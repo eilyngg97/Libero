@@ -1,0 +1,103 @@
+
+
+
+.option-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 140px;
+  background: var(--card-bg, #2196f3);
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(30,41,59,0.10);
+  padding: 0.2rem 2rem;
+  margin: 1rem 0;
+  transition: box-shadow 0.2s, transform 0.2s;
+  cursor: pointer;
+  border: none;
+  position: relative;
+  overflow: hidden;
+}
+
+
+.option-card:hover {
+  box-shadow: 0 8px 32px rgba(30,41,59,0.16);
+  transform: translateY(-2px) scale(1.02);
+}
+
+.option-card::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 20px;
+  background: radial-gradient(circle at 50% 40%, rgba(255,152,0,0.16) 0%, rgba(255,255,255,0.0) 70%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s;
+  z-index: 1;
+}
+.option-card:hover::after {
+  opacity: 1;
+}
+.option-card > * {
+  position: relative;
+  z-index: 2;
+}
+/* Modern icon style */
+.option-card-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 1.5rem;
+  box-shadow: 0 2px 8px rgba(30,41,59,0.10);
+}
+.option-card-icon svg {
+  font-size: 32px !important;
+  color: var(--card-icon, #2196f3) !important;
+}
+.option-card-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+/* Responsive y grid igual tamaño */
+
+
+@media (max-width: 900px) {
+  .option-card {
+    padding: 1rem 1rem;
+    min-height: 120px;
+  }
+
+}
+
+@media (max-width: 600px) {
+  .option-card {
+    flex-direction: column;
+    align-items: flex-start;
+    min-height: 100px;
+    padding: 1rem 0.5rem;
+  }
+  .option-card-icon {
+    margin-right: 0;
+    margin-bottom: 0.5rem;
+  }
+
+}
+}
+.option-card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.3rem;
+  letter-spacing: 0.5px;
+}
+.option-card-desc {
+  font-size: 0.95rem;
+  color: #f3f4f6;
+  opacity: 0.9;
+}

@@ -1,0 +1,22 @@
+/* Archivo de estilos para la vista de pagos. Puedes personalizar aquí los estilos para la gestión de pagos. */
+
+.pagos-card {
+  background: #fff3e0;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(30,41,59,0.10);
+  padding: 1rem 2rem;
+  margin: 1rem 0;
+}
+
+.pagos-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ff9800;
+  margin-bottom: 0.3rem;
+}
+
+.pagos-desc {
+  font-size: 0.95rem;
+  color: #6d4c41;
+  opacity: 0.9;
+}

@@ -1,0 +1,416 @@
+/* Puedes agregar estilos personalizados para el dashboard aquí */
+
+.dashboard-container {
+  padding: 24px;
+}
+
+.dashboard-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashboard-export-btn {
+  background: #1e293b;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  width: fit-content;
+}
+
+.dashboard-export-btn:hover {
+  background: #334155;
+}
+
+.dashboard-export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dashboard-header-row .small-card:first-of-type {
+  margin-left: auto;
+}
+
+.dashboard-card.small-card {
+  min-width: 220px;
+  max-width: 260px;
+  padding: 14px 16px;
+  align-items: flex-start;
+  flex: 0 0 auto;
+}
+
+.dashboard-quick-access {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  margin-top: 24px;
+  align-items: start;
+}
+
+.dashboard-card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+  padding: 20px;
+  min-width: 260px;
+  flex: 1;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.dashboard-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-right: 0;
+}
+
+.sedes-panel {
+  max-width: none;
+}
+
+.cumple-card {
+  position: sticky;
+  top: 24px;
+}
+
+.finanzas-wrapper {
+  width: 100%;
+}
+
+.dashboard-card h3 {
+  margin-top: 0;
+  color: #1e293b;
+}
+
+.dashboard-card ul {
+  padding-left: 18px;
+}
+
+.dashboard-btn {
+  background: #1e293b;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-size: 1rem;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+  width: 100%;
+}
+
+.dashboard-btn:hover {
+  background: #334155;
+}
+
+.finanzas-stats {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.finanzas-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.finanzas-card {
+  border: 1px solid #eef0f3;
+  border-radius: 18px;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.finanzas-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finanzas-sede-nombre {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #1f2937;
+}
+
+.finanzas-sede-sub {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+
+.finanzas-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #fff3e6;
+  color: #ff7a00;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.finanzas-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.progress-ring {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: conic-gradient(#f97316 calc(var(--progress) * 1%), #e5e7eb 0%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-ring-inner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.8rem;
+}
+
+.finanzas-progress-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.finanzas-progress-label {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+}
+
+.finanzas-progress-status {
+  color: #f97316;
+  font-weight: 700;
+}
+
+.finanzas-montos {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.95rem;
+  color: #475569;
+}
+
+.finanzas-monto-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.finanzas-monto-row b {
+  color: #0f172a;
+}
+
+.finanzas-pendiente {
+  color: #f97316;
+}
+
+.finanzas-no-pagado {
+  color: #ef4444;
+}
+
+.finanzas-abono {
+  color: #6d4c41;
+}
+
+.finanzas-btn {
+  background: #f8fafc;
+  color: #1f2937;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border 0.2s;
+}
+
+.finanzas-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5f5;
+}
+
+.stat-label {
+  color: #64748b;
+  margin-right: 8px;
+}
+
+.stat-value {
+  font-weight: bold;
+  color: #1e293b;
+}
+
+.stat-balance {
+  color: #059669;
+}
+
+.sedes-panel {
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  border-radius: 16px;
+  padding: 18px 18px 20px;
+}
+
+.sedes-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sedes-header h3 {
+  margin: 0;
+}
+
+.sedes-link {
+  background: transparent;
+  border: none;
+  color: #ff7a00;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sedes-link:hover {
+  text-decoration: underline;
+}
+
+.sedes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.sede-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 12px 16px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid #eef0f3;
+}
+
+.sede-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+.sede-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sede-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eef2f7;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sede-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sede-info strong {
+  color: #0f172a;
+  letter-spacing: 0.01em;
+}
+
+.sede-direccion {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.sede-alumnos {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+}
+
+.alumnos-count {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #ff7a00;
+}
+
+.alumnos-label {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.sedes-tip {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .dashboard-quick-access {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .dashboard-left {
+    margin-right: 0;
+  }
+
+  .dashboard-card {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .cumple-card {
+    position: static;
+    width: 100%;
+    max-width: none;
+  }
+}

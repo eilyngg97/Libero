@@ -1,0 +1,133 @@
+.entrenadores-list-container {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+  padding: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.filtros-entrenadores {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.entrenadores-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+.entrenadores-table th, .entrenadores-table td {
+  padding: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+.entrenador-foto {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid #e2e8f0;
+}
+.foto-placeholder {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+.estado-activo {
+  color: #059669;
+  font-weight: bold;
+}
+.estado-inactivo {
+  color: #e11d48;
+  font-weight: bold;
+}
+.paginacion-entrenadores {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+}
+.paginacion-entrenadores button {
+  background: #1e293b;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.paginacion-entrenadores button:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(30,41,59,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 32px 24px 24px 24px;
+  box-shadow: 0 4px 24px rgba(30,41,59,0.18);
+  min-width: 400px;
+  max-width: 700px;
+  width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 700px) {
+  .modal-content {
+    min-width: 0;
+    width: 98vw;
+    max-width: 98vw;
+    padding: 12px 4px 12px 4px;
+  }
+}
+.cerrar-modal-btn {
+  background: #e11d48;
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 18px;
+  transition: background 0.2s;
+}
+.cerrar-modal-btn:hover {
+  background: #be123c;
+}
+.nuevo-entrenador-btn {
+  background: #1e293b;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-size: 1rem;
+  margin-bottom: 18px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.nuevo-entrenador-btn:hover {
+  background: #334155;
+}
+.cerrar-modal-x {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  font-size: 2rem;
+  color: #e11d48;
+  cursor: pointer;
+  z-index: 10;
+  transition: color 0.2s;
+}
+.cerrar-modal-x:hover {
+  color: #be123c;
+}
