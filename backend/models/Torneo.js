@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 
 const TorneoSchema = new mongoose.Schema({
   nombre: { type: String, required: true },
-  liga: { type: String, required: true },
   descripcion: { type: String },
   fecha_limite: { type: Date },
   convocados: [

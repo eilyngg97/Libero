@@ -3,12 +3,33 @@ const router = express.Router();
 const Torneo = require('../models/Torneo');
 const Partido = require('../models/Partido');
 
+// ...otros endpoints...
+
+// DELETE /api/torneos/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const torneo = await Torneo.findById(req.params.id);
+    if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
+    // Eliminar todos los partidos asociados a este torneo
+    await Partido.deleteMany({ torneo: torneo._id });
+    // Eliminar el torneo
+    await torneo.deleteOne();
+    res.json({ message: 'Torneo y partidos eliminados correctamente' });
+  } catch (err) {
+    res.status(400).json({ error: 'Error al eliminar torneo', detalle: err.message });
+  }
+});
+
+
 // GET /api/torneos
 router.get('/', async (req, res) => {
   try {
     const torneos = await Torneo.find()
       .populate('partidos')
-      .populate('convocados.alumno')
+      .populate({
+        path: 'convocados.alumno',
+        select: 'nombres apellidos foto categoria', // Selecciona solo los campos necesarios
+      })
       .sort({ createdAt: -1 });
     res.json(torneos);
   } catch (err) {
@@ -21,14 +42,13 @@ router.get('/por-alumno/:alumnoId', async (req, res) => {
   try {
     const { alumnoId } = req.params;
     const torneos = await Torneo.find({ 'convocados.alumno': alumnoId })
-      .select('nombre liga descripcion fecha_limite convocados')
+      .select('nombre descripcion fecha_limite convocados')
       .sort({ createdAt: -1 });
     const data = torneos.map((t) => {
       const match = (t.convocados || []).find(c => String(c.alumno) === String(alumnoId));
       return {
         _id: t._id,
         nombre: t.nombre,
-        liga: t.liga,
         descripcion: t.descripcion,
         fecha_limite: t.fecha_limite,
         estado: match?.estado || 'pendiente',
@@ -68,9 +88,9 @@ router.get('/:id/partidos', async (req, res) => {
 // POST /api/torneos
 router.post('/', async (req, res) => {
   try {
-    const { nombre, liga, descripcion, fecha_limite, convocados } = req.body;
-    if (!nombre || !liga) {
-      return res.status(400).json({ error: 'Nombre y liga son obligatorios' });
+    const { nombre, descripcion, fecha_limite, convocados } = req.body;
+    if (!nombre) {
+      return res.status(400).json({ error: 'Nombre es obligatorio' });
     }
     const uniqueIds = Array.isArray(convocados)
       ? Array.from(new Set(convocados.filter(Boolean).map((id) => String(id))))
@@ -78,7 +98,6 @@ router.post('/', async (req, res) => {
     const convocadosList = uniqueIds.map((alumno) => ({ alumno }));
     const torneo = await Torneo.create({
       nombre,
-      liga,
       descripcion,
       fecha_limite: fecha_limite || null,
       convocados: convocadosList
@@ -92,10 +111,9 @@ router.post('/', async (req, res) => {
 // PUT /api/torneos/:id
 router.put('/:id', async (req, res) => {
   try {
-    const { nombre, liga, descripcion, fecha_limite, convocados } = req.body;
+    const { nombre, descripcion, fecha_limite, convocados } = req.body;
     const update = {};
     if (nombre !== undefined) update.nombre = nombre;
-    if (liga !== undefined) update.liga = liga;
     if (descripcion !== undefined) update.descripcion = descripcion;
     if (fecha_limite !== undefined) update.fecha_limite = fecha_limite || null;
 
@@ -170,12 +188,18 @@ router.post('/:id/partidos', async (req, res) => {
       equipo_contrario,
       jugadores
     } = req.body;
-    if (!nombre || !direccion || !fecha || !hora || !monto || !monto_inscripcion || !monto_acompanante || !entrenador || !equipo_contrario) {
+    if (!nombre) {
       return res.status(400).json({ error: 'Faltan campos obligatorios del partido' });
     }
     const torneo = await Torneo.findById(torneoId);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
     const toNumber = (value) => (value === null || value === undefined || value === '' ? undefined : Number(value));
+    // Copiar los convocados del torneo al partido (estado pendiente)
+    const convocadosPartido = (torneo.convocados || []).map(c => ({
+      alumno: c.alumno,
+      estado: 'pendiente',
+      respondido_en: null
+    }));
     const partido = await Partido.create({
       nombre,
       descripcion,
@@ -187,13 +211,34 @@ router.post('/:id/partidos', async (req, res) => {
       monto_acompanante: toNumber(monto_acompanante),
       entrenador,
       equipo_contrario,
-      jugadores: Array.isArray(jugadores) ? jugadores : [],
-      torneo: torneoId
+      torneo: torneoId,
+      convocados: convocadosPartido
     });
     await Torneo.findByIdAndUpdate(torneoId, { $push: { partidos: partido._id } });
     res.status(201).json(partido);
   } catch (err) {
     res.status(400).json({ error: 'Error al crear partido', detalle: err.message });
+  }
+});
+
+// PATCH /api/torneos/:torneoId/partidos/:partidoId/convocados/:alumnoId
+router.patch('/:torneoId/partidos/:partidoId/convocados/:alumnoId', async (req, res) => {
+  try {
+    const { partidoId, alumnoId } = req.params;
+    const { estado } = req.body;
+    if (!['aceptado', 'rechazado'].includes(estado)) {
+      return res.status(400).json({ error: 'Estado inválido' });
+    }
+    const partido = await Partido.findById(partidoId);
+    if (!partido) return res.status(404).json({ error: 'Partido no encontrado' });
+    const convocado = (partido.convocados || []).find(c => String(c.alumno) === String(alumnoId));
+    if (!convocado) return res.status(404).json({ error: 'Alumno no convocado en este partido' });
+    convocado.estado = estado;
+    convocado.respondido_en = new Date();
+    await partido.save();
+    res.json({ message: 'Respuesta registrada', estado, respondido_en: convocado.respondido_en });
+  } catch (err) {
+    res.status(400).json({ error: 'Error al responder convocatoria de partido', detalle: err.message });
   }
 });
 

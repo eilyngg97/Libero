@@ -38,6 +38,11 @@ function getMenuOptions(handleLogout) {
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' }
     );
   }
+  if (rol === 'usuario') {
+    options.push(
+      { text: 'Mis Torneos', icon: <EmojiEventsIcon />, path: '/torneos-usuario' }
+    );
+  }
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });
   return options;
 }

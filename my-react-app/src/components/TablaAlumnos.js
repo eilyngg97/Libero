@@ -20,9 +20,7 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-
-
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return '';
@@ -77,7 +75,10 @@ function TablaAlumnos() {
       Nombre: a.nombres,
       Apellido: a.apellidos,
       Fecha_Nacimiento: formatFecha(a.fecha_nacimiento),
-      Edad: calcularEdad(a.fecha_nacimiento)
+      Edad: calcularEdad(a.fecha_nacimiento),
+      Cedula: a.cedula,
+      Representante: a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
+      Telefono: a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-'),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -88,14 +89,17 @@ function TablaAlumnos() {
   // Función para descargar PDF
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
-    const columns = ["N°", "Nombre", "Apellido", "Fecha de Nacimiento", "Edad", "Cedula"];
+    const columns = ["N°", "Nombre", "Apellido", "Fecha de Nacimiento", "Edad", "Cedula", "Representante", "Telefono"];
+    console.log('Alumnos filtrados para PDF:', alumnosFiltrados);
     const rows = alumnosFiltrados.map((a, i) => [
       i + 1,
       a.nombres,
       a.apellidos,
       formatFecha(a.fecha_nacimiento),
       calcularEdad(a.fecha_nacimiento),
-      a.cedula
+      a.cedula,
+      a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
+      a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-')
     ]);
     doc.text(`Lista de Alumnos (Total: ${alumnosFiltrados.length})`, 14, 10);
     autoTable(doc, { head: [columns], body: rows, startY: 20 });
@@ -383,7 +387,7 @@ function TablaAlumnos() {
                           {alumno.nombres} {alumno.apellidos}
                         </Typography>
                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
-                          Inscrito: {formatFecha(alumno.fecha_inscripcion) || '-'}
+                          Fecha Nac: {formatFecha(alumno.fecha_nacimiento) || '-'}
                         </Typography>
                       </Box>
                     </Box>
@@ -432,12 +436,22 @@ function TablaAlumnos() {
                         <DeleteIcon />
                       </IconButton>
                     </Tooltip>
+                    <Tooltip title="Gestionar reposos">
+                      <IconButton
+                        aria-label="gestionar reposos"
+                        size="small"
+                        sx={{ color: '#94a3b8', ml: 1 }}
+                        onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
+                      >
+                        <LocalHospitalIcon />
+                      </IconButton>
+                    </Tooltip>
                     {alumno.foto_cedula && (
                       <Tooltip title="Descargar cédula">
                         <IconButton
                           aria-label="descargar cédula"
                           size="small"
-                          sx={{ color: '#1976d2', ml: 1 }}
+                          sx={{ color: '#94a3b8', ml: 1 }}
                           onClick={() => {
                             const link = document.createElement('a');
                             link.href = alumno.foto_cedula;

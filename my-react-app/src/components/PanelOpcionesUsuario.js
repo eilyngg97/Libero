@@ -4,14 +4,14 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
 import ShoppingBagIcon from '@mui/icons-material/ShoppingBag';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import { useLocation, useNavigate } from 'react-router-dom';
+import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 
 function PanelOpcionesUsuario() {
-  const location = useLocation();
+   const location = useLocation();
   const navigate = useNavigate();
   const [loadingRep, setLoadingRep] = useState(false);
   const [torneosAlumno, setTorneosAlumno] = useState([]);
@@ -20,8 +20,55 @@ function PanelOpcionesUsuario() {
   const [mensualidades, setMensualidades] = useState([]);
   const [mensualidadesLoading, setMensualidadesLoading] = useState(false);
   const [mensualidadesError, setMensualidadesError] = useState('');
+  const [juegosAlumno, setJuegosAlumno] = useState([]);
+  const [juegosLoading, setJuegosLoading] = useState(false);
+  const [juegosError, setJuegosError] = useState('');
   const alumno = location.state?.alumno;
   const sede = location.state?.sede;
+
+  const handleRespuestaJuego = async (torneoId, partidoId, estado) => {
+    if (!alumno?._id) return;
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos/${partidoId}/convocados/${alumno._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo registrar la respuesta');
+      setJuegosAlumno(prev => prev.map(j => j._id === partidoId ? { ...j, estadoConvocatoria: estado, respondido_en: data.respondido_en } : j));
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+  
+  // Utilidad para obtener partidos futuros donde el alumno está convocado
+  const fetchProximosJuegos = async (alumnoId, torneos) => {
+    const juegos = [];
+    for (const torneo of torneos) {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneo._id}/partidos`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const ahora = new Date();
+          data.forEach(partido => {
+            // Buscar convocatoria del alumno en el partido
+            const convocado = Array.isArray(partido.convocados)
+              ? partido.convocados.find(c => (c.alumno?._id || c.alumno) === alumnoId)
+              : null;
+            if (
+              convocado &&
+              new Date(partido.fecha) > ahora
+            ) {
+              juegos.push({ ...partido, torneo, estadoConvocatoria: convocado.estado, respondido_en: convocado.respondido_en });
+            }
+          });
+        }
+      } catch {}
+    }
+    // Ordenar por fecha
+    return juegos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  };
 
   useEffect(() => {
     if (!alumno?._id) return;
@@ -31,8 +78,22 @@ function PanelOpcionesUsuario() {
       try {
         const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/por-alumno/${alumno._id}`);
         const data = await res.json();
+        console.log('Torneos donde el alumno está convocado', data);
         if (!res.ok || !Array.isArray(data)) throw new Error('No se pudieron cargar los torneos');
         setTorneosAlumno(data);
+        // Si hay torneos, buscar partidos futuros donde el alumno está convocado
+        setJuegosLoading(true);
+        setJuegosError('');
+        try {
+          const juegos = await fetchProximosJuegos(alumno._id, data.filter(t => t.estado === 'aceptado'));
+          console.log('Juegos futuros donde el alumno está convocado', juegos);
+          setJuegosAlumno(juegos);
+        } catch (err) {
+          setJuegosAlumno([]);
+          setJuegosError('No se pudieron cargar los juegos');
+        } finally {
+          setJuegosLoading(false);
+        }
       } catch (err) {
         setTorneosAlumno([]);
         setTorneosError(err.message);
@@ -348,7 +409,7 @@ function PanelOpcionesUsuario() {
             </Grid>
             <Box sx={{ mt: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>Proximos torneos</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>Próximos torneos</Typography>
               </Box>
               {torneosLoading && <Typography variant="body2">Cargando...</Typography>}
               {torneosError && <Typography variant="body2" color="error">{torneosError}</Typography>}
@@ -373,11 +434,13 @@ function PanelOpcionesUsuario() {
                       borderRadius: 3,
                       border: '1px solid #e2e8f0',
                       backgroundColor: 'white',
-                      boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)'
+                      boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)',
+                      cursor: 'pointer',
                     }}
+                    onClick={() => navigate(`/torneos/${t._id}`)} // Navegar al detalle del torneo
                   >
                     <Grid container spacing={2} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
-                      <Grid item xs={12} sm={2} md={2}>
+                      <Grid item size={{ xs: 2 }}>
                         <Box
                           sx={{
                             width: 86,
@@ -386,93 +449,106 @@ function PanelOpcionesUsuario() {
                             background: 'linear-gradient(135deg, #f97316, #fb923c)',
                             color: 'white',
                             display: 'flex',
-                            flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
+                            fontSize: 24,
                             fontWeight: 700,
-                            textAlign: 'center'
                           }}
                         >
-                          <Typography sx={{ fontSize: 20, fontWeight: 800, lineHeight: 1 }}>
-                            {dia}
-                          </Typography>
-                          <Typography sx={{ fontSize: 10, letterSpacing: '0.08em' }}>
+                          {dia}
+                          <Typography variant="caption" sx={{ display: 'block', fontSize: 12 }}>
                             {mes}
                           </Typography>
-                          <Typography sx={{ fontSize: 10, opacity: 0.9, mt: 0.5 }}>
-                            {formatHora(t.fecha_limite) || 'Hora'}
-                          </Typography>
                         </Box>
                       </Grid>
-                      <Grid item xs={12} sm={6.5} md={6.5}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
-                          {t.liga && (
-                            <Chip
-                              size="small"
-                              label={t.liga}
-                              sx={{ bgcolor: '#ffedd5', color: '#c2410c', fontWeight: 700 }}
-                            />
-                          )}
-                          {alumno?.categoria && (
-                            <Chip
-                              size="small"
-                              label={`Categoria ${alumno.categoria}`}
-                              sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }}
-                            />
-                          )}
-                        </Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                      <Grid item size={{ xs: 9 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 700 }}>
                           {t.nombre}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#64748b' }}>
-                          {t.descripcion || 'Convocatoria abierta para este torneo.'}
-                        </Typography>
+                        <Chip
+                          label={estado.toUpperCase()}
+                          sx={{
+                            mt: 1,
+                            bgcolor: estado === 'aceptado' ? '#d1fae5' : '#fef3c7',
+                            color: estado === 'aceptado' ? '#065f46' : '#92400e',
+                            fontWeight: 700,
+                          }}
+                        />
                       </Grid>
-                      <Grid item xs={12} sm={3.5} md={3.5} />
+                      <Grid item size={{ xs: 1 }} sx={{ textAlign: 'right' }}>
+                        <IconButton onClick={() => navigate(`/torneos-usuario/${t._id}`)}>
+                          <ArrowForwardIosIcon sx={{ color: '#64748b' }} />
+                        </IconButton>
+                      </Grid>
                     </Grid>
-                    <Divider sx={{ my: 2 }} />
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, flexWrap: 'wrap' }}>
-                      {deadlinePassed && (
-                        <Typography variant="caption" sx={{ color: '#b91c1c', display: 'block', alignSelf: 'center' }}>
-                          La fecha limite ya paso.
-                        </Typography>
-                      )}
-                      <Button
-                        variant="contained"
-                        disabled={estado !== 'pendiente' || deadlinePassed}
-                        onClick={() => handleRespuestaTorneo(t._id, 'aceptado')}
-                        sx={{
-                          bgcolor: '#f97316',
-                          '&:hover': { bgcolor: '#ea580c' },
-                          fontWeight: 700,
-                          borderRadius: 2,
-                          width: 132
-                        }}
-                      >
-                        Aceptar
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        disabled={estado !== 'pendiente' || deadlinePassed}
-                        onClick={() => handleRespuestaTorneo(t._id, 'rechazado')}
-                        sx={{
-                          borderColor: '#e2e8f0',
-                          color: '#64748b',
-                          fontWeight: 700,
-                          borderRadius: 2,
-                          width: 132
-                        }}
-                      >
-                        Declinar
-                      </Button>
-                    </Box>
                   </Box>
                 );
               })}
+
+              {/* Próximos juegos */}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 4, mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>Próximos juegos</Typography>
+              </Box>
+              {juegosLoading && <Typography variant="body2">Cargando juegos...</Typography>}
+              {juegosError && <Typography variant="body2" color="error">{juegosError}</Typography>}
+              {!juegosLoading && !juegosError && juegosAlumno.length === 0 && (
+                <Typography variant="body2" sx={{ color: '#64748b' }}>
+                  No tienes juegos próximos donde estés convocado.
+                </Typography>
+              )}
+              {juegosAlumno.map((j) => (
+                <Box
+                  key={j._id}
+                  sx={{
+                    mb: 2,
+                    p: { xs: 2, md: 2.5 },
+                    borderRadius: 3,
+                    border: '1px solid #e2e8f0',
+                    backgroundColor: 'white',
+                    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => navigate(`/juegos/${j._id}`)} // Navegar al detalle del juego
+                >
+                  <Grid container spacing={2} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
+                    <Grid item size={{ xs: 12, sm: 2, md: 2 }}>
+                      <Box
+                        sx={{
+                          width: 86,
+                          height: 86,
+                          borderRadius: 2.5,
+                          background: 'linear-gradient(135deg, #3b82f6, #60a5fa)',
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 24,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {formatFechaCorta(j.fecha)}
+                      </Box>
+                    </Grid>
+                    <Grid item size={{ xs: 12, sm: 8, md: 8 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        {j.nombre}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b' }}>
+                        {j.descripcion || 'Sin descripción'}
+                      </Typography>
+                    </Grid>
+                    <Grid item size={{ xs: 12, sm: 2, md: 2 }}>
+                      <IconButton onClick={() => navigate(`/juegos/${j._id}`)}>
+                        <ArrowForwardIosIcon sx={{ color: '#64748b' }} />
+                      </IconButton>
+                    </Grid>
+                  </Grid>
+                </Box>
+              ))}
             </Box>
           </Grid>
-          <Grid item xs={12} md={4}>
-            <Box sx={{ position: { xs: 'static', md: 'sticky' }, top: { md: 24 } }}>
+          <Grid item size={{ xs: 12, md: 4 }} sx={{ marginLeft: 'auto'}}>
+            <Box sx={{ position: { xs: 'static', md: 'sticky' }, top: { md: 24 }, width: '100%', maxWidth: 400 }}>
               <Box
                 sx={{
                   borderRadius: 3,
@@ -495,20 +571,6 @@ function PanelOpcionesUsuario() {
                   <Typography variant="caption" sx={{ color: '#64748b' }}>
                     ID: #{alumno?._id?.slice(-6) || 'N/A'} • Categoria {alumno?.categoria || '-'}
                   </Typography>
-                  <Grid container spacing={2} sx={{ mt: 2 }}>
-                    <Grid item xs={6}>
-                      <Box sx={{ borderRadius: 2, border: '1px solid #e5e7eb', p: 1 }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Asistencia</Typography>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>92%</Typography>
-                      </Box>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Box sx={{ borderRadius: 2, border: '1px solid #e5e7eb', p: 1 }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Puntos</Typography>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>145</Typography>
-                      </Box>
-                    </Grid>
-                  </Grid>
                 </Box>
               </Box>
               <Box

@@ -1,26 +1,17 @@
 import React, { useState } from 'react';
 import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar } from '@mui/material';
-import VisibilityIcon from '@mui/icons-material/Visibility';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import DeleteIcon from '@mui/icons-material/Delete';
-import EditIcon from '@mui/icons-material/Edit';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import HourglassBottomIcon from '@mui/icons-material/HourglassBottom';
-import RemoveCircleIcon from '@mui/icons-material/RemoveCircle';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import TablePagination from '@mui/material/TablePagination';
+import * as XLSX from 'xlsx';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-	const estados = ['pagado', 'pendiente', 'retrasado', 'exonerado', 'abono'];
-const conceptos = ['Mensualidad', 'Inscripción', 'Uniforme', 'Torneo'];
 const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo',];
 
 function Mensualidades() {
@@ -268,6 +259,23 @@ function Mensualidades() {
 		}
 	};
 
+	const exportarExcel = () => {
+		const alumnosRetrasados = mensualidades.filter(m => m.estatus && m.estatus.toLowerCase() === 'retrasado');
+		const datos = alumnosRetrasados.map(m => ({
+			Alumno: `${m.id_alumno?.nombres || ''} ${m.id_alumno?.apellidos || ''}`,
+			Categoria: m.id_alumno?.categoria || '-',
+			Mes: meses[(m.mes || 1) - 1],
+			Monto: m.monto_esperado,
+			Estado: m.estatus
+		}));
+
+		const hoja = XLSX.utils.json_to_sheet(datos);
+		const libro = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(libro, hoja, 'Alumnos Retrasados');
+		const nombreSede = sedeSeleccionada?.nombre || 'sede';
+		XLSX.writeFile(libro, `alumnos_retrasados_${nombreSede}.xlsx`);
+	};
+
 	return (
 		<div>
 			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>Mensualidades</Typography>
@@ -281,6 +289,14 @@ function Mensualidades() {
 					<MenuItem value="">Todos</MenuItem>
 					{['Pendiente','Pagado','Retrasado', 'Exonerado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
+				<Button
+				className="mensualidades-export-btn"
+				variant="contained"
+				onClick={exportarExcel}
+				sx={{ marginBottom: 2, marginLeft: 'auto' }}
+			>
+				Exportar Excel
+			</Button>
 			</div>
 			<TableContainer
 				component={Paper}

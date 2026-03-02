@@ -8,12 +8,9 @@ exports.createPedidoUniforme = async (req, res) => {
       sedeId,
       prenda,
       talla,
-      precio,
-      metodo_pago,
-      referencia
     } = req.body;
 
-    if (!alumnoId || !prenda || !talla || !precio || !metodo_pago) {
+    if (!alumnoId || !prenda || !talla) {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
     if (!mongoose.Types.ObjectId.isValid(alumnoId)) {
@@ -22,26 +19,12 @@ exports.createPedidoUniforme = async (req, res) => {
     if (sedeId && !mongoose.Types.ObjectId.isValid(sedeId)) {
       return res.status(400).json({ error: 'sedeId inválido' });
     }
-    if (Number.isNaN(Number(precio))) {
-      return res.status(400).json({ error: 'precio inválido' });
-    }
-
-    const requiereReferencia = metodo_pago === 'TRANSFERENCIA' || metodo_pago === 'PAGO MOVIL';
-    if (requiereReferencia && (!referencia || referencia.length < 6)) {
-      return res.status(400).json({ error: 'Referencia obligatoria (mín. 6 dígitos)' });
-    }
-
-    const comprobante_url = req.file ? `/uploads/comprobantes/${req.file.filename}` : null;
 
     const pedido = await UniformePedido.create({
       alumno: alumnoId,
       sede: sedeId || undefined,
       prenda,
       talla,
-      precio: Number(precio),
-      metodo_pago,
-      referencia: requiereReferencia ? referencia : undefined,
-      comprobante_url,
       estado: 'pendiente',
       solicitado_por: req.user?.id
     });

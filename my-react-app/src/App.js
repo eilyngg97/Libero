@@ -22,6 +22,8 @@ import TorneoCrear from './components/TorneoCrear';
 import Sedes from './components/Sedes';
 import Login from './components/Login';
 import Constancias from './components/Constancias';
+import TorneoDetalle from './components/TorneoDetalle';
+import GestionReposos from './components/GestionReposos';
 
 import { SedeProvider } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
@@ -100,6 +102,8 @@ function App() {
                         <Route path="panel-opciones-usuario/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><PanelOpcionesUsuario /></ProtectedRoute>} />
                         <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
                         <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />
+                        <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
+                        <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
                       </Routes>
                     </main>
                   </div>

@@ -290,6 +290,13 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   const porcentajeAbono = resumenTotales.total > 0 ? (resumenTotales.abono / resumenTotales.total) * 100 : 0;
   const porcentajeNoPagado = resumenTotales.total > 0 ? Math.max(0, 100 - porcentajePagado - porcentajeAbono) : 0;
 
+  const getProgressStatus = (progress) => {
+    if (progress >= 80) return 'Excelente';
+    if (progress >= 50) return 'Estable';
+    if (progress >= 20) return 'Bajo';
+    return 'Crítico';
+  };
+
   return (
     <div className="dashboard-container">
       <div className="dashboard-header-row">
@@ -410,7 +417,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                             <div className="finanzas-progress-text">
                               <div className="finanzas-progress-label">PROGRESO DE COBRO</div>
                               <div className="finanzas-progress-status">
-                                → Estable
+                                → {getProgressStatus(progreso)}
                               </div>
                             </div>
                           </div>

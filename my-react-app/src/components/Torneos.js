@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, List, ListItem, ListItemText, IconButton, Typography, Accordion, AccordionSummary, AccordionDetails, Box, Grid, Chip, InputAdornment, Snackbar, Alert, Paper } from '@mui/material';
+import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, List, ListItem, ListItemText, IconButton, Typography, Accordion, AccordionSummary, AccordionDetails, Box, Grid, Chip, InputAdornment, Snackbar, Alert, Paper, Avatar } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { DataGrid } from '@mui/x-data-grid';
 import EditIcon from '@mui/icons-material/Edit';
@@ -24,10 +24,14 @@ import { useNavigate } from 'react-router-dom';
 
 
 function Torneos() {
+  const [dialogEliminarOpen, setDialogEliminarOpen] = useState(false);
+  const [torneoAEliminar, setTorneoAEliminar] = useState(null);
+    // Estado para saber si se está editando un partido
+    const [editandoPartido, setEditandoPartido] = useState(false);
+    const [partidoEditId, setPartidoEditId] = useState(null);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [nombre, setNombre] = useState('');
-  const [liga, setLiga] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [fechaLimite, setFechaLimite] = useState('');
   const [torneos, setTorneos] = useState([]);
@@ -147,7 +151,6 @@ function Torneos() {
     setOpen(false);
     setEditId(null);
     setNombre('');
-    setLiga('');
     setDescripcion('');
     setFechaLimite('');
     setConvocados([]);
@@ -169,7 +172,6 @@ function Torneos() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre,
-          liga,
           descripcion,
           fecha_limite: fechaLimite || null,
           convocados
@@ -195,7 +197,6 @@ function Torneos() {
       if (!res.ok) throw new Error(data.error || 'Error al obtener torneo');
       setEditId(data._id);
       setNombre(data.nombre || '');
-      setLiga(data.liga || '');
       setDescripcion(data.descripcion || '');
       setFechaLimite(data.fecha_limite ? data.fecha_limite.substring(0, 10) : '');
       const convocadosIds = Array.isArray(data.convocados)
@@ -213,19 +214,40 @@ function Torneos() {
       setSaveError(err.message);
     }
   };
-  const handleEliminar = (id) => {
-    setTorneos(prev => prev.filter(t => t.id !== id));
+  const handleEliminar = async () => {
+    if (!torneoAEliminar) return;
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoAEliminar}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'No se pudo eliminar el torneo');
+      }
+      setTorneos(prev => prev.filter(t => (t._id || t.id) !== torneoAEliminar));
+      setDialogEliminarOpen(false);
+      setTorneoAEliminar(null);
+    } catch (err) {
+      window.alert(err.message);
+      setDialogEliminarOpen(false);
+      setTorneoAEliminar(null);
+    }
   };
 
   // Partidos Modal
   const abrirModalPartidos = (torneo) => {
+    console.log('Abriendo modal de partidos para torneo:', torneo);
     setTorneoActual(torneo);
     setModalPartidos(true);
     setPartidos([]); // Aquí podrías cargar los partidos del torneo
+    setEditandoPartido(false);
+    setPartidoEditId(null);
   };
   const cerrarModalPartidos = () => {
     setModalPartidos(false);
     setPartidoError('');
+    setEditandoPartido(false);
+    setPartidoEditId(null);
     setPartidoForm({
       nombre: '',
       direccion: '',
@@ -245,22 +267,43 @@ function Torneos() {
     setPartidoError('');
     setPartidoLoading(true);
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...partidoForm,
-          jugadores: Array.isArray(partidoForm.jugadores) ? partidoForm.jugadores : []
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error al crear partido');
-      setPartidos(prev => [...prev, data]);
-      setTorneos(prev => prev.map(t => {
-        if ((t._id || t.id) !== torneoId) return t;
-        const partidosActuales = Array.isArray(t.partidos) ? t.partidos : [];
-        return { ...t, partidos: [...partidosActuales, data] };
-      }));
+      let res, data;
+      if (editandoPartido && partidoEditId) {
+        // Editar partido existente
+        res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos/${partidoEditId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...partidoForm,
+            jugadores: Array.isArray(partidoForm.jugadores) ? partidoForm.jugadores : []
+          })
+        });
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al editar partido');
+        setPartidos(prev => prev.map(p => (p._id === data._id ? data : p)));
+        setTorneos(prev => prev.map(t => {
+          if ((t._id || t.id) !== torneoId) return t;
+          const partidosActuales = Array.isArray(t.partidos) ? t.partidos : [];
+          return { ...t, partidos: partidosActuales.map(p => (p._id === data._id ? data : p)) };
+        }));
+      } else {
+        // Crear partido nuevo
+        res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...partidoForm,
+          })
+        });
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al crear partido');
+        setPartidos(prev => [...prev, data]);
+        setTorneos(prev => prev.map(t => {
+          if ((t._id || t.id) !== torneoId) return t;
+          const partidosActuales = Array.isArray(t.partidos) ? t.partidos : [];
+          return { ...t, partidos: [...partidosActuales, data] };
+        }));
+      }
       setPartidoForm({
         nombre: '',
         direccion: '',
@@ -274,6 +317,8 @@ function Torneos() {
         jugadores: []
       });
       setModalPartidos(false);
+      setEditandoPartido(false);
+      setPartidoEditId(null);
       setPartidoSuccess(true);
     } catch (err) {
       setPartidoError(err.message);
@@ -315,14 +360,23 @@ function Torneos() {
 
   const getAlumnoId = (al) => al._id || al.id;
 
-  const alumnosFiltrados = alumnos.filter((al) => {
-    const nombreCompleto = `${al.nombres || ''} ${al.apellidos || ''}`.toLowerCase();
-    if (filtroNombre && !nombreCompleto.includes(filtroNombre.toLowerCase())) return false;
-    const base = getBaseDate(al.fecha_nacimiento);
-    if (filtroDesde && (!base || base < filtroDesde)) return false;
-    if (filtroHasta && (!base || base > filtroHasta)) return false;
-    return true;
-  });
+  // Filtrar alumnos y ordenar: los seleccionados (convocados) primero
+  const alumnosFiltrados = alumnos
+    .filter((al) => {
+      const nombreCompleto = `${al.nombres || ''} ${al.apellidos || ''}`.toLowerCase();
+      if (filtroNombre && !nombreCompleto.includes(filtroNombre.toLowerCase())) return false;
+      const base = getBaseDate(al.fecha_nacimiento);
+      if (filtroDesde && (!base || base < filtroDesde)) return false;
+      if (filtroHasta && (!base || base > filtroHasta)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const convocadosSet = new Set(convocados);
+      const aSel = convocadosSet.has(getAlumnoId(a));
+      const bSel = convocadosSet.has(getAlumnoId(b));
+      if (aSel === bSel) return 0;
+      return aSel ? -1 : 1;
+    });
 
   const handleToggleConvocado = (id) => {
     setConvocados(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -440,15 +494,43 @@ function Torneos() {
     {
       key: 'acciones',
       label: 'ACCIONES',
-      width: '0.8fr',
+      width: '1.2fr',
       align: 'right',
       render: (j) => (
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-          <IconButton edge="end" aria-label="editar-juego" onClick={() => alert(`Editar juego: ${j.nombre}`)} size="small">
+          <IconButton
+            edge="end"
+            aria-label="editar-juego"
+            onClick={() => {
+              setPartidoForm({
+                nombre: j.nombre || '',
+                direccion: j.direccion || '',
+                fecha: j.fecha ? j.fecha.substring(0, 10) : '',
+                hora: j.hora || '',
+                monto: j.monto || '',
+                monto_inscripcion: j.monto_inscripcion || '',
+                monto_acompanante: j.monto_acompanante || '',
+                entrenador: j.entrenador || '',
+                equipo_contrario: j.equipo_contrario || '',
+                jugadores: Array.isArray(j.jugadores) ? j.jugadores : []
+              });
+              setEditandoPartido(true);
+              setPartidoEditId(j._id || j.id);
+              setModalPartidos(true);
+            }}
+            size="small"
+          >
             <DriveFileRenameOutlineIcon fontSize="small" />
           </IconButton>
           <IconButton edge="end" aria-label="eliminar-juego" onClick={() => alert(`Eliminar juego: ${j.nombre}`)} size="small">
             <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+          <IconButton edge="end" aria-label="ver-convocados-juego" onClick={() => {
+            setConvocadosModalTitle(j.nombre || 'Convocados del partido');
+            setConvocadosModalList(Array.isArray(j.convocados) ? j.convocados : []);
+            setConvocadosModalOpen(true);
+          }} size="small">
+            <VisibilityIcon fontSize="small" />
           </IconButton>
         </Box>
       )
@@ -474,7 +556,6 @@ function Torneos() {
               <Box sx={{ bgcolor: '#fff', borderRadius: 3, p: 2.5, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>Datos del torneo</Typography>
                 <TextField label="Nombre" fullWidth margin="normal" value={nombre} onChange={e => setNombre(e.target.value)} />
-                <TextField label="Liga" fullWidth margin="normal" value={liga} onChange={e => setLiga(e.target.value)} />
                 <TextField label="Descripción" fullWidth margin="normal" multiline rows={3} value={descripcion} onChange={e => setDescripcion(e.target.value)} />
                 <TextField
                   label="Fecha limite de respuesta"
@@ -611,7 +692,7 @@ function Torneos() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleGuardar} variant="contained" sx={{ backgroundColor: '#ff7a00' }} disabled={!nombre || !liga || !descripcion || saveLoading}>
+          <Button onClick={handleGuardar} variant="contained" sx={{ backgroundColor: '#ff7a00' }} disabled={!nombre || saveLoading}>
             {saveLoading ? 'Guardando...' : 'Guardar'}
           </Button>
         </DialogActions>
@@ -702,7 +783,11 @@ function Torneos() {
                       variant="outlined"
                       color="error"
                       startIcon={<DeleteIcon />}
-                      onClick={e => { e.stopPropagation(); handleEliminar(t._id || t.id); }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setTorneoAEliminar(t._id || t.id);
+                        setDialogEliminarOpen(true);
+                      }}
                       sx={{
                         borderRadius: 2,
                         textTransform: 'none',
@@ -819,7 +904,8 @@ function Torneos() {
                             px: 2,
                             py: 1.25,
                             borderTop: '1px solid #e2e8f0',
-                            alignItems: 'center'
+                            alignItems: 'center',
+                            position: 'relative'
                           }}
                         >
                           {juegosColumns.map((col) => (
@@ -889,7 +975,7 @@ function Torneos() {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ bgcolor: '#f8fafc', p: { xs: 2, md: 3 } }}>
-          <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 700, color: '#0f172a' }}>Crear Juego</Typography>
+          <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 700, color: '#0f172a' }}>{editandoPartido ? 'Editar Juego' : 'Crear Juego'}</Typography>
           {partidoError && (
             <Typography variant="body2" color="error" sx={{ mb: 2 }}>
               {partidoError}
@@ -1026,6 +1112,7 @@ function Torneos() {
             <Grid item size={{ xs: 12, md: 5 }}>
               <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)', bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
                 <Typography sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>Costos del Encuentro</Typography>
+                {torneoActual?.partidos?.length === 0 && (
                 <TextField
                   label="Monto de inscripcion"
                   type="number"
@@ -1042,6 +1129,7 @@ function Torneos() {
                     )
                   }}
                 />
+                )}
                 <TextField
                   label="Monto de acompanante"
                   type="number"
@@ -1091,10 +1179,10 @@ function Torneos() {
           <Button
             onClick={handleCrearPartido}
             variant="contained"
-            disabled={partidoLoading || !partidoForm.nombre || !partidoForm.direccion || !partidoForm.fecha || !partidoForm.hora || !partidoForm.monto || !partidoForm.monto_inscripcion || !partidoForm.monto_acompanante || !partidoForm.entrenador || !partidoForm.equipo_contrario}
+            disabled={partidoLoading || !partidoForm.nombre}
             sx={{ bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' }, fontWeight: 700, borderRadius: 2, px: 3 }}
           >
-            {partidoLoading ? 'Guardando...' : 'Crear Juego'}
+            {partidoLoading ? 'Guardando...' : editandoPartido ? 'Guardar Cambios' : 'Crear Juego'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1108,60 +1196,98 @@ function Torneos() {
           Juego creado con exito
         </Alert>
       </Snackbar>
-      <Dialog
-        open={convocadosModalOpen}
-        onClose={() => setConvocadosModalOpen(false)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Convocados - {convocadosModalTitle}</DialogTitle>
-        <DialogContent>
-          {convocadosModalList.length === 0 ? (
-            <Typography variant="body2" sx={{ color: '#64748b' }}>
-              No hay convocados para este torneo.
-            </Typography>
-          ) : (
-            <List
-              dense
-              sx={{
-                display: 'grid',
-                gridAutoFlow: 'column',
-                gridTemplateRows: 'repeat(4, minmax(0, auto))',
-                gridAutoColumns: 'minmax(0, 1fr)',
-                columnGap: 2,
-                rowGap: 1
-              }}
-            >
-              {convocadosModalList.map((c, idx) => {
-                const estado = c.estado || 'pendiente';
-                const estadoColor =
-                  estado === 'aceptado'
-                    ? { bg: alpha('#16a34a', 0.16), text: '#166534' }
-                    : estado === 'rechazado'
-                    ? { bg: alpha('#dc2626', 0.16), text: '#991b1b' }
-                    : { bg: alpha('#f59e0b', 0.16), text: '#92400e' };
-                return (
-                  <ListItem key={c.alumno?._id || c.alumno || idx} sx={{ pl: 0, width: '100%' }}>
-                    <ListItemText
-                      primary={c.alumno ? `${c.alumno.nombres || ''} ${c.alumno.apellidos || ''}` : 'Alumno'}
-                      secondary={
-                        <Chip
-                          size="small"
-                          label={`Estado: ${estado}`}
-                          sx={{ bgcolor: estadoColor.bg, color: estadoColor.text, mt: 0.5 }}
-                        />
-                      }
-                    />
-                  </ListItem>
-                );
-              })}
-            </List>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConvocadosModalOpen(false)}>Cerrar</Button>
-        </DialogActions>
-      </Dialog>
+        <Dialog
+          open={convocadosModalOpen}
+          onClose={() => setConvocadosModalOpen(false)}
+          fullWidth
+          maxWidth="sm"
+          PaperProps={{
+            sx: {
+              bgcolor: '#fff',
+              borderRadius: 3,
+              boxShadow: '0 6px 18px rgba(15, 23, 42, 0.10)',
+              p: 0.5
+            }
+          }}
+        >
+          <DialogTitle sx={{ fontWeight: 700, color: '#0f172a', bgcolor: '#f8fafc', borderTopLeftRadius: 12, borderTopRightRadius: 12, px: 3, py: 2, borderBottom: '1px solid #e2e8f0' }}>
+            Convocados - {convocadosModalTitle}
+          </DialogTitle>
+          <DialogContent sx={{ bgcolor: '#fff', px: 3, py: 2.5 }}>
+            {convocadosModalList.length === 0 ? (
+              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                No hay convocados para este torneo.
+              </Typography>
+            ) : (
+              <List
+                dense
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.5,
+                  mt: 1,
+                  mb: 1
+                }}
+              >
+                {convocadosModalList.map((c, idx) => {
+                  const estado = c.estado || 'pendiente';
+                  const estadoColor =
+                    estado === 'aceptado'
+                      ? { bg: '#dcfce7', text: '#16a34a' }
+                      : estado === 'rechazado'
+                      ? { bg: '#fee2e2', text: '#dc2626' }
+                      : { bg: '#fef9c3', text: '#f59e0b' };
+                  return (
+                    <ListItem key={c.alumno?._id || c.alumno || idx} sx={{
+                      pl: 0,
+                      pr: 0,
+                      py: 1.2,
+                      borderRadius: 2,
+                      border: '1px solid #e2e8f0',
+                      bgcolor: '#f8fafc',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2
+                    }}>
+                      {/* Avatar del alumno */}
+                      <Box sx={{ minWidth: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Avatar
+                          src={c.alumno?.foto || undefined}
+                          alt={c.alumno ? `${c.alumno.nombres || ''} ${c.alumno.apellidos || ''}` : 'Alumno'}
+                          sx={{ width: 38, height: 38, bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontSize: 18 }}
+                        >
+                          {(!c.alumno?.foto && c.alumno?.nombres) ? c.alumno.nombres[0] : ''}
+                        </Avatar>
+                      </Box>
+                      <ListItemText
+                        primary={<Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>{c.alumno ? `${c.alumno.nombres || ''} ${c.alumno.apellidos || ''}` : 'Alumno'}</Typography>}
+                        secondary={<Typography sx={{ color: '#64748b', fontSize: 12 }}>{c.alumno?.categoria ? `Categoría ${c.alumno.categoria}` : ''}</Typography>}
+                      />
+                      <Chip
+                        size="small"
+                        label={estado === 'aceptado' ? 'Confirmado' : estado === 'rechazado' ? 'Rechazado' : 'Pendiente'}
+                        sx={{ bgcolor: estadoColor.bg, color: estadoColor.text, fontWeight: 700, fontSize: 13, px: 1.5, py: 0.5, mr: 1, borderRadius: 2 }}
+                      />
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ bgcolor: '#f8fafc', px: 3, py: 2, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }}>
+            <Button onClick={() => setConvocadosModalOpen(false)} sx={{ color: '#f97316', fontWeight: 700 }}>Cerrar</Button>
+          </DialogActions>
+        </Dialog>
+         <Dialog open={dialogEliminarOpen} onClose={() => { setDialogEliminarOpen(false); setTorneoAEliminar(null); }}>
+                              <DialogTitle sx={{ fontWeight: 700, color: '#b91c1c' }}>Eliminar torneo</DialogTitle>
+                              <DialogContent>
+                                <Typography>¿Estás seguro que deseas eliminar este torneo? Esta acción eliminará también todos los partidos asociados y no se puede deshacer.</Typography>
+                              </DialogContent>
+                              <DialogActions>
+                                <Button onClick={() => { setDialogEliminarOpen(false); setTorneoAEliminar(null); }} color="inherit" sx={{ fontWeight: 700 }}>Cancelar</Button>
+                                <Button onClick={handleEliminar} color="error" variant="contained" sx={{ fontWeight: 700 }}>Eliminar</Button>
+                              </DialogActions>
+                            </Dialog>
     </div>
   );
 }

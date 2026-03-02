@@ -1,0 +1,14 @@
+.save-reposo {
+  background: #1e293b;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.save-reposo:hover {
+  background: #334155;
+}

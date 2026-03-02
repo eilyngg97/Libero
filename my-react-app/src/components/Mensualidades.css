@@ -17,5 +17,21 @@
   position: relative;
   overflow: hidden;
 }
+.mensualidades-export-btn {
+  background: #1e293b !important;
+  color: #fff !important;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  width: fit-content;
+}
+
+.mensualidades-export-btn:hover {
+  background: #334155;
+}
+
 
 /* Puedes agregar más estilos personalizados aquí para mensualidades */
