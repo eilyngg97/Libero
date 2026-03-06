@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "backup:mongo": "node scripts/mongoBackup.js",
+    "restore:mongo": "node scripts/mongoRestore.js",
+    "ops:preflight": "node scripts/opsPreflight.js"
   },
   "keywords": [],
   "author": "",

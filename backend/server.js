@@ -6,10 +6,12 @@ const {
   actualizarRetrasadosCore
 } = require('./controllers/mensualidadController');
 const { app, logWithTime } = require('./app');
+const { getMongoUri } = require('./config/secrets');
 
 async function bootstrap() {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    const mongoUri = getMongoUri();
+    await mongoose.connect(mongoUri);
     logWithTime('Conectado a MongoDB');
 
     try {

@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = 'test-secret';
+process.env.JWT_SECRET_CURRENT = 'test-secret';
 
 jest.mock('../models/User', () => ({
   findOne: jest.fn()
@@ -57,7 +57,7 @@ const PagoDetalle = require('../models/PagoDetalle');
 const { app } = require('../app');
 
 function makeToken(payload) {
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+  return jwt.sign(payload, process.env.JWT_SECRET_CURRENT, { expiresIn: '1h' });
 }
 
 describe('Backend smoke tests', () => {
