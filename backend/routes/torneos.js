@@ -2,11 +2,12 @@ const express = require('express');
 const router = express.Router();
 const Torneo = require('../models/Torneo');
 const Partido = require('../models/Partido');
+const { authMiddleware, rolMiddleware } = require('../middleware/auth');
 
 // ...otros endpoints...
 
 // DELETE /api/torneos/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
   try {
     const torneo = await Torneo.findById(req.params.id);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
@@ -22,7 +23,7 @@ router.delete('/:id', async (req, res) => {
 
 
 // GET /api/torneos
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   try {
     const torneos = await Torneo.find()
       .populate('partidos')
@@ -38,7 +39,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/torneos/por-alumno/:alumnoId
-router.get('/por-alumno/:alumnoId', async (req, res) => {
+router.get('/por-alumno/:alumnoId', authMiddleware, async (req, res) => {
   try {
     const { alumnoId } = req.params;
     const torneos = await Torneo.find({ 'convocados.alumno': alumnoId })
@@ -62,7 +63,7 @@ router.get('/por-alumno/:alumnoId', async (req, res) => {
 });
 
 // GET /api/torneos/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const torneo = await Torneo.findById(req.params.id)
       .populate('partidos')
@@ -75,7 +76,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // GET /api/torneos/:id/partidos
-router.get('/:id/partidos', async (req, res) => {
+router.get('/:id/partidos', authMiddleware, async (req, res) => {
   try {
     const torneo = await Torneo.findById(req.params.id).populate('partidos');
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
@@ -86,7 +87,7 @@ router.get('/:id/partidos', async (req, res) => {
 });
 
 // POST /api/torneos
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, rolMiddleware('admin'), async (req, res) => {
   try {
     const { nombre, descripcion, fecha_limite, convocados } = req.body;
     if (!nombre) {
@@ -109,7 +110,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/torneos/:id
-router.put('/:id', async (req, res) => {
+router.put('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
   try {
     const { nombre, descripcion, fecha_limite, convocados } = req.body;
     const update = {};
@@ -148,7 +149,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // PATCH /api/torneos/:id/convocados/:alumnoId
-router.patch('/:id/convocados/:alumnoId', async (req, res) => {
+router.patch('/:id/convocados/:alumnoId', authMiddleware, async (req, res) => {
   try {
     const { id, alumnoId } = req.params;
     const { estado } = req.body;
@@ -172,7 +173,7 @@ router.patch('/:id/convocados/:alumnoId', async (req, res) => {
 });
 
 // POST /api/torneos/:id/partidos
-router.post('/:id/partidos', async (req, res) => {
+router.post('/:id/partidos', authMiddleware, rolMiddleware('admin'), async (req, res) => {
   try {
     const torneoId = req.params.id;
     const {
@@ -222,7 +223,7 @@ router.post('/:id/partidos', async (req, res) => {
 });
 
 // PATCH /api/torneos/:torneoId/partidos/:partidoId/convocados/:alumnoId
-router.patch('/:torneoId/partidos/:partidoId/convocados/:alumnoId', async (req, res) => {
+router.patch('/:torneoId/partidos/:partidoId/convocados/:alumnoId', authMiddleware, async (req, res) => {
   try {
     const { partidoId, alumnoId } = req.params;
     const { estado } = req.body;

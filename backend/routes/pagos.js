@@ -23,6 +23,6 @@ const upload = multer({ storage });
 // Registrar pago
 router.post('/', authMiddleware, upload.single('comprobante'), pagoDetalleController.registrarPago);
 // Consultar pagos por mensualidad
-router.get('/:id_mensualidad', pagoDetalleController.getPagosPorMensualidad);
+router.get('/:id_mensualidad', authMiddleware, pagoDetalleController.getPagosPorMensualidad);
 
 module.exports = router;

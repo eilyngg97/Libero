@@ -17,7 +17,7 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import * as XLSX from 'xlsx';
+import { exportToCsv } from '../utils/exportCsv';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
@@ -69,7 +69,7 @@ function TablaAlumnos() {
   const [reactivarLoading, setReactivarLoading] = useState(false);
   const [reactivarSuccess, setReactivarSuccess] = useState({ open: false, message: '' });
   const [incluirBajas, setIncluirBajas] = useState(false);
-  // Función para descargar Excel
+  // Función para descargar CSV
   const handleDownloadExcel = () => {
     const alumnosActivos = alumnosFiltrados.filter(a => !(a.dado_de_baja || a.activo === false || a.estado === 'Baja'));
     const data = alumnosActivos.map(a => ({
@@ -81,10 +81,12 @@ function TablaAlumnos() {
       Representante: a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
       Telefono: a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-'),
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Alumnos');
-    XLSX.writeFile(wb, `alumnos${sedeSeleccionada && sedeSeleccionada.nombre ? '_' + sedeSeleccionada.nombre.replace(/\s+/g, '_') : ''}.xlsx`);
+    const headers = ['Nombre', 'Apellido', 'Fecha_Nacimiento', 'Edad', 'Cedula', 'Representante', 'Telefono'];
+    exportToCsv(
+      data,
+      `alumnos${sedeSeleccionada && sedeSeleccionada.nombre ? '_' + sedeSeleccionada.nombre.replace(/\s+/g, '_') : ''}.csv`,
+      headers
+    );
   };
 
   // Función para descargar PDF
@@ -245,7 +247,7 @@ function TablaAlumnos() {
             startIcon={<TableChartIcon />}
             onClick={handleDownloadExcel}
           >
-            Excel
+            CSV
           </Button>
           <Button
             variant="outlined"

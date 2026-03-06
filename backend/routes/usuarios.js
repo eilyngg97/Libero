@@ -4,7 +4,7 @@ const { crearUsuario } = require('../controllers/usuarioController');
 const { authMiddleware, rolMiddleware } = require('../middleware/auth');
 
 // GET /api/usuarios (ejemplo)
-router.get('/', (req, res) => {
+router.get('/', authMiddleware, rolMiddleware('admin'), (req, res) => {
   res.json({ msg: 'Lista de usuarios (implementación pendiente)' });
 });
 

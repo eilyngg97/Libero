@@ -7,7 +7,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import TablePagination from '@mui/material/TablePagination';
-import * as XLSX from 'xlsx';
+import { exportToCsv } from '../utils/exportCsv';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import './Mensualidades.css';
 
@@ -269,11 +269,9 @@ function Mensualidades() {
 			Estado: m.estatus
 		}));
 
-		const hoja = XLSX.utils.json_to_sheet(datos);
-		const libro = XLSX.utils.book_new();
-		XLSX.utils.book_append_sheet(libro, hoja, 'Alumnos Retrasados');
+		const headers = ['Alumno', 'Categoria', 'Mes', 'Monto', 'Estado'];
 		const nombreSede = sedeSeleccionada?.nombre || 'sede';
-		XLSX.writeFile(libro, `alumnos_retrasados_${nombreSede}.xlsx`);
+		exportToCsv(datos, `alumnos_retrasados_${nombreSede}.csv`, headers);
 	};
 
 	return (
@@ -295,7 +293,7 @@ function Mensualidades() {
 				onClick={exportarExcel}
 				sx={{ marginBottom: 2, marginLeft: 'auto' }}
 			>
-				Exportar Excel
+				Exportar CSV
 			</Button>
 			</div>
 			<TableContainer

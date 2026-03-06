@@ -17,7 +17,6 @@
     "react-router-dom": "^6.30.2",
     "react-scripts": "5.0.1",
     "recharts": "^2.7.2",
-    "xlsx": "^0.18.5",
     "web-vitals": "^2.1.4"
   },
   "scripts": {

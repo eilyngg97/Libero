@@ -10,7 +10,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import LocationCityIcon from '@mui/icons-material/LocationCity';
 import Avatar from '@mui/material/Avatar';
 import Pagination from '@mui/material/Pagination';
-import * as XLSX from 'xlsx';
+import { exportToCsv } from '../utils/exportCsv';
 
 function Dashboard() {
   const { setSedeSeleccionada } = useSede();
@@ -247,16 +247,12 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
         'Sede': al.sede?.nombre || ''
       }));
 
-      const ws = XLSX.utils.json_to_sheet(rows, {
-        header: ['Nombre', 'Apellido', 'Cédula', 'Edad', 'Fecha de nacimiento', 'Sede']
-      });
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Alumnos');
+      const headers = ['Nombre', 'Apellido', 'Cédula', 'Edad', 'Fecha de nacimiento', 'Sede'];
       const fecha = new Date().toISOString().slice(0, 10);
-      XLSX.writeFile(wb, `alumnos_${fecha}.xlsx`);
+      exportToCsv(rows, `alumnos_${fecha}.csv`, headers);
     } catch (error) {
-      console.error('Error al exportar Excel:', error);
-      window.alert('No se pudo exportar el Excel. Intenta nuevamente.');
+      console.error('Error al exportar CSV:', error);
+      window.alert('No se pudo exportar el archivo CSV. Intenta nuevamente.');
     } finally {
       setExportLoading(false);
     }

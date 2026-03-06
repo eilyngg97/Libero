@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Representante = require('../models/Representante');
 const representanteController = require('../controllers/representanteController');
+const { authMiddleware } = require('../middleware/auth');
 // Endpoint para autocompletar representantes por cédula (query param)
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, async (req, res) => {
   if (req.query.cedula) {
     try {
       // Búsqueda parcial, insensible a mayúsculas
@@ -18,7 +19,7 @@ router.get('/', async (req, res) => {
 });
 
 // Buscar representante por cédula
-router.get('/buscar/cedula/:cedula', async (req, res) => {
+router.get('/buscar/cedula/:cedula', authMiddleware, async (req, res) => {
   try {
     const representante = await Representante.findOne({ cedula: req.params.cedula });
     if (!representante) return res.status(404).json({ error: 'No se encontró representante con esa cédula' });
@@ -29,7 +30,7 @@ router.get('/buscar/cedula/:cedula', async (req, res) => {
 });
 
 // Obtener representante por usuario
-router.get('/por-usuario/:userId', async (req, res) => {
+router.get('/por-usuario/:userId', authMiddleware, async (req, res) => {
   try {
     const representante = await Representante.findOne({ usuario: req.params.userId });
     if (!representante) return res.status(404).json({ error: 'No se encontró representante para este usuario' });
@@ -40,9 +41,9 @@ router.get('/por-usuario/:userId', async (req, res) => {
 });
 
 // Obtener representante por ID
-router.get('/:id', representanteController.getRepresentanteById);
+router.get('/:id', authMiddleware, representanteController.getRepresentanteById);
 
 // Listar todos los representantes
-router.get('/', representanteController.getAllRepresentantes);
+router.get('/', authMiddleware, representanteController.getAllRepresentantes);
 
 module.exports = router;
