@@ -12,6 +12,8 @@ const upload = multer({ storage });
 router.get('/', alumnoController.getAlumnos);
 router.post('/', upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.createAlumno);
 router.get('/por-representante/:representanteId', alumnoController.getAlumnosPorRepresentante);
+router.get('/:id/reposos', alumnoController.getRepososAlumno);
+router.post('/:id/reposos', upload.single('certificado'), alumnoController.registrarReposoAlumno);
 router.get('/:id', alumnoController.getAlumnoById);
 router.put('/:id', upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.updateAlumno);
 router.patch('/:id/baja', alumnoController.darDeBajaAlumno);

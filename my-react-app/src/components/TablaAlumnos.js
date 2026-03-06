@@ -71,7 +71,8 @@ function TablaAlumnos() {
   const [incluirBajas, setIncluirBajas] = useState(false);
   // Función para descargar Excel
   const handleDownloadExcel = () => {
-    const data = alumnosFiltrados.map(a => ({
+    const alumnosActivos = alumnosFiltrados.filter(a => !(a.dado_de_baja || a.activo === false || a.estado === 'Baja'));
+    const data = alumnosActivos.map(a => ({
       Nombre: a.nombres,
       Apellido: a.apellidos,
       Fecha_Nacimiento: formatFecha(a.fecha_nacimiento),
@@ -90,7 +91,6 @@ function TablaAlumnos() {
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
     const columns = ["N°", "Nombre", "Apellido", "Fecha de Nacimiento", "Edad", "Cedula", "Representante", "Telefono"];
-    console.log('Alumnos filtrados para PDF:', alumnosFiltrados);
     const rows = alumnosFiltrados.map((a, i) => [
       i + 1,
       a.nombres,
@@ -174,7 +174,6 @@ function TablaAlumnos() {
         let data;
         try {
           data = await res.json();
-          console.log('Alumnos obtenidos:', data);
         } catch (jsonErr) {
           // Si la respuesta no es JSON, intenta leer el texto y mostrarlo como error
           const text = await res.text();
@@ -204,7 +203,7 @@ function TablaAlumnos() {
   let alumnosFiltrados = sedeSeleccionada && sedeSeleccionada._id
     ? alumnos.filter(a => a.sede && a.sede._id === sedeSeleccionada._id)
     : alumnos;
-
+  console.log('Alumnos después de filtrar por sede:', alumnosFiltrados);
   // Aplicar filtros adicionales
   alumnosFiltrados = alumnosFiltrados.filter(a => {
     const nombreMatch = filtroNombre === '' || (a.nombres && a.nombres.toLowerCase().includes(filtroNombre.toLowerCase()));
@@ -307,17 +306,6 @@ function TablaAlumnos() {
           />
         </Box>
         <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>CATEGORIA</Typography>
-          <TextField
-            variant="outlined"
-            size="small"
-            placeholder="Todas las categorias"
-            value={filtroCategoria}
-            onChange={e => setFiltroCategoria(e.target.value)}
-            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
-          />
-        </Box>
-        <Box>
           <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>FECHA</Typography>
           <TextField
             type="date"
@@ -362,7 +350,7 @@ function TablaAlumnos() {
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE DEL ALUMNO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>EDAD</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEDE</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>REPRESENTANTE</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
               </TableRow>
@@ -398,7 +386,7 @@ function TablaAlumnos() {
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={alumno.categoria || '-'}
+                      label={alumno.estado || '-'}
                       size="small"
                       sx={{ bgcolor: '#eef2ff', color: '#2563eb', fontWeight: 700 }}
                     />

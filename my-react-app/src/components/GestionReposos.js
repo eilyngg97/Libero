@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, TextField, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, IconButton } from '@mui/material';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { Box, Typography, TextField, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
+import Snackbar from '@mui/material/Snackbar';
+import MuiAlert from '@mui/material/Alert';
 import { useParams } from 'react-router-dom';
 import { ToggleButton, ToggleButtonGroup } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -22,6 +23,15 @@ const GestionReposos = () => {
   const inputCertificadoRef = React.useRef();
   const { id } = useParams();
   const [studentName, setStudentName] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const [notificacion, setNotificacion] = useState({ open: false, severity: 'success', message: '' });
+
+  const formatFecha = (fecha) => {
+    if (!fecha) return '';
+    const d = new Date(fecha);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('es-VE');
+  };
 
   useEffect(() => {
     // Fetch student data based on the ID from the URL
@@ -36,7 +46,19 @@ const GestionReposos = () => {
       }
     };
 
+    const fetchReposos = async () => {
+      try {
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos`);
+        if (!response.ok) throw new Error('Error al obtener reposos');
+        const data = await response.json();
+        setReposos(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
     fetchStudentName();
+    fetchReposos();
   }, [id]);
 
   const handleInputChange = (e) => {
@@ -44,13 +66,52 @@ const GestionReposos = () => {
     setNuevoReposo({ ...nuevoReposo, [name]: value });
   };
 
-  const handleFileChange = (e) => {
-    setNuevoReposo({ ...nuevoReposo, certificado: e.target.files[0] });
-  };
+  const handleGuardarReposo = async () => {
+    if (!nuevoReposo.fechaInicio || !nuevoReposo.tipo) {
+      setNotificacion({ open: true, severity: 'warning', message: 'Debes indicar Fecha Inicio y Tipo de reposo.' });
+      return;
+    }
 
-  const handleGuardarReposo = () => {
-    // Aquí se manejaría la lógica para guardar el reposo
-    console.log('Reposo guardado:', nuevoReposo);
+    try {
+      setGuardando(true);
+      const formData = new FormData();
+      formData.append('fecha_inicio', nuevoReposo.fechaInicio);
+      if (nuevoReposo.fechaFin) formData.append('fecha_fin', nuevoReposo.fechaFin);
+      formData.append('tipo', nuevoReposo.tipo);
+      if (nuevoReposo.motivo) formData.append('motivo', nuevoReposo.motivo);
+      if (fotoCertificado) formData.append('certificado', fotoCertificado);
+
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error al guardar reposo');
+
+      setNuevoReposo({
+        fechaInicio: '',
+        fechaFin: '',
+        tipo: '',
+        motivo: '',
+        certificado: null,
+      });
+      setTipoReposo('');
+      setFotoCertificado(null);
+      setPreviewCertificado(null);
+
+      const responseReposos = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos`);
+      if (responseReposos.ok) {
+        const repososActualizados = await responseReposos.json();
+        setReposos(Array.isArray(repososActualizados) ? repososActualizados : []);
+      }
+
+      setNotificacion({ open: true, severity: 'success', message: 'Reposo guardado correctamente.' });
+    } catch (error) {
+      setNotificacion({ open: true, severity: 'error', message: error.message || 'No se pudo guardar el reposo' });
+    } finally {
+      setGuardando(false);
+    }
   };
 
    const handleClickCertificado = () => {
@@ -66,9 +127,11 @@ const GestionReposos = () => {
         setPreviewCertificado(reader.result);
       };
       reader.readAsDataURL(file);
+      setNuevoReposo(prev => ({ ...prev, certificado: file }));
     } else {
       setFotoCertificado(null);
       setPreviewCertificado(null);
+      setNuevoReposo(prev => ({ ...prev, certificado: null }));
     }
   };
 
@@ -175,9 +238,10 @@ const GestionReposos = () => {
             type='button'
             className='save-reposo'
             onClick={handleGuardarReposo}
+            disabled={guardando}
            sx={{ width: '100%', mt: 2, py: 1.5, fontWeight: 700 }}
           >
-            Guardar Reposo
+            {guardando ? 'Guardando...' : 'Guardar Reposo'}
           </Button>
         </Box>
         <Box sx={{ flex: 2, backgroundColor: '#ffffff', p: 3, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
@@ -199,7 +263,7 @@ const GestionReposos = () => {
                 {reposos.map((reposo, index) => (
                   <TableRow key={index}>
                     <TableCell>{reposo.tipo}</TableCell>
-                    <TableCell>{reposo.fechaInicio} - {reposo.fechaFin || 'Indefinido'}</TableCell>
+                    <TableCell>{formatFecha(reposo.fecha_inicio)} - {reposo.fecha_fin ? formatFecha(reposo.fecha_fin) : 'Indefinido'}</TableCell>
                     <TableCell>{reposo.motivo}</TableCell>
                     <TableCell>{reposo.estado}</TableCell>
                   </TableRow>
@@ -215,6 +279,20 @@ const GestionReposos = () => {
       </Box>
         </Box>
       </Box>
+      <Snackbar
+        open={notificacion.open}
+        autoHideDuration={3000}
+        onClose={() => setNotificacion(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <MuiAlert
+          onClose={() => setNotificacion(prev => ({ ...prev, open: false }))}
+          severity={notificacion.severity}
+          sx={{ width: '100%' }}
+        >
+          {notificacion.message}
+        </MuiAlert>
+      </Snackbar>
     </Box>
   );
 };
