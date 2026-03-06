@@ -604,6 +604,22 @@ function PanelOpcionesUsuario() {
                     Proximo vencimiento: {resumenPago.proximo}
                   </Typography>
                 )}
+                <Button
+                  fullWidth
+                  variant="contained"
+                  endIcon={<ArrowForwardIosIcon sx={{ fontSize: 16 }} />}
+                  onClick={() => navigate(`/pagos-alumno/${alumno._id}`, { state: { alumno, sede } })}
+                  sx={{
+                    mt: 1.5,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #ff8a00 0%, #ff6a00 100%)',
+                    '&:hover': { background: 'linear-gradient(135deg, #ff8a00 0%, #ff6a00 100%)' }
+                  }}
+                >
+                  Pagar ahora
+                </Button>
               </Box>
             </Box>
           </Grid>
