@@ -226,7 +226,7 @@ function PanelOpcionesUsuario() {
             Bienvenido de nuevo, {alumno?.nombres || 'Jugador'}
           </Typography>
           <Typography variant="body2" sx={{ color: '#64748b' }}>
-            Aqui tienes el resumen de actividades de {alumno?.nombres || 'tu cuenta'} para esta semana.
+            Aqui tienes el resumen de actividades de {alumno?.nombres || 'tu cuenta'}.
           </Typography>
         </Box>
         <Grid container spacing={4} sx={{ mt: 3 }}>
@@ -407,145 +407,6 @@ function PanelOpcionesUsuario() {
                 </Box>
               </Grid>
             </Grid>
-            <Box sx={{ mt: 4 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>Próximos torneos</Typography>
-              </Box>
-              {torneosLoading && <Typography variant="body2">Cargando...</Typography>}
-              {torneosError && <Typography variant="body2" color="error">{torneosError}</Typography>}
-              {!torneosLoading && !torneosError && torneosAlumno.length === 0 && (
-                <Typography variant="body2" sx={{ color: '#64748b' }}>
-                  No tienes convocatorias activas.
-                </Typography>
-              )}
-              {torneosAlumno.map((t) => {
-                const deadlinePassed = isDeadlinePassed(t.fecha_limite);
-                const estado = t.estado || 'pendiente';
-                const fechaTexto = formatFechaCorta(t.fecha_limite);
-                const fechaParts = fechaTexto.split(' ');
-                const dia = fechaParts[0] || '--';
-                const mes = (fechaParts[1] || '').toUpperCase();
-                return (
-                  <Box
-                    key={t._id}
-                    sx={{
-                      mb: 2,
-                      p: { xs: 2, md: 2.5 },
-                      borderRadius: 3,
-                      border: '1px solid #e2e8f0',
-                      backgroundColor: 'white',
-                      boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => navigate(`/torneos/${t._id}`)} // Navegar al detalle del torneo
-                  >
-                    <Grid container spacing={2} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
-                      <Grid item size={{ xs: 2 }}>
-                        <Box
-                          sx={{
-                            width: 86,
-                            height: 86,
-                            borderRadius: 2.5,
-                            background: 'linear-gradient(135deg, #f97316, #fb923c)',
-                            color: 'white',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 24,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {dia}
-                          <Typography variant="caption" sx={{ display: 'block', fontSize: 12 }}>
-                            {mes}
-                          </Typography>
-                        </Box>
-                      </Grid>
-                      <Grid item size={{ xs: 9 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                          {t.nombre}
-                        </Typography>
-                        <Chip
-                          label={estado.toUpperCase()}
-                          sx={{
-                            mt: 1,
-                            bgcolor: estado === 'aceptado' ? '#d1fae5' : '#fef3c7',
-                            color: estado === 'aceptado' ? '#065f46' : '#92400e',
-                            fontWeight: 700,
-                          }}
-                        />
-                      </Grid>
-                      <Grid item size={{ xs: 1 }} sx={{ textAlign: 'right' }}>
-                        <IconButton onClick={() => navigate(`/torneos-usuario/${t._id}`)}>
-                          <ArrowForwardIosIcon sx={{ color: '#64748b' }} />
-                        </IconButton>
-                      </Grid>
-                    </Grid>
-                  </Box>
-                );
-              })}
-
-              {/* Próximos juegos */}
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 4, mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>Próximos juegos</Typography>
-              </Box>
-              {juegosLoading && <Typography variant="body2">Cargando juegos...</Typography>}
-              {juegosError && <Typography variant="body2" color="error">{juegosError}</Typography>}
-              {!juegosLoading && !juegosError && juegosAlumno.length === 0 && (
-                <Typography variant="body2" sx={{ color: '#64748b' }}>
-                  No tienes juegos próximos donde estés convocado.
-                </Typography>
-              )}
-              {juegosAlumno.map((j) => (
-                <Box
-                  key={j._id}
-                  sx={{
-                    mb: 2,
-                    p: { xs: 2, md: 2.5 },
-                    borderRadius: 3,
-                    border: '1px solid #e2e8f0',
-                    backgroundColor: 'white',
-                    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)',
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => navigate(`/juegos/${j._id}`)} // Navegar al detalle del juego
-                >
-                  <Grid container spacing={2} alignItems="center" sx={{ flexWrap: 'nowrap' }}>
-                    <Grid item size={{ xs: 12, sm: 2, md: 2 }}>
-                      <Box
-                        sx={{
-                          width: 86,
-                          height: 86,
-                          borderRadius: 2.5,
-                          background: 'linear-gradient(135deg, #3b82f6, #60a5fa)',
-                          color: 'white',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 24,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {formatFechaCorta(j.fecha)}
-                      </Box>
-                    </Grid>
-                    <Grid item size={{ xs: 12, sm: 8, md: 8 }}>
-                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                        {j.nombre}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        {j.descripcion || 'Sin descripción'}
-                      </Typography>
-                    </Grid>
-                    <Grid item size={{ xs: 12, sm: 2, md: 2 }}>
-                      <IconButton onClick={() => navigate(`/juegos/${j._id}`)}>
-                        <ArrowForwardIosIcon sx={{ color: '#64748b' }} />
-                      </IconButton>
-                    </Grid>
-                  </Grid>
-                </Box>
-              ))}
-            </Box>
           </Grid>
           <Grid item size={{ xs: 12, md: 4 }} sx={{ marginLeft: 'auto'}}>
             <Box sx={{ position: { xs: 'static', md: 'sticky' }, top: { md: 24 }, width: '100%', maxWidth: 400 }}>
@@ -558,7 +419,7 @@ function PanelOpcionesUsuario() {
                   overflow: 'hidden'
                 }}
               >
-                <Box sx={{ height: 90, background: 'linear-gradient(135deg, #60a5fa, #2563eb)' }} />
+                <Box sx={{ height: 90, background: 'linear-gradient(135deg, #1e293b, #1e293bdb)' }} />
                 <Box sx={{ px: 3, pb: 3, textAlign: 'center', mt: -5 }}>
                   <Avatar
                     src={alumno?.foto || undefined}
@@ -569,7 +430,7 @@ function PanelOpcionesUsuario() {
                     {alumno?.nombres} {alumno?.apellidos}
                   </Typography>
                   <Typography variant="caption" sx={{ color: '#64748b' }}>
-                    ID: #{alumno?._id?.slice(-6) || 'N/A'} • Categoria {alumno?.categoria || '-'}
+                     Categoria {alumno?.categoria || '-'}
                   </Typography>
                 </Box>
               </Box>

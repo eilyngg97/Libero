@@ -492,7 +492,7 @@ function PagosAlumno(props) {
         open={!!successMessage}
         autoHideDuration={3000}
         onClose={() => setSuccessMessage('')}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       >
         <Alert onClose={() => setSuccessMessage('')} severity="success" sx={{ width: '100%' }}>
           {successMessage}

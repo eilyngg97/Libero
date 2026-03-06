@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Box, Button, TextField, MenuItem, Select, InputLabel, FormControl, CircularProgress, Typography, Paper, Autocomplete } from '@mui/material';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useLocation } from 'react-router-dom';
 
 const tipos = [
   { value: 'simple', label: 'Constancia simple' },
   { value: 'retiro', label: 'Constancia de retiro' },
-  { value: 'horario', label: 'Constancia con horario' }
+  // { value: 'horario', label: 'Constancia con horario' }
 ];
 
 
@@ -171,7 +172,7 @@ function Constancias() {
               </Button>
             </Box>
             <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: '#94a3b8', mt: 1 }}>
-              El archivo se descargara automaticamente una vez procesado.
+              Una vez generado, puede descargarlo o visualizarlo en el siguiente recuadro.
             </Typography>
           </form>
         </Paper>
@@ -181,6 +182,25 @@ function Constancias() {
               Descargar constancia
             </Button>
             <iframe src={pdfUrl+"#navpanes=0&toolbar=0"} title="Vista previa" width="100%" height="400px" style={{ border: '1px solid #e2e8f0', marginTop: 10, borderRadius: 12 }} />
+            {/* NOTA */}
+            <Paper
+              elevation={0}
+              sx={{
+                mt: 2,
+                p: 2,
+                borderRadius: 3,
+                border: '1px solid #fdba74',
+                backgroundColor: '#fff7ed',
+                boxShadow: '0 4px 14px rgba(249, 115, 22, 0.12)'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <InfoOutlinedIcon sx={{ color: '#c2410c', fontSize: 18 }} />
+                <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 600 }}>
+                  Una vez impresas las constancias, deberán ser presentadas ante la Dirección de la Academia para su correspondiente firma y sello.
+                </Typography>
+              </Box>
+            </Paper>
           </Paper>
         )}
       </Box>

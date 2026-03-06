@@ -422,7 +422,7 @@ function AlumnoEditar({ locationState }) {
             <TextField id="outlined-basic-categoria" disabled label="Categoría asignada" name="categoria" variant="outlined" value={categoria} InputProps={{ readOnly: true }} fullWidth size="small" helperText="Se asigna automáticamente" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
-            <TextField id="outlined-basic-cedula" label="Cédula" name="cedula" variant="outlined" value={form.cedula || ''} onChange={handleChange} fullWidth size="small" />
+            <TextField id="outlined-basic-cedula" label="Cédula" name="cedula" variant="outlined" value={form.cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
             <FormControl fullWidth sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}>
               <InputLabel id="monto-personalizado-label">Tipo de monto mensualidad</InputLabel>
               <Select
@@ -455,7 +455,7 @@ function AlumnoEditar({ locationState }) {
             )}
           </div>
           <div className="form-row">
-            <FormControl fullWidth required style={{ minWidth: 180, marginRight: 8 }}>
+            <FormControl fullWidth required style={{ minWidth: 180, marginRight: 8 }} sx={{ my: 1 }}>
                               <InputLabel id="sede-label">Sede *</InputLabel>
                 <Select
                   labelId="sede-label"

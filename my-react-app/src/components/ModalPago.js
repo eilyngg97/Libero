@@ -294,7 +294,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                   <Box
                     sx={{
                       borderRadius: 2,
-                      backgroundColor: '#f97316',
+                      backgroundColor: '#343e48',
                       color: '#ffffff',
                       px: 2,
                       py: 1.5,

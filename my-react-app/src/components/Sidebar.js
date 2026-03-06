@@ -19,7 +19,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 
 
-function getMenuOptions(handleLogout) {
+function getMenuOptions(handleLogout, handleDashboardNavigation) {
   // Detectar el rol del usuario
   let rol = null;
   try {
@@ -27,7 +27,7 @@ function getMenuOptions(handleLogout) {
   } catch {}
   const dashboardPath = rol === 'usuario' ? '/dashboard-usuario' : '/dashboard';
   const options = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: dashboardPath },
+    { text: 'Dashboard', icon: <DashboardIcon />, path: dashboardPath, onClick: handleDashboardNavigation },
     
   ];
   if (rol === 'admin') {
@@ -36,11 +36,6 @@ function getMenuOptions(handleLogout) {
       { text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' },
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' }
-    );
-  }
-  if (rol === 'usuario') {
-    options.push(
-      { text: 'Mis Torneos', icon: <EmojiEventsIcon />, path: '/torneos-usuario' }
     );
   }
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });
@@ -64,7 +59,63 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
     navigate('/login');
   };
 
-  const menuOptions = getMenuOptions(handleLogout);
+  const handleDashboardNavigation = async () => {
+    const rol = localStorage.getItem('rol');
+    if (rol !== 'usuario') {
+      navigate('/dashboard');
+      if (variant === 'temporary' && onClose) onClose();
+      return;
+    }
+
+    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+    try {
+      const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+      if (!usuario?.id) {
+        navigate('/dashboard-usuario');
+        if (variant === 'temporary' && onClose) onClose();
+        return;
+      }
+
+      let alumnosFinal = [];
+      const repRes = await fetch(`${apiBase}/api/representantes/por-usuario/${usuario.id}`);
+      const repData = await repRes.json();
+      if (repRes.ok && repData && repData._id) {
+        const alumRes = await fetch(`${apiBase}/api/alumnos/por-representante/${repData._id}?populateSede=1`);
+        const alumData = await alumRes.json();
+        if (alumRes.ok && Array.isArray(alumData)) {
+          alumnosFinal = alumnosFinal.concat(alumData);
+        }
+      }
+
+      const alumRes2 = await fetch(`${apiBase}/api/alumnos/por-representante/null?usuarioId=${usuario.id}&populateSede=1`);
+      const alumData2 = await alumRes2.json();
+      if (alumRes2.ok && Array.isArray(alumData2)) {
+        alumnosFinal = alumnosFinal.concat(alumData2);
+      }
+
+      const alumnosUnicos = alumnosFinal.filter((al, idx, arr) => arr.findIndex(a2 => a2._id === al._id) === idx);
+
+      if (alumnosUnicos.length > 1) {
+        navigate('/dashboard-usuario');
+      } else if (alumnosUnicos.length === 1) {
+        const alumno = alumnosUnicos[0];
+        navigate(`/panel-opciones-usuario/${alumno._id}`, {
+          state: {
+            alumno,
+            sede: { nombre: alumno.sede }
+          }
+        });
+      } else {
+        navigate('/dashboard-usuario');
+      }
+    } catch {
+      navigate('/dashboard-usuario');
+    } finally {
+      if (variant === 'temporary' && onClose) onClose();
+    }
+  };
+
+  const menuOptions = getMenuOptions(handleLogout, handleDashboardNavigation);
 
   return (
     <Drawer
@@ -96,7 +147,10 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
       </Toolbar>
       <List>
         {menuOptions.map((option) => {
-          const selected = location.pathname === option.path;
+          const isDashboardOption = option.text === 'Dashboard';
+          const selected = isDashboardOption
+            ? location.pathname === '/dashboard' || location.pathname === '/dashboard-usuario' || location.pathname.startsWith('/panel-opciones-usuario/')
+            : location.pathname === option.path;
           if (option.text === 'Cerrar Sesión') {
             return (
               <ListItem key={option.text} disablePadding sx={{ justifyContent: 'center' }}>
@@ -125,8 +179,8 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
           return (
             <ListItem key={option.text} disablePadding sx={{ justifyContent: 'center' }}>
               <ListItemButton
-                component={Link}
-                to={option.path}
+                component={option.onClick ? 'button' : Link}
+                to={option.onClick ? undefined : option.path}
                 selected={selected}
                 sx={{
                   borderRadius: 2,
@@ -154,7 +208,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
                     },
                   }),
                 }}
-                onClick={variant === 'temporary' ? onClose : undefined}
+                onClick={option.onClick || (variant === 'temporary' ? onClose : undefined)}
               >
                 <ListItemIcon
                   sx={{
