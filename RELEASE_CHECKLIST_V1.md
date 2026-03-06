@@ -1,13 +1,13 @@
 # Release Checklist V1
 
 Estado general: En progreso
-Fecha: 2026-03-05
+Fecha: 2026-03-06
 
 ## 1) Seguridad de API y control de acceso
 - [x] Proteger rutas criticas con `authMiddleware`.
 - [x] Restringir operaciones administrativas con `rolMiddleware('admin')`.
 - [x] Proteger lecturas sensibles de pagos/representantes.
-- [ ] Validar ownership por recurso (usuario solo puede consultar/modificar su propio alumno).
+- [x] Validar ownership por recurso (usuario solo puede consultar/modificar su propio alumno).
 
 ## 2) Seguridad de infraestructura
 - [x] Restringir CORS por variable `CORS_ORIGINS`.
@@ -19,7 +19,7 @@ Fecha: 2026-03-05
 - [x] Actualizar test base (`App.test.js`) al flujo real.
 - [x] Verificar `npm test` en CI mode.
 - [x] Verificar `npm run build`.
-- [ ] Agregar smoke tests backend (login, lectura de alumnos, registro pago, generar constancia).
+- [x] Agregar smoke tests backend (login, lectura de alumnos, registro pago, generar constancia).
 
 ## 4) Dependencias y vulnerabilidades
 - [x] Eliminar dependencia directa vulnerable `xlsx` en frontend.
@@ -28,15 +28,16 @@ Fecha: 2026-03-05
 - [ ] Reducir alertas restantes asociadas a `react-scripts` legado (plan de migracion: Vite o CRA modernizado).
 
 ## 5) Operacion y despliegue
-- [ ] Definir variables de entorno de produccion (`backend/.env` no debe versionarse).
+- [x] Definir variables de entorno de produccion (`backend/.env` no debe versionarse).
 - [ ] Configurar backup de MongoDB y retencion.
 - [ ] Configurar monitoreo/logs (errores 5xx, latencia, uso de memoria).
 - [ ] Checklist de rollback (version anterior + DB backup).
 
 ## Resultado actual
-- Bloqueadores iniciales de seguridad: mitigados parcialmente.
+- Bloqueadores iniciales de seguridad: ownership por recurso implementado.
 - Build y tests frontend: OK.
-- Riesgo principal pendiente: vulnerabilidades transitorias por toolchain `react-scripts` y falta de validaciones de ownership.
+- Smoke tests backend: OK (`login`, `alumnos`, `pagos`, `constancias`).
+- Riesgo principal pendiente: vulnerabilidades transitorias por toolchain `react-scripts` y tareas operativas de despliegue.
 
 ## Criterio de salida a produccion
 Se recomienda salida cuando todos los items esten en `[x]`, en especial:

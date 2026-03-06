@@ -2,6 +2,7 @@ const Mensualidad = require('../models/Mensualidad');
 const Alumno = require('../models/Alumno');
 const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
+const Representante = require('../models/Representante');
 
 async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
   const inicioMes = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
@@ -147,6 +148,23 @@ exports.actualizarRetrasadosCore = actualizarRetrasadosCore;
 exports.getMensualidades = async (req, res) => {
   try {
     const filtro = {};
+    let ownedAlumnoIds = null;
+
+    if (req.user?.rol === 'usuario') {
+      const representantes = await Representante.find({ usuario: req.user.id }).select('_id');
+      const representanteIds = representantes.map((r) => r._id);
+      const filtroPropio = [{ usuario: req.user.id }];
+      if (representanteIds.length > 0) {
+        filtroPropio.push({ representante: { $in: representanteIds } });
+      }
+
+      const alumnosPropios = await Alumno.find({ $or: filtroPropio }).select('_id');
+      ownedAlumnoIds = alumnosPropios.map((a) => String(a._id));
+      if (ownedAlumnoIds.length === 0) {
+        return res.json([]);
+      }
+    }
+
     if (req.query.id_alumno) filtro.id_alumno = req.query.id_alumno;
     if (req.query.mes) filtro.mes = Number(req.query.mes);
     if (req.query.anio) filtro.anio = Number(req.query.anio);
@@ -164,6 +182,26 @@ exports.getMensualidades = async (req, res) => {
         const alumnos = await Alumno.find({ sede: idSede });
         filtro.id_alumno = { $in: alumnos.map(a => a._id) };
       }
+
+    if (ownedAlumnoIds) {
+      if (!filtro.id_alumno) {
+        filtro.id_alumno = { $in: ownedAlumnoIds };
+      } else if (typeof filtro.id_alumno === 'string') {
+        if (!ownedAlumnoIds.includes(String(filtro.id_alumno))) {
+          return res.json([]);
+        }
+      } else if (filtro.id_alumno.$in) {
+        const permitidos = filtro.id_alumno.$in
+          .map((id) => String(id))
+          .filter((id) => ownedAlumnoIds.includes(id));
+
+        if (permitidos.length === 0) {
+          return res.json([]);
+        }
+        filtro.id_alumno = { $in: permitidos };
+      }
+    }
+
     const mensualidades = await Mensualidad.find(filtro).populate('id_alumno');
     res.json(mensualidades);
   } catch (err) {

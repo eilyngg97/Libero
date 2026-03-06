@@ -1,9 +1,27 @@
 // Obtener alumnos por representante
 exports.getAlumnosPorRepresentante = async (req, res) => {
   try {
+    const esUsuarioFinal = req.user?.rol === 'usuario';
     let alumnos = [];
     const incluirBajas = req.query.incluirBajas === '1';
     const filtroBajas = incluirBajas ? {} : { activo: { $ne: false } };
+
+    if (esUsuarioFinal) {
+      const representantes = await Representante.find({ usuario: req.user.id }).select('_id');
+      const representanteIds = representantes.map((r) => r._id);
+      const filtroPropio = [{ usuario: req.user.id }];
+      if (representanteIds.length > 0) {
+        filtroPropio.push({ representante: { $in: representanteIds } });
+      }
+
+      let queryUsuario = Alumno.find({ ...filtroBajas, $or: filtroPropio });
+      if (req.query.populateSede === '1') {
+        queryUsuario = queryUsuario.populate('sede');
+      }
+      const propios = await queryUsuario;
+      return res.json(propios);
+    }
+
     if (req.params.representanteId && req.params.representanteId !== 'null') {
       let query = Alumno.find({ representante: req.params.representanteId, ...filtroBajas });
       if (req.query.populateSede === '1') {
@@ -65,6 +83,17 @@ exports.getAlumnos = async (req, res) => {
   try {
     const incluirBajas = req.query.incluirBajas === '1';
     const filtro = incluirBajas ? {} : { activo: { $ne: false } };
+
+    if (req.user?.rol === 'usuario') {
+      const representantes = await Representante.find({ usuario: req.user.id }).select('_id');
+      const representanteIds = representantes.map((r) => r._id);
+      const filtroPropio = [{ usuario: req.user.id }];
+      if (representanteIds.length > 0) {
+        filtroPropio.push({ representante: { $in: representanteIds } });
+      }
+      filtro.$or = filtroPropio;
+    }
+
     if (req.query.cedula) {
       filtro.cedula = req.query.cedula;
     }

@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const pagoDetalleController = require('../controllers/pagoDetalleController');
 const { authMiddleware } = require('../middleware/auth');
+const {
+	ensureMensualidadOwnershipFromBody,
+	ensureMensualidadOwnershipFromParam
+} = require('../middleware/ownership');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -21,8 +25,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // Registrar pago
-router.post('/', authMiddleware, upload.single('comprobante'), pagoDetalleController.registrarPago);
+router.post('/', authMiddleware, ensureMensualidadOwnershipFromBody('id_mensualidad'), upload.single('comprobante'), pagoDetalleController.registrarPago);
 // Consultar pagos por mensualidad
-router.get('/:id_mensualidad', authMiddleware, pagoDetalleController.getPagosPorMensualidad);
+router.get('/:id_mensualidad', authMiddleware, ensureMensualidadOwnershipFromParam('id_mensualidad'), pagoDetalleController.getPagosPorMensualidad);
 
 module.exports = router;
