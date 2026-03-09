@@ -1,5 +1,12 @@
-export const exportToCsv = (rows, fileName = 'export.csv', headers = []) => {
+export const exportToCsv = (
+  rows,
+  fileName = 'export.csv',
+  headers = [],
+  options = {}
+) => {
   if (!Array.isArray(rows) || rows.length === 0) return;
+
+  const delimiter = options.delimiter || ',';
 
   const headerKeys = headers.length ? headers : Object.keys(rows[0]);
   const escapeCell = (value) => {
@@ -8,11 +15,11 @@ export const exportToCsv = (rows, fileName = 'export.csv', headers = []) => {
   };
 
   const lines = [
-    headerKeys.map(escapeCell).join(','),
-    ...rows.map((row) => headerKeys.map((key) => escapeCell(row[key])).join(','))
+    headerKeys.map(escapeCell).join(delimiter),
+    ...rows.map((row) => headerKeys.map((key) => escapeCell(row[key])).join(delimiter))
   ];
 
-  const csvContent = `\ufeff${lines.join('\n')}`;
+  const csvContent = `\ufeff${lines.join('\r\n')}`;
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

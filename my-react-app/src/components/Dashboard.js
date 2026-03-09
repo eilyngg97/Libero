@@ -242,14 +242,15 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
         'Nombre': al.nombres || '',
         'Apellido': al.apellidos || '',
         'Cédula': al.cedula || '',
+        'Categoría': al.categoria || '',
         'Edad': calcularEdad(al.fecha_nacimiento),
         'Fecha de nacimiento': formatFechaNacimiento(al.fecha_nacimiento),
         'Sede': al.sede?.nombre || ''
       }));
 
-      const headers = ['Nombre', 'Apellido', 'Cédula', 'Edad', 'Fecha de nacimiento', 'Sede'];
+      const headers = ['Nombre', 'Apellido', 'Cédula', 'Categoría', 'Edad', 'Fecha de nacimiento', 'Sede'];
       const fecha = new Date().toISOString().slice(0, 10);
-      exportToCsv(rows, `alumnos_${fecha}.csv`, headers);
+      exportToCsv(rows, `alumnos_${fecha}.csv`, headers, { delimiter: ';' });
     } catch (error) {
       console.error('Error al exportar CSV:', error);
       window.alert('No se pudo exportar el archivo CSV. Intenta nuevamente.');
