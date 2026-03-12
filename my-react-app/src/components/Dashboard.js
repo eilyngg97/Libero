@@ -22,6 +22,21 @@ function Dashboard() {
   const [resumenMensualidades, setResumenMensualidades] = useState({ mes: null, anio: null, sedes: [] });
   const [resumenLoading, setResumenLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [mesSeleccionado, setMesSeleccionado] = useState(new Date().getMonth() + 1);
+  const mesesAnio = [
+    { value: 1, label: 'Enero' },
+    { value: 2, label: 'Febrero' },
+    { value: 3, label: 'Marzo' },
+    { value: 4, label: 'Abril' },
+    { value: 5, label: 'Mayo' },
+    { value: 6, label: 'Junio' },
+    { value: 7, label: 'Julio' },
+    { value: 8, label: 'Agosto' },
+    { value: 9, label: 'Septiembre' },
+    { value: 10, label: 'Octubre' },
+    { value: 11, label: 'Noviembre' },
+    { value: 12, label: 'Diciembre' }
+  ];
   // Paginación para cumpleañeros
   const [cumplePage, setCumplePage] = useState(1);
   const cumplePorPagina = 10;
@@ -102,7 +117,10 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     const fetchResumenMensualidades = async () => {
       setResumenLoading(true);
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede`);
+        const anioActual = new Date().getFullYear();
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede?mes=${mesSeleccionado}&anio=${anioActual}`
+        );
         const data = await res.json();
         if (res.ok && data && Array.isArray(data.sedes)) {
           setResumenMensualidades(data);
@@ -116,7 +134,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       }
     };
     fetchResumenMensualidades();
-  }, []);
+  }, [mesSeleccionado]);
   const dataFinanzas = [
     { name: 'Ingresos', monto: 12500 },
     { name: 'Egresos', monto: 7200 },
@@ -378,6 +396,20 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
             <span className="sedes-tip">Haz clic en una sede para ver sus alumnos</span>
           </div>
           <div className="finanzas-wrapper">
+            <div className="finanzas-header">
+              <h3>Resumen financiero del mes</h3>
+              <select
+                className="finanzas-mes-select"
+                value={mesSeleccionado}
+                onChange={(event) => setMesSeleccionado(Number(event.target.value))}
+              >
+                {mesesAnio.map((mes) => (
+                  <option key={mes.value} value={mes.value}>
+                    {mes.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div style={{ marginTop: 4 }}>
               {resumenLoading ? (
                 <div style={{ color: '#888', fontSize: 13 }}>Cargando resumen...</div>
