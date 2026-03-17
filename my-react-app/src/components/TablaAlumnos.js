@@ -21,6 +21,7 @@ import { exportToCsv } from '../utils/exportCsv';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import { mediaUrl } from '../utils/mediaUrl';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return '';
@@ -63,6 +64,7 @@ function TablaAlumnos() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState({ open: false, message: '' });
   const [bajaId, setBajaId] = useState(null);
+  const [motivoBaja, setMotivoBaja] = useState('');
   const [bajaLoading, setBajaLoading] = useState(false);
   const [bajaSuccess, setBajaSuccess] = useState({ open: false, message: '' });
   const [reactivarId, setReactivarId] = useState(null);
@@ -134,18 +136,28 @@ function TablaAlumnos() {
     setBajaLoading(true);
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${bajaId}/baja`, {
-        method: 'PATCH'
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ motivo_baja: motivoBaja.trim() || undefined })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al dar de baja al alumno');
-      setAlumnos(prev => prev.map(a => a._id === bajaId ? { ...a, estado: 'Baja', dado_de_baja: true, activo: false } : a));
+      setAlumnos(prev => prev.map(a => a._id === bajaId ? { ...a, estado: 'Baja', dado_de_baja: true, activo: false, motivo_baja: motivoBaja.trim() || null } : a));
       setBajaId(null);
+      setMotivoBaja('');
       setBajaSuccess({ open: true, message: data.message || 'Alumno dado de baja' });
     } catch (err) {
       setError(err.message);
     } finally {
       setBajaLoading(false);
     }
+  };
+  const handleCloseBajaDialog = () => {
+    if (bajaLoading) return;
+    setBajaId(null);
+    setMotivoBaja('');
   };
   const handleReactivarAlumno = async () => {
     if (!reactivarId) return;
@@ -366,7 +378,7 @@ function TablaAlumnos() {
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                       <Avatar
-                        src={alumno.foto || ''}
+                        src={mediaUrl(alumno.foto) || ''}
                         alt={alumno.nombres}
                         sx={{ width: 38, height: 38, bgcolor: '#e0ecff', color: '#2563eb', fontWeight: 700 }}
                       >
@@ -387,11 +399,22 @@ function TablaAlumnos() {
                     {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : (alumno.sede || '-')}
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={alumno.estado || '-'}
-                      size="small"
-                      sx={{ bgcolor: '#eef2ff', color: '#2563eb', fontWeight: 700 }}
-                    />
+                    <Tooltip
+                      title={alumno.dado_de_baja || alumno.activo === false ? `Motivo: ${alumno.motivo_baja?.trim() || 'No especificado'}` : ''}
+                      arrow
+                    >
+                      <span>
+                        <Chip
+                          label={alumno.dado_de_baja || alumno.activo === false ? 'Retirado' : (alumno.estado || '-')}
+                          size="small"
+                          sx={{
+                            bgcolor: alumno.dado_de_baja || alumno.activo === false ? '#fee2e2' : '#eef2ff',
+                            color: alumno.dado_de_baja || alumno.activo === false ? '#b91c1c' : '#2563eb',
+                            fontWeight: 700
+                          }}
+                        />
+                      </span>
+                    </Tooltip>
                   </TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
                     {alumno.representante && typeof alumno.representante === 'object'
@@ -409,11 +432,16 @@ function TablaAlumnos() {
                         <EditIcon />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="Dar de baja">
-                      <IconButton aria-label="dar de baja" size="small" sx={{ color: '#94a3b8', mr: 1 }} onClick={() => setBajaId(alumno._id)}>
-                        <PersonOffIcon />
-                      </IconButton>
-                    </Tooltip>
+                    {!(alumno.dado_de_baja || alumno.activo === false) && (
+                      <Tooltip title="Dar de baja">
+                        <IconButton aria-label="dar de baja" size="small" sx={{ color: '#94a3b8', mr: 1 }} onClick={() => {
+                          setBajaId(alumno._id);
+                          setMotivoBaja('');
+                        }}>
+                          <PersonOffIcon />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                     {(alumno.dado_de_baja || alumno.activo === false) && (
                       <Tooltip title="Reactivar">
                         <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', mr: 1 }} onClick={() => setReactivarId(alumno._id)}>
@@ -467,13 +495,26 @@ function TablaAlumnos() {
                     </Dialog>
                     <Dialog
                       open={!!bajaId}
-                      onClose={() => setBajaId(null)}
+                      onClose={handleCloseBajaDialog}
                       BackdropProps={{ sx: { backgroundColor: 'rgba(255, 255, 255, 0.08)', backdropFilter: 'blur(4px)' } }}
                     >
                       <DialogTitle>¿Dar de baja al alumno?</DialogTitle>
-                      <DialogContent>Confirma si deseas dar de baja al alumno. Esta acción se puede revertir.</DialogContent>
+                      <DialogContent>
+                        <Typography sx={{ mb: 2 }}>
+                          Confirma si deseas dar de baja al alumno. Esta acción se puede revertir.
+                        </Typography>
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={3}
+                          label="Motivo de baja"
+                          placeholder="Opcional"
+                          value={motivoBaja}
+                          onChange={(e) => setMotivoBaja(e.target.value)}
+                        />
+                      </DialogContent>
                       <DialogActions>
-                        <Button onClick={() => setBajaId(null)} disabled={bajaLoading}>Cancelar</Button>
+                        <Button onClick={handleCloseBajaDialog} disabled={bajaLoading}>Cancelar</Button>
                         <Button onClick={handleBajaAlumno} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}} variant="contained" disabled={bajaLoading}>
                           {bajaLoading ? 'Procesando...' : 'Dar de baja'}
                         </Button>

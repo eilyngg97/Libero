@@ -19,6 +19,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button, Typography, Paper, Avatar, Dialog, DialogTitle, DialogContent, Box, IconButton } from "@mui/material";
 import CloseIcon from '@mui/icons-material/Close';
 import Grid from "@mui/material/Grid";
+import { mediaUrl } from '../utils/mediaUrl';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return "";
@@ -30,6 +31,16 @@ function calcularEdad(fechaNacimiento) {
     edad--;
   }
   return edad;
+}
+
+function formatFecha(fecha) {
+  if (!fecha) return "-";
+  const date = new Date(fecha);
+  if (Number.isNaN(date.getTime())) return "-";
+  const dia = String(date.getDate()).padStart(2, '0');
+  const mes = String(date.getMonth() + 1).padStart(2, '0');
+  const anio = date.getFullYear();
+  return `${dia}/${mes}/${anio}`;
 }
 
 // Calcula el IMC y su clasificación
@@ -101,6 +112,7 @@ function AlumnoDetalle() {
   const imcNumero = Number(imc) || 0;
   const imcPercent = imcNumero ? Math.min(100, (imcNumero / 40) * 100) : 0;
   const sedeNombre = alumno.sede && typeof alumno.sede === "object" ? alumno.sede.nombre : alumno.sede;
+  const estaRetirado = alumno.dado_de_baja || alumno.activo === false;
   const infoItems = [
     { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de nacimiento", value: alumno.fecha_nacimiento?.substring(0, 10) || "-" },
     { icon: <EmojiPeopleIcon sx={{ fontSize: 16 }} />, label: "Edad", value: `${calcularEdad(alumno.fecha_nacimiento)} Años` },
@@ -127,7 +139,7 @@ function AlumnoDetalle() {
             <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1.5 }}>
                 <Avatar
-                  src={alumno.foto || ""}
+                  src={mediaUrl(alumno.foto) || ""}
                   alt="Foto"
                   sx={{ width: 140, height: 140, boxShadow: '0 8px 20px rgba(15, 23, 42, 0.15)' }}
                 />
@@ -137,6 +149,37 @@ function AlumnoDetalle() {
                 <Typography variant="caption" sx={{ color: '#f97316', fontWeight: 700, letterSpacing: '0.08em' }}>
                   {alumno.categoria} / {sedeNombre || '-'}
                 </Typography>
+                <Chip
+                  label={estaRetirado ? 'Retirado' : (alumno.estado || 'Activo')}
+                  size="small"
+                  sx={{
+                    bgcolor: estaRetirado ? '#fee2e2' : '#eef2ff',
+                    color: estaRetirado ? '#b91c1c' : '#2563eb',
+                    fontWeight: 700
+                  }}
+                />
+                {estaRetirado && (
+                  <Box
+                    sx={{
+                      width: '100%',
+                      bgcolor: '#fff7ed',
+                      border: '1px solid #fed7aa',
+                      borderRadius: 2,
+                      p: 1.5,
+                      textAlign: 'left'
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#c2410c', letterSpacing: '0.06em', mb: 0.75 }}>
+                      INFORMACION DE RETIRO
+                    </Typography>
+                    <Typography sx={{ fontSize: 12, color: '#7c2d12', mb: 0.5 }}>
+                      Fecha de baja: {formatFecha(alumno.fecha_baja)}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12, color: '#7c2d12' }}>
+                      Motivo: {alumno.motivo_baja?.trim() || 'No especificado'}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
               <Box sx={{ mt: 2, display: 'grid', gap: 1 }}>
                 {infoItems.map((item) => (
@@ -347,7 +390,7 @@ function AlumnoDetalle() {
           {alumno.foto_cedula ? (
             <Box sx={{ display: 'flex', justifyContent: 'center' }}>
               <img
-                src={alumno.foto_cedula}
+                src={mediaUrl(alumno.foto_cedula)}
                 alt="Foto de cédula"
                 style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8 }}
               />
