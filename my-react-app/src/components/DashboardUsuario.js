@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
+import { mediaUrl } from '../utils/mediaUrl';
 
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
@@ -129,7 +130,7 @@ function DashboardUsuario() {
                   <Card sx={{ borderRadius: 3, boxShadow: '0 10px 25px rgba(15, 23, 42, 0.08)', p: 2, minWidth: 260, border: '1px solid #e2e8f0' }}>
                     <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pb: 1.5 }}>
                       <Avatar
-                        src={alumno.foto || undefined}
+                        src={mediaUrl(alumno.foto) || undefined}
                         alt={alumno.nombres}
                         sx={{ width: 72, height: 72, mb: 1.25, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.16)' }}
                       />

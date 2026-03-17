@@ -4,8 +4,8 @@ const mongoose = require('mongoose');
 const AlumnoSchema = new mongoose.Schema({
   nombres: { type: String, required: true },
   apellidos: { type: String, required: true },
-  foto: { type: String }, // base64 o URL
-  foto_cedula: { type: String }, // base64 o URL de la cédula
+  foto: { type: String }, // URL pública del archivo (ej. /uploads/alumnos/...)
+  foto_cedula: { type: String }, // URL pública de la cédula (ej. /uploads/alumnos/...)
   lugar_nacimiento: { type: String },
   fecha_nacimiento: { type: Date },
   fecha_inscripcion: { type: Date },

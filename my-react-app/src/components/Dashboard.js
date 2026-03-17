@@ -11,6 +11,7 @@ import LocationCityIcon from '@mui/icons-material/LocationCity';
 import Avatar from '@mui/material/Avatar';
 import Pagination from '@mui/material/Pagination';
 import { exportToCsv } from '../utils/exportCsv';
+import { mediaUrl } from '../utils/mediaUrl';
 
 function Dashboard() {
   const { setSedeSeleccionada } = useSede();
@@ -505,7 +506,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Avatar src={al.foto || ''} alt={al.nombres} sx={{ width: 42, height: 42, fontSize: 18, bgcolor: '#f4c9b0' }}>
+                    <Avatar src={mediaUrl(al.foto) || ''} alt={al.nombres} sx={{ width: 42, height: 42, fontSize: 18, bgcolor: '#f4c9b0' }}>
                       {(!al.foto && al.nombres) ? al.nombres[0] : ''}
                     </Avatar>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

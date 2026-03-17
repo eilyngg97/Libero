@@ -9,6 +9,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import { mediaUrl } from '../utils/mediaUrl';
 
 function PanelOpcionesUsuario() {
    const location = useLocation();
@@ -422,7 +423,7 @@ function PanelOpcionesUsuario() {
                 <Box sx={{ height: 90, background: 'linear-gradient(135deg, #1e293b, #1e293bdb)' }} />
                 <Box sx={{ px: 3, pb: 3, textAlign: 'center', mt: -5 }}>
                   <Avatar
-                    src={alumno?.foto || undefined}
+                    src={mediaUrl(alumno?.foto) || undefined}
                     alt={alumno?.nombres}
                     sx={{ width: 80, height: 80, border: '3px solid white', mx: 'auto' }}
                   />

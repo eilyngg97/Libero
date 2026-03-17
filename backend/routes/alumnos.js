@@ -10,7 +10,27 @@ const {
 router.get('/count-by-sede', authMiddleware, rolMiddleware('admin'), alumnoCountController.getAlumnosCountBySede);
 const alumnoController = require('../controllers/alumnoController');
 const multer = require('multer');
-const storage = multer.memoryStorage();
+const path = require('path');
+const fs = require('fs');
+
+const alumnosUploadDir = path.join(__dirname, '..', 'uploads', 'alumnos');
+const repososUploadDir = path.join(__dirname, '..', 'uploads', 'reposos');
+fs.mkdirSync(alumnosUploadDir, { recursive: true });
+fs.mkdirSync(repososUploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+	destination: (req, file, cb) => {
+		if (file.fieldname === 'certificado') {
+			return cb(null, repososUploadDir);
+		}
+		return cb(null, alumnosUploadDir);
+	},
+	filename: (req, file, cb) => {
+		const ext = path.extname(file.originalname || '').toLowerCase();
+		const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+		cb(null, name);
+	}
+});
 const upload = multer({ storage });
 
 // CRUD rutas para alumnos

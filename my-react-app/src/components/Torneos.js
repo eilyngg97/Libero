@@ -21,6 +21,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import { useNavigate } from 'react-router-dom';
+import { mediaUrl } from '../utils/mediaUrl';
 
 
 function Torneos() {
@@ -1252,7 +1253,7 @@ function Torneos() {
                       {/* Avatar del alumno */}
                       <Box sx={{ minWidth: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Avatar
-                          src={c.alumno?.foto || undefined}
+                          src={mediaUrl(c.alumno?.foto) || undefined}
                           alt={c.alumno ? `${c.alumno.nombres || ''} ${c.alumno.apellidos || ''}` : 'Alumno'}
                           sx={{ width: 38, height: 38, bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontSize: 18 }}
                         >

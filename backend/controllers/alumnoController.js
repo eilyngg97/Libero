@@ -51,6 +51,11 @@ const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const bcrypt = require('bcryptjs');
 
+function buildUploadUrl(req, file, folder) {
+  if (!file || !file.filename) return null;
+  return `/uploads/${folder}/${file.filename}`;
+}
+
 function normalizarTipoReposo(tipo) {
   const valor = String(tipo || '').trim().toLowerCase();
   if (valor === 'indefinido') return 'Indefinido';
@@ -228,15 +233,15 @@ exports.createAlumno = async (req, res) => {
     delete alumnoData.rep_telefono;
     delete alumnoData.rep_domicilio;
 
-    // Si hay archivo de foto, convertir a base64 y guardar en el campo foto
+    // Si hay archivo de foto, guardar solo la URL pública
     if (req.files && req.files['foto'] && req.files['foto'][0]) {
       const fotoFile = req.files['foto'][0];
-      alumnoData.foto = `data:${fotoFile.mimetype};base64,${fotoFile.buffer.toString('base64')}`;
+      alumnoData.foto = buildUploadUrl(req, fotoFile, 'alumnos');
     }
-    // Si hay archivo de foto_cedula, convertir a base64 y guardar en el campo foto_cedula
+    // Si hay archivo de foto_cedula, guardar solo la URL pública
     if (req.files && req.files['foto_cedula'] && req.files['foto_cedula'][0]) {
       const cedulaFile = req.files['foto_cedula'][0];
-      alumnoData.foto_cedula = `data:${cedulaFile.mimetype};base64,${cedulaFile.buffer.toString('base64')}`;
+      alumnoData.foto_cedula = buildUploadUrl(req, cedulaFile, 'alumnos');
     }
 
     const alumno = new Alumno(alumnoData);
@@ -295,15 +300,15 @@ exports.updateAlumno = async (req, res) => {
         updateData.etiquetas = [];
       }
     }
-    // Si hay archivo de foto, convertir a base64 y guardar en el campo foto
+    // Si hay archivo de foto, guardar solo la URL pública
     if (req.files && req.files['foto'] && req.files['foto'][0]) {
       const fotoFile = req.files['foto'][0];
-      updateData.foto = `data:${fotoFile.mimetype};base64,${fotoFile.buffer.toString('base64')}`;
+      updateData.foto = buildUploadUrl(req, fotoFile, 'alumnos');
     }
-    // Si hay archivo de foto_cedula, convertir a base64 y guardar en el campo foto_cedula
+    // Si hay archivo de foto_cedula, guardar solo la URL pública
     if (req.files && req.files['foto_cedula'] && req.files['foto_cedula'][0]) {
       const cedulaFile = req.files['foto_cedula'][0];
-      updateData.foto_cedula = `data:${cedulaFile.mimetype};base64,${cedulaFile.buffer.toString('base64')}`;
+      updateData.foto_cedula = buildUploadUrl(req, cedulaFile, 'alumnos');
     }
     const alumno = await Alumno.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
@@ -440,7 +445,7 @@ exports.registrarReposoAlumno = async (req, res) => {
 
     let certificado = req.body.certificado || null;
     if (req.file) {
-      certificado = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      certificado = buildUploadUrl(req, req.file, 'reposos');
     }
 
     const reposo = await Reposo.create({

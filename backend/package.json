@@ -9,7 +9,9 @@
     "test": "jest --runInBand",
     "backup:mongo": "node scripts/mongoBackup.js",
     "restore:mongo": "node scripts/mongoRestore.js",
-    "ops:preflight": "node scripts/opsPreflight.js"
+    "ops:preflight": "node scripts/opsPreflight.js",
+    "migrate:media:dry": "node scripts/migrar_media_base64_a_archivos.js --dry-run",
+    "migrate:media": "node scripts/migrar_media_base64_a_archivos.js --apply"
   },
   "keywords": [],
   "author": "",

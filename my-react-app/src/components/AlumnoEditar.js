@@ -4,6 +4,7 @@ import { Button, TextField, Typography, Dialog, DialogTitle, DialogContent, Dial
 import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useSede } from '../context/SedeContext';
+import { mediaUrl } from '../utils/mediaUrl';
 import './Alumnos.css';
 const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado'];
 
@@ -51,8 +52,8 @@ function AlumnoEditar({ locationState }) {
         };
       }
       setForm(formData);
-      if (data.foto) setPreview(data.foto);
-      if (data.foto_cedula) setPreviewCedula(data.foto_cedula);
+      if (data.foto) setPreview(mediaUrl(data.foto));
+      if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
       setLoading(false);
     } else {
       // Si no, hacer fetch normal
@@ -80,8 +81,8 @@ function AlumnoEditar({ locationState }) {
             };
           }
           setForm(formData);
-          if (data.foto) setPreview(data.foto);
-          if (data.foto_cedula) setPreviewCedula(data.foto_cedula);
+          if (data.foto) setPreview(mediaUrl(data.foto));
+          if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
         } catch (err) {
           setError(err.message);
         } finally {

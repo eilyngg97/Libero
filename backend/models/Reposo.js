@@ -6,7 +6,7 @@ const ReposoSchema = new mongoose.Schema({
   fecha_fin: { type: Date },
   tipo: { type: String, enum: ['Parcial', 'Total', 'Indefinido'], required: true },
   motivo: { type: String },
-  certificado: { type: String },
+  certificado: { type: String }, // URL pública del certificado
   estado: { type: String, default: 'Activo' }
 }, { timestamps: true });
 
