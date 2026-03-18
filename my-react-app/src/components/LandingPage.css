@@ -355,8 +355,8 @@
 
 .benefitCard {
   padding: 34px 28px 30px;
-  height: 100%;
-  min-height: 100%;
+  height: auto;
+  min-height: 0;
   background-color: #ffffff;
   border-radius: 22px;
   box-shadow: 0 12px 34px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04);
@@ -1086,8 +1086,13 @@
   }
 
   .benefitsGrid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 18px;
+  }
+
+  .benefitsGridItem {
+    width: 100%;
   }
 
   .coachesTitle {

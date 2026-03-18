@@ -354,18 +354,11 @@ const LandingPage = () => {
           <div className="benefitsGrid">
             {benefits.map((item, index) => (
               <div className="benefitsGridItem" key={index}>
-                <motion.div 
-                  className="benefitCard"
-                  whileHover={{ scale: 1.03, y: -4 }}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: index * 0.1 }}
-                >
+                <div className="benefitCard">
                   <div className="iconWrapper">{item.icon}</div>
                   <Typography variant="h6" fontWeight={700}>{item.title}</Typography>
                   <Typography variant="body2" color="textSecondary">{item.desc}</Typography>
-                </motion.div>
+                </div>
               </div>
             ))}
           </div>
