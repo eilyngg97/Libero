@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { getMongoUri } = require('../config/secrets');
 
 const backupDir = process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups');

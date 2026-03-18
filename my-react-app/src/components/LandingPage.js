@@ -15,7 +15,7 @@ import './LandingPage.css';
 
 const stats = [
   { value: '+500', label: 'Alumnos Formados', icon: <MdPeople /> },
-  { value: '10', label: 'Entrenadores Certificados', icon: <MdWorkspacePremium /> },
+  { value: '7', label: 'Entrenadores Certificados', icon: <MdWorkspacePremium /> },
   { value: '15', label: 'Torneos Ganados', icon: <MdEmojiEvents /> },
   { value: '100%', label: 'Gestion Digital', icon: <MdPhoneIphone /> }
 ];
@@ -97,19 +97,19 @@ const coaches = [
 
 const sedes = [
   {
-    nombre: 'Sede Centro',
-    direccion: 'Av. Principal de Villa Sport, frente a la plaza central.',
-    horario: 'Lunes a viernes de 3:00 pm a 7:00 pm'
+    nombre: 'Sede Villa Crepuscular',
+    direccion: 'Villa Crepuscular, cancha techada.',
+    horario: 'Martes, Jueves y Viernes'
   },
   {
-    nombre: 'Sede Norte',
-    direccion: 'Calle 8 con Av. Libertador, complejo deportivo Norte.',
-    horario: 'Lunes, miercoles y viernes de 4:00 pm a 8:00 pm'
+    nombre: 'Sede Caraqueña',
+    direccion: 'José Félix Rivas, cancha techada.',
+    horario: 'Martes, Jueves y Viernes'
   },
   {
-    nombre: 'Sede Este',
-    direccion: 'Urbanizacion La Arboleda, cancha techada municipal.',
-    horario: 'Martes y jueves de 3:30 pm a 7:30 pm'
+    nombre: 'Sede Obelisco',
+    direccion: 'Carrera 23 con 56 entre el bloque 9 y 10, cancha techada.',
+    horario: 'Lunes, Miercoles y Sabados'
   }
 ];
 
