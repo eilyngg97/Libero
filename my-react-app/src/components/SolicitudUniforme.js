@@ -1,8 +1,51 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Typography, TextField, MenuItem, Button, InputLabel, Select, FormControl, Grid, Paper, Snackbar, Alert } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  Grid,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Snackbar,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography
+} from '@mui/material';
 import { useDolar } from '../context/DolarContext';
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
+const METODOS_PAGO = ['Pago movil', 'Transferencia'];
+
+const ESTADO_LABELS = {
+  pendiente: 'Pendiente',
+  esperando_pago: 'Esperando pago',
+  pago_en_revision: 'Pago en revision',
+  verificado: 'Verificado',
+  entregado: 'Entregado',
+  cancelado: 'Cancelado'
+};
+
+const ESTADO_STYLES = {
+  pendiente: { bgcolor: '#e2e8f0', color: '#475569' },
+  esperando_pago: { bgcolor: '#fef3c7', color: '#92400e' },
+  pago_en_revision: { bgcolor: '#dbeafe', color: '#1d4ed8' },
+  verificado: { bgcolor: '#dcfce7', color: '#166534' },
+  entregado: { bgcolor: '#ccfbf1', color: '#0f766e' },
+  cancelado: { bgcolor: '#fee2e2', color: '#b91c1c' }
+};
 
 function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const { dolar } = useDolar();
@@ -11,48 +54,92 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [prendasError, setPrendasError] = useState('');
   const [prenda, setPrenda] = useState('');
   const [talla, setTalla] = useState('');
-  const [pago, setPago] = useState('');
-  const [comprobante, setComprobante] = useState(null);
-  const [metodoPago, setMetodoPago] = useState('');
-  const [estado] = useState('pendiente');
-  const [referencia, setReferencia] = useState('');
-  const [errorReferencia, setErrorReferencia] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const tasaBCV = dolar?.promedio || 0;
+  const [errorMessage, setErrorMessage] = useState('');
+  const [pedidos, setPedidos] = useState([]);
+  const [pedidosLoading, setPedidosLoading] = useState(false);
+  const [cancelandoId, setCancelandoId] = useState(null);
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
+  const [pagoDialogOpen, setPagoDialogOpen] = useState(false);
+  const [pedidoPago, setPedidoPago] = useState(null);
+  const [metodoPago, setMetodoPago] = useState(METODOS_PAGO[0]);
+  const [referencia, setReferencia] = useState('');
+  const [comprobante, setComprobante] = useState(null);
+  const [submittingPago, setSubmittingPago] = useState(false);
+
+  const tasaBCV = Number(dolar?.promedio) || 0;
+  const token = localStorage.getItem('token');
+
+  const formatMoney = (value) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+    return Number(value).toFixed(2);
+  };
+
+  const formatFecha = (fecha) => {
+    if (!fecha) return '-';
+    const date = new Date(fecha);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('es-VE');
+  };
+
+  const fetchPrendas = async () => {
+    setPrendasLoading(true);
+    setPrendasError('');
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/public`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al obtener uniformes');
+      setPrendas(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setPrendas([]);
+      setPrendasError(err.message || 'Error al obtener uniformes');
+    } finally {
+      setPrendasLoading(false);
+    }
+  };
+
+  const fetchPedidos = async () => {
+    if (!alumno?._id) return;
+    setPedidosLoading(true);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/mis?alumnoId=${alumno._id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al obtener solicitudes activas');
+      setPedidos(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setPedidos([]);
+      setErrorMessage(err.message || 'Error al obtener solicitudes activas');
+    } finally {
+      setPedidosLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchPrendas = async () => {
-      setPrendasLoading(true);
-      setPrendasError('');
-      try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/public`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || 'Error al obtener uniformes');
-        setPrendas(Array.isArray(data) ? data : []);
-      } catch (err) {
-        setPrendas([]);
-        setPrendasError(err.message || 'Error al obtener uniformes');
-      } finally {
-        setPrendasLoading(false);
-      }
-    };
     fetchPrendas();
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!prenda || !talla) return alert('Completa todos los campos');
+  useEffect(() => {
+    fetchPedidos();
+  }, [alumno?._id]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!prenda || !talla) {
+      setErrorMessage('Completa todos los campos del pedido');
+      return;
+    }
+
     try {
       setGuardando(true);
-      const token = localStorage.getItem('token');
       const formData = new FormData();
       formData.append('alumnoId', alumno?._id || alumno?.id || '');
       const sedeId = sede?._id || sede?.id || alumno?.sede?._id || alumno?.sede || '';
       formData.append('sedeId', sedeId);
       formData.append('prenda', prenda);
       formData.append('talla', talla);
-      formData.append('estado', estado);
 
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
         method: 'POST',
@@ -64,17 +151,98 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
       setPrenda('');
       setTalla('');
-      setSuccessMessage('Pedido realizado con éxito');
+      setSuccessMessage('Pedido realizado con exito');
       onGuardar && onGuardar(data);
+      await fetchPedidos();
     } catch (err) {
-      alert(err.message || 'Error al guardar el pedido');
+      setErrorMessage(err.message || 'Error al guardar el pedido');
     } finally {
       setGuardando(false);
     }
   };
 
+  const handleCancelarPedido = async (pedidoId) => {
+    if (!pedidoId) return;
+    try {
+      setCancelandoId(pedidoId);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoId}/cancelar`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al cancelar solicitud');
+      setPedidos((prev) => prev.map((pedido) => (pedido._id === pedidoId ? data : pedido)));
+      setSuccessMessage('Solicitud cancelada');
+    } catch (err) {
+      setErrorMessage(err.message || 'Error al cancelar solicitud');
+    } finally {
+      setCancelandoId(null);
+      setConfirmCancelId(null);
+    }
+  };
+
+  const openPagoDialog = (pedido) => {
+    setPedidoPago(pedido);
+    setMetodoPago(METODOS_PAGO[0]);
+    setReferencia('');
+    setComprobante(null);
+    setPagoDialogOpen(true);
+  };
+
+  const closePagoDialog = () => {
+    if (submittingPago) return;
+    setPagoDialogOpen(false);
+    setPedidoPago(null);
+    setMetodoPago(METODOS_PAGO[0]);
+    setReferencia('');
+    setComprobante(null);
+  };
+
+  const handlePagarPedido = async () => {
+    if (!pedidoPago?._id) return;
+    if ((metodoPago === 'Transferencia' || metodoPago === 'Pago movil') && !/^[0-9]{6,}$/.test(referencia)) {
+      setErrorMessage('La referencia debe tener minimo 6 digitos');
+      return;
+    }
+
+    try {
+      setSubmittingPago(true);
+      const formData = new FormData();
+      formData.append('metodo_pago', metodoPago);
+      if (referencia) formData.append('referencia', referencia);
+      formData.append('fecha_pago', new Date().toISOString());
+      if (comprobante) formData.append('comprobante', comprobante);
+
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoPago._id}/pagar`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al registrar el pago');
+
+      setPedidos((prev) => prev.map((pedido) => (pedido._id === data._id ? data : pedido)));
+      setPagoDialogOpen(false);
+      setPedidoPago(null);
+      setMetodoPago(METODOS_PAGO[0]);
+      setReferencia('');
+      setComprobante(null);
+      setSuccessMessage('Pago registrado correctamente');
+    } catch (err) {
+      setErrorMessage(err.message || 'Error al registrar el pago');
+    } finally {
+      setSubmittingPago(false);
+    }
+  };
+
+  const montoPagoBs = pedidoPago?.precio && tasaBCV ? Number(pedidoPago.precio) * tasaBCV : null;
+
+  const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
+
+  const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
+
   return (
-    <Grid container justifyContent="center" alignItems="center" style={{ minHeight: '80vh' }}>
+    <Grid container justifyContent="center" alignItems="flex-start" sx={{ minHeight: '80vh', py: 3 }}>
       <Snackbar
         open={!!successMessage}
         autoHideDuration={3000}
@@ -85,61 +253,243 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
           {successMessage}
         </Alert>
       </Snackbar>
-      <Grid item size={{xs:12, sm:10, md:8}}>
-        <Paper elevation={4} sx={{ p: 4, borderRadius: 3 }}>
-          <Typography variant="h5" gutterBottom align="center" fontWeight={700} color="primary.main">
-            Solicitar Uniforme
-          </Typography>
-          {alumno && (
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              <b>Alumno:</b> {alumno.nombres} {alumno.apellidos}
+      <Snackbar
+        open={!!errorMessage}
+        autoHideDuration={3500}
+        onClose={() => setErrorMessage('')}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setErrorMessage('')} severity="error" sx={{ width: '100%' }}>
+          {errorMessage}
+        </Alert>
+      </Snackbar>
+      <Grid item size={{ xs: 12, sm: 11, md: 10 }}>
+        <Box sx={{ display: 'grid', gap: 3 }}>
+          <Paper elevation={4} sx={{ p: 4, borderRadius: 3 }}>
+            <Typography variant="h5" gutterBottom align="center" fontWeight={700} color="primary.main">
+              Solicitar Uniforme
             </Typography>
-          )}
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <div className="form-row">
-<FormControl fullWidth sx={{ mb: 2 }} required>
-              <InputLabel id="prenda-label">Prenda</InputLabel>
-              <Select
-                labelId="prenda-label"
-                value={prenda}
-                label="Prenda"
-                onChange={e => setPrenda(e.target.value)}
-                disabled={prendasLoading || !!prendasError}
-              >
-                <MenuItem value=""><em>Seleccione</em></MenuItem>
-                {prendas.map(p => (
-                  <MenuItem key={p._id} value={p.prenda}>{p.prenda} - ${p.precio}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {prendasError && (
-              <Typography variant="body2" color="error" sx={{ mb: 2 }}>
-                {prendasError}
+            {alumno && (
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                <b>Alumno:</b> {alumno.nombres} {alumno.apellidos}
               </Typography>
             )}
+            <Box component="form" onSubmit={handleSubmit} noValidate>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item size={{ xs: 12, md: 6 }}>
+                  <FormControl fullWidth required>
+                    <InputLabel id="prenda-label">Prenda</InputLabel>
+                    <Select
+                      labelId="prenda-label"
+                      value={prenda}
+                      label="Prenda"
+                      onChange={(event) => setPrenda(event.target.value)}
+                      disabled={prendasLoading || !!prendasError}
+                    >
+                      <MenuItem value=""><em>Seleccione</em></MenuItem>
+                      {prendas.map((item) => (
+                        <MenuItem key={item._id} value={item.prenda}>{item.prenda} - ${formatMoney(item.precio)}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item size={{ xs: 12, md: 6 }}>
+                  <FormControl fullWidth required>
+                    <InputLabel id="talla-label">Talla</InputLabel>
+                    <Select
+                      labelId="talla-label"
+                      value={talla}
+                      label="Talla"
+                      onChange={(event) => setTalla(event.target.value)}
+                    >
+                      <MenuItem value=""><em>Seleccione</em></MenuItem>
+                      {TALLAS.map((item) => (
+                        <MenuItem key={item} value={item}>{item}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+              {prendasError && (
+                <Typography variant="body2" color="error" sx={{ mb: 2 }}>
+                  {prendasError}
+                </Typography>
+              )}
+              <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={guardando}>
+                {guardando ? 'Guardando...' : 'Guardar pedido'}
+              </Button>
+            </Box>
+          </Paper>
 
-            <FormControl fullWidth sx={{ mb: 2 }} required>
-              <InputLabel id="talla-label">Talla</InputLabel>
+          <Paper elevation={3} sx={{ p: 3, borderRadius: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
+              Solicitudes de uniformes del alumno
+            </Typography>
+            {pedidosLoading ? (
+              <Typography>Cargando solicitudes...</Typography>
+            ) : pedidos.length === 0 ? (
+              <Typography color="text.secondary">No hay solicitudes registradas para este alumno.</Typography>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Prenda</TableCell>
+                      <TableCell>Talla</TableCell>
+                      <TableCell>Precio</TableCell>
+                      <TableCell>Pago</TableCell>
+                      <TableCell>Fecha</TableCell>
+                      <TableCell>Estado</TableCell>
+                      <TableCell>Acciones</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {pedidos.map((pedido) => (
+                      <TableRow key={pedido._id}>
+                        <TableCell>{pedido.prenda}</TableCell>
+                        <TableCell>{pedido.talla}</TableCell>
+                        <TableCell>
+                          <Typography sx={{ fontWeight: 700 }}>${formatMoney(pedido.precio)}</Typography>
+                          {tasaBCV ? (
+                            <Typography variant="body2" sx={{ color: '#64748b' }}>
+                              Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
+                            </Typography>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          {pedido.metodo_pago ? (
+                            <>
+                              <Typography>{pedido.metodo_pago}</Typography>
+                              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                Ref: {pedido.referencia || '-'}
+                              </Typography>
+                            </>
+                          ) : '-'}
+                        </TableCell>
+                        <TableCell>{formatFecha(pedido.fecha_pago || pedido.createdAt)}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={getEstadoLabel(pedido.estado)}
+                            size="small"
+                            sx={{
+                              ...getEstadoStyle(pedido.estado),
+                              fontWeight: 700
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {pedido.estado === 'esperando_pago' ? (
+                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                              <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
+                                Realizar pago
+                              </Button>
+                              <Button
+                                size="small"
+                                color="error"
+                                variant="outlined"
+                                disabled={cancelandoId === pedido._id}
+                                onClick={() => setConfirmCancelId(pedido._id)}
+                              >
+                                {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                              </Button>
+                            </Box>
+                          ) : pedido.estado === 'pendiente' ? (
+                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                Esperando solicitud de pago del administrador
+                              </Typography>
+                              <Button
+                                size="small"
+                                color="error"
+                                variant="outlined"
+                                disabled={cancelandoId === pedido._id}
+                                onClick={() => setConfirmCancelId(pedido._id)}
+                              >
+                                {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                              </Button>
+                            </Box>
+                          ) : (
+                            <Typography variant="body2" sx={{ color: '#64748b' }}>
+                              {pedido.estado === 'cancelado'
+                                ? 'Solicitud cancelada'
+                                : pedido.estado === 'pago_en_revision'
+                                  ? 'Pago enviado, en revision'
+                                  : pedido.estado === 'verificado'
+                                    ? 'Pago verificado. En espera de entrega'
+                                    : pedido.estado === 'entregado'
+                                      ? 'Prenda entregada'
+                                      : 'Sin acciones disponibles'}
+                            </Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Paper>
+        </Box>
+      </Grid>
+
+      <Dialog open={!!confirmCancelId} onClose={() => setConfirmCancelId(null)}>
+        <DialogTitle>Cancelar solicitud</DialogTitle>
+        <DialogContent>
+          <Typography>¿Deseas cancelar esta solicitud de uniforme?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmCancelId(null)} disabled={cancelandoId === confirmCancelId}>Volver</Button>
+          <Button onClick={() => handleCancelarPedido(confirmCancelId)} color="error" variant="contained" disabled={cancelandoId === confirmCancelId}>
+            Confirmar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={pagoDialogOpen} onClose={closePagoDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Realizar pago del uniforme</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'grid', gap: 2, pt: 1 }}>
+            <Typography><b>Prenda:</b> {pedidoPago?.prenda || '-'}</Typography>
+            <Typography>
+              <b>Monto:</b> ${formatMoney(pedidoPago?.precio)}{montoPagoBs ? ` / Bs. ${formatMoney(montoPagoBs)}` : ''}
+            </Typography>
+            <FormControl fullWidth>
+              <InputLabel id="metodo-pago-uniforme-label">Metodo de pago</InputLabel>
               <Select
-                labelId="talla-label"
-                value={talla}
-                label="Talla"
-                onChange={e => setTalla(e.target.value)}
+                labelId="metodo-pago-uniforme-label"
+                value={metodoPago}
+                label="Metodo de pago"
+                onChange={(event) => setMetodoPago(event.target.value)}
               >
-                <MenuItem value=""><em>Seleccione</em></MenuItem>
-                {TALLAS.map(t => (
-                  <MenuItem key={t} value={t}>{t}</MenuItem>
+                {METODOS_PAGO.map((item) => (
+                  <MenuItem key={item} value={item}>{item}</MenuItem>
                 ))}
               </Select>
             </FormControl>
-            </div>
-            
-            <Button type="submit" variant="contained" color="primary" fullWidth size="large">
-              {guardando ? 'Guardando...' : 'Guardar pedido'}
+            <TextField
+              label="Referencia"
+              value={referencia}
+              onChange={(event) => setReferencia(event.target.value)}
+              helperText={metodoPago === 'Transferencia' || metodoPago === 'Pago movil' ? 'Minimo 6 digitos' : ''}
+            />
+            <Button variant="outlined" component="label">
+              Adjuntar comprobante
+              <input type="file" hidden onChange={(event) => setComprobante(event.target.files?.[0] || null)} />
             </Button>
+            {comprobante && (
+              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                Archivo: {comprobante.name}
+              </Typography>
+            )}
           </Box>
-        </Paper>
-      </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePagoDialog} disabled={submittingPago}>Cancelar</Button>
+          <Button onClick={handlePagarPedido} variant="contained" disabled={submittingPago}>
+            {submittingPago ? 'Procesando...' : 'Confirmar pago'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Grid>
   );
 }

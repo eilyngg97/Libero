@@ -26,7 +26,12 @@ const upload = multer({ storage });
 router.get('/public', uniformeController.getUniformes);
 // Pedidos de uniformes
 router.post('/pedidos', authMiddleware, upload.single('comprobante'), uniformePedidoController.createPedidoUniforme);
+router.get('/pedidos/mis', authMiddleware, uniformePedidoController.getMisPedidosUniforme);
 router.get('/pedidos', authMiddleware, rolMiddleware('admin'), uniformePedidoController.getPedidosUniforme);
+router.patch('/pedidos/:id/solicitar-pago', authMiddleware, rolMiddleware('admin'), uniformePedidoController.solicitarPagoPedido);
+router.patch('/pedidos/:id/cancelar', authMiddleware, uniformePedidoController.cancelarPedido);
+router.patch('/pedidos/:id/pagar', authMiddleware, upload.single('comprobante'), uniformePedidoController.registrarPagoPedido);
+router.patch('/pedidos/:id/verificar-pago', authMiddleware, rolMiddleware('admin'), uniformePedidoController.verificarPagoPedido);
 router.patch('/pedidos/:id/entregado', authMiddleware, rolMiddleware('admin'), uniformePedidoController.marcarEntregado);
 // Todas las rutas protegidas para admin
 router.get('/', authMiddleware, rolMiddleware('admin'), uniformeController.getUniformes);
