@@ -103,6 +103,7 @@ app.use('/api/pagos', require('./routes/pagos'));
 app.use('/api/constancias', require('./routes/constancias'));
 app.use('/api/cumpleaneros', require('./routes/cumpleaneros'));
 app.use('/api/uniformes', require('./routes/uniformes'));
+app.use('/api/aspirantes', require('./routes/aspirantes'));
 
 app.use((err, req, res, next) => {
   console.error(`[${new Date().toISOString()}] Unhandled error in ${req.method} ${req.originalUrl}:`, err);

@@ -17,6 +17,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import DescriptionIcon from '@mui/icons-material/Description';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 
 
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
@@ -35,7 +36,8 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       { text: 'Sedes', icon: <LocationCityIcon />, path: '/sedes' },
       { text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' },
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
-      { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' }
+      { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
+      { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
     );
   }
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });
@@ -137,7 +139,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
     >
       <Toolbar sx={{ display: 'flex', justifyContent: collapsed ? 'center' : 'space-between', alignItems: 'center', minHeight: 64 }}>
         {!collapsed && (
-          <Typography variant="h6" noWrap component="div" sx={{ color: '#ff9800', fontWeight: 700 }}>
+          <Typography noWrap component="div" sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '2rem' }}>
             Libero.
           </Typography>
         )}

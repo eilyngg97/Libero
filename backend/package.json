@@ -10,6 +10,8 @@
     "backup:mongo": "node scripts/mongoBackup.js",
     "restore:mongo": "node scripts/mongoRestore.js",
     "ops:preflight": "node scripts/opsPreflight.js",
+    "mensualidades:enero:pagadas:dry": "node scripts/marcar_mensualidades_enero_pagadas.js",
+    "mensualidades:enero:pagadas": "node scripts/marcar_mensualidades_enero_pagadas.js --apply",
     "migrate:media:dry": "node scripts/migrar_media_base64_a_archivos.js --dry-run",
     "migrate:media": "node scripts/migrar_media_base64_a_archivos.js --apply"
   },
@@ -22,16 +24,18 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.0",
+    "framer-motion": "^12.38.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.0.1",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "react-icons": "^5.6.0"
   },
   "devDependencies": {
     "jest": "^30.2.0",
-    "supertest": "^7.1.4",
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "supertest": "^7.1.4"
   }
 }
