@@ -8,7 +8,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 // Adjunta token automáticamente a llamadas del API para unificar autenticación.
 const originalFetch = window.fetch.bind(window);
 window.fetch = async (input, init = {}) => {
-  const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+  const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
   const url = typeof input === 'string' ? input : input?.url || '';
   const isApiRequest = url.startsWith(`${apiBase}/api/`) || url.startsWith('/api/');
 
