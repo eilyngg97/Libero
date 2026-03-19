@@ -113,7 +113,7 @@ function PagosAlumno(props) {
   const pagosPagina = pagosFiltrados.slice((pagina - 1) * pagosPorPagina, pagina * pagosPorPagina);
 
   return (
-    <Box sx={{ p: { xs: 2, md: 3 } }}>
+    <Box sx={{ p: { md: 3 } }}>
       <Box sx={{ mb: 2 }}>
         <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a' }}>
           Mis pagos
@@ -185,24 +185,6 @@ function PagosAlumno(props) {
       ) : (
         pagosPagina.map((pago) => {
           const estado = pago.estado?.toLowerCase() || '';
-          const estadoVisual = (() => {
-            if (estado === 'pagado') {
-              return { Icon: CheckCircleIcon, bg: '#dcfce7', color: '#15803d' };
-            }
-            if (estado === 'pendiente') {
-              return { Icon: PendingActionsIcon, bg: '#fff7ed', color: '#c2410c' };
-            }
-            if (estado === 'retrasado') {
-              return { Icon: ErrorIcon, bg: '#fee2e2', color: '#b91c1c' };
-            }
-            if (estado === 'exonerado') {
-              return { Icon: SchoolIcon, bg: '#e0f2fe', color: '#0369a1' };
-            }
-            if (estado === 'en revision') {
-              return { Icon: PendingActionsIcon, bg: '#fff9c4', color: '#5f4b00' };
-            }
-            return { Icon: PendingActionsIcon, bg: '#f1f5f9', color: '#64748b' };
-          })();
           // Ajustar fecha a la zona horaria local
           const dateObj = new Date(pago.fecha + 'T00:00:00');
           // Usar toLocaleString para asegurar zona local
@@ -229,21 +211,6 @@ function PagosAlumno(props) {
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, minWidth: 0 }}>
-                  <Box
-                    sx={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 1.8,
-                      bgcolor: estadoVisual.bg,
-                      color: estadoVisual.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    <estadoVisual.Icon sx={{ fontSize: 18 }} />
-                  </Box>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
                       Mensualidad de {mesNombre} {anio}

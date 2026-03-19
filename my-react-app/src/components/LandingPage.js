@@ -9,6 +9,7 @@ import entrenador1Image from '../assets/entrenador_1.jpeg';
 import entrenador2Image from '../assets/entrenador_2.jpeg';
 import entrenador3Image from '../assets/entrenador_3.jpeg';
 import entrenador4Image from '../assets/entrenador_4.jpeg';
+import entrenador5Image from '../assets/entrenador_5.jpeg';
 import alumnasImage from '../assets/IMG_7391.PNG';
 import alumnasImage1 from '../assets/IMG_7389.PNG';
 import alumnasImage2 from '../assets/IMG_7388.PNG';
@@ -98,15 +99,15 @@ const coaches = [
     role: 'Coach de Ataque',
     sub: 'Especialista en Ofensiva',
     quote: 'Un ataque inteligente es aquel que sabe cuándo golpear fuerte y dónde golpear suave.',
-    image: entrenador3Image
+    image: entrenador5Image
   },
-  {
+ /* {
     name: 'LUIS MANZANILLA',
     role: 'Coach de 2da linea de defensa',
     sub: 'Especialista en Defensa de Campo y Control de Balón.',
     quote: 'El balón no toca el suelo mientras haya voluntad de lucha.',
     image: entrenador4Image
-  },
+  }, */
 ];
 
 const sedes = [
