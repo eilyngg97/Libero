@@ -47,7 +47,7 @@ function EntrenadorForm({ onSuccess }) {
       estado: 'activo',
     };
     try {
-      const res = await fetch('http://localhost:4000/entrenadores', {
+      const res = await fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/entrenadores`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

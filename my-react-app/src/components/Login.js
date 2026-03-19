@@ -17,7 +17,7 @@ function Login({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+      const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
       const res = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

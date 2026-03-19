@@ -17,7 +17,7 @@ function EntrenadoresList() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    fetch('http://localhost:4000/entrenadores', {
+    fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/entrenadores`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }

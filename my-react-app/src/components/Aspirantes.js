@@ -36,7 +36,7 @@ function formatDate(value) {
 }
 
 function Aspirantes() {
-  const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+  const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
   const token = localStorage.getItem('token');
 
   const [aspirantes, setAspirantes] = useState([]);

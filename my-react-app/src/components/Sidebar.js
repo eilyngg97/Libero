@@ -69,7 +69,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
       return;
     }
 
-    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:4000';
+    const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
     try {
       const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
       if (!usuario?.id) {

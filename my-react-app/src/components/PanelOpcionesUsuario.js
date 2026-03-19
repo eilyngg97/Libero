@@ -295,7 +295,7 @@ function PanelOpcionesUsuario() {
                     if (alumno && alumno.representante && typeof alumno.representante === 'string') {
                       setLoadingRep(true);
                       try {
-                        const res = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/api/representantes/${alumno.representante}`);
+                        const res = await fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/api/representantes/${alumno.representante}`);
                         if (res.ok) {
                           const repData = await res.json();
                           navigate(`/alumno-editar/${alumno._id}`, { state: { alumno: { ...alumno, representante: repData }, sede } });
