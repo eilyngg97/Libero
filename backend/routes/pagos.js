@@ -25,7 +25,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // Registrar pago
-router.post('/', authMiddleware, ensureMensualidadOwnershipFromBody('id_mensualidad'), upload.single('comprobante'), pagoDetalleController.registrarPago);
+router.post('/', authMiddleware, upload.single('comprobante'), ensureMensualidadOwnershipFromBody('id_mensualidad'), pagoDetalleController.registrarPago);
 // Consultar pagos por mensualidad
 router.get('/:id_mensualidad', authMiddleware, ensureMensualidadOwnershipFromParam('id_mensualidad'), pagoDetalleController.getPagosPorMensualidad);
 

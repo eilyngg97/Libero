@@ -8,13 +8,12 @@ exports.registrarPago = async (req, res) => {
     const comprobante_url = req.file ? `/uploads/comprobantes/${req.file.filename}` : null;
     if (!id_mensualidad) return res.status(400).json({ error: 'id_mensualidad requerido' });
     const monto = Number(monto_pagado);
-    const montoBs = monto_pagado_bs !== undefined && monto_pagado_bs !== null
-      ? Number(monto_pagado_bs)
-      : null;
+    const montoBsFueEnviado = monto_pagado_bs !== undefined && monto_pagado_bs !== null && monto_pagado_bs !== '';
+    const montoBs = montoBsFueEnviado ? Number(monto_pagado_bs) : null;
     if (!monto || Number.isNaN(monto) || monto <= 0) {
       return res.status(400).json({ error: 'Monto pagado inválido' });
     }
-    if (montoBs !== null && (Number.isNaN(montoBs) || montoBs <= 0)) {
+    if (montoBsFueEnviado && (Number.isNaN(montoBs) || montoBs <= 0)) {
       return res.status(400).json({ error: 'Monto pagado Bs inválido' });
     }
 
