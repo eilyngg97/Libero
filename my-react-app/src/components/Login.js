@@ -212,9 +212,8 @@ function Login({ onLogin }) {
             </Button>
           </form>
           <Typography variant="caption" sx={{ textAlign: 'center', color: '#94a3b8' }}>
-            ¿No tienes una cuenta?{' '}
-            <Link component="button" type="button" sx={{ color: '#f97316', fontWeight: 700, textDecoration: 'none' }}>
-              Contacta con Soporte
+            <Link href="/#inicio" sx={{ color: '#f97316', fontWeight: 700, textDecoration: 'none' }}>
+              Volver a nuestro sitio web
             </Link>
           </Typography>
         </Paper>
