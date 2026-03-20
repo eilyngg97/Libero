@@ -8,7 +8,10 @@ async function generarMensualidadesMes() {
   const mes = hoy.getMonth() + 1;
   const anio = hoy.getFullYear();
   const fecha_vencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
-  const alumnos = await Alumno.find({});
+  const alumnos = await Alumno.find({
+    activo: { $ne: false },
+    dado_de_baja: { $ne: true }
+  });
   let creadas = 0;
   for (const alumno of alumnos) {
     const existe = await Mensualidad.findOne({ id_alumno: alumno._id, mes, anio });

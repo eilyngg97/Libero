@@ -36,7 +36,10 @@ async function generarMensualidadesMesCore() {
   const mes = hoy.getMonth() + 1;
   const anio = hoy.getFullYear();
   const fecha_vencimiento = new Date(anio, mes - 1, 5, 23, 59, 59); // Día 5 del mes actual
-  const alumnos = await Alumno.find({});
+  const alumnos = await Alumno.find({
+    activo: { $ne: false },
+    dado_de_baja: { $ne: true }
+  });
   let creadas = 0;
 
   for (const alumno of alumnos) {
@@ -240,6 +243,12 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
         }
       },
       { $unwind: '$alumno' },
+      {
+        $match: {
+          'alumno.activo': { $ne: false },
+          'alumno.dado_de_baja': { $ne: true }
+        }
+      },
       {
         $lookup: {
           from: 'sedes',

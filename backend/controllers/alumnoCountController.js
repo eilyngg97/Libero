@@ -5,6 +5,12 @@ async function getAlumnosCountBySede(req, res) {
   try {
     const counts = await Alumno.aggregate([
       {
+        $match: {
+          activo: { $ne: false },
+          dado_de_baja: { $ne: true }
+        }
+      },
+      {
         $group: {
           _id: '$sede',
           count: { $sum: 1 }

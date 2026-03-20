@@ -6,7 +6,10 @@ exports.getCumpleanerosMes = async (req, res) => {
     const now = new Date();
     const mesActual = now.getMonth() + 1; // Enero = 1
     // Buscar alumnos con fecha_nacimiento en el mes actual
-    const alumnos = await Alumno.find().populate('sede');
+    const alumnos = await Alumno.find({
+      activo: { $ne: false },
+      dado_de_baja: { $ne: true }
+    }).populate('sede');
     const cumpleaneros = alumnos.filter(a => {
       if (!a.fecha_nacimiento) return false;
       const fecha = new Date(a.fecha_nacimiento);
