@@ -21,6 +21,8 @@ import {
   TextField,
   Typography
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { mediaUrl } from '../utils/mediaUrl';
@@ -58,6 +60,8 @@ function ListadoSolicitudesUniformes() {
   const [entregandoId, setEntregandoId] = useState(null);
 
   const token = localStorage.getItem('token');
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -202,6 +206,70 @@ function ListadoSolicitudesUniformes() {
     }
   };
 
+  const renderAccion = (pedido, mobile = false) => {
+    if (pedido.estado === 'pendiente') {
+      return (
+        <Button
+          size="small"
+          variant="contained"
+          fullWidth={mobile}
+          onClick={() => openSolicitudPagoDialog(pedido)}
+        >
+          Solicitar pago
+        </Button>
+      );
+    }
+
+    if (pedido.estado === 'pago_en_revision') {
+      return (
+        <Button
+          size="small"
+          variant="outlined"
+          fullWidth={mobile}
+          onClick={() => openDetallePagoDialog(pedido)}
+        >
+          Ver detalles pago
+        </Button>
+      );
+    }
+
+    if (pedido.estado === 'verificado') {
+      return (
+        <Button
+          size="small"
+          variant="contained"
+          fullWidth={mobile}
+          disabled={entregandoId === pedido._id}
+          onClick={() => setConfirmEntregarId(pedido._id)}
+          startIcon={
+            entregandoId === pedido._id
+              ? <CircularProgress size={14} sx={{ color: '#ffffff' }} />
+              : <CheckCircleOutlineIcon fontSize="small" />
+          }
+          sx={{
+            bgcolor: '#2e7d32',
+            color: '#ffffff',
+            fontWeight: 700,
+            textTransform: 'none',
+            boxShadow: 'none',
+            '&:hover': {
+              bgcolor: '#1f6b24',
+              boxShadow: 'none'
+            },
+            '&:disabled': {
+              bgcolor: '#c8e6c9',
+              color: '#2f5f32'
+            }
+          }}
+        >
+          {entregandoId === pedido._id ? 'Entregando...' : 'Marcar entregado'}
+        </Button>
+      );
+    }
+
+    return <Typography variant="body2" color="text.secondary">Sin acciones</Typography>;
+  };
+
   return (
     <Box>
       <Snackbar
@@ -230,6 +298,54 @@ function ListadoSolicitudesUniformes() {
         <Typography>Cargando...</Typography>
       ) : error ? (
         <Typography color="error">{error}</Typography>
+      ) : isMobile ? (
+        <Box sx={{ display: 'grid', gap: 1.5 }}>
+          {pedidos.map((pedido) => (
+            <Paper
+              key={pedido._id}
+              sx={{
+                borderRadius: 3,
+                border: '1px solid #e2e8f0',
+                p: 1.5,
+                boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)'
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+                <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
+                  {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
+                </Typography>
+                <Chip label={getEstadoLabel(pedido.estado)} size="small" sx={{ ...getEstadoStyle(pedido.estado), fontWeight: 700 }} />
+              </Box>
+
+              <Box sx={{ display: 'grid', gap: 0.5, mb: 1.2 }}>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Sede:</b> {pedido.sede?.nombre || '-'}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Prenda:</b> {pedido.prenda || '-'}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Talla:</b> {pedido.talla || '-'}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> ${formatMoney(pedido.precio)}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Método:</b> {pedido.metodo_pago || '-'}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Referencia:</b> {pedido.referencia || '-'}</Typography>
+                  {pedido.referencia && (
+                    <IconButton size="small" onClick={() => copiarReferencia(pedido.referencia)} aria-label="Copiar referencia" sx={{ color: '#94a3b8' }}>
+                      <ContentCopyIcon fontSize="inherit" />
+                    </IconButton>
+                  )}
+                </Box>
+              </Box>
+
+              <Box sx={{ display: 'grid', gap: 1 }}>
+                {pedido.comprobante_url ? (
+                  <Button size="small" variant="text" onClick={() => window.open(mediaUrl(pedido.comprobante_url), '_blank')}>
+                    Ver comprobante
+                  </Button>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">Sin comprobante</Typography>
+                )}
+                {renderAccion(pedido, true)}
+              </Box>
+            </Paper>
+          ))}
+        </Box>
       ) : (
         <TableContainer component={Paper}>
           <Table>
@@ -268,46 +384,7 @@ function ListadoSolicitudesUniformes() {
                     ) : '-'}
                   </TableCell>
                   <TableCell>
-                    {pedido.estado === 'pendiente' ? (
-                      <Button size="small" variant="contained" onClick={() => openSolicitudPagoDialog(pedido)}>
-                        Solicitar pago
-                      </Button>
-                    ) : pedido.estado === 'pago_en_revision' ? (
-                      <Button size="small" variant="outlined" onClick={() => openDetallePagoDialog(pedido)}>
-                        Ver detalles pago
-                      </Button>
-                    ) : pedido.estado === 'verificado' ? (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        disabled={entregandoId === pedido._id}
-                        onClick={() => setConfirmEntregarId(pedido._id)}
-                        startIcon={
-                          entregandoId === pedido._id
-                            ? <CircularProgress size={14} sx={{ color: '#ffffff' }} />
-                            : <CheckCircleOutlineIcon fontSize="small" />
-                        }
-                        sx={{
-                          bgcolor: '#2e7d32',
-                          color: '#ffffff',
-                          fontWeight: 700,
-                          textTransform: 'none',
-                          boxShadow: 'none',
-                          '&:hover': {
-                            bgcolor: '#1f6b24',
-                            boxShadow: 'none'
-                          },
-                          '&:disabled': {
-                            bgcolor: '#c8e6c9',
-                            color: '#2f5f32'
-                          }
-                        }}
-                      >
-                        {entregandoId === pedido._id ? 'Entregando...' : 'Marcar entregado'}
-                      </Button>
-                    ) : (
-                      <Typography variant="body2" color="text.secondary">Sin acciones</Typography>
-                    )}
+                    {renderAccion(pedido)}
                   </TableCell>
                 </TableRow>
               ))}
