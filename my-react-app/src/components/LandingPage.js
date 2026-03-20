@@ -32,13 +32,13 @@ const stats = [
   { value: '+500', label: 'Alumnos Formados', icon: <MdPeople /> },
   { value: '7', label: 'Entrenadores Certificados', icon: <MdWorkspacePremium /> },
   { value: '15', label: 'Torneos Ganados', icon: <MdEmojiEvents /> },
-  { value: '100%', label: 'Gestion Digital', icon: <MdPhoneIphone /> }
+  { value: '100%', label: 'Gestión Digital', icon: <MdPhoneIphone /> }
 ];
 
 const benefits = [
   {
-    title: 'Metodologia Pro',
-    desc: 'Planes de entrenamiento personalizados segun la posicion para un progreso mas claro y medible.',
+    title: 'Metodología Pro',
+    desc: 'Planes de entrenamiento personalizados según la posición para un progreso más claro y medible.',
     icon: <MdGpsFixed />
   },
   {
@@ -53,7 +53,7 @@ const benefits = [
   },
   {
     title: 'Comunidad y Valores',
-    desc: 'Torneos internos, eventos sociales y formacion enfocada en disciplina deportiva.',
+    desc: 'Torneos internos, eventos sociales y formación enfocada en disciplina deportiva.',
     icon: <MdFavoriteBorder />
   }
 ];
@@ -62,34 +62,34 @@ const coaches = [
   {
     name: 'EDIXON NELO',
     role: 'Director de la Academia',
-    sub: 'Formador tactico y estrategico',
-    quote: 'Vision, disciplina y formacion. La excelencia no es un acto, es un hábito que cultivamos en la cancha.',
+    sub: 'Formador táctico y estratégico',
+    quote: 'Visión, disciplina y formación. La excelencia no es un acto, es un hábito que cultivamos en la cancha.',
     image: directorImage
   },
   {
     name: 'DEIVI PUERTA',
-    role: 'Coach de Primera linea de defensa (BLOQUEO)',
+    role: 'Coach de Primera línea de defensa (BLOQUEO)',
     sub: 'Especialista en Muro Defensivo y Presión en Red.',
     quote: 'La defensa no espera al balón, lo intercepta con autoridad.',
     image: entrenador1Image
   },
   {
     name: 'DAVID VASQUEZ',
-    role: 'Coach de Formacion Base',
-    sub: 'Desarrollo tecnico inicial',
+    role: 'Coach de Formación Base',
+    sub: 'Desarrollo técnico inicial',
     quote: 'Los fundamentos bien trabajados sostienen el crecimiento deportivo.',
     image: entrenador2Image
   },
   {
     name: 'LORENA MOTA',
-    role: 'Coach de Formacion Base',
-    sub: 'Desarrollo tecnico inicial',
+    role: 'Coach de Formación Base',
+    sub: 'Desarrollo técnico inicial',
     quote: 'Dominar lo básico es el primer paso para ejecutar lo extraordinario.',
     image: entrenador3Image
   },
   {
     name: 'GABRIEL PALMERA',
-    role: 'Coach tactico de levantadores',
+    role: 'Coach táctico de levantadores',
     sub: 'Especialista en levantadores',
     quote: 'Diseñamos el cerebro de tu ofensiva. Perfeccionamos la visión de campo, la toma de decisiones bajo presión y la precisión táctica.',
     image: entrenador4Image
@@ -124,87 +124,87 @@ const sedes = [
   {
     nombre: 'Sede Obelisco',
     direccion: 'Carrera 23 con 56 entre el bloque 9 y 10, cancha techada.',
-    horario: 'Lunes, Miercoles y Sabados'
+    horario: 'Lunes, Miércoles y Sábados'
   }
 ];
 
 const atletas = [
   {
     nombre: 'Villa Sport',
-    logro: 'Competencia y Formacion Integral',
+    logro: 'Competencia y Formación Integral',
     descripcion: 'Disciplina, velocidad y lectura de juego en cada punto.',
     image: alumnasImage8
   },
   {
     nombre: 'Formacion Base',
-    logro: 'Progreso Tecnico Constante',
-    descripcion: 'Fundamentos solidos desde temprano para crecer con confianza.',
+    logro: 'Progreso Técnico Constante',
+    descripcion: 'Fundamentos sólidos desde temprano para crecer con confianza.',
     image: alumnasImage7
   },
   {
     nombre: 'Categoria Competitiva',
     logro: 'Top 3 en Torneos Estatales',
-    descripcion: 'Trabajo tactico y mental para competir al maximo nivel.',
+    descripcion: 'Trabajo táctico y mental para competir al máximo nivel.',
     image: alumnasImage5
   },
   {
     nombre: 'Villa Sport',
     logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
+    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
     image: alumnasImage4
   },
   {
     nombre: 'Juvenil Femenino',
-    logro: 'Competencia y Formacion Integral',
+    logro: 'Competencia y Formación Integral',
     descripcion: 'Disciplina, velocidad y lectura de juego en cada punto.',
     image: alumnasImage3
   },
   {
-    nombre: 'Formacion Base',
-    logro: 'Progreso Tecnico Constante',
-    descripcion: 'Fundamentos solidos desde temprano para crecer con confianza.',
+    nombre: 'Formación Base',
+    logro: 'Progreso Técnico Constante',
+    descripcion: 'Fundamentos sólidos desde temprano para crecer con confianza.',
     image: alumnasImage2
   },
   {
     nombre: 'Formación integral',
     logro: 'Deporte y valores para el desarrollo completo de cada atleta.',
-    descripcion: 'Trabajo tactico y mental para competir al maximo nivel.',
+    descripcion: 'Trabajo táctico y mental para competir al máximo nivel.',
     image: alumnasImage6
   },
   {
     nombre: 'Juvenil Villa Sport',
     logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
+    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
     image: alumnasImage1
   },
   {
     nombre: 'Villa Sport',
     logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
+    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
     image: alumnasImage
   },
   {
     nombre: 'Villa Sport',
     logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
+    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
     image: alumnasImage9
   },
   {
     nombre: 'Villa Sport',
     logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
+    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
     image: alumnasImage10
   },
   {
     nombre: 'Villa Sport',
     logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
+    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
     image: alumnasImage11
   },
   {
     nombre: 'Villa Sport',
     logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
+    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
     image: alumnasImage12
   },
 ];
@@ -411,7 +411,7 @@ const LandingPage = () => {
             <button
               type="button"
               className="mobileMenuToggle"
-              aria-label={mobileMenuOpen ? 'Cerrar menu de navegacion' : 'Abrir menu de navegacion'}
+              aria-label={mobileMenuOpen ? 'Cerrar menú de navegación' : 'Abrir menú de navegación'}
               aria-expanded={mobileMenuOpen}
               onClick={() => setMobileMenuOpen((prev) => !prev)}
             >
@@ -438,7 +438,7 @@ const LandingPage = () => {
                 href="/login"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Iniciar sesion
+                Iniciar sesión
               </Button>
             </Box>
           </Toolbar>
@@ -475,12 +475,12 @@ const LandingPage = () => {
                   <span className="heroTitleAccent"> Entrena con los mejores</span>
                 </Typography>
                 <Typography variant="h5" className="heroSubtitle">
-                  Formacion integral, tecnica avanzada y pasion por el voleibol. Unete a la comunidad de
-                  Villa Sport y desarrolla tu juego con un equipo que compite y enseña en serio.
+                  Formación integral, técnica avanzada y pasión por el voleibol. Únete a la comunidad de
+                  Villa Sport y desarrolla tu juego con un equipo que enseña y compite.
                 </Typography>
                 <div className="heroActions">
                   <Button className="ctaButton" variant="contained" endIcon={<MdArrowForward />} href="#contacto">
-                    Inscribete Ahora
+                    Inscríbete Ahora
                   </Button>
                   <Button className="ctaButton ctaButtonSecondary" variant="outlined" href="#beneficios">
                     Prueba una Clase Gratis
@@ -489,15 +489,15 @@ const LandingPage = () => {
                 <div className="heroHighlights">
                   <div className="heroHighlightItem">
                     <MdSchool />
-                    <span>Entrenamiento tecnico por categorias</span>
+                    <span>Entrenamiento técnico por categorías</span>
                   </div>
                   <div className="heroHighlightItem">
                     <MdEmojiEvents />
-                    <span>Preparacion competitiva y formativa</span>
+                    <span>Preparación competitiva y formativa</span>
                   </div>
                   <div className="heroHighlightItem">
                     <MdPlace />
-                    <span>Sedes activas para practica continua</span>
+                    <span>Sedes activas para práctica continua</span>
                   </div>
                 </div>
               </motion.div>
@@ -513,15 +513,15 @@ const LandingPage = () => {
                   Academia de voleibol
                 </Typography>
                 <Typography variant="h4" className="heroInfoTitle">
-                  Tecnica, disciplina y equipo.
+                  Técnica, disciplina y equipo.
                 </Typography>
                 <Typography className="heroInfoCopy">
-                  Programas para iniciacion, desarrollo y competencia con entrenadores enfocados en progreso real.
+                  Programas para iniciación, desarrollo y competencia con entrenadores enfocados en progreso real.
                 </Typography>
                 <div className="heroInfoStats">
                   <div>
                     <strong>3+</strong>
-                    <span>niveles de formacion</span>
+                    <span>niveles de formación</span>
                   </div>
                   <div>
                     <strong>100%</strong>
@@ -529,7 +529,7 @@ const LandingPage = () => {
                   </div>
                 </div>
                 <Button className="heroInfoButton" variant="text" href="#contacto">
-                  Solicitar informacion
+                  Solicitar información
                 </Button>
               </motion.div>
             </Grid>
@@ -537,7 +537,7 @@ const LandingPage = () => {
         </Container>
       </section>
 
-      <section className="statsBandSection" aria-label="Metricas destacadas">
+      <section className="statsBandSection" aria-label="Métricas destacadas">
         <div className="statsBand">
           {stats.map((item, index) => (
             <motion.div
@@ -563,7 +563,7 @@ const LandingPage = () => {
               ¿Por qué entrenar con nosotros?
             </Typography>
             <Typography className="benefitsSubtitle">
-              Ofrecemos una experiencia integral de formacion deportiva con metodologia profesional.
+              Ofrecemos una experiencia integral de formación deportiva con metodología profesional.
             </Typography>
           </div>
 
@@ -588,7 +588,7 @@ const LandingPage = () => {
               Staff de Entrenadores
             </Typography>
             <Typography className="coachesSubtitle">
-              Profesionales certificados con anos de experiencia en formacion deportiva.
+              Profesionales certificados con años de experiencia en formación deportiva.
             </Typography>
           </div>
 
@@ -631,7 +631,7 @@ const LandingPage = () => {
               Nuestras Sedes
             </Typography>
             <Typography className="sedesSubtitle">
-              Contamos con tres sedes activas para que elijas la que mejor te quede.
+              Contamos con tres sedes activas para que elijas la que mejor se adapte a ti.
             </Typography>
           </div>
 
@@ -677,13 +677,13 @@ const LandingPage = () => {
                 Nuestros Atletas
               </Typography>
               <Typography className="atletasSubtitle">
-                Ellos son el corazon competitivo de Villa Sport. Cada entrenamiento combina tecnica,
-                disciplina y acompanamiento para construir rendimiento real en cancha.
+                Ellos son el corazón competitivo de Villa Sport. Cada entrenamiento combina técnica,
+                disciplina y acompañamiento para construir rendimiento real en cancha.
               </Typography>
 
               <div className="atletasPills" aria-hidden="true">
                 <span><MdEmojiEvents /> Mentalidad ganadora</span>
-                <span><MdSchool /> Formacion integral</span>
+                <span><MdSchool /> Formación integral</span>
                 <span><MdPeople /> Trabajo en equipo</span>
               </div>
 
@@ -720,7 +720,7 @@ const LandingPage = () => {
                 </div>
               </div>
 
-              <div className="atletasThumbControls" aria-label="Galeria de atletas">
+              <div className="atletasThumbControls" aria-label="Galería de atletas">
                 <button
                   type="button"
                   className="atletasNavButton"
@@ -769,10 +769,10 @@ const LandingPage = () => {
           <div className="ctaBand">
             <div className="ctaBandInner">
               <Typography variant="h3" className="ctaBandTitle">
-                DA EL SIGUIENTE PASO EN TU FORMACION DEPORTIVA.
+                DA EL SIGUIENTE PASO EN TU FORMACIÓN DEPORTIVA.
               </Typography>
               <Typography variant="h5" className="ctaBandSubtitle">
-                Unete a Villa Sport y recibe informacion sobre horarios, categorias y proceso de inscripcion.
+                Únete a Villa Sport y recibe información sobre horarios, categorías y proceso de inscripción.
               </Typography>
               <div className="ctaBandActions">
                 <Button className="ctaBandPrimary" variant="contained" href="#contacto">
@@ -796,7 +796,7 @@ const LandingPage = () => {
             transition={{ duration: 0.5 }}
           >
             <Typography variant="h3" className="aspirantesTitle">
-              Formulario para Aspirantes
+              Formulario para aspirantes
             </Typography>
             <Typography className="aspirantesSubtitle">
               Completa tus datos y te contactaremos para iniciar tu proceso de ingreso a la academia.
@@ -807,10 +807,10 @@ const LandingPage = () => {
                 <MdWorkspacePremium /> Seguimiento personalizado
               </span>
               <span>
-                <MdSchool /> Evaluacion inicial
+                <MdSchool /> Evaluación inicial
               </span>
               <span>
-                <MdEmojiEvents /> Plan segun tu nivel
+                <MdEmojiEvents /> Plan según tu nivel
               </span>
             </div>
 
@@ -883,7 +883,7 @@ const LandingPage = () => {
                 transition={{ duration: 0.4, delay: 0.26 }}
               >
                 <TextField
-                  label="Numero de telefono"
+                  label="Número de teléfono"
                   name="telefono"
                   value={aspiranteForm.telefono}
                   onChange={handleAspiranteChange}
@@ -914,7 +914,7 @@ const LandingPage = () => {
 
               {aspiranteEnviado && (
                 <Typography className="aspirantesSuccess">
-                  ¡Solicitud enviada con exito! Gracias por postularte a Villa Sport. Te contactaremos pronto para coordinar tu evaluacion inicial.
+                  ¡Solicitud enviada con éxito! Gracias por postularte a Villa Sport. Te contactaremos pronto para coordinar tu evaluación inicial.
                 </Typography>
               )}
             </Box>
@@ -934,12 +934,12 @@ const LandingPage = () => {
                 </div>
               </div>
               <p>
-                Academia de voleibol enfocada en tecnica, disciplina y formacion integral para cada etapa de desarrollo.
+                Academia de voleibol enfocada en técnica, disciplina y formación integral para cada etapa de desarrollo.
               </p>
             </div>
 
             <div className="footerColumn">
-              <h5>Navegacion</h5>
+              <h5>Navegación</h5>
               <a href="#inicio">Inicio</a>
               <a href="#beneficios">Beneficios</a>
               <a href="#entrenadores">Entrenadores</a>
