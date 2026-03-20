@@ -9,6 +9,8 @@ import { useDolar } from '../context/DolarContext';
 import TablePagination from '@mui/material/TablePagination';
 import { exportToCsv } from '../utils/exportCsv';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -17,6 +19,8 @@ const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo',];
 function Mensualidades() {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
+	const theme = useTheme();
+	const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 	const [mensualidades, setMensualidades] = useState([]);
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
 	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
@@ -246,6 +250,47 @@ function Mensualidades() {
 		return Number(value).toFixed(2);
 	};
 
+	const renderEstatusChip = (estatusRaw) => {
+		const estado = (estatusRaw || '').toLowerCase();
+		if (estado === 'pagado') return (
+			<Chip
+				label="Pagado"
+				sx={{ borderRadius: 999, bgcolor: '#dff7ea', color: '#0f7a4a', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+			/>
+		);
+		if (estado === 'pendiente') return (
+			<Chip
+				label="Pendiente"
+				sx={{ borderRadius: 999, bgcolor: '#fff3dc', color: '#b45309', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+			/>
+		);
+		if (estado === 'retrasado') return (
+			<Chip
+				label="Retrasado"
+				sx={{ borderRadius: 999, bgcolor: '#ffe1e6', color: '#d32f2f', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+			/>
+		);
+		if (estado === 'exonerado') return (
+			<Chip
+				label="Exonerado"
+				sx={{ borderRadius: 999, bgcolor: '#e3f2fd', color: '#0288d1', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+			/>
+		);
+		if (estado === 'abono') return (
+			<Chip
+				label="Abono"
+				sx={{ borderRadius: 999, bgcolor: '#efe9e7', color: '#6d4c41', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+			/>
+		);
+		if (estado === 'en revision') return (
+			<Chip
+				label="En revision"
+				sx={{ borderRadius: 999, bgcolor: '#fff6cc', color: '#b45309', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+			/>
+		);
+		return <Chip label={estatusRaw || '-'} variant="outlined" />;
+	};
+
 	const inputSx = {
 		'& .MuiOutlinedInput-root': {
 			borderRadius: 2,
@@ -274,16 +319,18 @@ function Mensualidades() {
 		exportToCsv(datos, `alumnos_retrasados_${nombreSede}.csv`, headers);
 	};
 
+	const mensualidadesPaginadas = mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina);
+
 	return (
 		<div>
 			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>Mensualidades</Typography>
-			<div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120 }}>
+			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
+				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
 					{[...Array(12)].map((_, i) => <MenuItem key={i+1} value={i+1}>{meses[i]}</MenuItem>)}
 				</TextField>
-				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180 }} />
-				<TextField select label="Estado" value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} sx={{ minWidth: 120 }}>
+				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
+				<TextField select label="Estado" value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
 					{['Pendiente','Pagado','Retrasado', 'Exonerado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
@@ -291,195 +338,134 @@ function Mensualidades() {
 				className="mensualidades-export-btn"
 				variant="contained"
 				onClick={exportarExcel}
-				sx={{ marginBottom: 2, marginLeft: 'auto' }}
+				sx={{ width: { xs: '100%', md: 'auto' }, justifySelf: { xs: 'stretch', md: 'end' } }}
 			>
 				Exportar CSV
 			</Button>
-			</div>
-			<TableContainer
-				component={Paper}
-				sx={{
-					mt: 3,
-					borderRadius: 3,
-					overflow: 'hidden',
-					boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
-				}}
-			>
-				<Table sx={{ minWidth: 720 }}>
-					<TableHead>
-						<TableRow sx={{ backgroundColor: '#f8fafc' }}>
-							<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
-							<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
-							<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
-							<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
-							<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
-							<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
-						</TableRow>
-					</TableHead>
-					<TableBody>
-						{mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina).map((m) => (
-							<TableRow
-								key={m._id}
-								sx={{
-									'& td': { borderBottom: '1px solid #eef0f3', py: 2 },
-									'&:hover': { backgroundColor: '#fafafa' }
-								}}
-							>
-								<TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>
-									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-										<Avatar
-											sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}
-										>
-											{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
-										</Avatar>
-										{m.id_alumno ? m.id_alumno.nombres + ' ' + m.id_alumno.apellidos : ''}
-									</Box>
-								</TableCell>
-								<TableCell>
-									<Chip
-										label={m.id_alumno ? m.id_alumno.categoria : '-'}
-										sx={{
-											backgroundColor: '#f1f5f9',
-											color: '#64748b',
-											fontWeight: 700,
-											fontSize: 12
-										}}
-									/>
-								</TableCell>
-								<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1)-1]}</TableCell>
-								<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${m.monto_esperado}</TableCell>
-								<TableCell>
-									{(() => {
-										const estado = (m.estatus || '').toLowerCase();
-										if (estado === 'pagado') return (
-											<Chip
-												label="Pagado"
-												sx={{
-													borderRadius: 999,
-													bgcolor: '#dff7ea',
-													color: '#0f7a4a',
-													fontWeight: 700,
-													px: 1,
-													'& .MuiChip-label': { px: 0.5 }
-												}}
-											/>
-										);
-										if (estado === 'pendiente') return (
-											<Chip
-												label="Pendiente"
-												sx={{
-													borderRadius: 999,
-													bgcolor: '#fff3dc',
-													color: '#b45309',
-													fontWeight: 700,
-													px: 1,
-													'& .MuiChip-label': { px: 0.5 }
-												}}
-											/>
-										);
-										if (estado === 'retrasado') return (
-											<Chip
-												label="Retrasado"
-												sx={{
-													borderRadius: 999,
-													bgcolor: '#ffe1e6',
-													color: '#d32f2f',
-													fontWeight: 700,
-													px: 1,
-													'& .MuiChip-label': { px: 0.5 }
-												}}
-											/>
-										);
-										if (estado === 'exonerado') return (
-											<Chip
-												label="Exonerado"
-												sx={{
-													borderRadius: 999,
-													bgcolor: '#e3f2fd',
-													color: '#0288d1',
-													fontWeight: 700,
-													px: 1,
-													'& .MuiChip-label': { px: 0.5 }
-												}}
-											/>
-										);
-										if (estado === 'abono') return (
-											<Chip
-												label="Abono"
-												sx={{
-													borderRadius: 999,
-													bgcolor: '#efe9e7',
-													color: '#6d4c41',
-													fontWeight: 700,
-													px: 1,
-													'& .MuiChip-label': { px: 0.5 }
-												}}
-											/>
-										);
-										if (estado === 'en revision') return (
-											<Chip
-												label="En revision"
-												sx={{
-													borderRadius: 999,
-													bgcolor: '#fff6cc',
-													color: '#b45309',
-													fontWeight: 700,
-													px: 1,
-													'& .MuiChip-label': { px: 0.5 }
-												}}
-											/>
-										);
-										return <Chip label={m.estatus || '-'} variant="outlined" />;
-									})()}
-								</TableCell>
-								<TableCell>
-									{['pendiente', 'retrasado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-										<Button
-											variant="text"
-											size="small"
-											onClick={() => handlePago(m)}
-											endIcon={<ArrowForwardIcon fontSize="small" />}
-											sx={{ color: '#0f172a', fontWeight: 700 }}
-										>
-											Registrar pago
-										</Button>
-									)}
-									{['pagado', 'en revision', 'exonerado'].includes((m.estatus || '').toLowerCase()) && (
-										<Button
-											variant="text"
-											size="small"
-											onClick={() => handleVerDetalle(m)}
-											endIcon={<ArrowForwardIcon fontSize="small" />}
-											sx={{ color: '#0f172a', fontWeight: 700 }}
-										>
-											Ver detalle
-										</Button>
-									)}
+			</Box>
+			{isMobile ? (
+				<Box sx={{ mt: 2, display: 'grid', gap: 1.5 }}>
+					{mensualidadesPaginadas.map((m) => (
+						<Paper key={m._id} sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)' }}>
+							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+									<Avatar sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+										{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
+									</Avatar>
+									<Typography sx={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }} noWrap>
+										{m.id_alumno ? `${m.id_alumno.nombres} ${m.id_alumno.apellidos}` : '-'}
+									</Typography>
+								</Box>
+								{renderEstatusChip(m.estatus)}
+							</Box>
+							<Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
+								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
+								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
+								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${m.monto_esperado}</Typography>
+							</Box>
+							{['pendiente', 'retrasado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+								<Button variant="contained" fullWidth onClick={() => handlePago(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' }, fontWeight: 700 }}>
+									Registrar pago
+								</Button>
+							)}
+							{['pagado', 'en revision', 'exonerado'].includes((m.estatus || '').toLowerCase()) && (
+								<Button variant="outlined" fullWidth onClick={() => handleVerDetalle(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ borderColor: '#cbd5e1', color: '#0f172a', fontWeight: 700 }}>
+									Ver detalle
+								</Button>
+							)}
+						</Paper>
+					))}
+					<Paper sx={{ borderRadius: 3, border: '1px solid #eef0f3' }}>
+						<TablePagination
+							component="div"
+							count={mensualidades.length}
+							page={pagina}
+							onPageChange={handleChangePagina}
+							rowsPerPage={filasPorPagina}
+							onRowsPerPageChange={handleChangeFilasPorPagina}
+							rowsPerPageOptions={[5, 10, 25, 50]}
+							labelRowsPerPage="Filas por página"
+						/>
+					</Paper>
+				</Box>
+			) : (
+				<TableContainer
+					component={Paper}
+					sx={{
+						mt: 3,
+						borderRadius: 3,
+						overflow: 'hidden',
+						boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
+					}}
+				>
+					<Table sx={{ minWidth: 720 }}>
+						<TableHead>
+							<TableRow sx={{ backgroundColor: '#f8fafc' }}>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
+							</TableRow>
+						</TableHead>
+						<TableBody>
+							{mensualidadesPaginadas.map((m) => (
+								<TableRow
+									key={m._id}
+									sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}
+								>
+									<TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>
+										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+											<Avatar sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+												{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
+											</Avatar>
+											{m.id_alumno ? m.id_alumno.nombres + ' ' + m.id_alumno.apellidos : ''}
+										</Box>
+									</TableCell>
+									<TableCell>
+										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
+									</TableCell>
+									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
+									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${m.monto_esperado}</TableCell>
+									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
+									<TableCell>
+										{['pendiente', 'retrasado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+											<Button variant="text" size="small" onClick={() => handlePago(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ color: '#0f172a', fontWeight: 700 }}>
+												Registrar pago
+											</Button>
+										)}
+										{['pagado', 'en revision', 'exonerado'].includes((m.estatus || '').toLowerCase()) && (
+											<Button variant="text" size="small" onClick={() => handleVerDetalle(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ color: '#0f172a', fontWeight: 700 }}>
+												Ver detalle
+											</Button>
+										)}
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+						<tfoot>
+							<TableRow>
+								<TableCell colSpan={6}>
+									<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+										<TablePagination
+											component="div"
+											count={mensualidades.length}
+											page={pagina}
+											onPageChange={handleChangePagina}
+											rowsPerPage={filasPorPagina}
+											onRowsPerPageChange={handleChangeFilasPorPagina}
+											rowsPerPageOptions={[5, 10, 25, 50]}
+											labelRowsPerPage="Filas por página"
+										/>
+									</div>
 								</TableCell>
 							</TableRow>
-						))}
-					</TableBody>
-					{/* Paginación */}
-					<tfoot>
-						<TableRow>
-							<TableCell colSpan={6}>
-								<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-									<TablePagination
-										component="div"
-										count={mensualidades.length}
-										page={pagina}
-										onPageChange={handleChangePagina}
-										rowsPerPage={filasPorPagina}
-										onRowsPerPageChange={handleChangeFilasPorPagina}
-										rowsPerPageOptions={[5, 10, 25, 50]}
-										labelRowsPerPage="Filas por página"
-									/>
-								</div>
-							</TableCell>
-						</TableRow>
-					</tfoot>
-							{/* Modal detalle de pago */}
-							<Dialog open={modalDetalle} onClose={() => setModalDetalle(false)} maxWidth="xs" fullWidth>
+						</tfoot>
+					</Table>
+				</TableContainer>
+			)}
+			<Dialog open={modalDetalle} onClose={() => setModalDetalle(false)} maxWidth="xs" fullWidth>
 								<DialogTitle sx={{
 									bgcolor: '#0f2544',
 									color: '#fff',
@@ -618,7 +604,7 @@ function Mensualidades() {
 									<Button onClick={() => setModalDetalle(false)} fullWidth variant="text">Volver</Button>
 								</DialogActions>
 							</Dialog>
-							<Dialog open={comprobanteDialogOpen} onClose={() => setComprobanteDialogOpen(false)} maxWidth="md" fullWidth>
+			<Dialog open={comprobanteDialogOpen} onClose={() => setComprobanteDialogOpen(false)} maxWidth="md" fullWidth>
 								<DialogTitle>Comprobante</DialogTitle>
 								<DialogContent>
 									{comprobanteUrl ? (
@@ -640,9 +626,7 @@ function Mensualidades() {
 								<DialogActions>
 									<Button onClick={() => setComprobanteDialogOpen(false)}>Cerrar</Button>
 								</DialogActions>
-							</Dialog>
-				</Table>
-			</TableContainer>
+			</Dialog>
 			<Snackbar
 				open={!!successMessage}
 				autoHideDuration={3000}

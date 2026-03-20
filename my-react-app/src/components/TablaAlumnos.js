@@ -7,6 +7,8 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Checkbox, FormControlLabel, Avatar, Chip, Box } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -55,6 +57,8 @@ function TablaAlumnos() {
     };
   const { sedeSeleccionada } = useSede();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [alumnos, setAlumnos] = useState([]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
@@ -244,10 +248,10 @@ function TablaAlumnos() {
             Gestion centralizada de estudiantes y categorias.
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
           <Button
             variant="contained"
-            sx={{ bgcolor: '#f97316', fontWeight: 700, '&:hover': { bgcolor: '#ea580c' } }}
+            sx={{ bgcolor: '#f97316', fontWeight: 700, '&:hover': { bgcolor: '#ea580c' }, width: { xs: '100%', sm: 'auto' } }}
             startIcon={<PersonAddAlt1Icon />}
             onClick={() => navigate('/alumnos')}
           >
@@ -255,7 +259,7 @@ function TablaAlumnos() {
           </Button>
           <Button
             variant="outlined"
-            sx={{ borderColor: '#e2e8f0', color: '#16a34a', fontWeight: 700 }}
+            sx={{ borderColor: '#e2e8f0', color: '#16a34a', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
             startIcon={<TableChartIcon />}
             onClick={handleDownloadExcel}
           >
@@ -263,7 +267,7 @@ function TablaAlumnos() {
           </Button>
           <Button
             variant="outlined"
-            sx={{ borderColor: '#e2e8f0', color: '#ef4444', fontWeight: 700 }}
+            sx={{ borderColor: '#e2e8f0', color: '#ef4444', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
             startIcon={<PictureAsPdfIcon />}
             onClick={handleDownloadPDF}
           >
@@ -349,6 +353,147 @@ function TablaAlumnos() {
         <Typography>Cargando...</Typography>
       ) : error ? (
         <Typography color="error">{error}</Typography>
+      ) : isMobile ? (
+        <Box sx={{ display: 'grid', gap: 1.5 }}>
+          {alumnosPaginados.map((alumno) => (
+            <Paper
+              key={alumno._id}
+              sx={{
+                p: 1.5,
+                borderRadius: 3,
+                border: '1px solid #eef0f3',
+                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, mb: 1.2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0 }}>
+                  <Avatar
+                    src={mediaUrl(alumno.foto) || ''}
+                    alt={alumno.nombres}
+                    sx={{ width: 40, height: 40, bgcolor: '#e0ecff', color: '#2563eb', fontWeight: 700, flexShrink: 0 }}
+                  >
+                    {`${alumno.nombres?.[0] || ''}${alumno.apellidos?.[0] || ''}`.toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 700, color: '#0f172a', lineHeight: 1.15 }} noWrap>
+                      {alumno.nombres} {alumno.apellidos}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
+                      Edad: {calcularEdad(alumno.fecha_nacimiento) || '-'}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Tooltip
+                  title={alumno.dado_de_baja || alumno.activo === false ? `Motivo: ${alumno.motivo_baja?.trim() || 'No especificado'}` : ''}
+                  arrow
+                >
+                  <span>
+                    <Chip
+                      label={alumno.dado_de_baja || alumno.activo === false ? 'Retirado' : (alumno.estado || '-')}
+                      size="small"
+                      sx={{
+                        bgcolor: alumno.dado_de_baja || alumno.activo === false ? '#fee2e2' : '#eef2ff',
+                        color: alumno.dado_de_baja || alumno.activo === false ? '#b91c1c' : '#2563eb',
+                        fontWeight: 700
+                      }}
+                    />
+                  </span>
+                </Tooltip>
+              </Box>
+
+              <Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
+                  <strong>Sede:</strong> {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : (alumno.sede || '-')}
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
+                  <strong>Representante:</strong> {alumno.representante && typeof alumno.representante === 'object'
+                    ? `${alumno.representante.nombres} ${alumno.representante.apellidos}`
+                    : (alumno.representante || '-')}
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#64748b' }}>
+                  <strong>Fecha nac.:</strong> {formatFecha(alumno.fecha_nacimiento) || '-'}
+                </Typography>
+              </Box>
+
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                <Tooltip title="Ver detalles">
+                  <IconButton aria-label="ver" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={() => navigate(`/alumno/${alumno._id}`)}>
+                    <VisibilityIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Editar">
+                  <IconButton aria-label="editar" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={() => navigate(`/alumno/editar/${alumno._id}`)}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                {!(alumno.dado_de_baja || alumno.activo === false) && (
+                  <Tooltip title="Dar de baja">
+                    <IconButton aria-label="dar de baja" size="small" sx={{ color: '#64748b', bgcolor: '#fff7ed' }} onClick={() => {
+                      setBajaId(alumno._id);
+                      setMotivoBaja('');
+                    }}>
+                      <PersonOffIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                {(alumno.dado_de_baja || alumno.activo === false) && (
+                  <Tooltip title="Reactivar">
+                    <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', bgcolor: '#f0fdf4' }} onClick={() => setReactivarId(alumno._id)}>
+                      <ReplayIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                <Tooltip title="Eliminar">
+                  <IconButton aria-label="eliminar" size="small" sx={{ color: '#64748b', bgcolor: '#fff1f2' }} onClick={() => setDeleteId(alumno._id)}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Gestionar reposos">
+                  <IconButton
+                    aria-label="gestionar reposos"
+                    size="small"
+                    sx={{ color: '#64748b', bgcolor: '#f8fafc' }}
+                    onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
+                  >
+                    <LocalHospitalIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                {alumno.foto_cedula && (
+                  <Tooltip title="Descargar cédula">
+                    <IconButton
+                      aria-label="descargar cédula"
+                      size="small"
+                      sx={{ color: '#64748b', bgcolor: '#f8fafc' }}
+                      onClick={() => {
+                        const link = document.createElement('a');
+                        link.href = alumno.foto_cedula;
+                        link.download = `cedula_${alumno.nombres}_${alumno.apellidos}.jpg`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Box>
+            </Paper>
+          ))}
+
+          <Paper sx={{ borderRadius: 3, border: '1px solid #eef0f3' }}>
+            <TablePagination
+              component="div"
+              count={alumnosFiltrados.length}
+              page={page}
+              onPageChange={handleChangePage}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+              rowsPerPageOptions={[5, 10, 25]}
+              labelRowsPerPage="Filas por página:"
+            />
+          </Paper>
+        </Box>
       ) : (
         <TableContainer
           component={Paper}
@@ -483,53 +628,6 @@ function TablaAlumnos() {
                         </IconButton>
                       </Tooltip>
                     )}
-                    <Dialog open={!!deleteId} onClose={() => setDeleteId(null)}>
-                      <DialogTitle>¿Eliminar alumno?</DialogTitle>
-                      <DialogContent>¿Estás seguro de que deseas eliminar este alumno? Esta acción no se puede deshacer.</DialogContent>
-                      <DialogActions>
-                        <Button onClick={() => setDeleteId(null)} disabled={deleteLoading}>Cancelar</Button>
-                        <Button onClick={handleDeleteAlumno} color="error" variant="contained" disabled={deleteLoading}>
-                          {deleteLoading ? 'Eliminando...' : 'Eliminar'}
-                        </Button>
-                      </DialogActions>
-                    </Dialog>
-                    <Dialog
-                      open={!!bajaId}
-                      onClose={handleCloseBajaDialog}
-                      BackdropProps={{ sx: { backgroundColor: 'rgba(255, 255, 255, 0.08)', backdropFilter: 'blur(4px)' } }}
-                    >
-                      <DialogTitle>¿Dar de baja al alumno?</DialogTitle>
-                      <DialogContent>
-                        <Typography sx={{ mb: 2 }}>
-                          Confirma si deseas dar de baja al alumno. Esta acción se puede revertir.
-                        </Typography>
-                        <TextField
-                          fullWidth
-                          multiline
-                          minRows={3}
-                          label="Motivo de baja"
-                          placeholder="Opcional"
-                          value={motivoBaja}
-                          onChange={(e) => setMotivoBaja(e.target.value)}
-                        />
-                      </DialogContent>
-                      <DialogActions>
-                        <Button onClick={handleCloseBajaDialog} disabled={bajaLoading}>Cancelar</Button>
-                        <Button onClick={handleBajaAlumno} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}} variant="contained" disabled={bajaLoading}>
-                          {bajaLoading ? 'Procesando...' : 'Dar de baja'}
-                        </Button>
-                      </DialogActions>
-                    </Dialog>
-                    <Dialog open={!!reactivarId} onClose={() => setReactivarId(null)}>
-                      <DialogTitle>¿Reactivar alumno?</DialogTitle>
-                      <DialogContent>Confirma si deseas reactivar al alumno.</DialogContent>
-                      <DialogActions>
-                        <Button onClick={() => setReactivarId(null)} disabled={reactivarLoading}>Cancelar</Button>
-                        <Button onClick={handleReactivarAlumno} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}} variant="contained" disabled={reactivarLoading}>
-                          {reactivarLoading ? 'Procesando...' : 'Reactivar'}
-                        </Button>
-                      </DialogActions>
-                    </Dialog>
                   </TableCell>
                 </TableRow>
               ))}
@@ -547,6 +645,53 @@ function TablaAlumnos() {
           />
         </TableContainer>
       )}
+      <Dialog open={!!deleteId} onClose={() => setDeleteId(null)}>
+        <DialogTitle>¿Eliminar alumno?</DialogTitle>
+        <DialogContent>¿Estás seguro de que deseas eliminar este alumno? Esta acción no se puede deshacer.</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteId(null)} disabled={deleteLoading}>Cancelar</Button>
+          <Button onClick={handleDeleteAlumno} color="error" variant="contained" disabled={deleteLoading}>
+            {deleteLoading ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={!!bajaId}
+        onClose={handleCloseBajaDialog}
+        BackdropProps={{ sx: { backgroundColor: 'rgba(255, 255, 255, 0.08)', backdropFilter: 'blur(4px)' } }}
+      >
+        <DialogTitle>¿Dar de baja al alumno?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }}>
+            Confirma si deseas dar de baja al alumno. Esta acción se puede revertir.
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            minRows={3}
+            label="Motivo de baja"
+            placeholder="Opcional"
+            value={motivoBaja}
+            onChange={(e) => setMotivoBaja(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseBajaDialog} disabled={bajaLoading}>Cancelar</Button>
+          <Button onClick={handleBajaAlumno} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}} variant="contained" disabled={bajaLoading}>
+            {bajaLoading ? 'Procesando...' : 'Dar de baja'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={!!reactivarId} onClose={() => setReactivarId(null)}>
+        <DialogTitle>¿Reactivar alumno?</DialogTitle>
+        <DialogContent>Confirma si deseas reactivar al alumno.</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReactivarId(null)} disabled={reactivarLoading}>Cancelar</Button>
+          <Button onClick={handleReactivarAlumno} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}} variant="contained" disabled={reactivarLoading}>
+            {reactivarLoading ? 'Procesando...' : 'Reactivar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Snackbar open={deleteSuccess.open} autoHideDuration={2500} onClose={() => setDeleteSuccess({ open: false, message: '' })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <MuiAlert onClose={() => setDeleteSuccess({ open: false, message: '' })} severity="success" sx={{ width: '100%' }}>
           {deleteSuccess.message}
