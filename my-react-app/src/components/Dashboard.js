@@ -317,37 +317,37 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     <div className="dashboard-container">
       <div className="dashboard-header-row">
           <h2>Bienvenido al Dashboard</h2>
-        <div className="dashboard-card small-card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 12, background: '#fff2e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <GroupIcon style={{ color: '#ff7a00', fontSize: 28 }} />
+        <div className="dashboard-card small-card kpi-card kpi-students">
+          <div className="kpi-content">
+            <div className="kpi-icon-wrap">
+              <GroupIcon className="kpi-icon" />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h3 style={{ margin: 0 }}>Total de alumnos</h3>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#1e293b' }}>
+            <div className="kpi-copy">
+              <h3 className="kpi-title">Total de alumnos</h3>
+              <div className="kpi-value">
                 {Object.values(alumnosPorSede).reduce((acc, val) => acc + (Number(val) || 0), 0)}
               </div>
-              <div style={{ fontSize: 12, color: '#555' }}>
+              <div className="kpi-subtext">
                 Total en la academia
               </div>
             </div>
           </div>
         </div>
-        <div className="dashboard-card small-card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 12, background: '#e9f8ef', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <AttachMoneyIcon style={{ color: '#16a34a', fontSize: 28 }} />
+        <div className="dashboard-card small-card kpi-card kpi-dollar">
+          <div className="kpi-content">
+            <div className="kpi-icon-wrap">
+              <AttachMoneyIcon className="kpi-icon" />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <h3 style={{ margin: 0 }}>Tasa del dólar BCV</h3>
-              {dolarLoading && <div style={{ color: '#888', fontSize: 13 }}>Cargando...</div>}
-              {dolarError && <div style={{ color: '#d32f2f', fontSize: 13 }}>No disponible</div>}
+            <div className="kpi-copy">
+              <h3 className="kpi-title">Tasa del dólar BCV</h3>
+              {dolarLoading && <div className="kpi-state">Cargando...</div>}
+              {dolarError && <div className="kpi-state kpi-state-error">No disponible</div>}
               {!dolarLoading && !dolarError && (
                 <>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: '#1e293b' }}>
+                  <div className="kpi-value">
                     {formatDolar(dolar?.promedio)}
                   </div>
-                  <div style={{ fontSize: 12, color: '#555' }}>
+                  <div className="kpi-subtext">
                     Actualizado: {formatFecha(dolar?.fechaActualizacion)}
                   </div>
                 </>
@@ -368,9 +368,9 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       </div>
       <div className="dashboard-quick-access">
         <div className="dashboard-left">
-          <div className="dashboard-card sedes-panel">
+          <div className="dashboard-card sedes-panel sedes-panel-card">
             <div className="sedes-header">
-              <h3>Gestion de Sedes</h3>
+              <h3>Gestión de Sedes</h3>
               <button type="button" className="sedes-link" onClick={() => navigate('/sedes')}>
                 Ver todas
               </button>

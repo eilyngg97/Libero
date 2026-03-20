@@ -1,9 +1,5 @@
 /* Puedes agregar estilos personalizados para el dashboard aquí */
 
-.dashboard-container {
-  padding: 24px;
-}
-
 .dashboard-header-row {
   display: flex;
   align-items: flex-start;
@@ -35,6 +31,86 @@
 
 .dashboard-header-row .small-card:first-of-type {
   margin-left: auto;
+}
+
+.kpi-card {
+  border-radius: 14px;
+  border: 1px solid #e8edf4;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.06);
+}
+
+.kpi-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.kpi-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 52px;
+}
+
+.kpi-icon {
+  font-size: 28px;
+}
+
+.kpi-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kpi-title {
+  margin: 0;
+  font-size: 1.06rem;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.kpi-value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: #1e293b;
+  line-height: 1;
+}
+
+.kpi-subtext {
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.kpi-state {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.kpi-state-error {
+  color: #dc2626;
+}
+
+.kpi-students .kpi-icon-wrap {
+  background: #fff2e5;
+}
+
+.kpi-students .kpi-icon {
+  color: #ff7a00;
+}
+
+.kpi-dollar .kpi-icon-wrap {
+  background: #e9f8ef;
+}
+
+.kpi-dollar .kpi-icon {
+  color: #16a34a;
 }
 
 .dashboard-card.small-card {
@@ -311,29 +387,44 @@
   padding: 18px 18px 20px;
 }
 
+.sedes-panel-card {
+  border: 1px solid #e8edf4;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+}
+
 .sedes-header {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #d9e0eb;
 }
 
 .sedes-header h3 {
   margin: 0;
+  font-size: 1.15rem;
+  color: #0f172a;
 }
 
 .sedes-link {
-  background: transparent;
+  background: #fff3e6;
   border: none;
-  color: #ff7a00;
+  color: #c15f00;
   font-weight: 700;
   cursor: pointer;
-  padding: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  transition: background 0.2s, color 0.2s;
 }
 
 .sedes-link:hover {
-  text-decoration: underline;
+  text-decoration: none;
+  background: #ffe3c2;
+  color: #9a4d00;
 }
 
 .sedes-list {
@@ -357,8 +448,9 @@
 }
 
 .sede-item:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+  border-color: #ffd8b2;
+  box-shadow: 0 8px 18px rgba(255, 122, 0, 0.16);
 }
 
 .sede-left {
@@ -371,8 +463,8 @@
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: #eef2f7;
-  color: #64748b;
+  background: #eff6ff;
+  color: #334155;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -387,11 +479,15 @@
 .sede-info strong {
   color: #0f172a;
   letter-spacing: 0.01em;
+  text-transform: uppercase;
+  font-size: 0.98rem;
 }
 
 .sede-direccion {
-  color: #64748b;
-  font-size: 0.9rem;
+  color: #66758b;
+  font-size: 0.84rem;
+  max-width: 270px;
+  line-height: 1.35;
 }
 
 .sede-alumnos {
@@ -402,14 +498,15 @@
 }
 
 .alumnos-count {
-  font-size: 1.4rem;
+  font-size: 1.6rem;
   font-weight: 800;
-  color: #ff7a00;
+  color: #f97316;
+  line-height: 1;
 }
 
 .alumnos-label {
   font-size: 0.7rem;
-  color: #94a3b8;
+  color: #64748b;
   letter-spacing: 0.08em;
   font-weight: 700;
 }
@@ -417,11 +514,36 @@
 .sedes-tip {
   display: block;
   margin-top: 12px;
-  font-size: 0.9rem;
-  color: #94a3b8;
+  font-size: 0.8rem;
+  color: #64748b;
 }
 
 @media (max-width: 900px) {
+  .dashboard-header-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .dashboard-header-row h2 {
+    margin: 0 0 4px;
+    font-size: 1.55rem;
+  }
+
+  .dashboard-header-row .small-card:first-of-type {
+    margin-left: 0;
+  }
+
+  .dashboard-card.small-card {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .dashboard-export-btn {
+    width: 100%;
+    margin-top: 8px;
+  }
+
   .dashboard-quick-access {
     display: flex;
     flex-direction: column;
@@ -430,16 +552,17 @@
 
   .dashboard-left {
     margin-right: 0;
+    width: 100%;
   }
 
   .dashboard-card {
     max-width: 100%;
-    width: 100%;
+    min-width: 0;
+    padding: 16px;
   }
 
   .cumple-card {
     position: static;
-    width: 100%;
     max-width: none;
   }
 
@@ -451,5 +574,53 @@
   .finanzas-mes-select {
     width: 100%;
     min-width: 0;
+  }
+
+  .sedes-panel-card {
+    padding: 14px;
+  }
+
+  .sede-item {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .sede-direccion {
+    max-width: none;
+  }
+
+  .alumnos-count {
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .dashboard-header-row h2 {
+    font-size: 1.4rem;
+  }
+
+  .kpi-value {
+    font-size: 1.45rem;
+  }
+
+  .sedes-header h3 {
+    font-size: 1.05rem;
+  }
+
+  .sede-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sede-left {
+    width: 100%;
+  }
+
+  .sede-alumnos {
+    width: 100%;
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: 8px;
+    align-items: baseline;
   }
 }
