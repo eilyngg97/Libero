@@ -27,6 +27,7 @@ import TorneoDetalle from './components/TorneoDetalle';
 import GestionReposos from './components/GestionReposos';
 import Aspirantes from './components/Aspirantes';
 import LandingConfig from './components/LandingConfig';
+import ConciliacionBancaria from './components/ConciliacionBancaria';
 
 import { SedeProvider } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
@@ -154,6 +155,7 @@ function App() {
                         <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />
                         <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><Aspirantes /></ProtectedRoute>} />
                         <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><LandingConfig /></ProtectedRoute>} />
+                        <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
                         <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
                         <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
                       </Routes>

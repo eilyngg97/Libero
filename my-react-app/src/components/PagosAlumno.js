@@ -13,11 +13,14 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import { useDolar } from '../context/DolarContext';
 
 // Eliminar pagosEjemplo, usaremos datos reales
 
 function PagosAlumno(props) {
   const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo'];
+  const { dolar } = useDolar();
+  const tasa = Number(dolar?.promedio);
   const [openModalPago, setOpenModalPago] = useState(false);
   const [pagoSeleccionado, setPagoSeleccionado] = useState(null);
   const location = useLocation();
@@ -148,6 +151,24 @@ function PagosAlumno(props) {
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
+  };
+
+  const formatMontoEsperadoConBs = (montoUsd) => {
+    const usd = formatMoney(montoUsd);
+    if (!tasa || Number.isNaN(tasa)) {
+      return `${usd} USD`;
+    }
+    const bs = formatMoney(Number(montoUsd) * tasa);
+    return `${usd} USD / Bs ${bs}`;
+  };
+
+  const formatMontoConBs = (pago) => {
+    const montoUsd = formatMoney(pago?.monto_pagado);
+    const montoBs = pago?.monto_pagado_bs;
+    if (montoBs === null || montoBs === undefined || Number.isNaN(Number(montoBs))) {
+      return `$${montoUsd}`;
+    }
+    return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
   };
 
   const formatFechaBonita = (value) => {
@@ -365,7 +386,7 @@ function PagosAlumno(props) {
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mt: 0.5 }}>
                       <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        Monto: <Box component="span" sx={{ color: '#ff7a00', fontWeight: 700 }}>{pago.monto} USD</Box>
+                        Monto: <Box component="span" sx={{ color: '#ff7a00', fontWeight: 700 }}>{formatMontoEsperadoConBs(pago.monto)}</Box>
                       </Typography>
                       {(() => {
                         if (estado === 'pagado') {
@@ -513,7 +534,7 @@ function PagosAlumno(props) {
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: 39, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>${formatMoney(detallePago.monto_pagado)}</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: 39, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoConBs(detallePago)}</Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
@@ -610,7 +631,7 @@ function PagosAlumno(props) {
                     </Box>
                     <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Monto</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>${formatMoney(pago.monto_pagado)}</Typography>
+                      <Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoConBs(pago)}</Typography>
                     </Box>
                     <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Fecha</Typography>

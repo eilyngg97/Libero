@@ -19,6 +19,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 
 
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
@@ -40,6 +41,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
       { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
       { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' },
+      { text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' },
     );
   }
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });
