@@ -4,7 +4,8 @@ const pagoDetalleController = require('../controllers/pagoDetalleController');
 const { authMiddleware } = require('../middleware/auth');
 const {
 	ensureMensualidadOwnershipFromBody,
-	ensureMensualidadOwnershipFromParam
+	ensureMensualidadOwnershipFromParam,
+	ensurePagoOwnershipFromParam
 } = require('../middleware/ownership');
 const multer = require('multer');
 const path = require('path');
@@ -26,6 +27,10 @@ const upload = multer({ storage });
 
 // Registrar pago
 router.post('/', authMiddleware, upload.single('comprobante'), ensureMensualidadOwnershipFromBody('id_mensualidad'), pagoDetalleController.registrarPago);
+// Editar pago
+router.patch('/:id_pago', authMiddleware, upload.single('comprobante'), ensurePagoOwnershipFromParam('id_pago'), pagoDetalleController.editarPago);
+// Eliminar pago
+router.delete('/:id_pago', authMiddleware, ensurePagoOwnershipFromParam('id_pago'), pagoDetalleController.eliminarPago);
 // Consultar pagos por mensualidad
 router.get('/:id_mensualidad', authMiddleware, ensureMensualidadOwnershipFromParam('id_mensualidad'), pagoDetalleController.getPagosPorMensualidad);
 

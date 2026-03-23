@@ -20,6 +20,8 @@ jest.mock('../models/Mensualidad', () => ({
 
 jest.mock('../models/PagoDetalle', () => ({
   find: jest.fn(),
+  findById: jest.fn(),
+  findByIdAndDelete: jest.fn(),
   create: jest.fn()
 }));
 
@@ -105,6 +107,7 @@ describe('Backend smoke tests', () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 
     const mensualidadDoc = {
+      _id: 'm1',
       monto_esperado: 100,
       id_alumno: { habilitar_pago_cuotas: true },
       estatus: 'Pendiente',
@@ -114,7 +117,9 @@ describe('Backend smoke tests', () => {
     Mensualidad.findById.mockReturnValue({
       populate: jest.fn().mockResolvedValue(mensualidadDoc)
     });
-    PagoDetalle.find.mockResolvedValue([]);
+    PagoDetalle.find
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ _id: 'p1', monto_pagado: 100 }]);
     PagoDetalle.create.mockResolvedValue({ _id: 'p1' });
 
     const response = await request(app)
@@ -128,6 +133,77 @@ describe('Backend smoke tests', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.estatus).toBe('Pagado');
+  });
+
+  test('PATCH /api/pagos/:id_pago updates payment', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const pagoDoc = {
+      _id: 'p1',
+      id_mensualidad: 'm1',
+      monto_pagado: 50,
+      comprobante_url: null,
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 100,
+      id_alumno: { habilitar_pago_cuotas: true },
+      estatus: 'Abono',
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    PagoDetalle.findById.mockResolvedValue(pagoDoc);
+    Mensualidad.findById.mockReturnValue({
+      populate: jest.fn().mockResolvedValue(mensualidadDoc)
+    });
+    PagoDetalle.find
+      .mockResolvedValueOnce([{ _id: 'p1', monto_pagado: 50 }])
+      .mockResolvedValueOnce([{ _id: 'p1', monto_pagado: 100 }]);
+
+    const response = await request(app)
+      .patch('/api/pagos/p1')
+      .set('Authorization', `Bearer ${token}`)
+      .field('monto_pagado', '100')
+      .field('fecha_pago', '2026-03-06')
+      .field('metodo_pago', 'Transferencia')
+      .field('referencia', '123456');
+
+    expect(response.status).toBe(200);
+    expect(response.body.estatus).toBe('Pagado');
+  });
+
+  test('DELETE /api/pagos/:id_pago deletes payment', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const pagoDoc = {
+      _id: 'p1',
+      id_mensualidad: 'm1',
+      comprobante_url: null,
+      deleteOne: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 100,
+      id_alumno: { habilitar_pago_cuotas: true },
+      estatus: 'Pagado',
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    PagoDetalle.findById.mockResolvedValue(pagoDoc);
+    Mensualidad.findById.mockReturnValue({
+      populate: jest.fn().mockResolvedValue(mensualidadDoc)
+    });
+    PagoDetalle.find.mockResolvedValue([]);
+
+    const response = await request(app)
+      .delete('/api/pagos/p1')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.estatus).toBe('Pendiente');
   });
 
   test('POST /api/constancias generates pdf', async () => {

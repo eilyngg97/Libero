@@ -18,6 +18,7 @@ import Typography from '@mui/material/Typography';
 import DescriptionIcon from '@mui/icons-material/Description';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 
 
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
@@ -38,6 +39,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
       { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
+      { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' },
     );
   }
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });

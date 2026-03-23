@@ -1,6 +1,7 @@
 const Alumno = require('../models/Alumno');
 const Representante = require('../models/Representante');
 const Mensualidad = require('../models/Mensualidad');
+const PagoDetalle = require('../models/PagoDetalle');
 
 function isEndUser(req) {
   return req.user?.rol === 'usuario';
@@ -94,6 +95,26 @@ exports.ensureMensualidadOwnershipFromParam = (paramName = 'id_mensualidad') => 
 
   const esPropio = await userOwnsAlumno(req.user.id, mensualidad.id_alumno);
   if (!esPropio) return res.status(403).json({ error: 'No tienes permiso para esta mensualidad' });
+
+  next();
+};
+
+exports.ensurePagoOwnershipFromParam = (paramName = 'id_pago') => async (req, res, next) => {
+  if (!isEndUser(req)) return next();
+
+  const pagoId = req.params[paramName];
+  if (!pagoId) return res.status(400).json({ error: 'id_pago requerido' });
+
+  const pago = await PagoDetalle.findById(pagoId).select('id_mensualidad');
+  if (!pago) return res.status(404).json({ error: 'Pago no encontrado' });
+
+  const mensualidad = await Mensualidad.findById(pago.id_mensualidad).populate('id_alumno', 'usuario representante');
+  if (!mensualidad || !mensualidad.id_alumno) {
+    return res.status(404).json({ error: 'Mensualidad no encontrada' });
+  }
+
+  const esPropio = await userOwnsAlumno(req.user.id, mensualidad.id_alumno);
+  if (!esPropio) return res.status(403).json({ error: 'No tienes permiso para este pago' });
 
   next();
 };

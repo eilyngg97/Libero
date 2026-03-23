@@ -3,27 +3,14 @@ import { AppBar, Toolbar, Typography, Button, Container, Grid, Box, TextField, M
 import { motion } from 'framer-motion';
 import { MdArrowForward, MdPeople, MdPlace, MdEmojiEvents, MdSchool, MdGpsFixed, MdAssignment, MdPhoneIphone, MdFavoriteBorder, MdWorkspacePremium, MdMenu, MdClose, MdChevronLeft, MdChevronRight } from 'react-icons/md';
 import logoImage from '../assets/logo.png';
-import heroVoleyImage from '../assets/voley.jpg';
 import directorImage from '../assets/director.jpeg';
 import entrenador1Image from '../assets/entrenador_1.jpeg';
 import entrenador2Image from '../assets/entrenador_2.jpeg';
 import entrenador3Image from '../assets/entrenador_3.jpeg';
 import entrenador4Image from '../assets/entrenador_4.jpeg';
 import entrenador5Image from '../assets/entrenador_5.jpeg';
-import alumnasImage from '../assets/IMG_7391.PNG';
-import alumnasImage1 from '../assets/IMG_7389.PNG';
-import alumnasImage2 from '../assets/IMG_7388.PNG';
-import alumnasImage3 from '../assets/IMG_7390.PNG';
-
-import alumnasImage4 from '../assets/IMG_4562.jpeg';
-import alumnasImage5 from '../assets/IMG_5502.jpeg';
-import alumnasImage6 from '../assets/IMG_6827.jpeg';
-import alumnasImage7 from '../assets/IMG_7029.jpeg';
-import alumnasImage8 from '../assets/IMG_7030.jpeg';
-import alumnasImage9 from '../assets/IMG_7108.jpeg';
-import alumnasImage10 from '../assets/IMG_7115.jpeg';
-import alumnasImage11 from '../assets/IMG_7124.jpeg';
-import alumnasImage12 from '../assets/IMG_7131.jpeg';
+import { mediaUrl } from '../utils/mediaUrl';
+import { atletasDefault, heroImagesDefault } from '../constants/landingAtletasDefault';
 
 // IMPORTACIÓN DEL CSS MODULE Y BALONES
 import './LandingPage.css';
@@ -128,87 +115,6 @@ const sedes = [
   }
 ];
 
-const atletas = [
-  {
-    nombre: 'Villa Sport',
-    logro: 'Competencia y Formación Integral',
-    descripcion: 'Disciplina, velocidad y lectura de juego en cada punto.',
-    image: alumnasImage8
-  },
-  {
-    nombre: 'Formacion Base',
-    logro: 'Progreso Técnico Constante',
-    descripcion: 'Fundamentos sólidos desde temprano para crecer con confianza.',
-    image: alumnasImage7
-  },
-  {
-    nombre: 'Categoria Competitiva',
-    logro: 'Top 3 en Torneos Estatales',
-    descripcion: 'Trabajo táctico y mental para competir al máximo nivel.',
-    image: alumnasImage5
-  },
-  {
-    nombre: 'Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
-    image: alumnasImage4
-  },
-  {
-    nombre: 'Juvenil Femenino',
-    logro: 'Competencia y Formación Integral',
-    descripcion: 'Disciplina, velocidad y lectura de juego en cada punto.',
-    image: alumnasImage3
-  },
-  {
-    nombre: 'Formación Base',
-    logro: 'Progreso Técnico Constante',
-    descripcion: 'Fundamentos sólidos desde temprano para crecer con confianza.',
-    image: alumnasImage2
-  },
-  {
-    nombre: 'Formación integral',
-    logro: 'Deporte y valores para el desarrollo completo de cada atleta.',
-    descripcion: 'Trabajo táctico y mental para competir al máximo nivel.',
-    image: alumnasImage6
-  },
-  {
-    nombre: 'Juvenil Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
-    image: alumnasImage1
-  },
-  {
-    nombre: 'Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
-    image: alumnasImage
-  },
-  {
-    nombre: 'Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
-    image: alumnasImage9
-  },
-  {
-    nombre: 'Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
-    image: alumnasImage10
-  },
-  {
-    nombre: 'Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
-    image: alumnasImage11
-  },
-  {
-    nombre: 'Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompañamiento personalizado para formar atletas integrales.',
-    image: alumnasImage12
-  },
-];
-
 const navigationItems = [
   { label: 'Inicio', href: '#inicio' },
   { label: 'Beneficios', href: '#beneficios' },
@@ -224,11 +130,12 @@ const nivelesExperiencia = [
   'Avanzado'
 ];
 
-const heroImages = [alumnasImage, alumnasImage1, alumnasImage2, alumnasImage3];
+const heroImages = heroImagesDefault;
 
 const LandingPage = () => {
   const apiBase = process.env.REACT_APP_API_URL || '';
   const [heroImageIndex, setHeroImageIndex] = useState(0);
+  const [atletasConfig, setAtletasConfig] = useState([]);
   const [atletaIndex, setAtletaIndex] = useState(0);
   const [thumbStartIndex, setThumbStartIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState(null);
@@ -242,6 +149,47 @@ const LandingPage = () => {
   const [aspiranteEnviado, setAspiranteEnviado] = useState(false);
   const [aspiranteError, setAspiranteError] = useState('');
   const [aspiranteLoading, setAspiranteLoading] = useState(false);
+  const atletas = atletasConfig.length > 0 ? atletasConfig : atletasDefault;
+  const atletaActual = atletas[atletaIndex] || atletas[0];
+
+  useEffect(() => {
+    let isActive = true;
+
+    const cargarFotosLanding = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/landing/atletas-fotos`);
+        if (!response.ok) return;
+
+        const data = await response.json().catch(() => []);
+        if (!isActive) return;
+
+        const fotosNormalizadas = (Array.isArray(data) ? data : [])
+          .filter((item) => typeof item?.image === 'string' && item.image.trim())
+          .map((item, index) => {
+            const fallback = atletasDefault[index % atletasDefault.length] || atletasDefault[0];
+            return {
+              id: item._id || `landing-${index}`,
+              nombre: fallback?.nombre || 'Villa Sport',
+              logro: fallback?.logro || 'Formacion deportiva',
+              descripcion: fallback?.descripcion || 'Disciplina y trabajo en equipo para crecer cada temporada.',
+              image: mediaUrl(item.image)
+            };
+          });
+
+        if (fotosNormalizadas.length > 0) {
+          setAtletasConfig(fotosNormalizadas);
+        }
+      } catch (_) {
+        // Si falla, se mantiene el arreglo por defecto.
+      }
+    };
+
+    cargarFotosLanding();
+
+    return () => {
+      isActive = false;
+    };
+  }, [apiBase]);
 
   useEffect(() => {
     if (heroImages.length <= 1) {
@@ -277,7 +225,7 @@ const LandingPage = () => {
     }, 4200);
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [atletas.length]);
 
   useEffect(() => {
     if (atletas.length <= 4) {
@@ -289,22 +237,37 @@ const LandingPage = () => {
     }, 2800);
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [atletas.length]);
+
+  useEffect(() => {
+    if (!atletas.length) {
+      setAtletaIndex(0);
+      setThumbStartIndex(0);
+      return;
+    }
+
+    setAtletaIndex((prevIndex) => prevIndex % atletas.length);
+    setThumbStartIndex((prevIndex) => prevIndex % atletas.length);
+  }, [atletas.length]);
 
   const thumbsToShow = Math.min(4, atletas.length);
-  const visibleThumbs = Array.from({ length: thumbsToShow }, (_, offset) => {
-    const index = (thumbStartIndex + offset) % atletas.length;
-    return {
-      atleta: atletas[index],
-      index
-    };
-  });
+  const visibleThumbs = atletas.length
+    ? Array.from({ length: thumbsToShow }, (_, offset) => {
+      const index = (thumbStartIndex + offset) % atletas.length;
+      return {
+        atleta: atletas[index],
+        index
+      };
+    })
+    : [];
 
   const handleThumbNext = () => {
+    if (!atletas.length) return;
     setThumbStartIndex((prevIndex) => (prevIndex + 1) % atletas.length);
   };
 
   const handleThumbPrev = () => {
+    if (!atletas.length) return;
     setThumbStartIndex((prevIndex) => (prevIndex - 1 + atletas.length) % atletas.length);
   };
 
@@ -319,6 +282,11 @@ const LandingPage = () => {
 
   const handleCarouselTouchEnd = (event) => {
     if (touchStartX === null) {
+      return;
+    }
+
+    if (!atletas.length) {
+      setTouchStartX(null);
       return;
     }
 
@@ -688,8 +656,8 @@ const LandingPage = () => {
               </div>
 
               <div className="atletasMeta">
-                <strong>{atletas[atletaIndex].logro}</strong>
-                <p>{atletas[atletaIndex].descripcion}</p>
+                <strong>{atletaActual?.logro}</strong>
+                <p>{atletaActual?.descripcion}</p>
               </div>
             </motion.div>
 
@@ -706,9 +674,9 @@ const LandingPage = () => {
                 onTouchEnd={handleCarouselTouchEnd}
               >
                 <motion.img
-                  key={atletas[atletaIndex].image}
-                  src={atletas[atletaIndex].image}
-                  alt={atletas[atletaIndex].nombre}
+                  key={atletaActual?.id || atletaActual?.image}
+                  src={atletaActual?.image}
+                  alt={atletaActual?.nombre}
                   className="atletasMainImage"
                   initial={{ opacity: 0, scale: 1.04 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -716,7 +684,7 @@ const LandingPage = () => {
                 />
                 <div className="atletasImageOverlay">
                   <span>Team Villa Sport</span>
-                  <h4>{atletas[atletaIndex].nombre}</h4>
+                  <h4>{atletaActual?.nombre}</h4>
                 </div>
               </div>
 
@@ -733,7 +701,7 @@ const LandingPage = () => {
                 <div className="atletasThumbs" aria-label="Seleccionar atleta destacado">
                   {visibleThumbs.map(({ atleta, index }) => (
                   <button
-                    key={`${atleta.image}-${index}`}
+                    key={`${atleta.id || atleta.image}-${index}`}
                     type="button"
                     className={`atletaThumb ${index === atletaIndex ? 'active' : ''}`}
                     onClick={() => selectAtleta(index)}
