@@ -2,7 +2,6 @@ import alumnasImage from '../assets/IMG_7391.PNG';
 import alumnasImage1 from '../assets/IMG_7389.PNG';
 import alumnasImage2 from '../assets/IMG_7388.PNG';
 import alumnasImage3 from '../assets/IMG_7390.PNG';
-import alumnasImage4 from '../assets/IMG_4562.jpeg';
 import alumnasImage5 from '../assets/IMG_5502.jpeg';
 import alumnasImage6 from '../assets/IMG_6827.jpeg';
 import alumnasImage7 from '../assets/IMG_7029.jpeg';
@@ -30,12 +29,6 @@ export const atletasDefault = [
     logro: 'Top 3 en Torneos Estatales',
     descripcion: 'Trabajo tactico y mental para competir al maximo nivel.',
     image: alumnasImage5
-  },
-  {
-    nombre: 'Villa Sport',
-    logro: 'Nuevos Talentos en Desarrollo',
-    descripcion: 'Acompanamiento personalizado para formar atletas integrales.',
-    image: alumnasImage4
   },
   {
     nombre: 'Juvenil Femenino',

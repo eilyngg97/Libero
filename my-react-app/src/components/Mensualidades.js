@@ -24,6 +24,7 @@ function Mensualidades() {
 	const { dolar } = useDolar();
 	const theme = useTheme();
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+	const esAdmin = localStorage.getItem('rol') === 'admin';
 	const [mensualidades, setMensualidades] = useState([]);
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
 	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
@@ -107,6 +108,7 @@ function Mensualidades() {
 	};
 
 	const prepararModalPago = async (mensualidad, pagoEditar = null) => {
+		const puedePagarCuotas = esAdmin || mensualidad?.id_alumno?.habilitar_pago_cuotas === true;
 		setPagoInfo(mensualidad);
 		setPagoEnEdicion(pagoEditar);
 		setComprobante(null);
@@ -130,7 +132,7 @@ function Mensualidades() {
 			setPagosPreviosTotal(totalPrevio);
 			setMontoPendiente(restante);
 			if (!pagoEditar) {
-				setMontoPago(mensualidad?.id_alumno?.habilitar_pago_cuotas ? restante : (Number(mensualidad?.monto_esperado) || 0));
+				setMontoPago(puedePagarCuotas ? restante : (Number(mensualidad?.monto_esperado) || 0));
 			}
 		} finally {
 			setPagosLoading(false);
@@ -270,14 +272,14 @@ function Mensualidades() {
 			setErrorRef('Debes ingresar los 6 últimos dígitos de la referencia');
 			return;
 		}
-		const habilitarCuotas = pagoInfo?.id_alumno?.habilitar_pago_cuotas === true;
+		const habilitarCuotas = esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas === true;
 		const montoEsperado = Number(pagoInfo?.monto_esperado) || 0;
 		const montoToPay = habilitarCuotas ? Number(montoPago) : montoEsperado;
 		if (!montoToPay || Number.isNaN(montoToPay) || montoToPay <= 0) {
 			alert('Monto a pagar inválido');
 			return;
 		}
-		if (habilitarCuotas && montoToPay > (Number(montoPendiente) || 0)) {
+		if (montoToPay > (Number(montoPendiente) || 0)) {
 			alert('El monto excede el saldo pendiente');
 			return;
 		}
@@ -901,7 +903,7 @@ function Mensualidades() {
 						onChange={e => setFechaPago(e.target.value)}
 						InputLabelProps={{ shrink: true }}
 					/>
-					{pagoInfo?.id_alumno?.habilitar_pago_cuotas ? (
+					{(esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas) ? (
 						<>
 							<TextField
 								label="Monto a pagar"

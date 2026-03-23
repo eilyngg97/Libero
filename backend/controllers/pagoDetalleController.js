@@ -71,10 +71,11 @@ function validarMontoBs(montoBs) {
   return montoBs === null || (!Number.isNaN(montoBs) && montoBs > 0);
 }
 
-async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null }) {
+async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, actorRol = null }) {
   if (!mensualidad) return { error: { status: 404, payload: { error: 'Mensualidad no encontrada' } } };
 
-  const habilitarCuotas = mensualidad.id_alumno?.habilitar_pago_cuotas === true;
+  const habilitarCuotasAlumno = mensualidad.id_alumno?.habilitar_pago_cuotas === true;
+  const puedePagarCuotas = actorRol === 'admin' || habilitarCuotasAlumno;
   const pagosPrevios = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
   const totalPrevio = pagosPrevios
     .filter((pago) => String(pago._id) !== String(pagoIdExcluir))
@@ -93,7 +94,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null }
     return { error: { status: 400, payload: { error: 'La mensualidad ya está pagada' } } };
   }
 
-  if (!habilitarCuotas && monto < restante) {
+  if (!puedePagarCuotas && monto < restante) {
     return { error: { status: 400, payload: { error: 'Este alumno no tiene habilitado pago en cuotas' } } };
   }
 
@@ -104,7 +105,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null }
   return {
     totalPrevio,
     restante,
-    habilitarCuotas
+    habilitarCuotas: puedePagarCuotas
   };
 }
 
@@ -117,7 +118,7 @@ exports.registrarPago = async (req, res) => {
     const monto = normalizarMonto(monto_pagado);
     const montoBs = normalizarMontoBs(monto_pagado_bs);
     const mensualidad = await obtenerMensualidadConAlumno(id_mensualidad);
-    const validacion = await validarPago({ mensualidad, monto, montoBs });
+    const validacion = await validarPago({ mensualidad, monto, montoBs, actorRol: req.user?.rol });
     if (validacion.error) {
       return res.status(validacion.error.status).json(validacion.error.payload);
     }
@@ -157,7 +158,8 @@ exports.editarPago = async (req, res) => {
       mensualidad,
       monto,
       montoBs,
-      pagoIdExcluir: pago._id
+      pagoIdExcluir: pago._id,
+      actorRol: req.user?.rol
     });
 
     if (validacion.error) {
