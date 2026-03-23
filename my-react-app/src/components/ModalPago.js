@@ -10,6 +10,7 @@ import PaymentsIcon from '@mui/icons-material/Payments';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { useDolar } from '../context/DolarContext';
+import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
 const metodos = [
   {
@@ -45,10 +46,11 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const [comprobante, setComprobante] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [tasaPago, setTasaPago] = useState(null);
   const monto = pago?.monto;
   const { dolar } = useDolar();
   const tasa = dolar?.promedio;
-  const montoBs = (monto !== undefined && monto !== null && tasa) ? Number(monto) * Number(tasa) : null;
+  const montoBs = (monto !== undefined && monto !== null && tasaPago) ? Number(monto) * Number(tasaPago) : null;
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
@@ -65,8 +67,35 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setComprobante(null);
       setSubmitting(false);
       setSubmitError(null);
+      setTasaPago(Number(tasa) || null);
     }
-  }, [open]);
+  }, [open, tasa]);
+
+  useEffect(() => {
+    if (!open || !mostrarFormularioPago || !fechaPago || monto === undefined || monto === null) return;
+
+    let cancelled = false;
+
+    const actualizarMontoConHistorico = async () => {
+      try {
+        const tasaHistorica = await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
+        if (cancelled) return;
+        setTasaPago(Number(tasaHistorica) || null);
+        setMontoPagado(tasaHistorica ? formatMoney(Number(monto) * Number(tasaHistorica)) : '');
+      } catch {
+        if (cancelled) return;
+        const tasaActual = Number(tasa) || null;
+        setTasaPago(tasaActual);
+        setMontoPagado(tasaActual ? formatMoney(Number(monto) * tasaActual) : '');
+      }
+    };
+
+    actualizarMontoConHistorico();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mostrarFormularioPago, fechaPago, monto, tasa]);
 
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);
@@ -75,9 +104,6 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const handleYaPague = () => {
     setMostrarFormularioPago(true);
-    if (montoPagado === '') {
-      setMontoPagado(montoBs !== null ? formatMoney(montoBs) : '');
-    }
     if (fechaPago === '') {
       setFechaPago(new Date().toISOString().slice(0, 10));
     }
@@ -89,12 +115,13 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       return;
     }
     const montoPagadoNum = Number(montoPagado);
-    const montoPagadoUsd = tasa ? (montoPagadoNum / Number(tasa)) : null;
+    const tasaAplicada = Number(tasaPago) || Number(tasa) || null;
+    const montoPagadoUsd = tasaAplicada ? (montoPagadoNum / tasaAplicada) : null;
     if (!montoPagadoNum || Number.isNaN(montoPagadoNum)) {
       setSubmitError('Monto pagado invalido');
       return;
     }
-    if (!tasa || !montoPagadoUsd || Number.isNaN(montoPagadoUsd)) {
+    if (!tasaAplicada || !montoPagadoUsd || Number.isNaN(montoPagadoUsd)) {
       setSubmitError('No se pudo calcular el monto en USD');
       return;
     }
@@ -373,6 +400,9 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     value={fechaPago}
                     onChange={(e) => setFechaPago(e.target.value)}
                   />
+                  <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
+                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/USD` : 'No disponible'}
+                  </Typography>
                   <TextField
                     label="Referencia"
                     fullWidth

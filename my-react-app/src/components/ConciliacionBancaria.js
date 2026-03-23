@@ -20,9 +20,24 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
+const MONTO_TOLERANCIA_BS = 5;
+
 function formatMoney(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
   return Number(value).toFixed(2);
+}
+
+function formatDiferenciaMonto(montoSistema, montoExcel) {
+  if (
+    montoSistema === null || montoSistema === undefined || Number.isNaN(Number(montoSistema))
+    || montoExcel === null || montoExcel === undefined || Number.isNaN(Number(montoExcel))
+  ) {
+    return '-';
+  }
+
+  const diferencia = Number(montoExcel) - Number(montoSistema);
+  const signo = diferencia > 0 ? '+' : '';
+  return `${signo}${formatMoney(diferencia)}`;
 }
 
 function estadoChip(tipo) {
@@ -184,6 +199,10 @@ export default function ConciliacionBancaria() {
         Sube el estado de cuenta en Excel para validar pagos en revision con tres niveles de coincidencia.
       </Typography>
 
+      <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+        La conciliacion usa una tolerancia de monto de hasta Bs {MONTO_TOLERANCIA_BS.toFixed(2)} para los matches.
+      </Alert>
+
       <Paper
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
@@ -247,6 +266,10 @@ export default function ConciliacionBancaria() {
 
       {resultado && (
         <Box sx={{ mt: 2 }}>
+          <Typography variant="body2" sx={{ color: '#475569', mb: 1.5, fontWeight: 600 }}>
+            Criterio actual: si la diferencia entre monto banco y monto sistema es menor o igual a Bs {MONTO_TOLERANCIA_BS.toFixed(2)}, el monto se considera coincidente.
+          </Typography>
+
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
             <Chip label={`Excel: ${resultado.summary?.total_excel || 0}`} sx={{ bgcolor: '#e2e8f0', fontWeight: 700 }} />
             <Chip label={`En revision: ${resultado.summary?.total_sistema_en_revision || 0}`} sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 700 }} />
@@ -265,6 +288,7 @@ export default function ConciliacionBancaria() {
                   <TableCell>Ref. Excel</TableCell>
                   <TableCell>Monto Sistema (Bs)</TableCell>
                   <TableCell>Monto Excel (Bs)</TableCell>
+                  <TableCell>Diferencia (Bs)</TableCell>
                   <TableCell>Fecha Sistema</TableCell>
                   <TableCell>Fecha Excel</TableCell>
                   <TableCell>Motivo</TableCell>
@@ -279,6 +303,7 @@ export default function ConciliacionBancaria() {
                     <TableCell>{fila.referenciaExcel}</TableCell>
                     <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
                     <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
+                    <TableCell>{formatDiferenciaMonto(fila.montoSistema, fila.montoExcel)}</TableCell>
                     <TableCell>{fila.fechaSistema || '-'}</TableCell>
                     <TableCell>{fila.fechaExcel || '-'}</TableCell>
                     <TableCell>{fila.motivo}</TableCell>
@@ -286,7 +311,7 @@ export default function ConciliacionBancaria() {
                 ))}
                 {filasComparativas.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9}>
+                    <TableCell colSpan={10}>
                       <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
                         No hay filas para mostrar.
                       </Typography>

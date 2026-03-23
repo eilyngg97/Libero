@@ -2,6 +2,8 @@ const XLSX = require('xlsx');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
 
+const MONTO_TOLERANCIA_BS = 5;
+
 function normalizarTexto(value) {
   return String(value || '')
     .normalize('NFD')
@@ -98,7 +100,7 @@ function parseFecha(value) {
 
 function areAmountsEqual(a, b) {
   if (a === null || b === null || a === undefined || b === undefined) return false;
-  return Math.abs(Number(a) - Number(b)) <= 0.01;
+  return Math.abs(Number(a) - Number(b)) <= MONTO_TOLERANCIA_BS;
 }
 
 function levenshteinDistance(a, b) {
@@ -254,7 +256,7 @@ exports.previsualizarConciliacion = async (req, res) => {
     const matchTotal = [];
     const matchParcial = [];
 
-    // Nivel 1: match exacto por referencia + monto.
+    // Nivel 1: match total por referencia + monto dentro de tolerancia.
     for (const sistemaIdx of [...sistemaDisponibles]) {
       const sistema = sistemaRows[sistemaIdx];
       const candidatos = [...bancoDisponibles]
@@ -274,10 +276,10 @@ exports.previsualizarConciliacion = async (req, res) => {
 
       bancoDisponibles.delete(bancoIdx);
       sistemaDisponibles.delete(sistemaIdx);
-      matchTotal.push(buildMatchRecord({ banco: mejor, sistema, tipo: 'match_total', motivo: ['referencia (completa o ultimos 6) y monto coinciden'] }));
+      matchTotal.push(buildMatchRecord({ banco: mejor, sistema, tipo: 'match_total', motivo: [`referencia (completa o ultimos 6) y monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS}`] }));
     }
 
-    // Nivel 2: match parcial por monto + (referencia casi igual o misma fecha).
+    // Nivel 2: match parcial por monto dentro de tolerancia + (referencia casi igual o misma fecha).
     for (const sistemaIdx of [...sistemaDisponibles]) {
       const sistema = sistemaRows[sistemaIdx];
       let mejor = null;

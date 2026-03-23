@@ -14,6 +14,7 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { useDolar } from '../context/DolarContext';
+import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
 // Eliminar pagosEjemplo, usaremos datos reales
 
@@ -50,6 +51,7 @@ function PagosAlumno(props) {
   const [errorRef, setErrorRef] = useState('');
   const [comprobante, setComprobante] = useState(null);
   const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
+  const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -117,6 +119,31 @@ function PagosAlumno(props) {
     fetchMensualidades();
   }, [fetchMensualidades]);
 
+  useEffect(() => {
+    if (!modalEditarOpen || !fechaPago) return;
+
+    let cancelled = false;
+
+    const cargarTasaHistorica = async () => {
+      try {
+        const tasaHistorica = await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
+        if (!cancelled) {
+          setTasaPagoHistorica(Number(tasaHistorica) || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setTasaPagoHistorica(Number(tasa) || null);
+        }
+      }
+    };
+
+    cargarTasaHistorica();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [modalEditarOpen, fechaPago, tasa]);
+
   const pagosOrdenados = [...mensualidades].sort(
     (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
   );
@@ -171,6 +198,15 @@ function PagosAlumno(props) {
     return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
   };
 
+  const formatTasaAplicada = (pago) => {
+    const montoUsd = Number(pago?.monto_pagado);
+    const montoBs = Number(pago?.monto_pagado_bs);
+    if (!montoUsd || Number.isNaN(montoUsd) || !montoBs || Number.isNaN(montoBs)) {
+      return '-';
+    }
+    return `${formatMoney(montoBs / montoUsd)} Bs/USD`;
+  };
+
   const formatFechaBonita = (value) => {
     if (!value) return '-';
     const fecha = new Date(value);
@@ -191,6 +227,7 @@ function PagosAlumno(props) {
     setErrorRef('');
     setComprobante(null);
     setQuitarComprobanteActual(false);
+    setTasaPagoHistorica(Number(tasa) || null);
     setModalEditarOpen(true);
   };
 
@@ -217,9 +254,7 @@ function PagosAlumno(props) {
       formData.append('metodo_pago', metodoPago);
       formData.append('referencia', (metodoPago === 'Transferencia' || metodoPago === 'Pago movil') ? referencia : '');
 
-      const montoBs = (Number(detallePago?.monto_pagado_bs) && Number(detallePago?.monto_pagado))
-        ? (monto * (Number(detallePago.monto_pagado_bs) / Number(detallePago.monto_pagado))).toFixed(2)
-        : '';
+      const montoBs = tasaPagoHistorica ? (monto * Number(tasaPagoHistorica)).toFixed(2) : '';
       if (montoBs) formData.append('monto_pagado_bs', montoBs);
 
       if (comprobante) {
@@ -543,6 +578,11 @@ function PagosAlumno(props) {
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: 28, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatTasaAplicada(detallePago)}</Typography>
+                  </Box>
+
+                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Referencia</Typography>
                     <Box sx={{ mt: 0.7, display: 'flex', alignItems: 'center', gap: 0.4 }}>
                       <Typography sx={{ fontSize: 28, fontWeight: 800, color: '#4c6690', lineHeight: 1.12 }}>{detallePago.referencia || '-'}</Typography>
@@ -638,6 +678,10 @@ function PagosAlumno(props) {
                       <Typography sx={{ color: '#334155', mt: 0.25 }}>{formatFechaBonita(pago.fecha_pago)}</Typography>
                     </Box>
                     <Box>
+                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Tasa</Typography>
+                      <Typography sx={{ color: '#334155', mt: 0.25, fontWeight: 700 }}>{formatTasaAplicada(pago)}</Typography>
+                    </Box>
+                    <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
                       <Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
                     </Box>
@@ -699,6 +743,9 @@ function PagosAlumno(props) {
             size="small"
             InputLabelProps={{ shrink: true }}
           />
+          <Typography variant="caption" sx={{ color: '#64748b' }}>
+            Tasa aplicada: {tasaPagoHistorica ? `${formatMoney(tasaPagoHistorica)} Bs/USD` : 'No disponible'}
+          </Typography>
           <TextField
             label="Monto"
             type="number"

@@ -14,6 +14,7 @@ import { exportToCsv } from '../utils/exportCsv';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
+import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -58,6 +59,7 @@ function Mensualidades() {
 	const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
 	const [pagoAEliminar, setPagoAEliminar] = useState(null);
 	const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
+	const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
 
 	const getAuthHeaders = () => {
 		const token = localStorage.getItem('token');
@@ -77,7 +79,33 @@ function Mensualidades() {
 		setPagosPreviosTotal(0);
 		setMontoPendiente(0);
 		setFechaPago(new Date().toISOString().slice(0, 10));
+		setTasaPagoHistorica(null);
 	};
+
+	React.useEffect(() => {
+		if (!modalPago || !fechaPago) return;
+
+		let cancelled = false;
+
+		const cargarTasaHistorica = async () => {
+			try {
+				const tasaHistorica = await obtenerTasaOficialPorFecha(fechaPago, Number(dolar?.promedio) || 0);
+				if (!cancelled) {
+					setTasaPagoHistorica(Number(tasaHistorica) || 0);
+				}
+			} catch {
+				if (!cancelled) {
+					setTasaPagoHistorica(Number(dolar?.promedio) || 0);
+				}
+			}
+		};
+
+		cargarTasaHistorica();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [modalPago, fechaPago, dolar?.promedio]);
 
 	const cargarMensualidades = React.useCallback(async () => {
 		try {
@@ -291,7 +319,7 @@ function Mensualidades() {
 				formData.append('id_mensualidad', pagoInfo._id);
 			}
 			formData.append('monto_pagado', montoToPay);
-			formData.append('monto_pagado_bs', ((Number(montoToPay) || 0) * tasaBCV).toFixed(2));
+			formData.append('monto_pagado_bs', ((Number(montoToPay) || 0) * (tasaPagoHistorica || tasaBCV)).toFixed(2));
 			formData.append('fecha_pago', fechaPago);
 			formData.append('metodo_pago', metodoPago);
 			if (metodoPago === 'Transferencia' || metodoPago === 'Pago movil') {
@@ -326,6 +354,7 @@ function Mensualidades() {
 	};
 
 	const tasaBCV = dolar?.promedio || 0;
+	const tasaPagoActiva = tasaPagoHistorica || tasaBCV;
 	const formatMoney = (value) => {
 		if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
 		return Number(value).toFixed(2);
@@ -919,7 +948,10 @@ function Mensualidades() {
 								disabled={pagosLoading}
 							/>
 							<Typography variant="body2" sx={{ mt: -0.5, mb: 1, color: '#64748b' }}>
-								Monto en Bs: {formatMoney((Number(montoPago) || 0) * tasaBCV)} Bs
+								Monto en Bs: {formatMoney((Number(montoPago) || 0) * tasaPagoActiva)} Bs
+							</Typography>
+							<Typography variant="caption" sx={{ mt: -0.5, mb: 1, color: '#94a3b8', display: 'block' }}>
+								Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/USD
 							</Typography>
 						</>
 					) : (
@@ -934,7 +966,10 @@ function Mensualidades() {
 								disabled
 							/>
 							<Typography variant="body2" sx={{ mt: -0.5, mb: 1, color: '#64748b' }}>
-								Monto en Bs: {formatMoney((pagoInfo.monto_esperado || 0) * tasaBCV)} Bs
+								Monto en Bs: {formatMoney((pagoInfo.monto_esperado || 0) * tasaPagoActiva)} Bs
+							</Typography>
+							<Typography variant="caption" sx={{ mt: -0.5, mb: 1, color: '#94a3b8', display: 'block' }}>
+								Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/USD
 							</Typography>
 						</>
 					)}
