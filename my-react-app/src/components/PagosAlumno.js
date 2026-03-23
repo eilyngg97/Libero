@@ -209,7 +209,22 @@ function PagosAlumno(props) {
 
   const formatFechaBonita = (value) => {
     if (!value) return '-';
-    const fecha = new Date(value);
+
+    // Evita desfases por zona horaria cuando la API envia fechas ISO (YYYY-MM-DD o YYYY-MM-DDTHH:mm:ssZ).
+    // Tomamos la parte de fecha y la reconstruimos en horario local.
+    const raw = String(value).trim();
+    const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+    let fecha;
+    if (matchIso) {
+      const year = Number(matchIso[1]);
+      const month = Number(matchIso[2]);
+      const day = Number(matchIso[3]);
+      fecha = new Date(year, month - 1, day);
+    } else {
+      fecha = new Date(value);
+    }
+
     if (Number.isNaN(fecha.getTime())) return '-';
     return fecha.toLocaleDateString('es-ES', {
       day: '2-digit',

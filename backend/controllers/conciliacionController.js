@@ -141,7 +141,9 @@ function parseExcelRows(fileBuffer) {
   if (!firstSheetName) throw new Error('El archivo Excel no tiene hojas');
 
   const worksheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  // raw:false prioriza el valor mostrado/formateado en Excel (ej: 6.702,07)
+  // y evita perder separadores por interpretaciones numericas internas.
+  const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false });
   if (!rows.length) throw new Error('El archivo Excel esta vacio');
 
   const sample = rows[0];
