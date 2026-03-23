@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+require('dotenv').config();
 const { spawnSync } = require('child_process');
 const { getMongoUri, getJwtSigningSecret, getJwtVerificationSecrets } = require('../config/secrets');
 
