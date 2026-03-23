@@ -130,7 +130,7 @@ function levenshteinDistance(a, b) {
 
 function findColumnKey(headersMap, candidates) {
   for (const candidate of candidates) {
-    if (headersMap[candidate]) return headersMap[candidate];
+    if (headersMap[candidate] !== undefined) return headersMap[candidate];
   }
   return null;
 }
@@ -141,32 +141,38 @@ function parseExcelRows(fileBuffer) {
   if (!firstSheetName) throw new Error('El archivo Excel no tiene hojas');
 
   const worksheet = workbook.Sheets[firstSheetName];
-  // raw:false prioriza el valor mostrado/formateado en Excel (ej: 6.702,07)
-  // y evita perder separadores por interpretaciones numericas internas.
-  const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false });
+  // Leemos como AOA con raw:false para preservar el valor visual de la celda.
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    defval: '',
+    raw: false,
+    blankrows: false
+  });
   if (!rows.length) throw new Error('El archivo Excel esta vacio');
 
-  const sample = rows[0];
+  const headerRow = Array.isArray(rows[0]) ? rows[0] : [];
   const headersMap = {};
-  Object.keys(sample).forEach((key) => {
-    headersMap[normalizarTexto(key)] = key;
+  headerRow.forEach((header, index) => {
+    const key = normalizarTexto(header);
+    if (key) headersMap[key] = index;
   });
 
-  const fechaKey = findColumnKey(headersMap, ['fecha', 'date']);
-  const referenciaKey = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
-  const montoKey = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe']);
-  const descripcionKey = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
+  const fechaIdx = findColumnKey(headersMap, ['fecha', 'date']);
+  const referenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
+  const montoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe']);
+  const descripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
 
-  if (!referenciaKey || !montoKey) {
+  if (referenciaIdx === null || montoIdx === null) {
     throw new Error('No se encontraron columnas requeridas: Referencia y Monto');
   }
 
-  const parsedRows = rows
+  const dataRows = rows.slice(1);
+  const parsedRows = dataRows
     .map((row, idx) => {
-      const referencia = normalizarReferencia(row[referenciaKey]);
-      const montoBs = parseMonto(row[montoKey]);
-      const fecha = fechaKey ? parseFecha(row[fechaKey]) : null;
-      const descripcion = descripcionKey ? String(row[descripcionKey] || '').trim() : '';
+      const referencia = normalizarReferencia(row[referenciaIdx]);
+      const montoBs = parseMonto(row[montoIdx]);
+      const fecha = fechaIdx !== null ? parseFecha(row[fechaIdx]) : null;
+      const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
 
       if (!referencia && (montoBs === null || montoBs === undefined)) return null;
 
