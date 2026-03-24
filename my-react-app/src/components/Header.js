@@ -14,8 +14,6 @@ import MenuItem from '@mui/material/MenuItem';
 
 function Header({ titulo, onMenuClick }) {
   const navigate = useNavigate();
-  // Puedes reemplazar la URL por la foto real del usuario
-  const userPhoto = 'https://i.pravatar.cc/40?img=3';
   const [anchorEl, setAnchorEl] = useState(null);
   const openMenu = Boolean(anchorEl);
   let usuario = localStorage.getItem('usuario') || '';
@@ -25,6 +23,14 @@ function Header({ titulo, onMenuClick }) {
     usuario = null;
   }
   console.log('usuario localStorage:', usuario);
+
+  const userInitials = String(usuario?.nombre || 'Usuario')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() || '')
+    .join('') || 'U';
 
   const handleMenuClick = (event) => {
     setAnchorEl(event.currentTarget);
@@ -59,7 +65,12 @@ function Header({ titulo, onMenuClick }) {
             {usuario && `Bienvenido, ${usuario.nombre}`}
           </Typography>
           <IconButton onClick={handleMenuClick} sx={{ p: 0 }}>
-            <Avatar alt="Usuario" src={userPhoto} sx={{ width: 40, height: 40 }} />
+            <Avatar
+              alt={usuario?.nombre || 'Usuario'}
+              sx={{ width: 40, height: 40, bgcolor: '#0f172a', color: '#ffffff', fontWeight: 800, fontSize: 14 }}
+            >
+              {userInitials}
+            </Avatar>
             <ArrowDropDownIcon sx={{ color: '#1e293b', ml: 0.5 }} />
           </IconButton>
           <Menu

@@ -64,6 +64,7 @@ function AlumnoDetalle() {
   const [representante, setRepresentante] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [openFotoAlumno, setOpenFotoAlumno] = useState(false);
   const [openFotoCedula, setOpenFotoCedula] = useState(false);
 
   useEffect(() => {
@@ -141,7 +142,15 @@ function AlumnoDetalle() {
                 <Avatar
                   src={mediaUrl(alumno.foto) || ""}
                   alt="Foto"
-                  sx={{ width: 140, height: 140, boxShadow: '0 8px 20px rgba(15, 23, 42, 0.15)' }}
+                  onClick={() => alumno.foto && setOpenFotoAlumno(true)}
+                  sx={{
+                    width: 140,
+                    height: 140,
+                    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.15)',
+                    cursor: alumno.foto ? 'zoom-in' : 'default',
+                    transition: 'transform 0.2s ease',
+                    '&:hover': alumno.foto ? { transform: 'scale(1.03)' } : undefined
+                  }}
                 />
                 <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f172a' }}>
                   {alumno.nombres} {alumno.apellidos}
@@ -374,6 +383,32 @@ function AlumnoDetalle() {
         </Box>
       </Box>
       </Box>
+      <Dialog
+        open={openFotoAlumno}
+        onClose={() => setOpenFotoAlumno(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          Foto del alumno
+          <IconButton aria-label="cerrar" onClick={() => setOpenFotoAlumno(false)} size="small">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {alumno.foto ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 280, backgroundColor: '#f8fafc', borderRadius: 2, p: 1 }}>
+              <img
+                src={mediaUrl(alumno.foto)}
+                alt={`Foto de ${alumno.nombres} ${alumno.apellidos}`}
+                style={{ maxWidth: '100%', maxHeight: '75vh', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: 8 }}
+              />
+            </Box>
+          ) : (
+            <Typography variant="body2">Foto del alumno no disponible.</Typography>
+          )}
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={openFotoCedula}
         onClose={() => setOpenFotoCedula(false)}
