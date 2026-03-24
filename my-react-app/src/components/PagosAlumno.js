@@ -13,13 +13,16 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import PaymentIcon from '@mui/icons-material/Payment';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
+import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
 
 // Eliminar pagosEjemplo, usaremos datos reales
 
 function PagosAlumno(props) {
   const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo'];
+
   const { dolar } = useDolar();
   const tasa = Number(dolar?.promedio);
   const [openModalPago, setOpenModalPago] = useState(false);
@@ -235,10 +238,10 @@ function PagosAlumno(props) {
 
   const abrirModalEditarPago = (pago) => {
     setEditandoPago(pago);
-    setMetodoPago(pago?.metodo_pago || metodosPago[0]);
+    setMetodoPago(normalizeMetodoPago(pago?.metodo_pago));
     setMontoPago(Number(pago?.monto_pagado) || '');
     setFechaPago(pago?.fecha_pago ? new Date(pago.fecha_pago).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
-    setReferencia(pago?.referencia || '');
+    setReferencia(pago?.referencia ? String(pago.referencia) : '');
     setErrorRef('');
     setComprobante(null);
     setQuitarComprobanteActual(false);
@@ -248,7 +251,7 @@ function PagosAlumno(props) {
 
   const guardarEdicionPago = async () => {
     if (!editandoPago?._id || !mensualidadDetalle?.id) return;
-    if ((metodoPago === 'Transferencia' || metodoPago === 'Pago movil') && referencia.length !== 6) {
+    if (metodoRequiereReferencia(metodoPago) && referencia.length !== 6) {
       setErrorRef('Debes ingresar los 6 ultimos digitos de la referencia');
       return;
     }
@@ -266,8 +269,8 @@ function PagosAlumno(props) {
       const formData = new FormData();
       formData.append('monto_pagado', monto);
       formData.append('fecha_pago', fechaPago);
-      formData.append('metodo_pago', metodoPago);
-      formData.append('referencia', (metodoPago === 'Transferencia' || metodoPago === 'Pago movil') ? referencia : '');
+      formData.append('metodo_pago', normalizeMetodoPago(metodoPago));
+      formData.append('referencia', metodoRequiereReferencia(metodoPago) ? referencia : '');
 
       const montoBs = tasaPagoHistorica ? (monto * Number(tasaPagoHistorica)).toFixed(2) : '';
       if (montoBs) formData.append('monto_pagado_bs', montoBs);
@@ -330,6 +333,19 @@ function PagosAlumno(props) {
   // Paginación
   const totalPaginas = Math.ceil(pagosFiltrados.length / pagosPorPagina);
   const pagosPagina = pagosFiltrados.slice((pagina - 1) * pagosPorPagina, pagina * pagosPorPagina);
+
+  const inputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      backgroundColor: '#ffffff'
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: '#e2e8f0'
+    },
+    '& .MuiInputLabel-root': {
+      color: '#64748b'
+    }
+  };
 
   return (
     <Box sx={{ p: { md: 3 } }}>
@@ -734,16 +750,59 @@ function PagosAlumno(props) {
           setSuccessMessage('Pago registrado');
         }}
       />
-      <Dialog open={modalEditarOpen} onClose={() => { if (!guardandoEdicion) setModalEditarOpen(false); }} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Editar pago</DialogTitle>
-        <DialogContent sx={{ display: 'grid', gap: 1.25, pt: '12px !important' }}>
+      <Dialog
+        open={modalEditarOpen}
+        onClose={() => { if (!guardandoEdicion) setModalEditarOpen(false); }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle
+          disableTypography
+          sx={{
+            p: 3,
+            pb: 1.5,
+            backgroundColor: '#ffffff'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: 2,
+                backgroundColor: '#fff2e7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <PaymentIcon sx={{ color: '#ff7a00' }} />
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                Editar Pago
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.25 }}>
+                Corrige los datos del pago y guarda los cambios.
+              </Typography>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ p: 3, pt: 1.5, bgcolor: '#f8fafc' }}>
           <TextField
             select
-            label="Metodo de pago"
+            label="Método de pago"
             value={metodoPago}
-            onChange={(e) => { setMetodoPago(e.target.value); setErrorRef(''); if (e.target.value === 'Efectivo') setReferencia(''); }}
+            onChange={(e) => {
+              const nuevoMetodo = normalizeMetodoPago(e.target.value);
+              setMetodoPago(nuevoMetodo);
+              if (!metodoRequiereReferencia(nuevoMetodo)) setReferencia('');
+              setErrorRef('');
+            }}
             fullWidth
+            margin="normal"
             size="small"
+            sx={inputSx}
           >
             {metodosPago.map((metodo) => (
               <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
@@ -755,40 +814,73 @@ function PagosAlumno(props) {
             value={fechaPago}
             onChange={(e) => setFechaPago(e.target.value)}
             fullWidth
+            margin="normal"
             size="small"
+            sx={inputSx}
             InputLabelProps={{ shrink: true }}
           />
-          <Typography variant="caption" sx={{ color: '#64748b' }}>
+          <Typography variant="caption" sx={{ mt: 0.25, mb: 1, color: '#94a3b8', display: 'block' }}>
             Tasa aplicada: {tasaPagoHistorica ? `${formatMoney(tasaPagoHistorica)} Bs/USD` : 'No disponible'}
           </Typography>
           <TextField
-            label="Monto"
+            label="Monto a pagar"
             type="number"
             value={montoPago}
             onChange={(e) => setMontoPago(e.target.value)}
             fullWidth
+            margin="normal"
             size="small"
+            sx={inputSx}
             inputProps={{ min: 0, step: '0.01' }}
           />
-          {(metodoPago === 'Transferencia' || metodoPago === 'Pago movil') && (
+          {metodoRequiereReferencia(metodoPago) && (
             <TextField
-              label="6 ultimos digitos de referencia"
+              label="6 últimos dígitos de referencia"
               value={referencia}
               onChange={(e) => setReferencia(e.target.value.replace(/[^0-9]/g, ''))}
               fullWidth
+              margin="normal"
               size="small"
+              sx={inputSx}
               inputProps={{ maxLength: 6 }}
               error={!!errorRef}
               helperText={errorRef}
             />
           )}
-          <Box component="label" sx={{ mt: 0.5, border: '1px dashed #cbd5f0', borderRadius: 2, p: 1.5, textAlign: 'center', cursor: 'pointer' }}>
-            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>Adjuntar nuevo comprobante</Typography>
-            <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG o PDF</Typography>
+          <Box
+            component="label"
+            sx={{
+              mt: 2,
+              border: '1px dashed #cbd5f0',
+              borderRadius: 2,
+              p: 2,
+              textAlign: 'center',
+              backgroundColor: '#f8fafc',
+              display: 'block',
+              cursor: 'pointer'
+            }}
+          >
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                backgroundColor: '#fff2e7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mx: 'auto',
+                mb: 1
+              }}
+            >
+              <PaymentIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
+            </Box>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>Haz clic para adjuntar comprobante</Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG hasta 5MB</Typography>
             <input type="file" hidden onChange={(e) => { setComprobante(e.target.files[0]); setQuitarComprobanteActual(false); }} />
           </Box>
           {comprobante && (
-            <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, px: 1.25, py: 0.75, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box sx={{ mt: 1.5, px: 1.5, py: 1, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                 <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
                 <Typography variant="body2" sx={{ color: '#475569', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -801,7 +893,7 @@ function PagosAlumno(props) {
             </Box>
           )}
           {editandoPago?.comprobante_url && !comprobante && (
-            <Box sx={{ p: 1.25, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#ffffff' }}>
+            <Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#ffffff' }}>
               <Typography variant="body2" sx={{ color: '#64748b', mb: 0.75 }}>Hay un comprobante asociado a este pago.</Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                 <Button size="small" onClick={() => handleVerComprobante(editandoPago.comprobante_url)}>Ver actual</Button>
@@ -809,12 +901,22 @@ function PagosAlumno(props) {
                   {quitarComprobanteActual ? 'Deshacer quitar comprobante' : 'Quitar comprobante actual'}
                 </Button>
               </Box>
+              {quitarComprobanteActual && (
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#b91c1c' }}>
+                  Al guardar, este pago quedará sin comprobante.
+                </Typography>
+              )}
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setModalEditarOpen(false)} disabled={guardandoEdicion}>Cancelar</Button>
-          <Button variant="contained" onClick={guardarEdicionPago} disabled={guardandoEdicion}>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1, justifyContent: 'flex-end', gap: 1.5 }}>
+          <Button onClick={() => setModalEditarOpen(false)} disabled={guardandoEdicion} sx={{ color: '#64748b', fontWeight: 700 }}>Cancelar</Button>
+          <Button
+            variant="contained"
+            onClick={guardarEdicionPago}
+            disabled={guardandoEdicion}
+            sx={{ bgcolor: '#ff7a00', '&:hover': { bgcolor: '#f97316' }, fontWeight: 800, borderRadius: 2, px: 3 }}
+          >
             {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
           </Button>
         </DialogActions>

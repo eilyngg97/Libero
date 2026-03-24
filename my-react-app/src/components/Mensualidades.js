@@ -15,6 +15,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
+import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -153,8 +154,8 @@ function Mensualidades() {
 		setComprobante(null);
 		setQuitarComprobanteActual(false);
 		setErrorRef('');
-		setMetodoPago(pagoEditar?.metodo_pago || metodosPago[0]);
-		setReferencia(pagoEditar?.referencia || '');
+		setMetodoPago(normalizeMetodoPago(pagoEditar?.metodo_pago));
+		setReferencia(pagoEditar?.referencia ? String(pagoEditar.referencia) : '');
 		setFechaPago(getInputDateFromApi(pagoEditar?.fecha_pago));
 		setModalPago(true);
 		setPagosLoading(true);
@@ -219,7 +220,6 @@ function Mensualidades() {
 	};
 
 	const handleEditarPago = (pago, mensualidad = mensualidadDetalle) => {
-		setModalDetalle(false);
 		prepararModalPago(mensualidad, pago);
 	};
 
@@ -307,7 +307,7 @@ function Mensualidades() {
 	const registrarPago = async () => {
 		if (guardandoPago) return;
 		// Validar numero de digitos de referencia
-		if ((metodoPago === 'Transferencia' || metodoPago === 'Pago movil') && referencia.length !== 6) {
+		if (metodoRequiereReferencia(metodoPago) && referencia.length !== 6) {
 			setErrorRef('Debes ingresar los 6 últimos dígitos de la referencia');
 			return;
 		}
@@ -332,8 +332,8 @@ function Mensualidades() {
 			formData.append('monto_pagado', montoToPay);
 			formData.append('monto_pagado_bs', ((Number(montoToPay) || 0) * (tasaPagoHistorica || tasaBCV)).toFixed(2));
 			formData.append('fecha_pago', fechaPago);
-			formData.append('metodo_pago', metodoPago);
-			if (metodoPago === 'Transferencia' || metodoPago === 'Pago movil') {
+			formData.append('metodo_pago', normalizeMetodoPago(metodoPago));
+			if (metodoRequiereReferencia(metodoPago)) {
 				formData.append('referencia', referencia);
 			} else {
 				formData.append('referencia', '');
@@ -968,7 +968,12 @@ function Mensualidades() {
 						size="small"
 						sx={inputSx}
 						value={metodoPago}
-						onChange={e => { setMetodoPago(e.target.value); setReferencia(''); setErrorRef(''); }}
+						onChange={e => {
+							const nuevoMetodo = normalizeMetodoPago(e.target.value);
+							setMetodoPago(nuevoMetodo);
+							if (!metodoRequiereReferencia(nuevoMetodo)) setReferencia('');
+							setErrorRef('');
+						}}
 					>
 						{metodosPago.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
 					</TextField>
@@ -1024,7 +1029,7 @@ function Mensualidades() {
 							</Typography>
 						</>
 					)}
-					{(metodoPago === 'Transferencia' || metodoPago === 'Pago movil') && (
+					{metodoRequiereReferencia(metodoPago) && (
 						<TextField
 							label="6 últimos dígitos de referencia"
 							fullWidth
