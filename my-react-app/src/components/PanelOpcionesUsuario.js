@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Divider } from '@mui/material';
+import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Divider, Alert } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -24,8 +24,12 @@ function PanelOpcionesUsuario() {
   const [juegosAlumno, setJuegosAlumno] = useState([]);
   const [juegosLoading, setJuegosLoading] = useState(false);
   const [juegosError, setJuegosError] = useState('');
+  const [pedidosUniforme, setPedidosUniforme] = useState([]);
+  const [uniformesLoading, setUniformesLoading] = useState(false);
+  const [uniformesError, setUniformesError] = useState('');
   const alumno = location.state?.alumno;
   const sede = location.state?.sede;
+  const token = localStorage.getItem('token');
 
   const handleRespuestaJuego = async (torneoId, partidoId, estado) => {
     if (!alumno?._id) return;
@@ -125,6 +129,32 @@ function PanelOpcionesUsuario() {
     fetchMensualidades();
   }, [alumno?._id]);
 
+  useEffect(() => {
+    if (!alumno?._id) return;
+
+    const fetchPedidosUniforme = async () => {
+      setUniformesLoading(true);
+      setUniformesError('');
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/mis?alumnoId=${alumno._id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data)) {
+          throw new Error(data?.error || 'No se pudieron cargar las solicitudes de uniforme');
+        }
+        setPedidosUniforme(data);
+      } catch (err) {
+        setPedidosUniforme([]);
+        setUniformesError(err.message || 'No se pudieron cargar las solicitudes de uniforme');
+      } finally {
+        setUniformesLoading(false);
+      }
+    };
+
+    fetchPedidosUniforme();
+  }, [alumno?._id, token]);
+
   const handleRespuestaTorneo = async (torneoId, estado) => {
     if (!alumno?._id) return;
     try {
@@ -220,6 +250,43 @@ function PanelOpcionesUsuario() {
     };
   }, [mensualidades, mensualidadesError, mensualidadesLoading]);
 
+  const uniformesPendientesPago = useMemo(
+    () => pedidosUniforme.filter((pedido) => pedido.estado === 'esperando_pago'),
+    [pedidosUniforme]
+  );
+
+  const resumenUniforme = useMemo(() => {
+    if (uniformesLoading) {
+      return {
+        label: 'Cargando',
+        detalle: 'Revisando solicitudes de uniforme',
+        color: 'info'
+      };
+    }
+
+    if (uniformesError) {
+      return {
+        label: 'Sin datos',
+        detalle: 'No se pudieron cargar tus solicitudes de uniforme',
+        color: 'warning'
+      };
+    }
+
+    if (uniformesPendientesPago.length > 0) {
+      return {
+        label: 'Pago pendiente',
+        detalle: `Tienes ${uniformesPendientesPago.length} solicitud${uniformesPendientesPago.length > 1 ? 'es' : ''} de uniforme esperando pago`,
+        color: 'warning'
+      };
+    }
+
+    return {
+      label: 'Sin pendientes',
+      detalle: 'No tienes solicitudes de uniforme por pagar',
+      color: 'success'
+    };
+  }, [uniformesError, uniformesLoading, uniformesPendientesPago]);
+
   return (
     <Box sx={{ p: 2 }}>
         <Box sx={{ mb: 2 }}>
@@ -230,6 +297,29 @@ function PanelOpcionesUsuario() {
             Aqui tienes el resumen de actividades de {alumno?.nombres || 'tu cuenta'}.
           </Typography>
         </Box>
+        {uniformesPendientesPago.length > 0 && (
+          <Alert
+            severity="warning"
+            sx={{
+              mb: 2,
+              borderRadius: 2,
+              alignItems: 'center',
+              '& .MuiAlert-message': { width: '100%' }
+            }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => navigate('/solicitud-uniforme', { state: { alumno, sede } })}
+                sx={{ fontWeight: 700 }}
+              >
+                Pagar ahora
+              </Button>
+            }
+          >
+            Tienes {uniformesPendientesPago.length} solicitud{uniformesPendientesPago.length > 1 ? 'es' : ''} de uniforme esperando pago.
+          </Alert>
+        )}
         <Grid container spacing={4} sx={{ mt: 3 }}>
           <Grid item size={{ xs:12, md:8 }}>
             <Grid container spacing={2.5} mt={1} justifyContent="center">
@@ -394,6 +484,20 @@ function PanelOpcionesUsuario() {
                   </IconButton>
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>Solicitar uniforme</Typography>
                   <Typography variant="body2">Solicita tu uniforme</Typography>
+                  <Chip
+                    label={resumenUniforme.label}
+                    size="small"
+                    sx={{
+                      mt: 1,
+                      bgcolor: uniformesPendientesPago.length > 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.14)',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      border: '1px solid rgba(255,255,255,0.24)'
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                    {resumenUniforme.detalle}
+                  </Typography>
                   <ShoppingBagIcon
                     className="bg-icon"
                     sx={{
@@ -481,6 +585,48 @@ function PanelOpcionesUsuario() {
                   }}
                 >
                   Pagar ahora
+                </Button>
+              </Box>
+              <Box
+                sx={{
+                  mt: 2,
+                  p: 2,
+                  borderRadius: 3,
+                  border: '1px solid #e5e7eb',
+                  backgroundColor: 'white',
+                  boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ color: '#64748b', fontWeight: 700, mb: 1 }}>
+                  Uniformes
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  {resumenUniforme.color === 'success' && <CheckCircleIcon color="success" />}
+                  {(resumenUniforme.color === 'warning' || resumenUniforme.color === 'info') && (
+                    <PendingActionsIcon color={resumenUniforme.color} />
+                  )}
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                    {resumenUniforme.label}
+                  </Typography>
+                </Box>
+                <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>
+                  {resumenUniforme.detalle}
+                </Typography>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  endIcon={<ArrowForwardIosIcon sx={{ fontSize: 16 }} />}
+                  onClick={() => navigate('/solicitud-uniforme', { state: { alumno, sede } })}
+                  sx={{
+                    mt: 1.5,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #27c86b 0%, #0ea577 100%)',
+                    '&:hover': { background: 'linear-gradient(135deg, #27c86b 0%, #0ea577 100%)' }
+                  }}
+                >
+                  Ver solicitudes
                 </Button>
               </Box>
             </Box>

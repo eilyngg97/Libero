@@ -10,6 +10,7 @@ import {
   DialogTitle,
   FormControl,
   Grid,
+  IconButton,
   InputLabel,
   MenuItem,
   Paper,
@@ -24,6 +25,9 @@ import {
   TextField,
   Typography
 } from '@mui/material';
+import PaymentIcon from '@mui/icons-material/Payment';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import CloseIcon from '@mui/icons-material/Close';
 import { useDolar } from '../context/DolarContext';
 
 const TALLAS = ['S', 'M', 'L', 'XL'];
@@ -54,6 +58,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [prendasError, setPrendasError] = useState('');
   const [prenda, setPrenda] = useState('');
   const [talla, setTalla] = useState('');
+  const [nombrePersonalizado, setNombrePersonalizado] = useState('');
+  const [numeroFranela, setNumeroFranela] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -140,6 +146,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       formData.append('sedeId', sedeId);
       formData.append('prenda', prenda);
       formData.append('talla', talla);
+      formData.append('nombrePersonalizado', nombrePersonalizado);
+      formData.append('numeroFranela', numeroFranela);
 
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
         method: 'POST',
@@ -151,6 +159,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
       setPrenda('');
       setTalla('');
+      setNombrePersonalizado('');
+      setNumeroFranela('');
       setSuccessMessage('Pedido realizado con exito');
       onGuardar && onGuardar(data);
       await fetchPedidos();
@@ -237,6 +247,19 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
   const montoPagoBs = pedidoPago?.precio && tasaBCV ? Number(pedidoPago.precio) * tasaBCV : null;
 
+  const inputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      backgroundColor: '#ffffff'
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: '#e2e8f0'
+    },
+    '& .MuiInputLabel-root': {
+      color: '#64748b'
+    }
+  };
+
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
 
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
@@ -309,6 +332,24 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     </Select>
                   </FormControl>
                 </Grid>
+                <Grid item size={{ xs: 12, md: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="Nombre personalizado"
+                    value={nombrePersonalizado}
+                    onChange={(event) => setNombrePersonalizado(event.target.value)}
+                    helperText="Opcional"
+                  />
+                </Grid>
+                <Grid item size={{ xs: 12, md: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="Numero de franela"
+                    value={numeroFranela}
+                    onChange={(event) => setNumeroFranela(event.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
+                    helperText="Opcional"
+                  />
+                </Grid>
               </Grid>
               {prendasError && (
                 <Typography variant="body2" color="error" sx={{ mb: 2 }}>
@@ -336,6 +377,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     <TableRow>
                       <TableCell>Prenda</TableCell>
                       <TableCell>Talla</TableCell>
+                      <TableCell>Nombre</TableCell>
+                      <TableCell>Numero</TableCell>
                       <TableCell>Precio</TableCell>
                       <TableCell>Pago</TableCell>
                       <TableCell>Fecha</TableCell>
@@ -348,6 +391,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                       <TableRow key={pedido._id}>
                         <TableCell>{pedido.prenda}</TableCell>
                         <TableCell>{pedido.talla}</TableCell>
+                        <TableCell>{pedido.nombre_personalizado || '-'}</TableCell>
+                        <TableCell>{pedido.numero_franela || '-'}</TableCell>
                         <TableCell>
                           <Typography sx={{ fontWeight: 700 }}>${formatMoney(pedido.precio)}</Typography>
                           {tasaBCV ? (
@@ -445,14 +490,82 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={pagoDialogOpen} onClose={closePagoDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Realizar pago del uniforme</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'grid', gap: 2, pt: 1 }}>
-            <Typography><b>Prenda:</b> {pedidoPago?.prenda || '-'}</Typography>
-            <Typography>
-              <b>Monto:</b> ${formatMoney(pedidoPago?.precio)}{montoPagoBs ? ` / Bs. ${formatMoney(montoPagoBs)}` : ''}
-            </Typography>
+      <Dialog
+        open={pagoDialogOpen}
+        onClose={closePagoDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle
+          disableTypography
+          sx={{
+            p: 3,
+            pb: 1.5,
+            backgroundColor: '#ffffff'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: 2,
+                backgroundColor: '#fff2e7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <PaymentIcon sx={{ color: '#ff7a00' }} />
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                Realizar pago del uniforme
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.25 }}>
+                Confirma los datos y carga el comprobante para validar el pago.
+              </Typography>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ p: 3, pt: 1.5, bgcolor: '#f8fafc' }}>
+          <Box sx={{ display: 'grid', gap: 2 }}>
+            <Box
+              sx={{
+                position: 'relative',
+                bgcolor: '#ffffff',
+                borderRadius: 2.5,
+                border: '1px solid #e7eaf2',
+                p: 2,
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 6,
+                  borderTopLeftRadius: 10,
+                  borderTopRightRadius: 10,
+                  background: 'linear-gradient(90deg, #ff8a00 0%, #8a4b00 100%)'
+                }
+              }}
+            >
+              <Box sx={{ pt: 1.25, display: 'grid', gap: 1 }}>
+                <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 700 }}>
+                  Prenda
+                </Typography>
+                <Typography sx={{ color: '#0f172a', fontWeight: 800 }}>
+                  {pedidoPago?.prenda || '-'}
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 700, mt: 0.75 }}>
+                  Monto
+                </Typography>
+                <Typography sx={{ color: '#9a5a00', fontWeight: 900, fontSize: 18 }}>
+                  ${formatMoney(pedidoPago?.precio)}{montoPagoBs ? ` / Bs. ${formatMoney(montoPagoBs)}` : ''}
+                </Typography>
+              </Box>
+            </Box>
             <FormControl fullWidth>
               <InputLabel id="metodo-pago-uniforme-label">Metodo de pago</InputLabel>
               <Select
@@ -460,6 +573,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                 value={metodoPago}
                 label="Metodo de pago"
                 onChange={(event) => setMetodoPago(event.target.value)}
+                size="small"
+                sx={inputSx}
               >
                 {METODOS_PAGO.map((item) => (
                   <MenuItem key={item} value={item}>{item}</MenuItem>
@@ -469,23 +584,68 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
             <TextField
               label="Referencia"
               value={referencia}
-              onChange={(event) => setReferencia(event.target.value)}
+              onChange={(event) => setReferencia(event.target.value.replace(/[^0-9]/g, '').slice(0, 20))}
+              size="small"
+              sx={inputSx}
               helperText={metodoPago === 'Transferencia' || metodoPago === 'Pago movil' ? 'Minimo 6 digitos' : ''}
             />
-            <Button variant="outlined" component="label">
-              Adjuntar comprobante
+            <Box
+              component="label"
+              sx={{
+                mt: 0.5,
+                border: '1px dashed #cbd5f0',
+                borderRadius: 2,
+                p: 2,
+                textAlign: 'center',
+                backgroundColor: '#f8fafc',
+                display: 'block',
+                cursor: 'pointer'
+              }}
+            >
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff2e7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mx: 'auto',
+                  mb: 1
+                }}
+              >
+                <PaymentIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
+              </Box>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>Haz clic para adjuntar comprobante</Typography>
+              <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG o PDF hasta 5MB</Typography>
               <input type="file" hidden onChange={(event) => setComprobante(event.target.files?.[0] || null)} />
-            </Button>
+            </Box>
             {comprobante && (
-              <Typography variant="body2" sx={{ color: '#64748b' }}>
-                Archivo: {comprobante.name}
-              </Typography>
+              <Box sx={{ mt: 0.25, px: 1.5, py: 1, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                  <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
+                  <Typography variant="body2" sx={{ color: '#475569', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {comprobante.name}
+                  </Typography>
+                </Box>
+                <IconButton size="small" onClick={() => setComprobante(null)}>
+                  <CloseIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+                </IconButton>
+              </Box>
             )}
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={closePagoDialog} disabled={submittingPago}>Cancelar</Button>
-          <Button onClick={handlePagarPedido} variant="contained" disabled={submittingPago}>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1, justifyContent: 'flex-end', gap: 1.5 }}>
+          <Button onClick={closePagoDialog} disabled={submittingPago} sx={{ color: '#64748b', fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handlePagarPedido}
+            variant="contained"
+            disabled={submittingPago}
+            sx={{ bgcolor: '#ff7a00', '&:hover': { bgcolor: '#f97316' }, fontWeight: 800, borderRadius: 2, px: 3 }}
+          >
             {submittingPago ? 'Procesando...' : 'Confirmar pago'}
           </Button>
         </DialogActions>

@@ -26,6 +26,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { mediaUrl } from '../utils/mediaUrl';
+import { useSede } from '../context/SedeContext';
 
 const ESTADO_LABELS = {
   pendiente: 'Pendiente',
@@ -62,6 +63,7 @@ function ListadoSolicitudesUniformes() {
   const token = localStorage.getItem('token');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { sedeSeleccionada } = useSede();
 
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -92,7 +94,11 @@ function ListadoSolicitudesUniformes() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
+      const params = new URLSearchParams();
+      if (sedeSeleccionada?._id) params.set('sedeId', sedeSeleccionada._id);
+
+      const query = params.toString();
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos${query ? `?${query}` : ''}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       const data = await res.json();
@@ -108,7 +114,7 @@ function ListadoSolicitudesUniformes() {
 
   useEffect(() => {
     fetchPedidos();
-  }, []);
+  }, [sedeSeleccionada?._id]);
 
   const openSolicitudPagoDialog = (pedido) => {
     setPedidoSeleccionado(pedido);
@@ -294,6 +300,9 @@ function ListadoSolicitudesUniformes() {
       </Snackbar>
 
       <Typography variant="h5" sx={{ mb: 2 }}>Pedidos de Uniformes</Typography>
+      <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
+        Sede: {sedeSeleccionada?.nombre || 'Todas'}
+      </Typography>
       {loading ? (
         <Typography>Cargando...</Typography>
       ) : error ? (
@@ -321,6 +330,8 @@ function ListadoSolicitudesUniformes() {
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Sede:</b> {pedido.sede?.nombre || '-'}</Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Prenda:</b> {pedido.prenda || '-'}</Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Talla:</b> {pedido.talla || '-'}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Nombre:</b> {pedido.nombre_personalizado || '-'}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Numero:</b> {pedido.numero_franela || '-'}</Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> ${formatMoney(pedido.precio)}</Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Método:</b> {pedido.metodo_pago || '-'}</Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
@@ -355,6 +366,8 @@ function ListadoSolicitudesUniformes() {
                 <TableCell>Sede</TableCell>
                 <TableCell>Prenda</TableCell>
                 <TableCell>Talla</TableCell>
+                <TableCell>Nombre</TableCell>
+                <TableCell>Numero</TableCell>
                 <TableCell>Precio</TableCell>
                 <TableCell>Metodo</TableCell>
                 <TableCell>Referencia</TableCell>
@@ -370,6 +383,8 @@ function ListadoSolicitudesUniformes() {
                   <TableCell>{pedido.sede?.nombre || '-'}</TableCell>
                   <TableCell>{pedido.prenda}</TableCell>
                   <TableCell>{pedido.talla}</TableCell>
+                  <TableCell>{pedido.nombre_personalizado || '-'}</TableCell>
+                  <TableCell>{pedido.numero_franela || '-'}</TableCell>
                   <TableCell>${formatMoney(pedido.precio)}</TableCell>
                   <TableCell>{pedido.metodo_pago || '-'}</TableCell>
                   <TableCell>{pedido.referencia || '-'}</TableCell>
@@ -459,6 +474,12 @@ function ListadoSolicitudesUniformes() {
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 1.5, columnGap: 2, fontSize: 13 }}>
                 <Typography sx={{ color: '#64748b' }}>Prenda</Typography>
                 <Typography sx={{ fontWeight: 700, color: '#0f172a', textAlign: 'right' }}>{pedidoSeleccionado?.prenda || '-'}</Typography>
+
+                <Typography sx={{ color: '#64748b' }}>Nombre personalizado</Typography>
+                <Typography sx={{ fontWeight: 700, color: '#0f172a', textAlign: 'right' }}>{pedidoSeleccionado?.nombre_personalizado || '-'}</Typography>
+
+                <Typography sx={{ color: '#64748b' }}>Numero de franela</Typography>
+                <Typography sx={{ fontWeight: 700, color: '#0f172a', textAlign: 'right' }}>{pedidoSeleccionado?.numero_franela || '-'}</Typography>
 
                 <Typography sx={{ color: '#64748b' }}>Monto</Typography>
                 <Typography sx={{ fontWeight: 700, color: '#ff7a00', textAlign: 'right' }}>${formatMoney(pedidoSeleccionado?.precio)}</Typography>

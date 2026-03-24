@@ -23,6 +23,8 @@ exports.createPedidoUniforme = async (req, res) => {
       sedeId,
       prenda,
       talla,
+      nombrePersonalizado,
+      numeroFranela,
     } = req.body;
 
     if (!alumnoId || !prenda || !talla) {
@@ -42,6 +44,8 @@ exports.createPedidoUniforme = async (req, res) => {
       alumno: alumnoId,
       sede: sedeId || undefined,
       prenda,
+      nombre_personalizado: String(nombrePersonalizado || '').trim() || undefined,
+      numero_franela: String(numeroFranela || '').trim() || undefined,
       precio,
       talla,
       estado: ESTADOS_PEDIDO.PENDIENTE,
@@ -90,7 +94,16 @@ exports.getMisPedidosUniforme = async (req, res) => {
 
 exports.getPedidosUniforme = async (req, res) => {
   try {
-    const pedidos = await UniformePedido.find()
+    const filtro = {};
+
+    if (req.query.sedeId) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.sedeId)) {
+        return res.status(400).json({ error: 'sedeId inválido' });
+      }
+      filtro.sede = req.query.sedeId;
+    }
+
+    const pedidos = await UniformePedido.find(filtro)
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por')
