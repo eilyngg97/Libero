@@ -553,7 +553,7 @@ function PagosAlumno(props) {
             <>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                 <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
-                <Typography sx={{ fontSize: 34, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
+                <Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
               </Box>
 
               <Box
@@ -579,28 +579,28 @@ function PagosAlumno(props) {
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, columnGap: 4.5, rowGap: 2.25, pt: 1.75 }}>
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Metodo de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: 32, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{detallePago.metodo_pago || '-'}</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{detallePago.metodo_pago || '-'}</Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: 39, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoConBs(detallePago)}</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoConBs(detallePago)}</Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: 31, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFechaBonita(detallePago.fecha_pago)}</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFechaBonita(detallePago.fecha_pago)}</Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: 28, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatTasaAplicada(detallePago)}</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatTasaAplicada(detallePago)}</Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Referencia</Typography>
                     <Box sx={{ mt: 0.7, display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                      <Typography sx={{ fontSize: 28, fontWeight: 800, color: '#4c6690', lineHeight: 1.12 }}>{detallePago.referencia || '-'}</Typography>
+                      <Typography sx={{ fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#4c6690', lineHeight: 1.12 }}>{detallePago.referencia || '-'}</Typography>
                       {detallePago.referencia && (
                         <IconButton size="small" onClick={() => copiarReferencia(detallePago.referencia)} sx={{ color: '#95a2b6' }}>
                           <ContentCopyIcon fontSize="inherit" />
@@ -616,7 +616,7 @@ function PagosAlumno(props) {
                         variant="text"
                         startIcon={<InsertDriveFileIcon fontSize="small" />}
                         onClick={() => handleVerComprobante(detallePago.comprobante_url)}
-                        sx={{ mt: 0.35, px: 0, color: '#ff8a00', fontWeight: 900, textTransform: 'none', fontSize: 25 }}
+                        sx={{ mt: 0.35, px: 0, color: '#ff8a00', fontWeight: 900, textTransform: 'none', fontSize: { xs: 14, sm: 16 } }}
                       >
                         Ver Archivo Digital
                       </Button>
@@ -625,12 +625,12 @@ function PagosAlumno(props) {
                     )}
                   </Box>
 
-                  <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { md: '2 / 3' } }}>
                     <Button
                       variant="contained"
                       startIcon={<EditIcon fontSize="small" />}
                       onClick={() => abrirModalEditarPago(detallePago)}
-                      sx={{ borderRadius: 999, px: 2.2, bgcolor: '#e5edf8', color: '#1165a4', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#d8e5f6', boxShadow: 'none' } }}
+                      sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#e5edf8', color: '#1165a4', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#d8e5f6', boxShadow: 'none' } }}
                     >
                       Editar
                     </Button>
@@ -639,7 +639,7 @@ function PagosAlumno(props) {
                       startIcon={<DeleteOutlineIcon fontSize="small" />}
                       onClick={() => solicitarEliminarPago(detallePago)}
                       disabled={eliminandoPagoId === detallePago._id}
-                      sx={{ borderRadius: 999, px: 2.2, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
+                      sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
                     >
                       {eliminandoPagoId === detallePago._id ? 'Eliminando...' : 'Eliminar'}
                     </Button>
@@ -656,7 +656,7 @@ function PagosAlumno(props) {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <HistoryRoundedIcon sx={{ color: '#8ea0bc', fontSize: 19 }} />
-                  <Typography sx={{ fontSize: 35, fontWeight: 900, color: '#0b2a57', lineHeight: 1.15 }}>
+                  <Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.15 }}>
                     {mensualidadDetalle?.id_alumno?.habilitar_pago_cuotas === true ? 'Historial de abonos' : 'Historial de pagos'}
                   </Typography>
                 </Box>
@@ -675,7 +675,7 @@ function PagosAlumno(props) {
                       px: 1.7,
                       py: 1.2,
                       display: 'grid',
-                      gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr 1fr auto' },
+                      gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr 1fr 1fr auto' },
                       alignItems: 'center',
                       gap: 1.3
                     }}
@@ -700,7 +700,7 @@ function PagosAlumno(props) {
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
                       <Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+                    <Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
                       {pago.comprobante_url && (
                         <IconButton size="small" onClick={() => handleVerComprobante(pago.comprobante_url)} sx={{ bgcolor: '#f3f4f6', '&:hover': { bgcolor: '#e9edf3' } }}>
                           <InsertDriveFileIcon fontSize="small" sx={{ color: '#4b5563' }} />

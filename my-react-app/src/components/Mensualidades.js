@@ -20,6 +20,20 @@ import './Mensualidades.css';
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo',];
 
+const getLocalInputDate = (dateValue = new Date()) => {
+	const date = new Date(dateValue);
+	date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+	return date.toISOString().slice(0, 10);
+};
+
+const getInputDateFromApi = (value) => {
+	if (!value) return getLocalInputDate();
+	const raw = String(value).trim();
+	const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+	if (matchIso) return `${matchIso[1]}-${matchIso[2]}-${matchIso[3]}`;
+	return getLocalInputDate(new Date(value));
+};
+
 function Mensualidades() {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
@@ -41,10 +55,7 @@ function Mensualidades() {
 	const [pagosPreviosTotal, setPagosPreviosTotal] = useState(0);
 	const [montoPendiente, setMontoPendiente] = useState(0);
 	const [pagosLoading, setPagosLoading] = useState(false);
-	const [fechaPago, setFechaPago] = useState(() => {
-		const hoy = new Date();
-		return hoy.toISOString().slice(0, 10);
-	});
+	const [fechaPago, setFechaPago] = useState(() => getLocalInputDate());
 	const [modalDetalle, setModalDetalle] = useState(false);
 	const [detallePago, setDetallePago] = useState(null);
 	const [pagosDetalle, setPagosDetalle] = useState([]);
@@ -78,7 +89,7 @@ function Mensualidades() {
 		setMontoPago('');
 		setPagosPreviosTotal(0);
 		setMontoPendiente(0);
-		setFechaPago(new Date().toISOString().slice(0, 10));
+		setFechaPago(getLocalInputDate());
 		setTasaPagoHistorica(null);
 	};
 
@@ -144,7 +155,7 @@ function Mensualidades() {
 		setErrorRef('');
 		setMetodoPago(pagoEditar?.metodo_pago || metodosPago[0]);
 		setReferencia(pagoEditar?.referencia || '');
-		setFechaPago(pagoEditar?.fecha_pago ? new Date(pagoEditar.fecha_pago).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+		setFechaPago(getInputDateFromApi(pagoEditar?.fecha_pago));
 		setModalPago(true);
 		setPagosLoading(true);
 		setPagosPreviosTotal(0);
@@ -362,13 +373,44 @@ function Mensualidades() {
 
 	const formatFechaBonita = (value) => {
 		if (!value) return '-';
-		const fecha = new Date(value);
+
+		const raw = String(value).trim();
+		const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+		let fecha;
+		if (matchIso) {
+			const year = Number(matchIso[1]);
+			const month = Number(matchIso[2]);
+			const day = Number(matchIso[3]);
+			fecha = new Date(year, month - 1, day);
+		} else {
+			fecha = new Date(value);
+		}
+
 		if (Number.isNaN(fecha.getTime())) return '-';
 		return fecha.toLocaleDateString('es-ES', {
 			day: '2-digit',
 			month: 'short',
 			year: 'numeric'
 		});
+	};
+
+	const formatTasaAplicada = (pago) => {
+		const montoUsd = Number(pago?.monto_pagado);
+		const montoBs = Number(pago?.monto_pagado_bs);
+		if (!montoUsd || Number.isNaN(montoUsd) || !montoBs || Number.isNaN(montoBs)) {
+			return '-';
+		}
+		return `${formatMoney(montoBs / montoUsd)} Bs/USD`;
+	};
+
+	const formatMontoConBs = (pago) => {
+		const montoUsd = formatMoney(pago?.monto_pagado);
+		const montoBs = pago?.monto_pagado_bs;
+		if (montoBs === null || montoBs === undefined || Number.isNaN(Number(montoBs))) {
+			return `$${montoUsd}`;
+		}
+		return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
 	};
 
 	const renderEstatusChip = (estatusRaw) => {
@@ -635,12 +677,17 @@ function Mensualidades() {
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
-										<Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>${formatMoney(detallePago.monto_pagado)}</Typography>
+										<Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoConBs(detallePago)}</Typography>
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
 										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFechaBonita(detallePago.fecha_pago)}</Typography>
+									</Box>
+
+									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
+										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatTasaAplicada(detallePago)}</Typography>
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
@@ -671,12 +718,12 @@ function Mensualidades() {
 										)}
 									</Box>
 
-									<Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2 }}>
+									<Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { md: '2 / 3' }, justifySelf: { md: 'end' } }}>
 										<Button
 											variant="contained"
 											startIcon={<EditIcon fontSize="small" />}
 											onClick={() => handleEditarPago(detallePago)}
-											sx={{ borderRadius: 999, px: 2.2, bgcolor: '#e5edf8', color: '#1165a4', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#d8e5f6', boxShadow: 'none' } }}
+											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#e5edf8', color: '#1165a4', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#d8e5f6', boxShadow: 'none' } }}
 										>
 											Editar
 										</Button>
@@ -685,7 +732,7 @@ function Mensualidades() {
 											startIcon={<DeleteOutlineIcon fontSize="small" />}
 											onClick={() => solicitarEliminarPago(detallePago)}
 											disabled={eliminandoPagoId === detallePago._id}
-											sx={{ borderRadius: 999, px: 2.2, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
+											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
 										>
 											{eliminandoPagoId === detallePago._id ? 'Eliminando...' : 'Eliminar'}
 										</Button>
@@ -721,7 +768,7 @@ function Mensualidades() {
 											px: 1.7,
 											py: 1.2,
 											display: 'grid',
-											gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr 1fr auto' },
+											gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr 1fr 1fr auto' },
 											alignItems: 'center',
 											gap: 1.3
 										}}
@@ -732,17 +779,21 @@ function Mensualidades() {
 										</Box>
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Monto</Typography>
-											<Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>${formatMoney(pago.monto_pagado)}</Typography>
+											<Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoConBs(pago)}</Typography>
 										</Box>
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Fecha</Typography>
 											<Typography sx={{ color: '#334155', mt: 0.25 }}>{formatFechaBonita(pago.fecha_pago)}</Typography>
 										</Box>
 										<Box>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Tasa</Typography>
+											<Typography sx={{ color: '#334155', mt: 0.25, fontWeight: 700 }}>{formatTasaAplicada(pago)}</Typography>
+										</Box>
+										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
 											<Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
 										</Box>
-										<Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+										<Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
 											{pago.comprobante_url && (
 												<IconButton size="small" onClick={() => handleVerComprobante(pago.comprobante_url)} sx={{ bgcolor: '#f3f4f6', '&:hover': { bgcolor: '#e9edf3' } }}>
 													<InsertDriveFileIcon fontSize="small" sx={{ color: '#4b5563' }} />
@@ -818,7 +869,7 @@ function Mensualidades() {
 						<Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
 							<Typography variant="body2"><b>Método:</b> {pagoAEliminar.metodo_pago || '-'}</Typography>
 							<Typography variant="body2"><b>Monto:</b> {pagoAEliminar.monto_pagado || '-'} USD</Typography>
-							<Typography variant="body2"><b>Fecha:</b> {pagoAEliminar.fecha_pago ? new Date(pagoAEliminar.fecha_pago).toISOString().slice(0,10) : '-'}</Typography>
+							<Typography variant="body2"><b>Fecha:</b> {formatFechaBonita(pagoAEliminar.fecha_pago)}</Typography>
 						</Box>
 					)}
 				</DialogContent>
