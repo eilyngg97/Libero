@@ -265,7 +265,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
 
   return (
-    <Grid container justifyContent="center" alignItems="flex-start" sx={{ minHeight: '80vh', py: 3 }}>
+    <Grid container justifyContent="center" alignItems="flex-start" sx={{ minHeight: '80vh', py: { xs: 2, md: 3 } }}>
       <Snackbar
         open={!!successMessage}
         autoHideDuration={3000}
@@ -288,7 +288,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       </Snackbar>
       <Grid item size={{ xs: 12, sm: 11, md: 10 }}>
         <Box sx={{ display: 'grid', gap: 3 }}>
-          <Paper elevation={4} sx={{ p: 4, borderRadius: 3 }}>
+          <Paper elevation={4} sx={{ p: { xs: 2, sm: 3, md: 4 }, borderRadius: 3 }}>
             <Typography variant="h5" gutterBottom align="center" fontWeight={700} color="primary.main">
               Solicitar Uniforme
             </Typography>
@@ -362,7 +362,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
             </Box>
           </Paper>
 
-          <Paper elevation={3} sx={{ p: 3, borderRadius: 3 }}>
+          <Paper elevation={3} sx={{ p: { xs: 2, md: 3 }, borderRadius: 3 }}>
             <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
               Solicitudes de uniformes del alumno
             </Typography>
@@ -371,107 +371,213 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
             ) : pedidos.length === 0 ? (
               <Typography color="text.secondary">No hay solicitudes registradas para este alumno.</Typography>
             ) : (
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Prenda</TableCell>
-                      <TableCell>Talla</TableCell>
-                      <TableCell>Nombre</TableCell>
-                      <TableCell>Numero</TableCell>
-                      <TableCell>Precio</TableCell>
-                      <TableCell>Pago</TableCell>
-                      <TableCell>Fecha</TableCell>
-                      <TableCell>Estado</TableCell>
-                      <TableCell>Acciones</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {pedidos.map((pedido) => (
-                      <TableRow key={pedido._id}>
-                        <TableCell>{pedido.prenda}</TableCell>
-                        <TableCell>{pedido.talla}</TableCell>
-                        <TableCell>{pedido.nombre_personalizado || '-'}</TableCell>
-                        <TableCell>{pedido.numero_franela || '-'}</TableCell>
-                        <TableCell>
-                          <Typography sx={{ fontWeight: 700 }}>${formatMoney(pedido.precio)}</Typography>
-                          {tasaBCV ? (
-                            <Typography variant="body2" sx={{ color: '#64748b' }}>
-                              Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
-                            </Typography>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>
-                          {pedido.metodo_pago ? (
-                            <>
-                              <Typography>{pedido.metodo_pago}</Typography>
-                              <Typography variant="body2" sx={{ color: '#64748b' }}>
-                                Ref: {pedido.referencia || '-'}
-                              </Typography>
-                            </>
-                          ) : '-'}
-                        </TableCell>
-                        <TableCell>{formatFecha(pedido.fecha_pago || pedido.createdAt)}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={getEstadoLabel(pedido.estado)}
+              <>
+                <Box sx={{ display: { xs: 'grid', md: 'none' }, gap: 1.5 }}>
+                  {pedidos.map((pedido) => (
+                    <Box
+                      key={pedido._id}
+                      sx={{
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 2.5,
+                        p: 1.5,
+                        backgroundColor: '#ffffff',
+                        boxShadow: '0 6px 16px rgba(15, 23, 42, 0.06)'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+                        <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>
+                          {pedido.prenda} - {pedido.talla}
+                        </Typography>
+                        <Chip
+                          label={getEstadoLabel(pedido.estado)}
+                          size="small"
+                          sx={{
+                            ...getEstadoStyle(pedido.estado),
+                            fontWeight: 700
+                          }}
+                        />
+                      </Box>
+
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 1 }}>
+                        <Box>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Nombre</Typography>
+                          <Typography variant="body2" sx={{ color: '#0f172a' }}>{pedido.nombre_personalizado || '-'}</Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Numero</Typography>
+                          <Typography variant="body2" sx={{ color: '#0f172a' }}>{pedido.numero_franela || '-'}</Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Fecha</Typography>
+                          <Typography variant="body2" sx={{ color: '#0f172a' }}>{formatFecha(pedido.fecha_pago || pedido.createdAt)}</Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Pago</Typography>
+                          <Typography variant="body2" sx={{ color: '#0f172a' }}>
+                            {pedido.metodo_pago ? `${pedido.metodo_pago} | Ref: ${pedido.referencia || '-'}` : '-'}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      <Box sx={{ mb: 1 }}>
+                        <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Precio</Typography>
+                        <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>${formatMoney(pedido.precio)}</Typography>
+                        {tasaBCV ? (
+                          <Typography variant="body2" sx={{ color: '#64748b' }}>
+                            Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
+                          </Typography>
+                        ) : null}
+                      </Box>
+
+                      {pedido.estado === 'esperando_pago' ? (
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                          <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
+                            Realizar pago
+                          </Button>
+                          <Button
                             size="small"
-                            sx={{
-                              ...getEstadoStyle(pedido.estado),
-                              fontWeight: 700
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {pedido.estado === 'esperando_pago' ? (
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
-                                Realizar pago
-                              </Button>
-                              <Button
-                                size="small"
-                                color="error"
-                                variant="outlined"
-                                disabled={cancelandoId === pedido._id}
-                                onClick={() => setConfirmCancelId(pedido._id)}
-                              >
-                                {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
-                              </Button>
-                            </Box>
-                          ) : pedido.estado === 'pendiente' ? (
-                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                              <Typography variant="body2" sx={{ color: '#64748b' }}>
-                                Esperando solicitud de pago del administrador
-                              </Typography>
-                              <Button
-                                size="small"
-                                color="error"
-                                variant="outlined"
-                                disabled={cancelandoId === pedido._id}
-                                onClick={() => setConfirmCancelId(pedido._id)}
-                              >
-                                {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
-                              </Button>
-                            </Box>
-                          ) : (
-                            <Typography variant="body2" sx={{ color: '#64748b' }}>
-                              {pedido.estado === 'cancelado'
-                                ? 'Solicitud cancelada'
-                                : pedido.estado === 'pago_en_revision'
-                                  ? 'Pago enviado, en revision'
-                                  : pedido.estado === 'verificado'
-                                    ? 'Pago verificado. En espera de entrega'
-                                    : pedido.estado === 'entregado'
-                                      ? 'Prenda entregada'
-                                      : 'Sin acciones disponibles'}
-                            </Typography>
-                          )}
-                        </TableCell>
+                            color="error"
+                            variant="outlined"
+                            disabled={cancelandoId === pedido._id}
+                            onClick={() => setConfirmCancelId(pedido._id)}
+                          >
+                            {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                          </Button>
+                        </Box>
+                      ) : pedido.estado === 'pendiente' ? (
+                        <Box sx={{ display: 'grid', gap: 1 }}>
+                          <Typography variant="body2" sx={{ color: '#64748b' }}>
+                            Esperando solicitud de pago del administrador
+                          </Typography>
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            disabled={cancelandoId === pedido._id}
+                            onClick={() => setConfirmCancelId(pedido._id)}
+                          >
+                            {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                          </Button>
+                        </Box>
+                      ) : (
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          {pedido.estado === 'cancelado'
+                            ? 'Solicitud cancelada'
+                            : pedido.estado === 'pago_en_revision'
+                              ? 'Pago enviado, en revision'
+                              : pedido.estado === 'verificado'
+                                ? 'Pago verificado. En espera de entrega'
+                                : pedido.estado === 'entregado'
+                                  ? 'Prenda entregada'
+                                  : 'Sin acciones disponibles'}
+                        </Typography>
+                      )}
+                    </Box>
+                  ))}
+                </Box>
+
+                <TableContainer sx={{ display: { xs: 'none', md: 'block' } }}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Prenda</TableCell>
+                        <TableCell>Talla</TableCell>
+                        <TableCell>Nombre</TableCell>
+                        <TableCell>Numero</TableCell>
+                        <TableCell>Precio</TableCell>
+                        <TableCell>Pago</TableCell>
+                        <TableCell>Fecha</TableCell>
+                        <TableCell>Estado</TableCell>
+                        <TableCell>Acciones</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                    </TableHead>
+                    <TableBody>
+                      {pedidos.map((pedido) => (
+                        <TableRow key={pedido._id}>
+                          <TableCell>{pedido.prenda}</TableCell>
+                          <TableCell>{pedido.talla}</TableCell>
+                          <TableCell>{pedido.nombre_personalizado || '-'}</TableCell>
+                          <TableCell>{pedido.numero_franela || '-'}</TableCell>
+                          <TableCell>
+                            <Typography sx={{ fontWeight: 700 }}>${formatMoney(pedido.precio)}</Typography>
+                            {tasaBCV ? (
+                              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
+                              </Typography>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
+                            {pedido.metodo_pago ? (
+                              <>
+                                <Typography>{pedido.metodo_pago}</Typography>
+                                <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                  Ref: {pedido.referencia || '-'}
+                                </Typography>
+                              </>
+                            ) : '-'}
+                          </TableCell>
+                          <TableCell>{formatFecha(pedido.fecha_pago || pedido.createdAt)}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={getEstadoLabel(pedido.estado)}
+                              size="small"
+                              sx={{
+                                ...getEstadoStyle(pedido.estado),
+                                fontWeight: 700
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {pedido.estado === 'esperando_pago' ? (
+                              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
+                                  Realizar pago
+                                </Button>
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                  disabled={cancelandoId === pedido._id}
+                                  onClick={() => setConfirmCancelId(pedido._id)}
+                                >
+                                  {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                                </Button>
+                              </Box>
+                            ) : pedido.estado === 'pendiente' ? (
+                              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                  Esperando solicitud de pago del administrador
+                                </Typography>
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  variant="outlined"
+                                  disabled={cancelandoId === pedido._id}
+                                  onClick={() => setConfirmCancelId(pedido._id)}
+                                >
+                                  {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                                </Button>
+                              </Box>
+                            ) : (
+                              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                {pedido.estado === 'cancelado'
+                                  ? 'Solicitud cancelada'
+                                  : pedido.estado === 'pago_en_revision'
+                                    ? 'Pago enviado, en revision'
+                                    : pedido.estado === 'verificado'
+                                      ? 'Pago verificado. En espera de entrega'
+                                      : pedido.estado === 'entregado'
+                                        ? 'Prenda entregada'
+                                        : 'Sin acciones disponibles'}
+                              </Typography>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </>
             )}
           </Paper>
         </Box>
