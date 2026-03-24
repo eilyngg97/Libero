@@ -21,6 +21,14 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
 const MONTO_TOLERANCIA_BS = 5;
+const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'txt'];
+
+function isAllowedFile(file) {
+  if (!file?.name) return false;
+  const parts = String(file.name).toLowerCase().split('.');
+  const extension = parts.length > 1 ? parts[parts.length - 1] : '';
+  return ALLOWED_EXTENSIONS.includes(extension);
+}
 
 function formatMoney(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -66,7 +74,12 @@ export default function ConciliacionBancaria() {
 
   const procesarArchivo = async (fileToProcess = archivo) => {
     if (!fileToProcess) {
-      setError('Debes seleccionar un archivo Excel para conciliar.');
+      setError('Debes seleccionar un archivo para conciliar.');
+      return;
+    }
+
+    if (!isAllowedFile(fileToProcess)) {
+      setError('Formato no permitido. Usa .xlsx, .xls o .txt');
       return;
     }
 
@@ -132,6 +145,10 @@ export default function ConciliacionBancaria() {
     setDragging(false);
     const droppedFile = event.dataTransfer?.files?.[0];
     if (!droppedFile) return;
+    if (!isAllowedFile(droppedFile)) {
+      setError('Formato no permitido. Usa .xlsx, .xls o .txt');
+      return;
+    }
     setArchivo(droppedFile);
     setResultado(null);
   };
@@ -196,7 +213,7 @@ export default function ConciliacionBancaria() {
         Conciliacion Bancaria
       </Typography>
       <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
-        Sube el estado de cuenta en Excel para validar pagos en revision con tres niveles de coincidencia.
+        Sube el estado de cuenta en Excel o TXT para validar pagos en revision con tres niveles de coincidencia.
       </Typography>
 
       <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
@@ -217,10 +234,10 @@ export default function ConciliacionBancaria() {
       >
         <CloudUploadIcon sx={{ fontSize: 38, color: '#fb923c', mb: 1 }} />
         <Typography sx={{ fontWeight: 700, color: '#1e293b' }}>
-          Arrastra y suelta tu Excel aqui
+          Arrastra y suelta tu archivo aqui
         </Typography>
         <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
-          Formatos permitidos: .xlsx y .xls
+          Formatos permitidos: .xlsx, .xls y .txt
         </Typography>
 
         <Box sx={{ mt: 1.5, display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -229,10 +246,14 @@ export default function ConciliacionBancaria() {
             <input
               type="file"
               hidden
-              accept=".xlsx,.xls"
+              accept=".xlsx,.xls,.txt"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
+                  if (!isAllowedFile(file)) {
+                    setError('Formato no permitido. Usa .xlsx, .xls o .txt');
+                    return;
+                  }
                   setArchivo(file);
                   setResultado(null);
                 }

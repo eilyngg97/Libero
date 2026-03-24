@@ -1,4 +1,5 @@
 const XLSX = require('xlsx');
+const path = require('path');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
 
@@ -193,6 +194,133 @@ function parseExcelRows(fileBuffer) {
   return parsedRows;
 }
 
+function parseTxtRows(fileBuffer) {
+  const text = Buffer.from(fileBuffer || Buffer.alloc(0)).toString('utf8');
+  const rawLines = text
+    .split(/\r?\n/)
+    .map((line) => String(line || '').replace(/\r/g, ''));
+
+  const nonEmptyRawLines = rawLines.filter((line) => line.trim());
+
+  if (!nonEmptyRawLines.length) {
+    throw new Error('El archivo TXT esta vacio');
+  }
+
+  const firstLine = nonEmptyRawLines[0];
+  const detectedSeparator = firstLine.includes('\t')
+    ? '\t'
+    : (firstLine.includes(';') ? ';' : null);
+
+  // 1) TXT delimitado (tab o punto y coma)
+  if (detectedSeparator) {
+    const lines = nonEmptyRawLines.map((line) => line.trim());
+    const rows = lines.map((line) => line.split(detectedSeparator).map((cell) => String(cell || '').trim()));
+    const headerRow = Array.isArray(rows[0]) ? rows[0] : [];
+    const headersMap = {};
+
+    headerRow.forEach((header, index) => {
+      const key = normalizarTexto(header);
+      if (key) headersMap[key] = index;
+    });
+
+    const fechaIdx = findColumnKey(headersMap, ['fecha', 'date']);
+    const referenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
+    const montoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe']);
+    const descripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
+
+    if (referenciaIdx === null || montoIdx === null) {
+      throw new Error('No se encontraron columnas requeridas en TXT: Referencia y Monto');
+    }
+
+    const dataRows = rows.slice(1);
+    const parsedRows = dataRows
+      .map((row, idx) => {
+        const referencia = normalizarReferencia(row[referenciaIdx]);
+        const montoBs = parseMonto(row[montoIdx]);
+        const fecha = fechaIdx !== null ? parseFecha(row[fechaIdx]) : null;
+        const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
+
+        if (!referencia && (montoBs === null || montoBs === undefined)) return null;
+
+        return {
+          excelRow: idx + 2,
+          referencia,
+          monto_bs: montoBs,
+          fecha,
+          descripcion
+        };
+      })
+      .filter(Boolean);
+
+    if (!parsedRows.length) {
+      throw new Error('No se encontraron filas validas en el TXT');
+    }
+
+    return parsedRows;
+  }
+
+  // 2) TXT de ancho fijo (ej. bancos que alinean columnas por espacios)
+  const headerIndex = nonEmptyRawLines.findIndex((line) => {
+    const normalized = normalizarTexto(line);
+    return normalized.includes('referencia') && normalized.includes('monto');
+  });
+
+  if (headerIndex < 0) {
+    throw new Error('No se encontro encabezado en TXT (se esperaba Referencia y Monto)');
+  }
+
+  const headerLine = nonEmptyRawLines[headerIndex];
+  const headerNormalized = normalizarTexto(headerLine);
+
+  const fechaStart = Math.max(0, headerNormalized.indexOf('fecha'));
+  const referenciaStart = headerNormalized.indexOf('referencia');
+  const descripcionStart = headerNormalized.indexOf('descripcion') >= 0
+    ? headerNormalized.indexOf('descripcion')
+    : (headerNormalized.indexOf('detalle') >= 0 ? headerNormalized.indexOf('detalle') : -1);
+  const montoStart = headerNormalized.indexOf('monto');
+  const saldoStart = headerNormalized.indexOf('saldo');
+
+  if (referenciaStart < 0 || montoStart < 0) {
+    throw new Error('No se encontraron columnas requeridas en TXT: Referencia y Monto');
+  }
+
+  const parsedRows = [];
+  const transactionLineRegex = /^\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/;
+
+  nonEmptyRawLines.slice(headerIndex + 1).forEach((line, idx) => {
+    if (!transactionLineRegex.test(line)) return;
+
+    const fechaRaw = line.slice(fechaStart, referenciaStart).trim();
+    const referenciaRaw = line.slice(referenciaStart, descripcionStart > referenciaStart ? descripcionStart : montoStart).trim();
+    const descripcionRaw = descripcionStart > referenciaStart
+      ? line.slice(descripcionStart, montoStart).trim()
+      : '';
+    const montoRaw = saldoStart > montoStart
+      ? line.slice(montoStart, saldoStart).trim()
+      : line.slice(montoStart).trim();
+
+    const referencia = normalizarReferencia(referenciaRaw);
+    const montoBs = parseMonto(montoRaw);
+    const fecha = parseFecha(fechaRaw);
+
+    if (!referencia && (montoBs === null || montoBs === undefined)) return;
+
+    parsedRows.push({
+      excelRow: headerIndex + idx + 2,
+      referencia,
+      monto_bs: montoBs,
+      fecha,
+      descripcion: descripcionRaw
+    });
+  });
+
+  if (!parsedRows.length) {
+    throw new Error('No se encontraron filas validas en el TXT');
+  }
+
+  return parsedRows;
+}
+
 function buildMatchRecord({ banco, sistema, tipo, motivo = [] }) {
   return {
     tipo,
@@ -226,10 +354,14 @@ function rankByDateSimilarity(candidates, targetDate) {
 exports.previsualizarConciliacion = async (req, res) => {
   try {
     if (!req.file?.buffer) {
-      return res.status(400).json({ error: 'Debes subir un archivo Excel' });
+      return res.status(400).json({ error: 'Debes subir un archivo de conciliacion' });
     }
 
-    const bancoRows = parseExcelRows(req.file.buffer);
+    const extension = path.extname(String(req.file.originalname || '')).toLowerCase();
+
+    const bancoRows = extension === '.txt'
+      ? parseTxtRows(req.file.buffer)
+      : parseExcelRows(req.file.buffer);
 
     const mensualidadesRevision = await Mensualidad.find({ estatus: 'En revision' })
       .populate('id_alumno', 'nombres apellidos')
