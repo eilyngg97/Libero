@@ -86,6 +86,11 @@ function Alumnos() {
   const [cedulaDuplicada, setCedulaDuplicada] = useState(false);
   const [cedulaCheckLoading, setCedulaCheckLoading] = useState(false);
   const [cedulaCheckMsg, setCedulaCheckMsg] = useState('');
+  const [numeroFranelaDuplicado, setNumeroFranelaDuplicado] = useState(false);
+  const [numeroFranelaCheckLoading, setNumeroFranelaCheckLoading] = useState(false);
+  const [numeroFranelaCheckMsg, setNumeroFranelaCheckMsg] = useState('');
+  const [numerosFranelaDisponibles, setNumerosFranelaDisponibles] = useState([]);
+  const [numerosFranelaOcupados, setNumerosFranelaOcupados] = useState([]);
   // Estados para la primera mensualidad
   const [showMensualidadModal, setShowMensualidadModal] = useState(false);
   const [nuevoAlumnoId, setNuevoAlumnoId] = useState(null);
@@ -162,6 +167,71 @@ function Alumnos() {
       clearTimeout(timer);
     };
   }, [form.cedula, form.sede?._id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const categoriaNormalizada = String(form.categoria || '').trim().toUpperCase();
+
+    if (!categoriaNormalizada) {
+      setNumeroFranelaCheckLoading(false);
+      setNumeroFranelaCheckMsg('');
+      setNumeroFranelaDuplicado(false);
+      setNumerosFranelaDisponibles([]);
+      setNumerosFranelaOcupados([]);
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      setNumeroFranelaCheckLoading(true);
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Error verificando nro de franela');
+
+        if (!cancelled) {
+          const ocupados = Array.isArray(data.ocupados) ? data.ocupados : [];
+          const disponibles = Array.isArray(data.disponibles) ? data.disponibles : [];
+          setNumerosFranelaOcupados(ocupados);
+          setNumerosFranelaDisponibles(disponibles);
+          setNumeroFranelaCheckMsg('');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setNumerosFranelaOcupados([]);
+          setNumerosFranelaDisponibles([]);
+          setNumeroFranelaCheckMsg('No se pudo verificar disponibilidad de franela.');
+        }
+      } finally {
+        if (!cancelled) setNumeroFranelaCheckLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [form.categoria]);
+
+  useEffect(() => {
+    if (!form.numero_franela) {
+      setNumeroFranelaDuplicado(false);
+      return;
+    }
+    const numero = Number(form.numero_franela);
+    if (Number.isNaN(numero) || numero < 1 || numero > 100) {
+      setNumeroFranelaDuplicado(false);
+      setNumeroFranelaCheckMsg('El nro de franela debe estar entre 1 y 100.');
+      return;
+    }
+
+    const duplicado = numerosFranelaOcupados.includes(numero);
+    setNumeroFranelaDuplicado(duplicado);
+    setNumeroFranelaCheckMsg(
+      duplicado
+        ? `El nro de franela ${numero} ya esta ocupado en la categoria ${String(form.categoria || '').trim().toUpperCase()}.`
+        : ''
+    );
+  }, [form.numero_franela, form.categoria, numerosFranelaOcupados]);
   // Al montar, establecer la sede desde el contexto o localStorage
   useEffect(() => {
     let sede = sedeSeleccionada;
@@ -387,6 +457,10 @@ function Alumnos() {
         setError('El nro de franela debe estar entre 1 y 100.');
         return;
       }
+      if (numeroFranelaDuplicado) {
+        setError(numeroFranelaCheckMsg || 'Ese nro de franela ya esta asignado en la categoria.');
+        return;
+      }
     }
 
     // Si es beca completa, registrar el alumno directamente
@@ -576,15 +650,30 @@ function Alumnos() {
               id="outlined-basic-numero-franela"
               label="Nro de franela"
               name="numero_franela"
-              type="number"
+              select
               variant="outlined"
               value={form.numero_franela || ''}
               onChange={handleChange}
               fullWidth
               size="small"
               sx={{ my: 1 }}
-              inputProps={{ min: 1, max: 100 }}
-            />
+              disabled={!categoria || numeroFranelaCheckLoading}
+              error={numeroFranelaDuplicado}
+              helperText={
+                numeroFranelaDuplicado
+                  ? numeroFranelaCheckMsg
+                  : (numeroFranelaCheckLoading
+                    ? 'Verificando disponibilidad por categoria...'
+                    : (!categoria
+                      ? 'Selecciona fecha de nacimiento para definir categoria'
+                      : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
+              }
+            >
+              <MenuItem value=""><em>Sin asignar</em></MenuItem>
+              {numerosFranelaDisponibles.map((nro) => (
+                <MenuItem key={nro} value={String(nro)}>{nro}</MenuItem>
+              ))}
+            </TextField>
           </div>
           <div className="form-row">
             <TextField id="outlined-basic-nombres" label="Nombres *" name="nombres" variant="outlined" value={form.nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
@@ -640,7 +729,7 @@ function Alumnos() {
           </div>
           
           <div className="form-row">
-            <FormControl fullWidth required style={{ minWidth: 180, marginRight: 8 }} sx={{ my: 1 }}>
+            <FormControl fullWidth required sx={{ my: 1 }}>
               <InputLabel id="sede-label">Sede</InputLabel>
                 <Select
                   labelId="sede-label"
@@ -756,8 +845,8 @@ function Alumnos() {
                   name="rep_cedula"
                   variant="outlined"
                   fullWidth
-                  size="medium"
-                  sx={{ my: 1, minWidth: 250}}
+                  size="small"
+                  sx={{ my: 1 }}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (

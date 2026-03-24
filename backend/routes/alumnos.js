@@ -35,6 +35,7 @@ const upload = multer({ storage });
 
 // CRUD rutas para alumnos
 router.get('/', authMiddleware, alumnoController.getAlumnos);
+router.get('/numeros-franela/disponibilidad', authMiddleware, alumnoController.getDisponibilidadNumeroFranela);
 router.post('/', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.createAlumno);
 router.get('/por-representante/:representanteId', authMiddleware, ensureRepresentanteOwnershipFromParam('representanteId'), alumnoController.getAlumnosPorRepresentante);
 router.get('/:id/reposos', authMiddleware, rolMiddleware('admin'), alumnoController.getRepososAlumno);

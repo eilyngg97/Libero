@@ -50,10 +50,56 @@ const Mensualidad = require('../models/Mensualidad');
 const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 
 function buildUploadUrl(req, file, folder) {
   if (!file || !file.filename) return null;
   return `/uploads/${folder}/${file.filename}`;
+}
+
+function normalizarCategoria(valor) {
+  return String(valor || '').trim().toUpperCase();
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizarNumeroFranela(valor) {
+  if (valor === undefined || valor === null || valor === '') return undefined;
+  const nro = Number(valor);
+  if (Number.isNaN(nro)) return NaN;
+  return nro;
+}
+
+async function validarNumeroFranelaDisponible({ numeroFranela, categoria, excludeAlumnoId }) {
+  if (numeroFranela === undefined) return;
+
+  if (!Number.isInteger(numeroFranela) || numeroFranela < 1 || numeroFranela > 100) {
+    throw new Error('El nro de franela debe estar entre 1 y 100.');
+  }
+
+  const categoriaNormalizada = normalizarCategoria(categoria);
+  if (!categoriaNormalizada) {
+    throw new Error('La categoria es obligatoria para asignar nro de franela.');
+  }
+
+  const filtro = {
+    categoria: categoriaNormalizada,
+    numero_franela: numeroFranela,
+    activo: { $ne: false }
+  };
+
+  if (excludeAlumnoId) {
+    filtro._id = { $ne: excludeAlumnoId };
+  }
+
+  const alumnoExistente = await Alumno.findOne(filtro).select('_id nombres apellidos sede categoria numero_franela');
+  if (alumnoExistente) {
+    throw new Error(
+      `El nro de franela ${numeroFranela} ya esta asignado en la categoria ${categoriaNormalizada} a ${alumnoExistente.nombres} ${alumnoExistente.apellidos}.`
+    );
+  }
 }
 
 function normalizarTipoReposo(tipo) {
@@ -110,6 +156,52 @@ exports.getAlumnos = async (req, res) => {
     res.json(alumnos);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener alumnos' });
+  }
+};
+
+exports.getDisponibilidadNumeroFranela = async (req, res) => {
+  try {
+    const categoria = normalizarCategoria(req.query.categoria);
+    if (!categoria) {
+      return res.status(400).json({ error: 'La categoria es obligatoria.' });
+    }
+
+    const filtro = {
+      activo: { $ne: false },
+      numero_franela: { $gte: 1, $lte: 100 },
+      categoria: { $regex: new RegExp(`^${escapeRegex(categoria)}$`, 'i') }
+    };
+
+    const excludeAlumnoId = req.query.excludeAlumnoId;
+    if (excludeAlumnoId && mongoose.Types.ObjectId.isValid(excludeAlumnoId)) {
+      filtro._id = { $ne: excludeAlumnoId };
+    }
+
+    const alumnos = await Alumno.find(filtro).select('numero_franela').lean();
+    const ocupadosSet = new Set();
+
+    alumnos.forEach((alumno) => {
+      const nro = Number(alumno.numero_franela);
+      if (Number.isInteger(nro) && nro >= 1 && nro <= 100) {
+        ocupadosSet.add(nro);
+      }
+    });
+
+    const ocupados = Array.from(ocupadosSet).sort((a, b) => a - b);
+    const disponibles = [];
+    for (let i = 1; i <= 100; i += 1) {
+      if (!ocupadosSet.has(i)) disponibles.push(i);
+    }
+
+    return res.json({
+      categoria,
+      ocupados,
+      disponibles,
+      totalOcupados: ocupados.length,
+      totalDisponibles: disponibles.length
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al consultar disponibilidad de nro de franela' });
   }
 };
 
@@ -206,10 +298,17 @@ exports.createAlumno = async (req, res) => {
       usuario: user ? user._id : undefined,
       cedula
     };
+    if (alumnoData.categoria !== undefined) {
+      alumnoData.categoria = normalizarCategoria(alumnoData.categoria);
+    }
     if (alumnoData.numero_franela !== undefined && alumnoData.numero_franela !== '') {
-      const nro = Number(alumnoData.numero_franela);
+      const nro = normalizarNumeroFranela(alumnoData.numero_franela);
       alumnoData.numero_franela = Number.isNaN(nro) ? undefined : nro;
     }
+    await validarNumeroFranelaDisponible({
+      numeroFranela: alumnoData.numero_franela,
+      categoria: alumnoData.categoria
+    });
     if (alumnoData.habilitar_pago_cuotas !== undefined) {
       alumnoData.habilitar_pago_cuotas = alumnoData.habilitar_pago_cuotas === true || alumnoData.habilitar_pago_cuotas === 'true';
     }
@@ -267,6 +366,9 @@ exports.getAlumnoById = async (req, res) => {
 // Actualizar un alumno
 exports.updateAlumno = async (req, res) => {
   try {
+    const alumnoActual = await Alumno.findById(req.params.id).select('_id categoria numero_franela');
+    if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
+
     let updateData = { ...req.body };
     let sedeId = updateData.sede;
     if (typeof sedeId === 'string') {
@@ -281,9 +383,27 @@ exports.updateAlumno = async (req, res) => {
     if (req.body.cedula !== undefined) {
       updateData.cedula = req.body.cedula;
     }
+    if (updateData.categoria !== undefined) {
+      updateData.categoria = normalizarCategoria(updateData.categoria);
+    }
     if (updateData.numero_franela !== undefined && updateData.numero_franela !== '') {
-      const nro = Number(updateData.numero_franela);
+      const nro = normalizarNumeroFranela(updateData.numero_franela);
       updateData.numero_franela = Number.isNaN(nro) ? undefined : nro;
+    }
+    const cambiaNumeroOCategoria = updateData.numero_franela !== undefined || updateData.categoria !== undefined;
+    if (cambiaNumeroOCategoria) {
+      const categoriaObjetivo = updateData.categoria !== undefined
+        ? updateData.categoria
+        : alumnoActual.categoria;
+      const numeroObjetivo = updateData.numero_franela !== undefined
+        ? updateData.numero_franela
+        : alumnoActual.numero_franela;
+
+      await validarNumeroFranelaDisponible({
+        numeroFranela: numeroObjetivo,
+        categoria: categoriaObjetivo,
+        excludeAlumnoId: alumnoActual._id
+      });
     }
     if (updateData.habilitar_pago_cuotas !== undefined) {
       updateData.habilitar_pago_cuotas = updateData.habilitar_pago_cuotas === true || updateData.habilitar_pago_cuotas === 'true';
@@ -311,7 +431,6 @@ exports.updateAlumno = async (req, res) => {
       updateData.foto_cedula = buildUploadUrl(req, cedulaFile, 'alumnos');
     }
     const alumno = await Alumno.findByIdAndUpdate(req.params.id, updateData, { new: true });
-    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
     const debeRecalcularMonto =
       updateData.tipo_mensualidad !== undefined ||
       updateData.monto_personalizado_valor !== undefined ||

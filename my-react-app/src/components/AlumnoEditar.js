@@ -26,6 +26,11 @@ function AlumnoEditar({ locationState }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [categoria, setCategoria] = useState('');
+  const [numeroFranelaDuplicado, setNumeroFranelaDuplicado] = useState(false);
+  const [numeroFranelaCheckLoading, setNumeroFranelaCheckLoading] = useState(false);
+  const [numeroFranelaCheckMsg, setNumeroFranelaCheckMsg] = useState('');
+  const [numerosFranelaDisponibles, setNumerosFranelaDisponibles] = useState([]);
+  const [numerosFranelaOcupados, setNumerosFranelaOcupados] = useState([]);
   const inputRef = useRef(null);
   const inputCedulaRef = useRef(null);
 
@@ -112,6 +117,74 @@ function AlumnoEditar({ locationState }) {
     }
   }, [form.fecha_nacimiento]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const categoriaNormalizada = String(form.categoria || '').trim().toUpperCase();
+
+    if (!categoriaNormalizada) {
+      setNumeroFranelaCheckLoading(false);
+      setNumeroFranelaCheckMsg('');
+      setNumeroFranelaDuplicado(false);
+      setNumerosFranelaDisponibles([]);
+      setNumerosFranelaOcupados([]);
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      setNumeroFranelaCheckLoading(true);
+      try {
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}&excludeAlumnoId=${encodeURIComponent(id)}`
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Error verificando nro de franela');
+
+        if (!cancelled) {
+          const ocupados = Array.isArray(data.ocupados) ? data.ocupados : [];
+          const disponibles = Array.isArray(data.disponibles) ? data.disponibles : [];
+          setNumerosFranelaOcupados(ocupados);
+          setNumerosFranelaDisponibles(disponibles);
+          setNumeroFranelaCheckMsg('');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setNumerosFranelaOcupados([]);
+          setNumerosFranelaDisponibles([]);
+          setNumeroFranelaCheckMsg('No se pudo verificar disponibilidad de franela.');
+        }
+      } finally {
+        if (!cancelled) setNumeroFranelaCheckLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [form.categoria, id]);
+
+  useEffect(() => {
+    if (!form.numero_franela) {
+      setNumeroFranelaDuplicado(false);
+      return;
+    }
+
+    const numero = Number(form.numero_franela);
+    if (Number.isNaN(numero) || numero < 1 || numero > 100) {
+      setNumeroFranelaDuplicado(false);
+      setNumeroFranelaCheckMsg('El nro de franela debe estar entre 1 y 100.');
+      return;
+    }
+
+    const duplicado = numerosFranelaOcupados.includes(numero);
+    setNumeroFranelaDuplicado(duplicado);
+    setNumeroFranelaCheckMsg(
+      duplicado
+        ? `El nro de franela ${numero} ya esta ocupado en la categoria ${String(form.categoria || '').trim().toUpperCase()}.`
+        : ''
+    );
+  }, [form.numero_franela, form.categoria, numerosFranelaOcupados]);
+
   const handleFotoChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -193,6 +266,10 @@ function AlumnoEditar({ locationState }) {
       const nro = Number(form.numero_franela);
       if (Number.isNaN(nro) || nro < 1 || nro > 100) {
         setError('El nro de franela debe estar entre 1 y 100.');
+        return;
+      }
+      if (numeroFranelaDuplicado) {
+        setError(numeroFranelaCheckMsg || 'Ese nro de franela ya esta asignado en la categoria.');
         return;
       }
     }
@@ -404,15 +481,30 @@ function AlumnoEditar({ locationState }) {
               id="outlined-basic-numero-franela"
               label="Nro de franela"
               name="numero_franela"
-              type="number"
+              select
               variant="outlined"
               value={form.numero_franela || ''}
               onChange={handleChange}
               fullWidth
               size="small"
               sx={{ my: 1 }}
-              inputProps={{ min: 1, max: 100 }}
-            />
+              disabled={!categoria || numeroFranelaCheckLoading}
+              error={numeroFranelaDuplicado}
+              helperText={
+                numeroFranelaDuplicado
+                  ? numeroFranelaCheckMsg
+                  : (numeroFranelaCheckLoading
+                    ? 'Verificando disponibilidad por categoria...'
+                    : (!categoria
+                      ? 'Selecciona fecha de nacimiento para definir categoria'
+                      : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
+              }
+            >
+              <MenuItem value=""><em>Sin asignar</em></MenuItem>
+              {numerosFranelaDisponibles.map((nro) => (
+                <MenuItem key={nro} value={String(nro)}>{nro}</MenuItem>
+              ))}
+            </TextField>
           </div>
           <div className="form-row">
           <TextField id="outlined-basic-nombres" label="Nombres *" name="nombres" variant="outlined" value={form.nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />

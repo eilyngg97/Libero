@@ -173,6 +173,22 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     }
   };
 
+  const headerTitle = !metodoSeleccionado
+    ? '¿Como vas a pagar?'
+    : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
+      ? 'Confirma los datos del pago'
+      : metodoSeleccionado.id === 'deposito-usd'
+        ? 'Pago en USD'
+        : `Datos para pagar por ${metodoSeleccionado.nombre}`;
+
+  const headerSubtitle = !metodoSeleccionado
+    ? 'Selecciona tu metodo de pago preferido para continuar.'
+    : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
+      ? 'Completa los datos y carga el comprobante para finalizar.'
+      : metodoSeleccionado.id === 'deposito-usd'
+        ? 'Sigue las instrucciones para registrar el pago con administracion.'
+        : 'Revisa la informacion y continua cuando hayas realizado el pago.';
+
   return (
     <Dialog
       open={open}
@@ -199,10 +215,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a', mt: 0.5 }}>
-              ¿Como vas a pagar?
+              {headerTitle}
             </Typography>
             <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.5 }}>
-              Selecciona tu metodo de pago preferido para continuar.
+              {headerSubtitle}
             </Typography>
           </Box>
           <IconButton onClick={onClose} size="small" sx={{ color: '#94a3b8' }}>
