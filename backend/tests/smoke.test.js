@@ -8,6 +8,7 @@ jest.mock('../models/User', () => {
   }));
 
   UserMock.findOne = jest.fn();
+  UserMock.findByIdAndDelete = jest.fn();
 
   return UserMock;
 });
@@ -30,7 +31,8 @@ jest.mock('../models/Alumno', () => {
 jest.mock('../models/Representante', () => ({
   find: jest.fn(),
   findById: jest.fn(),
-  findOne: jest.fn()
+  findOne: jest.fn(),
+  findByIdAndDelete: jest.fn()
 }));
 
 jest.mock('../models/Mensualidad', () => ({
@@ -307,6 +309,51 @@ describe('Backend smoke tests', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.estatus).toBe('Pendiente');
+  });
+
+  test('DELETE /api/alumnos/:id elimina representante y usuario huerfanos solo en borrado fisico', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    Alumno.findByIdAndDelete.mockResolvedValue({
+      _id: 'a1',
+      representante: 'r1',
+      usuario: null
+    });
+    Alumno.findOne
+      .mockReturnValueOnce({ select: jest.fn().mockResolvedValue(null) })
+      .mockReturnValueOnce({ select: jest.fn().mockResolvedValue(null) });
+    Representante.findByIdAndDelete.mockResolvedValue({ _id: 'r1', usuario: 'u1' });
+    Representante.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue(null) });
+    User.findByIdAndDelete.mockResolvedValue({ _id: 'u1' });
+
+    const response = await request(app)
+      .delete('/api/alumnos/a1')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(Representante.findByIdAndDelete).toHaveBeenCalledWith('r1');
+    expect(User.findByIdAndDelete).toHaveBeenCalledWith('u1');
+  });
+
+  test('PATCH /api/alumnos/:id/baja mantiene representante y usuario', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    Alumno.findByIdAndUpdate.mockResolvedValue({
+      _id: 'a1',
+      activo: false,
+      dado_de_baja: true,
+      representante: 'r1',
+      usuario: 'u1'
+    });
+
+    const response = await request(app)
+      .patch('/api/alumnos/a1/baja')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ motivo_baja: 'Prueba' });
+
+    expect(response.status).toBe(200);
+    expect(Representante.findByIdAndDelete).not.toHaveBeenCalled();
+    expect(User.findByIdAndDelete).not.toHaveBeenCalled();
   });
 
   test('POST /api/constancias generates pdf', async () => {

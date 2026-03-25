@@ -129,6 +129,19 @@ async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio) {
   );
 }
 
+async function eliminarUsuarioSiQuedaHuerfano(userId) {
+  if (!userId) return;
+
+  const [alumnoRelacionado, representanteRelacionado] = await Promise.all([
+    Alumno.findOne({ usuario: userId }).select('_id'),
+    Representante.findOne({ usuario: userId }).select('_id')
+  ]);
+
+  if (!alumnoRelacionado && !representanteRelacionado) {
+    await User.findByIdAndDelete(userId);
+  }
+}
+
 // Obtener todos los alumnos
 exports.getAlumnos = async (req, res) => {
   try {
@@ -505,6 +518,22 @@ exports.deleteAlumno = async (req, res) => {
   try {
     const alumno = await Alumno.findByIdAndDelete(req.params.id);
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    if (alumno.representante) {
+      const otroAlumnoConRepresentante = await Alumno.findOne({ representante: alumno.representante }).select('_id');
+
+      if (!otroAlumnoConRepresentante) {
+        const representante = await Representante.findByIdAndDelete(alumno.representante);
+        if (representante?.usuario) {
+          await eliminarUsuarioSiQuedaHuerfano(representante.usuario);
+        }
+      }
+    }
+
+    if (alumno.usuario) {
+      await eliminarUsuarioSiQuedaHuerfano(alumno.usuario);
+    }
+
     res.json({ message: 'Alumno eliminado' });
   } catch (err) {
     res.status(500).json({ error: 'Error al eliminar alumno' });
