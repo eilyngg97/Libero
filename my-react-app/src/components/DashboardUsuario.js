@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardActions, Button, Typography, Avatar, Grid, Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import { mediaUrl } from '../utils/mediaUrl';
 
 function DashboardUsuario() {
@@ -126,62 +124,138 @@ function DashboardUsuario() {
             {alumnos.map((alumno) => {
               const resumen = resumenPagos[alumno._id] || { fechaTexto: '--', monto: null, estado: 'sin datos' };
               return (
-                <Grid item xs={12} sm={6} md={4} key={alumno._id}>
-                  <Card sx={{ borderRadius: 3, boxShadow: '0 10px 25px rgba(15, 23, 42, 0.08)', p: 2, minWidth: 260, border: '1px solid #e2e8f0' }}>
-                    <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pb: 1.5 }}>
-                      <Avatar
-                        src={mediaUrl(alumno.foto) || undefined}
-                        alt={alumno.nombres}
-                        sx={{ width: 72, height: 72, mb: 1.25, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.16)' }}
-                      />
-                      <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5, color: '#0f172a' }}>
-                        {alumno.nombres} {alumno.apellidos}
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1, mb: 1.5, flexWrap: 'wrap', justifyContent: 'center' }}>
-                        <Typography variant="caption" sx={{ bgcolor: '#f8fafc', border: '1px solid #e2e8f0', px: 1, py: 0.4, borderRadius: 1.5, color: '#475569' }}>
-                          Categoria: <b>{alumno.categoria || '-'}</b>
-                        </Typography>
-                        <Typography variant="caption" sx={{ bgcolor: '#f8fafc', border: '1px solid #e2e8f0', px: 1, py: 0.4, borderRadius: 1.5, color: '#475569' }}>
-                          Sede: <b>{alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : alumno.sede || '-'}</b>
-                        </Typography>
-                      </Box>
-
-                      <Box sx={{ width: '100%', borderRadius: 2, p: 1.4, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                        <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>
-                          RESUMEN
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.75 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                            <EventAvailableIcon sx={{ color: '#3b82f6', fontSize: 18 }} />
-                            <Typography variant="body2" sx={{ color: '#475569' }}>
-                              Proximo pago
+                <Grid item xs={12} sm={6} md={4} key={alumno._id} sx={{ display: 'flex', justifyContent: 'center' }}>
+                  <Card
+                    sx={{
+                      width: '100%',
+                      maxWidth: 380,
+                      borderRadius: 2.5,
+                      p: 1.3,
+                      minWidth: 260,
+                      bgcolor: '#f3f4f6',
+                      border: '1px solid #e5e7eb',
+                      boxShadow: '0 8px 18px rgba(17, 24, 39, 0.07)'
+                    }}
+                  >
+                    <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', pb: 1.2, px: 1.3 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 1.1 }}>
+                        <Avatar
+                          src={mediaUrl(alumno.foto) || undefined}
+                          alt={alumno.nombres}
+                          sx={{ width: 58, height: 58, boxShadow: '0 4px 10px rgba(15, 23, 42, 0.16)' }}
+                        />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography
+                            variant="subtitle1"
+                            sx={{
+                              fontWeight: 700,
+                              color: '#111827',
+                              lineHeight: 1.15,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}
+                          >
+                            {alumno.nombres} {alumno.apellidos}
+                          </Typography>
+                          <Box sx={{ display: 'flex', gap: 0.75, mt: 0.65, flexWrap: 'wrap' }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                bgcolor: '#e5e7eb',
+                                border: '1px solid #d1d5db',
+                                px: 0.85,
+                                py: 0.2,
+                                borderRadius: 999,
+                                color: '#4b5563',
+                                fontWeight: 600
+                              }}
+                            >
+                              Categoria: {alumno.categoria || '-'}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                bgcolor: '#e5e7eb',
+                                border: '1px solid #d1d5db',
+                                px: 0.85,
+                                py: 0.2,
+                                borderRadius: 999,
+                                color: '#4b5563',
+                                fontWeight: 600
+                              }}
+                            >
+                              Sede: {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : alumno.sede || '-'}
                             </Typography>
                           </Box>
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                        </Box>
+                      </Box>
+
+                      <Box
+                        sx={{
+                          borderRadius: 1.5,
+                          p: 1.25,
+                          bgcolor: '#e5e7eb',
+                          border: '1px solid #d1d5db'
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: 'block',
+                            color: '#4b5563',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            mb: 0.7
+                          }}
+                        >
+                          Resumen de cuenta
+                        </Typography>
+
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
+                          <Typography variant="body2" sx={{ color: '#374151', lineHeight: 1.25 }}>
+                            Proximo pago:
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#111827', lineHeight: 1.25, textAlign: 'right' }}>
                             {resumen.fechaTexto}
                           </Typography>
                         </Box>
-                        <Typography variant="body2" sx={{ mt: 0.7, color: '#0f172a', fontWeight: 700 }}>
-                          {formatMonto(resumen.monto)}
-                        </Typography>
-                        <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: '#475569', fontWeight: 700 }}>
-                          Saldo a favor: ${Number(alumno?.saldo_a_favor_mensualidades || 0).toFixed(2)}
-                        </Typography>
+                        <Box sx={{ borderTop: '1px solid #cfd4dc', my: 0.2 }} />
+
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
+                          <Typography variant="body2" sx={{ color: '#374151', lineHeight: 1.25 }}>
+                            Monto:
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#111827', lineHeight: 1.25, textAlign: 'right' }}>
+                            {formatMonto(resumen.monto).replace(' USD', '')}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ borderTop: '1px solid #cfd4dc', my: 0.2 }} />
+
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
+                          <Typography variant="body2" sx={{ color: '#111827', fontWeight: 700, lineHeight: 1.25 }}>
+                            Saldo a favor:
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#111827', fontWeight: 800, lineHeight: 1.25, textAlign: 'right' }}>
+                            ${Number(alumno?.saldo_a_favor_mensualidades || 0).toFixed(2)}
+                          </Typography>
+                        </Box>
                       </Box>
                     </CardContent>
-                    <CardActions sx={{ justifyContent: 'center', pt: 0.5 }}>
+                    <CardActions sx={{ justifyContent: 'center', pt: 0.5, px: 1.3, pb: 1.2 }}>
                       <Button
                         variant="contained"
                         fullWidth
                         sx={{
-                          bgcolor: '#1e293b',
-                          '&:hover': { bgcolor: '#0f172a' },
-                          fontWeight: 700,
-                          borderRadius: 2,
+                          bgcolor: '#020617',
+                          '&:hover': { bgcolor: '#111827' },
+                          fontWeight: 600,
+                          borderRadius: 1.4,
                           textTransform: 'none',
-                          py: 1
+                          py: 0.95,
+                          fontSize: '0.9rem'
                         }}
-                        startIcon={<PersonOutlineIcon />}
                         onClick={() => {
                           navigate(`/panel-opciones-usuario/${alumno._id}`, {
                             state: {
@@ -199,9 +273,11 @@ function DashboardUsuario() {
               );
             })}
 
-            <Grid item xs={12} sm={6} md={4}>
+            <Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
               <Card
                 sx={{
+                  width: '100%',
+                  maxWidth: 380,
                   borderRadius: 3,
                   minHeight: 330,
                   border: '2px dashed #cbd5e1',
