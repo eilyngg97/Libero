@@ -9,6 +9,7 @@ import LockIcon from '@mui/icons-material/Lock';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
@@ -19,7 +20,7 @@ const metodos = [
     detalles: {
       banco: 'BANCO BANESCO',
       telefono: '0412-5228727',
-      cedula: 'V-19433844',
+      cedula: '19433844',
     }
   },
   {
@@ -46,6 +47,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const [comprobante, setComprobante] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [copySuccess, setCopySuccess] = useState('');
   const [tasaPago, setTasaPago] = useState(null);
   const monto = pago?.monto;
   const { dolar } = useDolar();
@@ -67,9 +69,50 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setComprobante(null);
       setSubmitting(false);
       setSubmitError(null);
+      setCopySuccess('');
       setTasaPago(Number(tasa) || null);
     }
   }, [open, tasa]);
+
+  const copiarDatoPago = async (clave, valor) => {
+    const valorFormateado = formatearValorDetallePago(clave, valor);
+    const soloDigitos = String(valor || '').replace(/\D/g, '');
+    const textoParaCopiar = (clave === 'cedula' || clave === 'telefono' || clave === 'cuenta')
+      ? soloDigitos
+      : String(valorFormateado || '');
+    if (!textoParaCopiar || textoParaCopiar === '-') return;
+    const label = String(clave || '').replace('_', ' ');
+    try {
+      await navigator.clipboard.writeText(textoParaCopiar);
+      setCopySuccess(`${label} copiado`);
+      setTimeout(() => setCopySuccess(''), 1800);
+    } catch {
+      setCopySuccess('No se pudo copiar');
+      setTimeout(() => setCopySuccess(''), 1800);
+    }
+  };
+
+  const formatearValorDetallePago = (clave, valor) => {
+    if (clave === 'cedula') {
+      const base = String(valor || '').replace(/^V-?/i, '').trim();
+      return base ? `V-${base}` : '-';
+    }
+
+    if (clave === 'telefono') {
+      const digits = String(valor || '').replace(/\D/g, '');
+      if (!digits) return '-';
+      if (digits.length <= 4) return digits;
+      return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    }
+
+    if (clave === 'cuenta') {
+      const digits = String(valor || '').replace(/\D/g, '');
+      if (!digits) return '-';
+      return digits.match(/.{1,4}/g)?.join('-') || digits;
+    }
+
+    return valor;
+  };
 
   useEffect(() => {
     if (!open || !mostrarFormularioPago || !fechaPago || monto === undefined || monto === null) return;
@@ -325,15 +368,37 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, mb: 2 }}>
                     {Object.entries(metodoSeleccionado.detalles).map(([k, v]) => (
                       <Box key={k}>
+                        {(() => {
+                          const valorFormateado = formatearValorDetallePago(k, v);
+                          return (
+                            <>
                         <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                           {k.replace('_', ' ')}
                         </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                          {v}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
+                            {valorFormateado}
+                          </Typography>
+                          <IconButton
+                            size="small"
+                            onClick={() => copiarDatoPago(k, v)}
+                            sx={{ color: '#64748b' }}
+                            aria-label={`Copiar ${k}`}
+                          >
+                            <ContentCopyIcon fontSize="inherit" />
+                          </IconButton>
+                        </Box>
+                            </>
+                          );
+                        })()}
                       </Box>
                     ))}
                   </Box>
+                  {copySuccess && (
+                    <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 700, display: 'block', mb: 1 }}>
+                      {copySuccess}
+                    </Typography>
+                  )}
                   <Box
                     sx={{
                       borderRadius: 2,
@@ -355,7 +420,18 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                         {montoBs !== null ? `${formatMoney(montoBs)} Bs` : '-'} / {formatMoney(monto)} USD
                       </Typography>
                     </Box>
-                    <PaymentsIcon sx={{ opacity: 0.85 }} />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => copiarDatoPago('monto_bs', montoBs !== null ? formatMoney(montoBs) : '')}
+                        disabled={montoBs === null}
+                        sx={{ color: '#ffffff', opacity: montoBs === null ? 0.45 : 0.9 }}
+                        aria-label="Copiar monto en Bs"
+                      >
+                        <ContentCopyIcon fontSize="inherit" />
+                      </IconButton>
+                      <PaymentsIcon sx={{ opacity: 0.85 }} />
+                    </Box>
                   </Box>
                 </CardContent>
               </Card>
