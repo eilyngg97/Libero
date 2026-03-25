@@ -23,6 +23,7 @@ const AlumnoSchema = new mongoose.Schema({
   observaciones: { type: String },
   numero_franela: { type: Number, min: 1, max: 100 },
   habilitar_pago_cuotas: { type: Boolean, default: false },
+  saldo_a_favor_mensualidades: { type: Number, default: 0 },
   etiquetas: [{ type: String }],
   activo: { type: Boolean, default: true },
   dado_de_baja: { type: Boolean, default: false },

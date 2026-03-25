@@ -164,6 +164,9 @@ function DashboardUsuario() {
                         <Typography variant="body2" sx={{ mt: 0.7, color: '#0f172a', fontWeight: 700 }}>
                           {formatMonto(resumen.monto)}
                         </Typography>
+                        <Typography variant="caption" sx={{ mt: 0.5, display: 'block', color: '#475569', fontWeight: 700 }}>
+                          Saldo a favor: ${Number(alumno?.saldo_a_favor_mensualidades || 0).toFixed(2)}
+                        </Typography>
                       </Box>
                     </CardContent>
                     <CardActions sx={{ justifyContent: 'center', pt: 0.5 }}>

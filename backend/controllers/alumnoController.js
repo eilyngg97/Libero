@@ -73,7 +73,7 @@ function normalizarNumeroFranela(valor) {
 }
 
 async function validarNumeroFranelaDisponible({ numeroFranela, categoria, excludeAlumnoId }) {
-  if (numeroFranela === undefined) return;
+  if (numeroFranela === undefined || numeroFranela === null || numeroFranela === '') return;
 
   if (!Number.isInteger(numeroFranela) || numeroFranela < 1 || numeroFranela > 100) {
     throw new Error('El nro de franela debe estar entre 1 y 100.');
@@ -301,9 +301,13 @@ exports.createAlumno = async (req, res) => {
     if (alumnoData.categoria !== undefined) {
       alumnoData.categoria = normalizarCategoria(alumnoData.categoria);
     }
-    if (alumnoData.numero_franela !== undefined && alumnoData.numero_franela !== '') {
+    if (Object.prototype.hasOwnProperty.call(alumnoData, 'numero_franela')) {
       const nro = normalizarNumeroFranela(alumnoData.numero_franela);
-      alumnoData.numero_franela = Number.isNaN(nro) ? undefined : nro;
+      if (nro === undefined) {
+        delete alumnoData.numero_franela;
+      } else {
+        alumnoData.numero_franela = nro;
+      }
     }
     await validarNumeroFranelaDisponible({
       numeroFranela: alumnoData.numero_franela,
@@ -366,7 +370,7 @@ exports.getAlumnoById = async (req, res) => {
 // Actualizar un alumno
 exports.updateAlumno = async (req, res) => {
   try {
-    const alumnoActual = await Alumno.findById(req.params.id).select('_id categoria numero_franela');
+    const alumnoActual = await Alumno.findById(req.params.id).select('_id categoria numero_franela nombres apellidos cedula usuario representante');
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
@@ -381,14 +385,14 @@ exports.updateAlumno = async (req, res) => {
     }
     updateData.sede = sedeId;
     if (req.body.cedula !== undefined) {
-      updateData.cedula = req.body.cedula;
+      updateData.cedula = String(req.body.cedula || '').trim();
     }
     if (updateData.categoria !== undefined) {
       updateData.categoria = normalizarCategoria(updateData.categoria);
     }
-    if (updateData.numero_franela !== undefined && updateData.numero_franela !== '') {
+    if (Object.prototype.hasOwnProperty.call(updateData, 'numero_franela')) {
       const nro = normalizarNumeroFranela(updateData.numero_franela);
-      updateData.numero_franela = Number.isNaN(nro) ? undefined : nro;
+      updateData.numero_franela = nro === undefined ? null : nro;
     }
     const cambiaNumeroOCategoria = updateData.numero_franela !== undefined || updateData.categoria !== undefined;
     if (cambiaNumeroOCategoria) {
@@ -430,6 +434,38 @@ exports.updateAlumno = async (req, res) => {
       const cedulaFile = req.files['foto_cedula'][0];
       updateData.foto_cedula = buildUploadUrl(req, cedulaFile, 'alumnos');
     }
+
+    const cedulaObjetivo = updateData.cedula !== undefined
+      ? String(updateData.cedula || '').trim()
+      : String(alumnoActual.cedula || '').trim();
+    const nombresObjetivo = String(updateData.nombres ?? alumnoActual.nombres ?? '').trim();
+    const apellidosObjetivo = String(updateData.apellidos ?? alumnoActual.apellidos ?? '').trim();
+    const representanteObjetivo = updateData.representante !== undefined
+      ? updateData.representante
+      : alumnoActual.representante;
+    const usuarioObjetivo = updateData.usuario !== undefined
+      ? updateData.usuario
+      : alumnoActual.usuario;
+
+    const sinRepresentante = !representanteObjetivo;
+    const sinUsuario = !usuarioObjetivo;
+
+    // Si el alumno no tiene representante, al completar cédula en edición se crea su usuario de portal.
+    if (sinRepresentante && sinUsuario && cedulaObjetivo && nombresObjetivo && apellidosObjetivo) {
+      let user = await User.findOne({ email: cedulaObjetivo });
+      if (!user) {
+        const password = await bcrypt.hash(cedulaObjetivo, 10);
+        user = new User({
+          nombre: `${nombresObjetivo} ${apellidosObjetivo}`.trim(),
+          email: cedulaObjetivo,
+          password,
+          rol: 'usuario'
+        });
+        await user.save();
+      }
+      updateData.usuario = user._id;
+    }
+
     const alumno = await Alumno.findByIdAndUpdate(req.params.id, updateData, { new: true });
     const debeRecalcularMonto =
       updateData.tipo_mensualidad !== undefined ||

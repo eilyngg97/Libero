@@ -8,6 +8,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
 import { MenuItem, FormControl, InputLabel, Select, TextField, Autocomplete, CircularProgress, Checkbox, FormControlLabel, InputAdornment, Box, Paper, Typography, Switch } from '@mui/material';
 import './Alumnos.css';
 
@@ -240,7 +241,14 @@ function Alumnos() {
       sede = stored ? JSON.parse(stored) : '';
     }
     if (sede && sede._id && sede.nombre) {
-      setForm(prev => ({ ...prev, sede: { _id: sede._id, nombre: sede.nombre } }));
+      setForm(prev => ({
+        ...prev,
+        sede: {
+          _id: sede._id,
+          nombre: sede.nombre,
+          costo: sede.costo
+        }
+      }));
     }
   }, [sedeSeleccionada]);
   const inputRef = useRef(null);
@@ -489,6 +497,9 @@ function Alumnos() {
         setLoading(false);
       }
     } else {
+      const montoSede = Number(form.sede?.costo);
+      setMontoMensualidad(Number.isFinite(montoSede) && montoSede > 0 ? String(montoSede) : '');
+      setEstadoMensualidad('Pendiente');
       setShowMensualidadModal(true);
     }
   };
@@ -923,18 +934,46 @@ function Alumnos() {
       </Dialog>
 
       {/* Modal para registrar la primera mensualidad */}
-      <Dialog open={!!showMensualidadModal} onClose={() => setShowMensualidadModal(false)}>
-        <DialogTitle>Registrar primera mensualidad</DialogTitle>
+      <Dialog
+        open={!!showMensualidadModal}
+        onClose={() => setShowMensualidadModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pb: 0.5 }}>
+          Registrar primera mensualidad
+        </DialogTitle>
         <DialogContent>
+          <DialogContentText sx={{ color: '#64748b', mb: 1.25 }}>
+            Se sugiere el monto de la sede, pero puedes modificarlo si aplica prorrateo.
+          </DialogContentText>
+          <Box sx={{ p: 1.2, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#f8fafc', mb: 1.5 }}>
+            <Typography variant="body2" sx={{ color: '#475569' }}>
+              Sede: <b>{form.sede?.nombre || '-'}</b>
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#475569' }}>
+              Monto base sede: <b>{form.sede?.costo !== undefined && form.sede?.costo !== null && form.sede?.costo !== '' ? `$${Number(form.sede.costo).toFixed(2)}` : 'No disponible'}</b>
+            </Typography>
+          </Box>
           <TextField
             label="Monto"
             type="number"
             value={montoMensualidad}
             onChange={e => setMontoMensualidad(e.target.value)}
             fullWidth
-            sx={{ my: 2 }}
+            size="small"
+            sx={{ my: 1.25 }}
+            inputProps={{ min: 0, step: '0.01' }}
+            InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+            helperText="Puedes ajustar este monto para prorrateos o casos especiales."
           />
-          <FormControl fullWidth sx={{ my: 2 }}>
+          <FormControl fullWidth sx={{ my: 1.25 }} size="small">
             <InputLabel id="estado-label">Estado</InputLabel>
             <Select
               labelId="estado-label"
@@ -949,7 +988,7 @@ function Alumnos() {
           </FormControl>
           {errorMensualidad && <div style={{ color: 'red', marginBottom: 8 }}>{errorMensualidad}</div>}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2.25 }}>
           <Button onClick={() => setShowMensualidadModal(false)} disabled={loadingMensualidad}>Cancelar</Button>
           <Button
             variant="contained"

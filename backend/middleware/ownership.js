@@ -2,6 +2,7 @@ const Alumno = require('../models/Alumno');
 const Representante = require('../models/Representante');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const mongoose = require('mongoose');
 
 function isEndUser(req) {
   return req.user?.rol === 'usuario';
@@ -52,17 +53,27 @@ exports.ensureAlumnoOwnershipFromBody = (fieldName = 'alumnoId') => async (req, 
 exports.ensureRepresentanteOwnershipFromParam = (paramName = 'representanteId') => async (req, res, next) => {
   if (!isEndUser(req)) return next();
 
-  const representanteId = req.params[paramName];
-  if (!representanteId) return res.status(400).json({ error: 'representanteId requerido' });
+  try {
+    const representanteId = req.params[paramName];
+    if (!representanteId || representanteId === 'null' || representanteId === 'undefined') {
+      return next();
+    }
 
-  const representante = await Representante.findById(representanteId).select('usuario');
-  if (!representante) return res.status(404).json({ error: 'Representante no encontrado' });
+    if (!mongoose.Types.ObjectId.isValid(representanteId)) {
+      return res.status(400).json({ error: 'representanteId invalido' });
+    }
 
-  if (String(representante.usuario) !== String(req.user.id)) {
-    return res.status(403).json({ error: 'No tienes permiso para este representante' });
+    const representante = await Representante.findById(representanteId).select('usuario');
+    if (!representante) return res.status(404).json({ error: 'Representante no encontrado' });
+
+    if (String(representante.usuario) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'No tienes permiso para este representante' });
+    }
+
+    next();
+  } catch (error) {
+    return res.status(500).json({ error: 'Error validando propiedad del representante' });
   }
-
-  next();
 };
 
 exports.ensureMensualidadOwnershipFromBody = (fieldName = 'id_mensualidad') => async (req, res, next) => {

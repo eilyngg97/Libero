@@ -1,7 +1,12 @@
 const PagoDetalle = require('../models/PagoDetalle');
 const Mensualidad = require('../models/Mensualidad');
+const Alumno = require('../models/Alumno');
 const fs = require('fs');
 const path = require('path');
+
+function redondearMonto(valor) {
+  return Number((Number(valor) || 0).toFixed(2));
+}
 
 function normalizarMonto(value) {
   return Number(value);
@@ -41,13 +46,37 @@ function eliminarArchivoComprobante(comprobanteUrl) {
 
 async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior) {
   const pagos = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
-  const totalPagado = pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0);
-  const montoEsperado = Number(mensualidad.monto_esperado) || 0;
-  const restante = Math.max(0, montoEsperado - totalPagado);
+  const totalPagado = redondearMonto(pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0));
+  const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
+  const restante = redondearMonto(Math.max(0, montoEsperado - totalPagado));
+  const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
+  const saldoGeneradoNuevo = redondearMonto(Math.max(0, totalPagado - montoEsperado));
+  const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
   const mantenerRevision = estatusAnterior === 'En revision' || actorRol === 'usuario';
+  const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
+  const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
 
-  if (totalPagado <= 0) {
-    mensualidad.estatus = 'Pendiente';
+  if (deltaSaldo !== 0) {
+    const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
+    if (alumnoId) {
+      const alumno = await Alumno.findById(alumnoId);
+      if (alumno) {
+        const saldoResultante = redondearMonto((alumno.saldo_a_favor_mensualidades || 0) + deltaSaldo);
+        if (saldoResultante < 0) {
+          throw new Error('El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.');
+        }
+        alumno.saldo_a_favor_mensualidades = saldoResultante;
+        await alumno.save();
+      }
+    }
+  }
+
+  mensualidad.saldo_a_favor_generado = saldoGeneradoNuevo;
+
+  if (montoEsperado <= 0) {
+    mensualidad.estatus = mantenerRevision && totalPagado > 0 ? 'En revision' : 'Pagado';
+  } else if (totalPagado <= 0) {
+    mensualidad.estatus = (estatusAnteriorNormalizado === 'retrasado' || estaVencida) ? 'Retrasado' : 'Pendiente';
   } else if (totalPagado >= montoEsperado) {
     mensualidad.estatus = mantenerRevision ? 'En revision' : 'Pagado';
   } else {
@@ -76,6 +105,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
 
   const habilitarCuotasAlumno = mensualidad.id_alumno?.habilitar_pago_cuotas === true;
   const puedePagarCuotas = actorRol === 'admin' || habilitarCuotasAlumno;
+  const permiteSobrepagoAdelantado = actorRol === 'admin';
   const pagosPrevios = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
   const totalPrevio = pagosPrevios
     .filter((pago) => String(pago._id) !== String(pagoIdExcluir))
@@ -90,7 +120,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
     return { error: { status: 400, payload: { error: 'Monto pagado Bs inválido' } } };
   }
 
-  if (restante <= 0) {
+  if (restante <= 0 && !permiteSobrepagoAdelantado) {
     return { error: { status: 400, payload: { error: 'La mensualidad ya está pagada' } } };
   }
 
@@ -98,7 +128,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
     return { error: { status: 400, payload: { error: 'Este alumno no tiene habilitado pago en cuotas' } } };
   }
 
-  if (monto > restante) {
+  if (monto > restante && !permiteSobrepagoAdelantado) {
     return { error: { status: 400, payload: { error: 'El monto excede el saldo pendiente' } } };
   }
 

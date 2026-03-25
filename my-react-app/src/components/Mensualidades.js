@@ -72,6 +72,14 @@ function Mensualidades() {
 	const [pagoAEliminar, setPagoAEliminar] = useState(null);
 	const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
 	const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
+	const [modalAjusteSede, setModalAjusteSede] = useState(false);
+	const [ajusteNuevoMonto, setAjusteNuevoMonto] = useState('');
+	const [ajusteDescripcion, setAjusteDescripcion] = useState('');
+	const [ajusteAnio, setAjusteAnio] = useState(() => String(new Date().getFullYear()));
+	const [aplicandoAjuste, setAplicandoAjuste] = useState(false);
+	const [previewAjuste, setPreviewAjuste] = useState(null);
+	const [previewAjusteLoading, setPreviewAjusteLoading] = useState(false);
+	const [previewAjusteError, setPreviewAjusteError] = useState('');
 
 	const getAuthHeaders = () => {
 		const token = localStorage.getItem('token');
@@ -93,6 +101,68 @@ function Mensualidades() {
 		setFechaPago(getLocalInputDate());
 		setTasaPagoHistorica(null);
 	};
+
+	const resetAjusteSedeForm = () => {
+		setModalAjusteSede(false);
+		setAjusteNuevoMonto('');
+		setAjusteDescripcion('');
+		setAjusteAnio(String(new Date().getFullYear()));
+		setPreviewAjuste(null);
+		setPreviewAjusteError('');
+	};
+
+	const obtenerPreviewAjusteSede = React.useCallback(async () => {
+		if (!sedeSeleccionada?._id || !filtroMes) {
+			setPreviewAjuste(null);
+			setPreviewAjusteError('');
+			return;
+		}
+
+		const nuevoMonto = Number(ajusteNuevoMonto);
+		const anio = Number(ajusteAnio);
+
+		if (Number.isNaN(nuevoMonto) || nuevoMonto < 0 || Number.isNaN(anio) || anio < 2000) {
+			setPreviewAjuste(null);
+			setPreviewAjusteError('');
+			return;
+		}
+
+		try {
+			setPreviewAjusteLoading(true);
+			setPreviewAjusteError('');
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/ajuste-sede/preview`, {
+				method: 'POST',
+				headers: {
+					...getAuthHeaders(),
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					id_sede: sedeSeleccionada._id,
+					mes: Number(filtroMes),
+					anio,
+					nuevo_monto: nuevoMonto
+				})
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo calcular la vista previa');
+			setPreviewAjuste(data);
+		} catch (err) {
+			setPreviewAjuste(null);
+			setPreviewAjusteError(err.message || 'No se pudo calcular la vista previa');
+		} finally {
+			setPreviewAjusteLoading(false);
+		}
+	}, [sedeSeleccionada?._id, filtroMes, ajusteNuevoMonto, ajusteAnio]);
+
+	React.useEffect(() => {
+		if (!modalAjusteSede) return;
+
+		const timer = setTimeout(() => {
+			obtenerPreviewAjusteSede();
+		}, 300);
+
+		return () => clearTimeout(timer);
+	}, [modalAjusteSede, obtenerPreviewAjusteSede]);
 
 	React.useEffect(() => {
 		if (!modalPago || !fechaPago) return;
@@ -312,13 +382,14 @@ function Mensualidades() {
 			return;
 		}
 		const habilitarCuotas = esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas === true;
+		const permiteSobrepagoAdelantado = esAdmin;
 		const montoEsperado = Number(pagoInfo?.monto_esperado) || 0;
 		const montoToPay = habilitarCuotas ? Number(montoPago) : montoEsperado;
 		if (!montoToPay || Number.isNaN(montoToPay) || montoToPay <= 0) {
 			alert('Monto a pagar inválido');
 			return;
 		}
-		if (montoToPay > (Number(montoPendiente) || 0)) {
+		if (!permiteSobrepagoAdelantado && montoToPay > (Number(montoPendiente) || 0)) {
 			alert('El monto excede el saldo pendiente');
 			return;
 		}
@@ -482,7 +553,67 @@ function Mensualidades() {
 		exportToCsv(datos, `alumnos_retrasados_${nombreSede}.csv`, headers);
 	};
 
+	const aplicarAjusteSede = async () => {
+		if (!sedeSeleccionada?._id) {
+			alert('Selecciona una sede antes de aplicar el ajuste.');
+			return;
+		}
+
+		const nuevoMonto = Number(ajusteNuevoMonto);
+		const anio = Number(ajusteAnio);
+
+		if (!filtroMes) {
+			alert('Selecciona el mes que vas a ajustar.');
+			return;
+		}
+
+		if (Number.isNaN(nuevoMonto) || nuevoMonto < 0) {
+			alert('Ingresa un monto válido para la sede.');
+			return;
+		}
+
+		if (Number.isNaN(anio) || anio < 2000) {
+			alert('Ingresa un año válido.');
+			return;
+		}
+
+		if ((previewAjuste?.mensualidades_actualizables || 0) <= 0) {
+			alert('No hay mensualidades aplicables para este ajuste con los datos indicados.');
+			return;
+		}
+
+		try {
+			setAplicandoAjuste(true);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/ajuste-sede`, {
+				method: 'POST',
+				headers: {
+					...getAuthHeaders(),
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					id_sede: sedeSeleccionada._id,
+					mes: Number(filtroMes),
+					anio,
+					nuevo_monto: nuevoMonto,
+					descripcion: ajusteDescripcion.trim()
+				})
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo aplicar el ajuste');
+			resetAjusteSedeForm();
+			await cargarMensualidades();
+			setSuccessMessage(
+				`Ajuste aplicado: ${data.mensualidades_actualizadas || 0} actualizadas, ${data.mensualidades_omitidas || 0} omitidas y ${data.alumnos_con_saldo_a_favor || 0} alumnos con saldo a favor.`
+			);
+		} catch (err) {
+			alert(err.message || 'No se pudo aplicar el ajuste');
+		} finally {
+			setAplicandoAjuste(false);
+		}
+	};
+
 	const mensualidadesPaginadas = mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina);
+	const formatMontoCorto = (value) => `$${formatMoney(value)}`;
 
 	return (
 		<div>
@@ -497,15 +628,32 @@ function Mensualidades() {
 					<MenuItem value="">Todos</MenuItem>
 					{['Pendiente','Pagado','Retrasado', 'Exonerado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
-				<Button
-				className="mensualidades-export-btn"
-				variant="contained"
-				onClick={exportarExcel}
-				sx={{ width: { xs: '100%', md: 'auto' }, justifySelf: { xs: 'stretch', md: 'end' } }}
-			>
-				Exportar CSV
-			</Button>
+				<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'stretch', md: 'end' }, gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
+					{esAdmin && (
+						<Button
+							variant="outlined"
+							onClick={() => setModalAjusteSede(true)}
+							disabled={!sedeSeleccionada?._id || !filtroMes}
+							sx={{ width: { xs: '100%', md: 'auto' }, fontWeight: 700 }}
+						>
+							Ajuste por sede
+						</Button>
+					)}
+					<Button
+						className="mensualidades-export-btn"
+						variant="contained"
+						onClick={exportarExcel}
+						sx={{ width: { xs: '100%', md: 'auto' }, justifySelf: { xs: 'stretch', md: 'end' } }}
+					>
+						Exportar CSV
+					</Button>
+				</Box>
 			</Box>
+			{esAdmin && !sedeSeleccionada?._id && (
+				<Alert severity="info" sx={{ mb: 2 }}>
+					Selecciona una sede para poder aplicar un ajuste extraordinario al monto del mes.
+				</Alert>
+			)}
 			{isMobile ? (
 				<Box sx={{ mt: 2, display: 'grid', gap: 1.5 }}>
 					{mensualidadesPaginadas.map((m) => (
@@ -525,6 +673,8 @@ function Mensualidades() {
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${m.monto_esperado}</Typography>
+								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
+								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo generado:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 							</Box>
 							{['pendiente', 'retrasado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 								<Button variant="contained" fullWidth onClick={() => handlePago(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' }, fontWeight: 700, mb: ['abono'].includes((m.estatus || '').toLowerCase()) ? 1 : 0 }}>
@@ -568,6 +718,8 @@ function Mensualidades() {
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO GENERADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
 							</TableRow>
@@ -591,6 +743,8 @@ function Mensualidades() {
 									</TableCell>
 									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
 									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${m.monto_esperado}</TableCell>
+									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
+									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
 									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
 									<TableCell>
 										{['pendiente', 'retrasado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
@@ -609,7 +763,7 @@ function Mensualidades() {
 						</TableBody>
 						<tfoot>
 							<TableRow>
-								<TableCell colSpan={6}>
+								<TableCell colSpan={8}>
 									<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
 										<TablePagination
 											component="div"
@@ -903,6 +1057,79 @@ function Mensualidades() {
 					{successMessage}
 				</Alert>
 			</Snackbar>
+			<Dialog open={modalAjusteSede} onClose={() => !aplicandoAjuste && resetAjusteSedeForm()} maxWidth="sm" fullWidth>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Ajuste extraordinario por sede</DialogTitle>
+				<DialogContent sx={{ pt: 1.5 }}>
+					<Alert severity="warning" sx={{ mb: 2 }}>
+						Se rebajará el monto del mes seleccionado para los alumnos de esta sede con mensualidad basada en sede. Si alguno ya pagó el monto completo, la diferencia quedará como saldo a favor para el próximo mes.
+					</Alert>
+					<TextField
+						label="Sede"
+						fullWidth
+						margin="normal"
+						value={sedeSeleccionada?.nombre || ''}
+						disabled
+					/>
+					<TextField
+						label="Mes"
+						fullWidth
+						margin="normal"
+						value={filtroMes ? meses[Number(filtroMes) - 1] : ''}
+						disabled
+					/>
+					<TextField
+						label="Año"
+						type="number"
+						fullWidth
+						margin="normal"
+						value={ajusteAnio}
+						onChange={e => setAjusteAnio(e.target.value)}
+						inputProps={{ min: 2000, step: 1 }}
+					/>
+					<TextField
+						label="Nuevo monto de mensualidad"
+						type="number"
+						fullWidth
+						margin="normal"
+						value={ajusteNuevoMonto}
+						onChange={e => setAjusteNuevoMonto(e.target.value)}
+						inputProps={{ min: 0, step: '0.01' }}
+						helperText="Ejemplo: si la sede cobra 35 y este mes se reconocerá una semana, coloca aquí el nuevo monto final del mes."
+					/>
+					<TextField
+						label="Descripción"
+						fullWidth
+						margin="normal"
+						value={ajusteDescripcion}
+						onChange={e => setAjusteDescripcion(e.target.value)}
+						placeholder="Semana reconocida por suspensión de clases"
+					/>
+					{previewAjusteLoading && <Alert severity="info" sx={{ mt: 1.5 }}>Calculando vista previa...</Alert>}
+					{!!previewAjusteError && <Alert severity="error" sx={{ mt: 1.5 }}>{previewAjusteError}</Alert>}
+					{previewAjuste && !previewAjusteLoading && (
+						<Alert
+							severity={previewAjuste.mensualidades_no_compatibles > 0 ? 'error' : 'success'}
+							sx={{ mt: 1.5 }}
+						>
+							Impacto estimado: {previewAjuste.mensualidades_actualizables || 0} actualizables, {previewAjuste.mensualidades_omitidas || 0} omitidas.
+							 {previewAjuste.mensualidades_no_compatibles > 0 && ` ${previewAjuste.mensualidades_no_compatibles} no compatibles con este monto.`}
+						</Alert>
+					)}
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={resetAjusteSedeForm} disabled={aplicandoAjuste}>Cancelar</Button>
+					<Button variant="outlined" onClick={obtenerPreviewAjusteSede} disabled={aplicandoAjuste || previewAjusteLoading}>
+						Recalcular impacto
+					</Button>
+					<Button
+						variant="contained"
+						onClick={aplicarAjusteSede}
+						disabled={aplicandoAjuste || previewAjusteLoading || (previewAjuste?.mensualidades_actualizables || 0) <= 0 || (previewAjuste?.mensualidades_no_compatibles || 0) > 0}
+					>
+						{aplicandoAjuste ? 'Aplicando...' : 'Aplicar ajuste'}
+					</Button>
+				</DialogActions>
+			</Dialog>
 			{/* Modal pago rápido */}
 			<Dialog
 				open={modalPago}
@@ -999,8 +1226,12 @@ function Mensualidades() {
 								sx={inputSx}
 								value={montoPago}
 								onChange={e => setMontoPago(e.target.value)}
-								inputProps={{ min: 0, step: '0.01', max: montoPendiente || undefined }}
-								helperText={`Pagado: ${formatMoney(pagosPreviosTotal)} | Pendiente: ${formatMoney(montoPendiente)}`}
+								inputProps={{ min: 0, step: '0.01', max: esAdmin ? undefined : (montoPendiente || undefined) }}
+								helperText={
+									esAdmin
+										? `Pagado: ${formatMoney(pagosPreviosTotal)} | Pendiente: ${formatMoney(montoPendiente)} | Si superas el pendiente, el excedente se guarda como saldo a favor.`
+										: `Pagado: ${formatMoney(pagosPreviosTotal)} | Pendiente: ${formatMoney(montoPendiente)}`
+								}
 								disabled={pagosLoading}
 							/>
 							<Typography variant="body2" sx={{ mt: -0.5, mb: 1, color: '#64748b' }}>

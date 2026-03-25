@@ -32,8 +32,12 @@ router.get('/buscar/cedula/:cedula', authMiddleware, async (req, res) => {
 // Obtener representante por usuario
 router.get('/por-usuario/:userId', authMiddleware, async (req, res) => {
   try {
+    if (req.user?.rol === 'usuario' && String(req.user.id) !== String(req.params.userId)) {
+      return res.status(403).json({ error: 'No tienes permiso para consultar este usuario' });
+    }
+
     const representante = await Representante.findOne({ usuario: req.params.userId });
-    if (!representante) return res.status(404).json({ error: 'No se encontró representante para este usuario' });
+    if (!representante) return res.status(200).json(null);
     res.json(representante);
   } catch (err) {
     res.status(500).json({ error: 'Error al buscar representante' });

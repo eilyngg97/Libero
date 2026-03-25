@@ -30,6 +30,7 @@ function PanelOpcionesUsuario() {
   const alumno = location.state?.alumno;
   const sede = location.state?.sede;
   const token = localStorage.getItem('token');
+  const saldoAFavorActual = Number(alumno?.saldo_a_favor_mensualidades) || 0;
 
   const handleRespuestaJuego = async (torneoId, partidoId, estado) => {
     if (!alumno?._id) return;
@@ -551,6 +552,9 @@ function PanelOpcionesUsuario() {
               >
                 <Typography variant="subtitle2" sx={{ color: '#64748b', fontWeight: 700, mb: 1 }}>
                   Estado de pago
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 700, mb: 1 }}>
+                  Saldo a favor disponible: ${saldoAFavorActual.toFixed(2)}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                   {resumenPago.color === 'success' && <CheckCircleIcon color="success" />}
