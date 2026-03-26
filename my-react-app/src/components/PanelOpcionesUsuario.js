@@ -7,6 +7,7 @@ import ShoppingBagIcon from '@mui/icons-material/ShoppingBag';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { mediaUrl } from '../utils/mediaUrl';
@@ -540,6 +541,65 @@ function PanelOpcionesUsuario() {
               <Box
                 sx={{
                   mt: 2,
+                  p: 3,
+                  borderRadius: 4,
+                  background: 'linear-gradient(145deg, #0f766e 0%, #0d9488 100%)',
+                  color: '#ffffff',
+                  overflow: 'hidden',
+                  boxShadow: '0 16px 28px rgba(15, 118, 110, 0.3)',
+                  position: 'relative'
+                }}
+              >
+                <Typography sx={{ fontSize: 13, letterSpacing: '0.08em', fontWeight: 800, opacity: 0.92 }}>
+                  SALDO A FAVOR DISPONIBLE
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 1.2 }}>
+                  <Typography sx={{ fontSize: { xs: 40, md: 42 }, lineHeight: 1, fontWeight: 900 }}>
+                    ${saldoAFavorActual.toFixed(2)}
+                  </Typography>
+                  <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>USD</Typography>
+                </Box>
+
+                <Box
+                  sx={{
+                    mt: 2,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.8,
+                    px: 1.5,
+                    py: 0.8,
+                    borderRadius: 999,
+                    bgcolor: 'rgba(255,255,255,0.24)',
+                    backdropFilter: 'blur(2px)'
+                  }}
+                >
+                  <SavingsOutlinedIcon sx={{ fontSize: 14, opacity: 0.95 }} />
+                  <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
+                    {saldoAFavorActual > 0 ? 'Disponible para proximas cuotas' : 'Sin saldo a favor en este momento'}
+                  </Typography>
+                </Box>
+
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    right: 16,
+                    bottom: 16,
+                    width: 74,
+                    height: 74,
+                    borderRadius: 3,
+                    bgcolor: 'rgba(255,255,255,0.16)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <SavingsOutlinedIcon sx={{ fontSize: 38, color: 'rgba(255,255,255,0.45)' }} />
+                </Box>
+              </Box>
+
+              <Box
+                sx={{
+                  mt: 2,
                   p: 2,
                   borderRadius: 3,
                   border: '1px solid #e5e7eb',
@@ -549,9 +609,6 @@ function PanelOpcionesUsuario() {
               >
                 <Typography variant="subtitle2" sx={{ color: '#64748b', fontWeight: 700, mb: 1 }}>
                   Estado de pago
-                </Typography>
-                <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 700, mb: 1 }}>
-                  Saldo a favor disponible: ${saldoAFavorActual.toFixed(2)}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                   {resumenPago.color === 'success' && <CheckCircleIcon color="success" />}
