@@ -3,7 +3,7 @@ const path = require('path');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
 
-const MONTO_TOLERANCIA_BS = 5;
+const MONTO_TOLERANCIA_BS = 100;
 
 function normalizarTexto(value) {
   return String(value || '')

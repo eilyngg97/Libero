@@ -385,11 +385,13 @@ function Mensualidades() {
 		const permiteSobrepagoAdelantado = esAdmin;
 		const montoEsperado = Number(pagoInfo?.monto_esperado) || 0;
 		const montoToPay = habilitarCuotas ? Number(montoPago) : montoEsperado;
+		const tasaParaTolerancia = Number(tasaPagoHistorica || tasaBCV) || 0;
+		const toleranciaUsd = tasaParaTolerancia > 0 ? (5 / tasaParaTolerancia) : 0;
 		if (!montoToPay || Number.isNaN(montoToPay) || montoToPay <= 0) {
 			alert('Monto a pagar inválido');
 			return;
 		}
-		if (!permiteSobrepagoAdelantado && montoToPay > (Number(montoPendiente) || 0)) {
+		if (!permiteSobrepagoAdelantado && (montoToPay - (Number(montoPendiente) || 0)) > toleranciaUsd) {
 			alert('El monto excede el saldo pendiente');
 			return;
 		}

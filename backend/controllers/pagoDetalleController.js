@@ -4,6 +4,8 @@ const Alumno = require('../models/Alumno');
 const fs = require('fs');
 const path = require('path');
 
+const MONTO_TOLERANCIA_BS = 100;
+
 function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
 }
@@ -100,6 +102,18 @@ function validarMontoBs(montoBs) {
   return montoBs === null || (!Number.isNaN(montoBs) && montoBs > 0);
 }
 
+function calcularToleranciaUsdDesdeBs(monto, montoBs) {
+  const montoNum = Number(monto);
+  const montoBsNum = Number(montoBs);
+  if (!Number.isFinite(montoNum) || montoNum <= 0) return 0;
+  if (!Number.isFinite(montoBsNum) || montoBsNum <= 0) return 0;
+
+  const tasaAplicada = montoBsNum / montoNum;
+  if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) return 0;
+
+  return redondearMonto(MONTO_TOLERANCIA_BS / tasaAplicada);
+}
+
 async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, actorRol = null }) {
   if (!mensualidad) return { error: { status: 404, payload: { error: 'Mensualidad no encontrada' } } };
 
@@ -111,6 +125,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
     .filter((pago) => String(pago._id) !== String(pagoIdExcluir))
     .reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0);
   const restante = Math.max(0, (Number(mensualidad.monto_esperado) || 0) - totalPrevio);
+  const toleranciaUsd = calcularToleranciaUsdDesdeBs(monto, montoBs);
 
   if (!monto || Number.isNaN(monto) || monto <= 0) {
     return { error: { status: 400, payload: { error: 'Monto pagado inválido' } } };
@@ -124,18 +139,25 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
     return { error: { status: 400, payload: { error: 'La mensualidad ya está pagada' } } };
   }
 
-  if (!puedePagarCuotas && monto < restante) {
+  if (!puedePagarCuotas && monto < restante && (restante - monto) > toleranciaUsd) {
     return { error: { status: 400, payload: { error: 'Este alumno no tiene habilitado pago en cuotas' } } };
   }
 
-  if (monto > restante && !permiteSobrepagoAdelantado) {
+  if (monto > restante && !permiteSobrepagoAdelantado && (monto - restante) > toleranciaUsd) {
     return { error: { status: 400, payload: { error: 'El monto excede el saldo pendiente' } } };
+  }
+
+  let montoARegistrar = monto;
+  if (!permiteSobrepagoAdelantado && restante > 0 && Math.abs(monto - restante) <= toleranciaUsd) {
+    montoARegistrar = redondearMonto(restante);
   }
 
   return {
     totalPrevio,
     restante,
-    habilitarCuotas: puedePagarCuotas
+    habilitarCuotas: puedePagarCuotas,
+    montoARegistrar,
+    toleranciaUsd
   };
 }
 
@@ -155,7 +177,7 @@ exports.registrarPago = async (req, res) => {
 
     await PagoDetalle.create({
       id_mensualidad,
-      monto_pagado: monto,
+      monto_pagado: validacion.montoARegistrar,
       monto_pagado_bs: montoBs,
       fecha_pago,
       metodo_pago,
@@ -197,7 +219,7 @@ exports.editarPago = async (req, res) => {
     }
 
     const comprobanteAnterior = pago.comprobante_url;
-    pago.monto_pagado = monto;
+    pago.monto_pagado = validacion.montoARegistrar;
     pago.monto_pagado_bs = montoBs;
     pago.fecha_pago = fecha_pago;
     pago.metodo_pago = metodo_pago;

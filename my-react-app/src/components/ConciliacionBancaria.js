@@ -20,7 +20,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 
-const MONTO_TOLERANCIA_BS = 5;
+const MONTO_TOLERANCIA_BS = 100;
 const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'txt'];
 
 function isAllowedFile(file) {
