@@ -83,6 +83,8 @@ function Mensualidades() {
 	const [previewAjusteLoading, setPreviewAjusteLoading] = useState(false);
 	const [previewAjusteError, setPreviewAjusteError] = useState('');
 	const [adelantandoAlumnoId, setAdelantandoAlumnoId] = useState('');
+	const [confirmarAdelantoOpen, setConfirmarAdelantoOpen] = useState(false);
+	const [mensualidadAAdelantar, setMensualidadAAdelantar] = useState(null);
 
 	const getAuthHeaders = () => {
 		const token = localStorage.getItem('token');
@@ -321,6 +323,12 @@ function Mensualidades() {
 		} finally {
 			setAdelantandoAlumnoId('');
 		}
+	};
+
+	const solicitarAdelantoMensualidad = (mensualidadBase) => {
+		if (!mensualidadBase || adelantandoAlumnoId) return;
+		setMensualidadAAdelantar(mensualidadBase);
+		setConfirmarAdelantoOpen(true);
 	};
 
 	const handleEditarPago = (pago, mensualidad = mensualidadDetalle) => {
@@ -735,7 +743,7 @@ function Mensualidades() {
 									<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
 										<span>
 											<IconButton
-												onClick={() => adelantarSiguienteMensualidadAdmin(m)}
+												onClick={() => solicitarAdelantoMensualidad(m)}
 												disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
 												sx={{
 													border: '1px solid #99f6e4',
@@ -831,7 +839,7 @@ function Mensualidades() {
 													<span>
 														<IconButton
 															size="small"
-															onClick={() => adelantarSiguienteMensualidadAdmin(m)}
+															onClick={() => solicitarAdelantoMensualidad(m)}
 															disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
 															sx={{
 																color: '#0f766e',
@@ -1146,6 +1154,48 @@ function Mensualidades() {
 						disabled={!!eliminandoPagoId}
 					>
 						{eliminandoPagoId ? 'Eliminando...' : 'Eliminar pago'}
+					</Button>
+				</DialogActions>
+			</Dialog>
+			<Dialog
+				open={confirmarAdelantoOpen}
+				onClose={() => {
+					if (adelantandoAlumnoId) return;
+					setConfirmarAdelantoOpen(false);
+					setMensualidadAAdelantar(null);
+				}}
+				maxWidth="xs"
+				fullWidth
+			>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Adelantar mensualidad</DialogTitle>
+				<DialogContent>
+					<Typography sx={{ color: '#334155' }}>
+						¿Estas seguro de adelantar la factura del proximo mes?
+					</Typography>
+				</DialogContent>
+				<DialogActions>
+					<Button
+						onClick={() => {
+							setConfirmarAdelantoOpen(false);
+							setMensualidadAAdelantar(null);
+						}}
+						disabled={!!adelantandoAlumnoId}
+					>
+						Cancelar
+					</Button>
+					<Button
+						variant="contained"
+						onClick={async () => {
+							const objetivo = mensualidadAAdelantar;
+							setConfirmarAdelantoOpen(false);
+							setMensualidadAAdelantar(null);
+							if (objetivo) {
+								await adelantarSiguienteMensualidadAdmin(objetivo);
+							}
+						}}
+						disabled={!!adelantandoAlumnoId}
+					>
+						{adelantandoAlumnoId ? 'Procesando...' : 'Si, adelantar'}
 					</Button>
 				</DialogActions>
 			</Dialog>

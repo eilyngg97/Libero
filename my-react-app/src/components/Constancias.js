@@ -31,6 +31,8 @@ function Constancias() {
   const [loadingAlumnos, setLoadingAlumnos] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [rol, setRol] = useState('');
+  const [solventeMensualidades, setSolventeMensualidades] = useState(true);
+  const [validandoSolvencia, setValidandoSolvencia] = useState(false);
   const inputSx = {
     '& .MuiOutlinedInput-root': {
       bgcolor: '#f8fafc',
@@ -62,6 +64,65 @@ function Constancias() {
       }
     }
   }, [inputValue, rol]);
+
+  React.useEffect(() => {
+    if (!alumnoId) {
+      setSolventeMensualidades(false);
+      return;
+    }
+
+    let cancelled = false;
+    const estatusConDeuda = new Set(['pendiente', 'abono', 'en revision', 'retrasado', 'insolvente']);
+
+    const cargarSolvencia = async () => {
+      try {
+        setValidandoSolvencia(true);
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?id_alumno=${alumnoId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!res.ok) throw new Error('No se pudo validar solvencia');
+        const data = await res.json();
+        const mensualidades = Array.isArray(data) ? data : [];
+        const tieneDeuda = mensualidades.some((m) => estatusConDeuda.has(String(m.estatus || '').toLowerCase()));
+        if (!cancelled) {
+          setSolventeMensualidades(!tieneDeuda);
+        }
+      } catch {
+        if (!cancelled) {
+          setSolventeMensualidades(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setValidandoSolvencia(false);
+        }
+      }
+    };
+
+    cargarSolvencia();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [alumnoId]);
+
+  const tiposDisponibles = React.useMemo(() => {
+    return tipos.filter((t) => {
+      if (t.value === 'retiro' && rol !== 'admin') return false;
+      if (t.value === 'simple' && !solventeMensualidades) return false;
+      return true;
+    });
+  }, [rol, solventeMensualidades]);
+
+  React.useEffect(() => {
+    if (!tiposDisponibles.length) {
+      setTipo('');
+      return;
+    }
+    if (!tiposDisponibles.some((t) => t.value === tipo)) {
+      setTipo(tiposDisponibles[0].value);
+    }
+  }, [tipo, tiposDisponibles]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -144,9 +205,14 @@ function Constancias() {
                 onChange={e => setTipo(e.target.value)}
                 sx={inputSx}
               >
-                {tipos.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
+                {tiposDisponibles.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
               </Select>
             </FormControl>
+            {!solventeMensualidades && (
+              <Typography variant="caption" sx={{ color: '#b91c1c', display: 'block', mt: 0.5 }}>
+                La constancia simple solo está disponible cuando el alumno está solvente.
+              </Typography>
+            )}
             <TextField
               fullWidth
               margin="normal"
@@ -164,7 +230,7 @@ function Constancias() {
               <Button
                 type="submit"
                 variant="contained"
-                disabled={loading || !alumnoId}
+                disabled={loading || !alumnoId || !tipo || validandoSolvencia}
                 fullWidth
                 sx={{ bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' }, fontWeight: 700, borderRadius: 2, py: 1.2 }}
               >

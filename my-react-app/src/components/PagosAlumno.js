@@ -59,6 +59,7 @@ function PagosAlumno(props) {
   const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
   const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
   const [adelantandoMensualidad, setAdelantandoMensualidad] = useState(false);
+  const [confirmarAdelantoOpen, setConfirmarAdelantoOpen] = useState(false);
 
   const mapMensualidadToPagoItem = (m) => ({
     id: m._id,
@@ -567,7 +568,7 @@ function PagosAlumno(props) {
             <Button
               startIcon={<PaymentsIcon sx={{ fontSize: 17 }} />}
               variant="contained"
-              onClick={adelantarSiguienteMensualidad}
+              onClick={() => setConfirmarAdelantoOpen(true)}
               disabled={adelantandoMensualidad || !alumno?._id}
               sx={{
                 borderRadius: 999,
@@ -1293,6 +1294,40 @@ function PagosAlumno(props) {
           </Button>
           <Button variant="contained" color="error" onClick={eliminarPago} disabled={!!eliminandoPagoId}>
             {eliminandoPagoId ? 'Eliminando...' : 'Eliminar pago'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={confirmarAdelantoOpen}
+        onClose={() => {
+          if (adelantandoMensualidad) return;
+          setConfirmarAdelantoOpen(false);
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Adelantar mensualidad</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#334155' }}>
+            ¿Estas seguro de adelantar la factura del proximo mes?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmarAdelantoOpen(false)}
+            disabled={adelantandoMensualidad}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              setConfirmarAdelantoOpen(false);
+              await adelantarSiguienteMensualidad();
+            }}
+            disabled={adelantandoMensualidad}
+          >
+            {adelantandoMensualidad ? 'Procesando...' : 'Si, adelantar'}
           </Button>
         </DialogActions>
       </Dialog>
