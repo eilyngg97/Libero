@@ -9,6 +9,7 @@ import entrenador2Image from '../assets/entrenador_2.jpeg';
 import entrenador3Image from '../assets/entrenador_3.jpeg';
 import entrenador4Image from '../assets/entrenador_4.jpeg';
 import entrenador5Image from '../assets/entrenador_5.jpeg';
+import entrenador6Image from '../assets/entrenador_6.png';
 import { mediaUrl } from '../utils/mediaUrl';
 import { atletasDefault, heroImagesDefault } from '../constants/landingAtletasDefault';
 
@@ -88,13 +89,13 @@ const coaches = [
     quote: 'Un ataque inteligente es aquel que sabe cuándo golpear fuerte y dónde golpear suave.',
     image: entrenador5Image
   },
- /* {
+  {
     name: 'LUIS MANZANILLA',
     role: 'Coach de 2da linea de defensa',
     sub: 'Especialista en Defensa de Campo y Control de Balón.',
     quote: 'El balón no toca el suelo mientras haya voluntad de lucha.',
-    image: entrenador4Image
-  }, */
+    image: entrenador6Image
+  },
 ];
 
 const sedes = [

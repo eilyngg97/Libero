@@ -30,7 +30,7 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import { useDolar } from '../context/DolarContext';
 
-const TALLAS = ['S', 'M', 'L', 'XL'];
+const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
 const METODOS_PAGO = ['Pago movil', 'Transferencia'];
 
 const ESTADO_LABELS = {
@@ -59,7 +59,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [prenda, setPrenda] = useState('');
   const [talla, setTalla] = useState('');
   const [nombrePersonalizado, setNombrePersonalizado] = useState('');
-  const [numeroFranela, setNumeroFranela] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -76,6 +75,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
   const tasaBCV = Number(dolar?.promedio) || 0;
   const token = localStorage.getItem('token');
+  const numeroFranelaAlumno = String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim();
 
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -137,6 +137,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setErrorMessage('Completa todos los campos del pedido');
       return;
     }
+    if (!numeroFranelaAlumno) {
+      setErrorMessage('El alumno no tiene numero de franela asignado');
+      return;
+    }
 
     try {
       setGuardando(true);
@@ -147,7 +151,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       formData.append('prenda', prenda);
       formData.append('talla', talla);
       formData.append('nombrePersonalizado', nombrePersonalizado);
-      formData.append('numeroFranela', numeroFranela);
+      formData.append('numeroFranela', numeroFranelaAlumno);
 
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
         method: 'POST',
@@ -160,7 +164,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setPrenda('');
       setTalla('');
       setNombrePersonalizado('');
-      setNumeroFranela('');
       setSuccessMessage('Pedido realizado con exito');
       onGuardar && onGuardar(data);
       await fetchPedidos();
@@ -289,7 +292,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       <Grid item size={{ xs: 12, sm: 11, md: 10 }}>
         <Box sx={{ display: 'grid', gap: 3 }}>
           <Paper elevation={4} sx={{ p: { xs: 2, sm: 3, md: 4 }, borderRadius: 3 }}>
-            <Typography variant="h5" gutterBottom align="center" fontWeight={700} color="primary.main">
+            <Typography variant="h5" gutterBottom align="center" fontWeight={700}>
               Solicitar Uniforme
             </Typography>
             {alumno && (
@@ -337,7 +340,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     fullWidth
                     label="Nombre personalizado"
                     value={nombrePersonalizado}
-                    onChange={(event) => setNombrePersonalizado(event.target.value)}
+                    onChange={(event) => setNombrePersonalizado(event.target.value.toUpperCase())}
                     helperText="Opcional"
                   />
                 </Grid>
@@ -345,9 +348,22 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                   <TextField
                     fullWidth
                     label="Numero de franela"
-                    value={numeroFranela}
-                    onChange={(event) => setNumeroFranela(event.target.value.replace(/[^0-9]/g, '').slice(0, 3))}
-                    helperText="Opcional"
+                    value={numeroFranelaAlumno}
+                    disabled
+                    error={!numeroFranelaAlumno}
+                    sx={{
+                      '& .MuiInputBase-input.Mui-disabled': {
+                        WebkitTextFillColor: '#64748b'
+                      },
+                      '& .MuiOutlinedInput-root.Mui-disabled': {
+                        backgroundColor: '#f1f5f9'
+                      }
+                    }}
+                    helperText={
+                      numeroFranelaAlumno
+                        ? 'Se usa el numero asignado en la ficha del alumno'
+                        : 'El alumno no tiene numero de franela asignado'
+                    }
                   />
                 </Grid>
               </Grid>

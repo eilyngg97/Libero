@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const UniformePedido = require('../models/UniformePedido');
 const Uniforme = require('../models/Uniforme');
+const Alumno = require('../models/Alumno');
 
 const ESTADOS_PEDIDO = {
   PENDIENTE: 'pendiente',
@@ -24,7 +25,6 @@ exports.createPedidoUniforme = async (req, res) => {
       prenda,
       talla,
       nombrePersonalizado,
-      numeroFranela,
     } = req.body;
 
     if (!alumnoId || !prenda || !talla) {
@@ -39,13 +39,23 @@ exports.createPedidoUniforme = async (req, res) => {
 
     const uniforme = await Uniforme.findOne({ prenda });
     const precio = uniforme?.precio || 0;
+    const alumno = await Alumno.findById(alumnoId).select('numero_franela');
+
+    if (!alumno) {
+      return res.status(404).json({ error: 'Alumno no encontrado' });
+    }
+
+    const numeroFranelaAlumno = String(alumno.numero_franela || '').trim();
+    if (!numeroFranelaAlumno) {
+      return res.status(400).json({ error: 'El alumno no tiene numero de franela asignado' });
+    }
 
     const pedido = await UniformePedido.create({
       alumno: alumnoId,
       sede: sedeId || undefined,
       prenda,
-      nombre_personalizado: String(nombrePersonalizado || '').trim() || undefined,
-      numero_franela: String(numeroFranela || '').trim() || undefined,
+      nombre_personalizado: String(nombrePersonalizado || '').trim().toUpperCase() || undefined,
+      numero_franela: numeroFranelaAlumno,
       precio,
       talla,
       estado: ESTADOS_PEDIDO.PENDIENTE,
