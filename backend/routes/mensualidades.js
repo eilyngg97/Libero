@@ -2,12 +2,15 @@ const express = require('express');
 const router = express.Router();
 const mensualidadController = require('../controllers/mensualidadController');
 const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { ensureAlumnoOwnershipFromBody } = require('../middleware/ownership');
 
 // Generar mensualidades automáticamente
 router.post('/generar', authMiddleware, rolMiddleware('admin'), mensualidadController.generarMensualidadesMes);
 
 // Registrar la primera mensualidad manualmente
 router.post('/primera', authMiddleware, rolMiddleware('admin'), mensualidadController.registrarPrimeraMensualidad);
+// Crear mensualidad del mes siguiente para permitir pago adelantado
+router.post('/adelantar', authMiddleware, ensureAlumnoOwnershipFromBody('id_alumno'), mensualidadController.adelantarMensualidadSiguiente);
 // Actualizar retrasados (día 6)
 router.post('/actualizar-retrasados', authMiddleware, rolMiddleware('admin'), mensualidadController.actualizarRetrasados);
 // Consultar mensualidades

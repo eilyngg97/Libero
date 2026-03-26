@@ -9,6 +9,11 @@ function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
 }
 
+function esEstatusInsolvente(estatus) {
+  const normalizado = String(estatus || '').toLowerCase();
+  return normalizado === 'retrasado' || normalizado === 'insolvente';
+}
+
 function obtenerMontoBaseMensualidad(mensualidad) {
   if (mensualidad?.monto_base !== undefined && mensualidad?.monto_base !== null) {
     return redondearMonto(mensualidad.monto_base);
@@ -97,7 +102,7 @@ async function recalcularMensualidadPorPagos(
   if (montoEsperado <= 0) {
     mensualidad.estatus = mantenerRevision && totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
-    mensualidad.estatus = (estatusAnteriorNormalizado === 'retrasado' || estaVencida) ? 'Retrasado' : 'Pendiente';
+    mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
   } else if (totalPagado >= montoEsperado) {
     mensualidad.estatus = mantenerRevision ? 'En revision' : 'Pagado';
   } else {
@@ -255,6 +260,15 @@ async function generarMensualidadesMesCore() {
   return creadas;
 }
 
+function obtenerMesSiguiente(fechaBase = new Date()) {
+  const base = new Date(fechaBase);
+  const siguiente = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  return {
+    mes: siguiente.getMonth() + 1,
+    anio: siguiente.getFullYear()
+  };
+}
+
 async function actualizarRetrasadosCore({ force = false } = {}) {
   const hoy = new Date();
   if (!force && hoy.getDate() !== 6) return 0;
@@ -262,7 +276,7 @@ async function actualizarRetrasadosCore({ force = false } = {}) {
   const anio = hoy.getFullYear();
   const result = await Mensualidad.updateMany(
     { mes, anio, estatus: 'Pendiente', fecha_vencimiento: { $lt: hoy } },
-    { $set: { estatus: 'Retrasado' } }
+    { $set: { estatus: 'Insolvente' } }
   );
   return result.modifiedCount;
 }
@@ -337,6 +351,72 @@ exports.generarMensualidadesMes = async (req, res) => {
     res.json({ message: `Mensualidades generadas: ${creadas}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.adelantarMensualidadSiguiente = async (req, res) => {
+  try {
+    const { id_alumno } = req.body;
+    if (!id_alumno) {
+      return res.status(400).json({ error: 'id_alumno es requerido' });
+    }
+
+    const alumno = await Alumno.findById(id_alumno);
+    if (!alumno) {
+      return res.status(404).json({ error: 'Alumno no encontrado' });
+    }
+
+    if (alumno.activo === false || alumno.dado_de_baja === true) {
+      return res.status(400).json({ error: 'No se puede adelantar mensualidad para un alumno inactivo o dado de baja' });
+    }
+
+    const { mes, anio } = obtenerMesSiguiente(new Date());
+    const existente = await Mensualidad.findOne({ id_alumno, mes, anio }).populate('id_alumno');
+    if (existente) {
+      return res.json({
+        message: 'La mensualidad del mes siguiente ya existe',
+        mensualidad: existente,
+        creada: false
+      });
+    }
+
+    const fecha_vencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
+    const montoBase = await resolverMontoBaseAlumno(alumno);
+    let monto = montoBase;
+    let creditoAplicado = 0;
+    let estatus = 'Pendiente';
+
+    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, mes, anio);
+    if (reglaReposo === 'EXENTO_POR_REPOSO') {
+      monto = 0;
+      estatus = 'Exento por reposo';
+    } else {
+      const credito = await consumirSaldoAFavor(alumno, montoBase);
+      creditoAplicado = credito.creditoAplicado;
+      monto = credito.montoEsperado;
+    }
+
+    const mensualidad = await Mensualidad.create({
+      id_alumno,
+      mes,
+      anio,
+      monto_base: montoBase,
+      credito_aplicado: creditoAplicado,
+      ajuste_extraordinario: 0,
+      saldo_a_favor_generado: 0,
+      monto_esperado: monto,
+      fecha_vencimiento,
+      estatus
+    });
+
+    const mensualidadPopulada = await Mensualidad.findById(mensualidad._id).populate('id_alumno');
+    return res.status(201).json({
+      message: 'Mensualidad del mes siguiente creada correctamente',
+      mensualidad: mensualidadPopulada,
+      creada: true
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 };
 
@@ -560,8 +640,24 @@ exports.getMensualidades = async (req, res) => {
       }
     }
 
-    const mensualidades = await Mensualidad.find(filtro).populate('id_alumno');
-    res.json(mensualidades);
+    const mensualidades = await Mensualidad.find(filtro).populate({
+      path: 'id_alumno',
+      populate: {
+        path: 'representante',
+        select: 'nombres apellidos'
+      }
+    });
+
+    // Compatibilidad: data histórica con "Retrasado" se expone como "Insolvente".
+    const mensualidadesCompat = mensualidades.map((m) => {
+      const raw = m.toObject ? m.toObject() : m;
+      if (esEstatusInsolvente(raw.estatus)) {
+        raw.estatus = 'Insolvente';
+      }
+      return raw;
+    });
+
+    res.json(mensualidadesCompat);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

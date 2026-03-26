@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar } from '@mui/material';
+import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
@@ -11,7 +11,9 @@ import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import TablePagination from '@mui/material/TablePagination';
 import { exportToCsv } from '../utils/exportCsv';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import PaidIcon from '@mui/icons-material/Paid';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
@@ -80,6 +82,7 @@ function Mensualidades() {
 	const [previewAjuste, setPreviewAjuste] = useState(null);
 	const [previewAjusteLoading, setPreviewAjusteLoading] = useState(false);
 	const [previewAjusteError, setPreviewAjusteError] = useState('');
+	const [adelantandoAlumnoId, setAdelantandoAlumnoId] = useState('');
 
 	const getAuthHeaders = () => {
 		const token = localStorage.getItem('token');
@@ -289,6 +292,37 @@ function Mensualidades() {
 		prepararModalPago(m);
 	};
 
+	const adelantarSiguienteMensualidadAdmin = async (mensualidadBase) => {
+		const alumnoId = mensualidadBase?.id_alumno?._id || mensualidadBase?.id_alumno;
+		if (!alumnoId || adelantandoAlumnoId) return;
+
+		try {
+			setAdelantandoAlumnoId(String(alumnoId));
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/adelantar`, {
+				method: 'POST',
+				headers: {
+					...getAuthHeaders(),
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ id_alumno: alumnoId })
+			});
+
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo adelantar la mensualidad');
+
+			if (data?.mensualidad?._id) {
+				await prepararModalPago(data.mensualidad);
+			}
+
+			await cargarMensualidades();
+			setSuccessMessage(data?.message || 'Mensualidad adelantada correctamente');
+		} catch (err) {
+			alert(err.message || 'No se pudo adelantar la mensualidad');
+		} finally {
+			setAdelantandoAlumnoId('');
+		}
+	};
+
 	const handleEditarPago = (pago, mensualidad = mensualidadDetalle) => {
 		prepararModalPago(mensualidad, pago);
 	};
@@ -488,40 +522,52 @@ function Mensualidades() {
 
 	const renderEstatusChip = (estatusRaw) => {
 		const estado = (estatusRaw || '').toLowerCase();
+		const esInsolvente = estado === 'retrasado' || estado === 'insolvente';
+		const chipSxBase = {
+			borderRadius: 999,
+			fontWeight: 700,
+			minWidth: 112,
+			justifyContent: 'center',
+			'& .MuiChip-label': {
+				px: 0.5,
+				width: '100%',
+				textAlign: 'center'
+			}
+		};
 		if (estado === 'pagado') return (
 			<Chip
 				label="Pagado"
-				sx={{ borderRadius: 999, bgcolor: '#dff7ea', color: '#0f7a4a', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+				sx={{ ...chipSxBase, bgcolor: '#dff7ea', color: '#0f7a4a' }}
 			/>
 		);
 		if (estado === 'pendiente') return (
 			<Chip
 				label="Pendiente"
-				sx={{ borderRadius: 999, bgcolor: '#fff3dc', color: '#b45309', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+				sx={{ ...chipSxBase, bgcolor: '#fff3dc', color: '#b45309' }}
 			/>
 		);
-		if (estado === 'retrasado') return (
+		if (esInsolvente) return (
 			<Chip
-				label="Retrasado"
-				sx={{ borderRadius: 999, bgcolor: '#ffe1e6', color: '#d32f2f', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+				label="Insolvente"
+				sx={{ ...chipSxBase, bgcolor: '#ffe1e6', color: '#d32f2f' }}
 			/>
 		);
 		if (estado === 'exonerado') return (
 			<Chip
 				label="Exonerado"
-				sx={{ borderRadius: 999, bgcolor: '#e3f2fd', color: '#0288d1', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+				sx={{ ...chipSxBase, bgcolor: '#e3f2fd', color: '#0288d1' }}
 			/>
 		);
 		if (estado === 'abono') return (
 			<Chip
 				label="Abono"
-				sx={{ borderRadius: 999, bgcolor: '#efe9e7', color: '#6d4c41', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+				sx={{ ...chipSxBase, bgcolor: '#efe9e7', color: '#6d4c41' }}
 			/>
 		);
 		if (estado === 'en revision') return (
 			<Chip
 				label="En revision"
-				sx={{ borderRadius: 999, bgcolor: '#fff6cc', color: '#b45309', fontWeight: 700, px: 1, '& .MuiChip-label': { px: 0.5 } }}
+				sx={{ ...chipSxBase, bgcolor: '#fff6cc', color: '#b45309' }}
 			/>
 		);
 		return <Chip label={estatusRaw || '-'} variant="outlined" />;
@@ -540,19 +586,23 @@ function Mensualidades() {
 		}
 	};
 
+	const hayInsolventes = mensualidades.some(
+		(m) => ['retrasado', 'insolvente'].includes((m.estatus || '').toLowerCase())
+	);
+
 	const exportarExcel = () => {
-		const alumnosRetrasados = mensualidades.filter(m => m.estatus && m.estatus.toLowerCase() === 'retrasado');
+		const alumnosRetrasados = mensualidades.filter(m => m.estatus && ['retrasado', 'insolvente'].includes(m.estatus.toLowerCase()));
 		const datos = alumnosRetrasados.map(m => ({
-			Alumno: `${m.id_alumno?.nombres || ''} ${m.id_alumno?.apellidos || ''}`,
+			Representante: `${m.id_alumno?.representante?.nombres || ''} ${m.id_alumno?.representante?.apellidos || ''}`.trim() || 'Sin representante',
 			Categoria: m.id_alumno?.categoria || '-',
 			Mes: meses[(m.mes || 1) - 1],
 			Monto: m.monto_esperado,
-			Estado: m.estatus
+			Estado: 'Insolvente'
 		}));
 
-		const headers = ['Alumno', 'Categoria', 'Mes', 'Monto', 'Estado'];
+		const headers = ['Representante', 'Categoria', 'Mes', 'Monto', 'Estado'];
 		const nombreSede = sedeSeleccionada?.nombre || 'sede';
-		exportToCsv(datos, `alumnos_retrasados_${nombreSede}.csv`, headers);
+		exportToCsv(datos, `alumnos_insolventes_${nombreSede}.csv`, headers);
 	};
 
 	const aplicarAjusteSede = async () => {
@@ -620,7 +670,7 @@ function Mensualidades() {
 	return (
 		<div>
 			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>Mensualidades</Typography>
-			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
+			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
 				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
 					{[...Array(12)].map((_, i) => <MenuItem key={i+1} value={i+1}>{meses[i]}</MenuItem>)}
@@ -628,28 +678,30 @@ function Mensualidades() {
 				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
 				<TextField select label="Estado" value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
-					{['Pendiente','Pagado','Retrasado', 'Exonerado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
+					{['Pendiente','Pagado','Insolvente', 'Exonerado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
-				<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'stretch', md: 'end' }, gridColumn: { xs: '1 / -1', md: 'span 1' } }}>
-					{esAdmin && (
-						<Button
-							variant="outlined"
-							onClick={() => setModalAjusteSede(true)}
-							disabled={!sedeSeleccionada?._id || !filtroMes}
-							sx={{ width: { xs: '100%', md: 'auto' }, fontWeight: 700 }}
-						>
-							Ajuste por sede
-						</Button>
-					)}
+			</Box>
+			<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', mb: 2, mt: 2 }}>
+				{esAdmin && (
+					<Button
+						variant="outlined"
+						onClick={() => setModalAjusteSede(true)}
+						disabled={!sedeSeleccionada?._id || !filtroMes}
+						sx={{ width: { xs: '100%', sm: 'auto' }, fontWeight: 700 }}
+					>
+						Ajuste por sede
+					</Button>
+				)}
+				{hayInsolventes && (
 					<Button
 						className="mensualidades-export-btn"
 						variant="contained"
 						onClick={exportarExcel}
-						sx={{ width: { xs: '100%', md: 'auto' }, justifySelf: { xs: 'stretch', md: 'end' } }}
+						sx={{ width: { xs: '100%', sm: 'auto' } }}
 					>
-						Exportar CSV
+						Exportar CSV insolventes
 					</Button>
-				</Box>
+				)}
 			</Box>
 			{esAdmin && !sedeSeleccionada?._id && (
 				<Alert severity="info" sx={{ mb: 2 }}>
@@ -678,16 +730,40 @@ function Mensualidades() {
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo generado:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 							</Box>
-							{['pendiente', 'retrasado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-								<Button variant="contained" fullWidth onClick={() => handlePago(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' }, fontWeight: 700, mb: ['abono'].includes((m.estatus || '').toLowerCase()) ? 1 : 0 }}>
-									Registrar pago
-								</Button>
-							)}
-							{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-								<Button variant="outlined" fullWidth onClick={() => handleVerDetalle(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ borderColor: '#cbd5e1', color: '#0f172a', fontWeight: 700 }}>
-									Ver detalle
-								</Button>
-							)}
+							<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
+								{esAdmin && (
+									<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
+										<span>
+											<IconButton
+												onClick={() => adelantarSiguienteMensualidadAdmin(m)}
+												disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
+												sx={{
+													border: '1px solid #99f6e4',
+													bgcolor: '#ecfeff',
+													color: '#0f766e',
+													'&:hover': { bgcolor: '#cffafe' }
+												}}
+											>
+												<PaymentsIcon fontSize="small" />
+											</IconButton>
+										</span>
+									</Tooltip>
+								)}
+								{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+									<Tooltip title="Registrar pago">
+										<IconButton onClick={() => handlePago(m)} sx={{ bgcolor: '#14532d', color: '#fff', '&:hover': { bgcolor: '#166534' } }}>
+											<PaidIcon fontSize="small" />
+										</IconButton>
+									</Tooltip>
+								)}
+								{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+									<Tooltip title="Ver detalle">
+										<IconButton onClick={() => handleVerDetalle(m)} sx={{ border: '1px solid #bfdbfe', bgcolor: '#eff6ff', color: '#1d4ed8', '&:hover': { bgcolor: '#dbeafe' } }}>
+											<VisibilityIcon fontSize="small" />
+										</IconButton>
+									</Tooltip>
+								)}
+							</Box>
 						</Paper>
 					))}
 					<Paper sx={{ borderRadius: 3, border: '1px solid #eef0f3' }}>
@@ -749,16 +825,40 @@ function Mensualidades() {
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
 									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
 									<TableCell>
-										{['pendiente', 'retrasado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-											<Button variant="text" size="small" onClick={() => handlePago(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ color: '#0f172a', fontWeight: 700 }}>
-												Registrar pago
-											</Button>
-										)}
-										{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-											<Button variant="text" size="small" onClick={() => handleVerDetalle(m)} endIcon={<ArrowForwardIcon fontSize="small" />} sx={{ color: '#0f172a', fontWeight: 700 }}>
-												Ver detalle
-											</Button>
-										)}
+										<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
+											{esAdmin && (
+												<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
+													<span>
+														<IconButton
+															size="small"
+															onClick={() => adelantarSiguienteMensualidadAdmin(m)}
+															disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
+															sx={{
+																color: '#0f766e',
+																bgcolor: '#ecfeff',
+																'&:hover': { bgcolor: '#cffafe' }
+															}}
+														>
+															<PaymentsIcon fontSize="small" />
+														</IconButton>
+													</span>
+												</Tooltip>
+											)}
+											{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+												<Tooltip title="Registrar pago">
+													<IconButton size="small" onClick={() => handlePago(m)} sx={{ color: '#166534', bgcolor: '#dcfce7', '&:hover': { bgcolor: '#bbf7d0' } }}>
+														<PaidIcon fontSize="small" />
+													</IconButton>
+												</Tooltip>
+											)}
+											{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+												<Tooltip title="Ver detalle">
+													<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={{ color: '#1d4ed8', bgcolor: '#eff6ff', '&:hover': { bgcolor: '#dbeafe' } }}>
+														<VisibilityIcon fontSize="small" />
+													</IconButton>
+												</Tooltip>
+											)}
+										</Box>
 									</TableCell>
 								</TableRow>
 							))}

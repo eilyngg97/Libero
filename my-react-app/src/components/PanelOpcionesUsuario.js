@@ -240,14 +240,11 @@ function PanelOpcionesUsuario() {
       };
     }
 
-    const ultima = mensualidadesOrdenadas[mensualidadesOrdenadas.length - 1];
     return {
       label: 'Al dia',
       color: 'success',
       detalle: 'Todas las mensualidades estan al dia',
-      proximo: ultima?.fecha
-        ? ultima.fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
-        : ''
+      proximo: ''
     };
   }, [mensualidades, mensualidadesError, mensualidadesLoading]);
 

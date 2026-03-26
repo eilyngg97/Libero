@@ -14,6 +14,9 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PaymentIcon from '@mui/icons-material/Payment';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
+import PaymentsIcon from '@mui/icons-material/Payments';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
@@ -55,6 +58,19 @@ function PagosAlumno(props) {
   const [comprobante, setComprobante] = useState(null);
   const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
   const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
+  const [adelantandoMensualidad, setAdelantandoMensualidad] = useState(false);
+
+  const mapMensualidadToPagoItem = (m) => ({
+    id: m._id,
+    _id: m._id,
+    id_alumno: m.id_alumno,
+    fecha: `${m.anio}-${String(m.mes).padStart(2, '0')}-01`,
+    fecha_vencimiento: m.fecha_vencimiento,
+    monto: m.monto_esperado,
+    estado: m.estatus,
+    detalle: m.detalle || `Mensualidad correspondiente a ${m.mes}/${m.anio}`,
+    descripcion: 'Mensualidad'
+  });
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -73,20 +89,42 @@ function PagosAlumno(props) {
         return res.json();
       })
       .then(data => {
-        setMensualidades(data.map(m => ({
-          id: m._id,
-          _id: m._id,
-          id_alumno: m.id_alumno,
-          fecha: `${m.anio}-${String(m.mes).padStart(2, '0')}-01`,
-          monto: m.monto_esperado,
-          estado: m.estatus,
-          detalle: m.detalle || `Mensualidad correspondiente a ${m.mes}/${m.anio}`,
-          descripcion: 'Mensualidad',
-        })));
+        setMensualidades(data.map(mapMensualidadToPagoItem));
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [alumno?._id]);
+
+  const adelantarSiguienteMensualidad = async () => {
+    if (!alumno?._id || adelantandoMensualidad) return;
+
+    try {
+      setAdelantandoMensualidad(true);
+      setError(null);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/adelantar`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id_alumno: alumno._id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo adelantar la mensualidad');
+
+      const mensualidad = data?.mensualidad;
+      if (mensualidad?._id) {
+        setPagoSeleccionado(mapMensualidadToPagoItem(mensualidad));
+        setOpenModalPago(true);
+      }
+      await fetchMensualidades();
+      setSuccessMessage(data?.message || 'Mensualidad adelantada correctamente');
+    } catch (err) {
+      setError(err.message || 'No se pudo adelantar la mensualidad');
+    } finally {
+      setAdelantandoMensualidad(false);
+    }
+  };
 
   const cargarPagosMensualidad = async (mensualidadId) => {
     const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${mensualidadId}`, {
@@ -347,210 +385,516 @@ function PagosAlumno(props) {
     }
   };
 
+  const estadosConSaldo = ['pendiente', 'retrasado', 'abono'];
+  const mensualidadesConSaldo = mensualidades.filter((m) => estadosConSaldo.includes(String(m.estado || '').toLowerCase()));
+  const balancePendiente = mensualidadesConSaldo.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
+  const proximaMensualidadPorVencer = mensualidadesConSaldo
+    .map((item) => {
+      const vencimiento = item.fecha_vencimiento ? new Date(item.fecha_vencimiento) : null;
+      return Number.isNaN(vencimiento?.getTime()) ? null : vencimiento;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.getTime() - b.getTime())[0] || null;
+
+  const textoVencimiento = (() => {
+    if (!proximaMensualidadPorVencer) return 'Sin vencimientos cercanos';
+    const hoy = new Date();
+    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    const inicioVenc = new Date(
+      proximaMensualidadPorVencer.getFullYear(),
+      proximaMensualidadPorVencer.getMonth(),
+      proximaMensualidadPorVencer.getDate()
+    );
+    const diffDias = Math.ceil((inicioVenc.getTime() - inicioHoy.getTime()) / 86400000);
+    if (diffDias <= 0) return 'Vencida';
+    return `Vence en ${diffDias} ${diffDias === 1 ? 'dia' : 'dias'}`;
+  })();
+
+  const estadoConteo = mensualidades.reduce((acc, item) => {
+    const estado = String(item?.estado || '').toLowerCase();
+    acc[estado] = (acc[estado] || 0) + 1;
+    return acc;
+  }, {});
+
+  const estadoPagado = estadoConteo['pagado'] || 0;
+  const estadoPendiente = estadoConteo['pendiente'] || 0;
+  const estadoRetrasado = estadoConteo['retrasado'] || 0;
+  const estadoEnRevision = estadoConteo['en revision'] || 0;
+  const estadoAbono = estadoConteo['abono'] || 0;
+  const estadoExonerado = estadoConteo['exonerado'] || 0;
+  const estadoExentoReposo = estadoConteo['exento por reposo'] || 0;
+
+  const ultimaMensualidadRegistrada = [...mensualidades]
+    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+
+  const estadoCuenta = (() => {
+    if (estadoRetrasado > 0) {
+      return {
+        titulo: 'Con Retrasos',
+        subtitulo: 'Tienes cuotas vencidas por regularizar',
+        color: '#b91c1c',
+        fondoIcono: '#fecaca',
+        icono: <ErrorIcon sx={{ color: '#b91c1c', fontSize: 18 }} />
+      };
+    }
+
+    if (estadoPendiente > 0) {
+      return {
+        titulo: 'Pago Pendiente',
+        subtitulo: 'Tienes cuotas pendientes por pagar',
+        color: '#c2410c',
+        fondoIcono: '#fed7aa',
+        icono: <PendingActionsIcon sx={{ color: '#c2410c', fontSize: 18 }} />
+      };
+    }
+
+    if (estadoAbono > 0) {
+      return {
+        titulo: 'Con Abonos',
+        subtitulo: 'Hay mensualidades parcialmente cubiertas',
+        color: '#b45309',
+        fondoIcono: '#fde68a',
+        icono: <PendingActionsIcon sx={{ color: '#b45309', fontSize: 18 }} />
+      };
+    }
+
+    if (estadoEnRevision > 0) {
+      return {
+        titulo: 'En Revision',
+        subtitulo: 'Tus pagos estan en proceso de verificacion',
+        color: '#1d4ed8',
+        fondoIcono: '#bfdbfe',
+        icono: <PendingActionsIcon sx={{ color: '#1d4ed8', fontSize: 18 }} />
+      };
+    }
+
+    if (estadoPagado > 0 || estadoExonerado > 0 || estadoExentoReposo > 0) {
+      return {
+        titulo: 'En Buen Estado',
+        subtitulo: 'Al dia con tus cuotas',
+        color: '#047857',
+        fondoIcono: '#86efac',
+        icono: <CheckCircleIcon sx={{ color: '#047857', fontSize: 18 }} />
+      };
+    }
+
+    return {
+      titulo: 'Sin Datos',
+      subtitulo: 'Aun no hay mensualidades registradas',
+      color: '#475569',
+      fondoIcono: '#e2e8f0',
+      icono: <SchoolIcon sx={{ color: '#475569', fontSize: 18 }} />
+    };
+  })();
+
   return (
     <Box sx={{ p: { md: 3 } }}>
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a' }}>
-          Mis pagos
-        </Typography>
-        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
-          Alumno: <Box component="span" sx={{ fontWeight: 700 }}>{alumno?.nombres || alumno?.nombre}</Box> | Sede:{' '}
-          <Box component="span" sx={{ fontWeight: 700 }}>{typeof sede?.nombre === 'object' ? sede.nombre.nombre : sede?.nombre || '-'}</Box>
-        </Typography>
-      </Box>
-      <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
-        <Button
-          variant={filtro === 'porPagar' ? 'contained' : 'outlined'}
-          onClick={() => setFiltro('porPagar')}
-          sx={{
-            borderRadius: 999,
-            px: 2.5,
-            fontWeight: 700,
-            textTransform: 'none',
-            borderColor: filtro === 'porPagar' ? '#ff7a00' : '#cbd5f0',
-            bgcolor: filtro === 'porPagar' ? '#ff7a00' : '#ffffff',
-            color: filtro === 'porPagar' ? '#ffffff' : '#0f172a',
-            boxShadow: filtro === 'porPagar' ? '0 6px 14px rgba(255, 122, 0, 0.25)' : 'none',
-            '&:hover': { bgcolor: filtro === 'porPagar' ? '#f97316' : '#f8fafc', borderColor: '#ff7a00' }
-          }}
-        >
-          Por pagar
-        </Button>
-        <Button
-          variant={filtro === 'pagados' ? 'contained' : 'outlined'}
-          onClick={() => setFiltro('pagados')}
-          sx={{
-            borderRadius: 999,
-            px: 2.5,
-            fontWeight: 700,
-            textTransform: 'none',
-            borderColor: filtro === 'pagados' ? '#ff7a00' : '#cbd5f0',
-            bgcolor: filtro === 'pagados' ? '#ff7a00' : '#ffffff',
-            color: filtro === 'pagados' ? '#ffffff' : '#0f172a',
-            boxShadow: filtro === 'pagados' ? '0 6px 14px rgba(255, 122, 0, 0.25)' : 'none',
-            '&:hover': { bgcolor: filtro === 'pagados' ? '#f97316' : '#f8fafc', borderColor: '#ff7a00' }
-          }}
-        >
-          Pagados
-        </Button>
-        <Button
-          variant={filtro === 'todos' ? 'contained' : 'outlined'}
-          onClick={() => setFiltro('todos')}
-          sx={{
-            borderRadius: 999,
-            px: 2.5,
-            fontWeight: 700,
-            textTransform: 'none',
-            borderColor: filtro === 'todos' ? '#ff7a00' : '#cbd5f0',
-            bgcolor: filtro === 'todos' ? '#ff7a00' : '#ffffff',
-            color: filtro === 'todos' ? '#ffffff' : '#0f172a',
-            boxShadow: filtro === 'todos' ? '0 6px 14px rgba(255, 122, 0, 0.25)' : 'none',
-            '&:hover': { bgcolor: filtro === 'todos' ? '#f97316' : '#f8fafc', borderColor: '#ff7a00' }
-          }}
-        >
-          Todos
-        </Button>
-      </Box>
-      {loading ? (
-        <Typography variant="body2" color="text.secondary">Cargando mensualidades...</Typography>
-      ) : error ? (
-        <Typography variant="body2" color="error">{error}</Typography>
-      ) : pagosFiltrados.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">No hay pagos para mostrar.</Typography>
-      ) : (
-        pagosPagina.map((pago) => {
-          const estado = pago.estado?.toLowerCase() || '';
-          // Ajustar fecha a la zona horaria local
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '9fr 3fr' }, gap: { xs: 3, md: 4 }, alignItems: 'start' }}>
+        <Box>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a' }}>
+              Mis pagos
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
+              Alumno: <Box component="span" sx={{ fontWeight: 700 }}>{alumno?.nombres || alumno?.nombre}</Box> | Sede:{' '}
+              <Box component="span" sx={{ fontWeight: 700 }}>{typeof sede?.nombre === 'object' ? sede.nombre.nombre : sede?.nombre || '-'}</Box>
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
+            <Button
+              startIcon={<PendingActionsIcon sx={{ fontSize: 18 }} />}
+              variant={filtro === 'porPagar' ? 'contained' : 'outlined'}
+              onClick={() => setFiltro('porPagar')}
+              sx={{
+                borderRadius: 999,
+                px: 2.5,
+                fontWeight: 700,
+                textTransform: 'none',
+                borderColor: filtro === 'porPagar' ? '#b45309' : '#cbd5e1',
+                bgcolor: filtro === 'porPagar' ? '#b45309' : '#ffffff',
+                color: filtro === 'porPagar' ? '#ffffff' : '#334155',
+                boxShadow: filtro === 'porPagar' ? '0 6px 14px rgba(180, 83, 9, 0.24)' : 'none',
+                '&:hover': {
+                  bgcolor: filtro === 'porPagar' ? '#92400e' : '#f8fafc',
+                  borderColor: '#b45309'
+                }
+              }}
+            >
+              Por pagar
+            </Button>
+            <Button
+              startIcon={<CheckCircleIcon sx={{ fontSize: 18 }} />}
+              variant={filtro === 'pagados' ? 'contained' : 'outlined'}
+              onClick={() => setFiltro('pagados')}
+              sx={{
+                borderRadius: 999,
+                px: 2.5,
+                fontWeight: 700,
+                textTransform: 'none',
+                borderColor: filtro === 'pagados' ? '#15803d' : '#cbd5e1',
+                bgcolor: filtro === 'pagados' ? '#15803d' : '#ffffff',
+                color: filtro === 'pagados' ? '#ffffff' : '#334155',
+                boxShadow: filtro === 'pagados' ? '0 6px 14px rgba(21, 128, 61, 0.24)' : 'none',
+                '&:hover': {
+                  bgcolor: filtro === 'pagados' ? '#166534' : '#f8fafc',
+                  borderColor: '#15803d'
+                }
+              }}
+            >
+              Pagados
+            </Button>
+            <Button
+              startIcon={<HistoryRoundedIcon sx={{ fontSize: 18 }} />}
+              variant={filtro === 'todos' ? 'contained' : 'outlined'}
+              onClick={() => setFiltro('todos')}
+              sx={{
+                borderRadius: 999,
+                px: 2.5,
+                fontWeight: 700,
+                textTransform: 'none',
+                borderColor: filtro === 'todos' ? '#334155' : '#cbd5e1',
+                bgcolor: filtro === 'todos' ? '#334155' : '#ffffff',
+                color: filtro === 'todos' ? '#ffffff' : '#334155',
+                boxShadow: filtro === 'todos' ? '0 6px 14px rgba(51, 65, 85, 0.22)' : 'none',
+                '&:hover': {
+                  bgcolor: filtro === 'todos' ? '#1e293b' : '#f8fafc',
+                  borderColor: '#334155'
+                }
+              }}
+            >
+              Todos
+            </Button>
+            <Button
+              startIcon={<PaymentsIcon sx={{ fontSize: 17 }} />}
+              variant="contained"
+              onClick={adelantarSiguienteMensualidad}
+              disabled={adelantandoMensualidad || !alumno?._id}
+              sx={{
+                borderRadius: 999,
+                px: 2.5,
+                fontWeight: 700,
+                textTransform: 'none',
+                bgcolor: '#e07d00',
+                color: '#ffffff',
+                boxShadow: '0 6px 14px rgba(255, 187, 0, 0.24)',
+                '&:hover': { bgcolor: '#8f5602' }
+              }}
+            >
+              {adelantandoMensualidad ? 'Creando...' : 'Adelantar proximo mes'}
+            </Button>
+          </Box>
+          {loading ? (
+            <Typography variant="body2" color="text.secondary">Cargando mensualidades...</Typography>
+          ) : error ? (
+            <Typography variant="body2" color="error">{error}</Typography>
+          ) : pagosFiltrados.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">No hay pagos para mostrar.</Typography>
+          ) : (
+            pagosPagina.map((pago) => {
+          const estado = String(pago.estado || '').toLowerCase();
           const dateObj = new Date(pago.fecha + 'T00:00:00');
-          // Usar toLocaleString para asegurar zona local
           const mesNombre = dateObj.toLocaleString('es-ES', { month: 'long', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
           const anio = dateObj.toLocaleString('es-ES', { year: 'numeric', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+          const vencimiento = pago.fecha_vencimiento ? new Date(pago.fecha_vencimiento) : null;
+          const tieneVencimiento = vencimiento && !Number.isNaN(vencimiento.getTime());
+          const diasRetraso = tieneVencimiento
+            ? Math.max(0, Math.ceil((new Date().setHours(0, 0, 0, 0) - new Date(vencimiento.getFullYear(), vencimiento.getMonth(), vencimiento.getDate()).getTime()) / 86400000))
+            : 0;
+
+          const estadoUi = (() => {
+            if (estado === 'retrasado') {
+              return {
+                badge: 'VENCIDO',
+                bg: '#fff5f5',
+                border: '#f6d6d6',
+                iconBg: '#fde2e2',
+                icon: <ErrorIcon sx={{ color: '#dc2626', fontSize: 20 }} />,
+                amountColor: '#dc2626',
+                actionLabel: 'Resolver',
+                actionBg: '#dc2626',
+                actionHover: '#b91c1c',
+                infoColor: '#b91c1c'
+              };
+            }
+
+            if (estado === 'pendiente' || estado === 'abono' || estado === 'en revision') {
+              return {
+                badge: estado === 'en revision' ? 'EN REVISION' : (estado === 'abono' ? 'ABONO' : 'PENDIENTE'),
+                bg: '#fffdf8',
+                border: '#efe7dc',
+                iconBg: '#fbe6cf',
+                icon: <PendingActionsIcon sx={{ color: '#b45309', fontSize: 20 }} />,
+                amountColor: '#0f172a',
+                actionLabel: estado === 'en revision' ? 'Ver detalle' : 'Pagar Ahora',
+                actionBg: estado === 'en revision' ? '#475569' : '#a16207',
+                actionHover: estado === 'en revision' ? '#334155' : '#854d0e',
+                infoColor: '#92400e'
+              };
+            }
+
+            if (estado === 'pagado') {
+              return {
+                badge: 'PAGADO',
+                bg: '#f6f8ff',
+                border: '#e5e9f5',
+                iconBg: '#86efac',
+                icon: <CheckCircleIcon sx={{ color: '#166534', fontSize: 20 }} />,
+                amountColor: '#a1a1aa',
+                actionLabel: 'Ver Recibo',
+                actionBg: 'transparent',
+                actionHover: 'transparent',
+                infoColor: '#64748b'
+              };
+            }
+
+            if (estado === 'exonerado' || estado === 'exento por reposo') {
+              return {
+                badge: 'EXONERADO',
+                bg: '#f0fdf4',
+                border: '#dcfce7',
+                iconBg: '#bbf7d0',
+                icon: <SchoolIcon sx={{ color: '#15803d', fontSize: 20 }} />,
+                amountColor: '#15803d',
+                actionLabel: 'Ver detalle',
+                actionBg: '#15803d',
+                actionHover: '#166534',
+                infoColor: '#15803d'
+              };
+            }
+
+            return {
+              badge: String(pago.estado || '-').toUpperCase(),
+              bg: '#ffffff',
+              border: '#e5e7eb',
+              iconBg: '#e2e8f0',
+              icon: <PaymentIcon sx={{ color: '#334155', fontSize: 20 }} />,
+              amountColor: '#0f172a',
+              actionLabel: 'Ver detalle',
+              actionBg: '#475569',
+              actionHover: '#334155',
+              infoColor: '#64748b'
+            };
+          })();
+
+          const subInfo = estado === 'retrasado'
+            ? `Atrasado por ${diasRetraso || 1} ${diasRetraso === 1 ? 'dia' : 'dias'}`
+            : (tieneVencimiento ? `Vence: ${formatFechaBonita(vencimiento)}` : `Periodo: ${mesNombre} ${anio}`);
+
+          const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono';
+
           return (
             <Card
               key={pago.id}
               sx={{
                 mb: 2,
-                borderRadius: 2.5,
-                border: '1px solid #e5e7eb',
-                boxShadow: '0 8px 18px rgba(15, 23, 42, 0.06)'
+                borderRadius: 4,
+                border: `1px solid ${estadoUi.border}`,
+                backgroundColor: estadoUi.bg,
+                boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05)'
               }}
             >
-              <CardContent
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 2,
-                  px: { xs: 2, md: 3 },
-                  py: { xs: 2, md: 2.5 }
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1, minWidth: 0 }}>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                      Mensualidad de {mesNombre} {anio}
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mt: 0.5 }}>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        Monto: <Box component="span" sx={{ color: '#ff7a00', fontWeight: 700 }}>{formatMontoEsperadoConBs(pago.monto)}</Box>
+              <CardContent sx={{ px: { xs: 1.8, md: 2.25 }, py: { xs: 2.4, md: 2.8 }, '&:last-child': { pb: { xs: 2.4, md: 2.8 } } }}>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'auto 1fr auto' }, alignItems: 'center', gap: 1.5 }}>
+                  <Box
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: '50%',
+                      backgroundColor: estadoUi.iconBg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    {estadoUi.icon}
+                  </Box>
+
+                  <Box sx={{ minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <Typography sx={{ fontWeight: 900, color: '#1f2937', fontSize: { xs: 18, md: 19 }, lineHeight: 1.1 }}>
+                        Mensualidad {mesNombre} {anio}
                       </Typography>
-                      {(() => {
-                        if (estado === 'pagado') {
-                          return (
-                            <Chip
-                              icon={<CheckCircleIcon />}
-                              label={pago.estado}
-                              sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 700 }}
-                            />
-                          );
-                        }
-                        if (estado === 'pendiente') {
-                          return (
-                            <Chip
-                              icon={<PendingActionsIcon />}
-                              label={pago.estado}
-                              sx={{ bgcolor: '#fff7ed', color: '#c2410c', fontWeight: 700 }}
-                            />
-                          );
-                        }
-                        if (estado === 'retrasado') {
-                          return (
-                            <Chip
-                              icon={<ErrorIcon />}
-                              label={pago.estado}
-                              sx={{ bgcolor: '#fee2e2', color: '#b91c1c', fontWeight: 700 }}
-                            />
-                          );
-                        }
-                        if (estado === 'exonerado') {
-                          return (
-                            <Chip
-                              icon={<SchoolIcon />}
-                              label={pago.estado}
-                              sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}
-                            />
-                          );
-                        }
-                        if (estado === 'en revision') return (
-                          <Chip
-                            icon={<PendingActionsIcon />}
-                            label={pago.estado}
-                            sx={{ bgcolor: '#fff9c4', color: '#5f4b00', fontWeight: 700 }}
-                          />
-                        );
-                        return pago.estado;
-                      })()}
+                      <Chip
+                        label={estadoUi.badge}
+                        size="small"
+                        sx={{
+                          height: 22,
+                          bgcolor: estado === 'retrasado' ? '#dc2626' : (estado === 'pagado' ? '#4ade80' : '#f6d3ad'),
+                          color: estado === 'pagado' ? '#065f46' : (estado === 'retrasado' ? '#ffffff' : '#8a4b08'),
+                          fontWeight: 800,
+                          fontSize: 9
+                        }}
+                      />
+                    </Box>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.8, flexWrap: 'wrap', mt: 0.5 }}>
+                      <Typography sx={{ fontSize: 16, color: estadoUi.infoColor, fontWeight: 700 }}>
+                        {subInfo}
+                      </Typography>
                     </Box>
                   </Box>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                  {(estado === 'pendiente' || estado === 'retrasado') && (
-                    <Button
-                      variant="contained"
-                      size="medium"
-                      sx={{
-                        ml: 1,
-                        bgcolor: estado === 'retrasado' ? '#ef4444' : '#ff7a00',
-                        '&:hover': { bgcolor: estado === 'retrasado' ? '#dc2626' : '#f97316' },
-                        fontWeight: 700,
-                        borderRadius: 2
-                      }}
-                      onClick={() => { setPagoSeleccionado(pago); setOpenModalPago(true); }}
-                    >
-                      Pagar
-                    </Button>
-                  )}
-                  {(estado === 'pagado' || estado === 'en revision' || estado === 'abono') && (
-                    <Button
-                      variant="text"
-                      endIcon={<ArrowForwardIosIcon sx={{ fontSize: 14 }} />}
-                      sx={{
-                        color: '#0f172a',
-                        fontWeight: 700,
-                        textTransform: 'none',
-                        minWidth: 'fit-content'
-                      }}
-                      onClick={() => handleVerDetalle(pago)}
-                    >
-                      Ver detalle
-                    </Button>
-                  )}
+
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.7 }}>
+                    <Typography sx={{ color: estadoUi.amountColor, fontWeight: 900, fontSize: { xs: 25, md: 27 }, lineHeight: 1 }}>
+                      ${formatMoney(pago.monto)}
+                    </Typography>
+
+                    {showPrimaryAction ? (
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={() => { setPagoSeleccionado(pago); setOpenModalPago(true); }}
+                        sx={{
+                          borderRadius: 999,
+                          px: 2,
+                          py: 0.45,
+                          fontSize: 12,
+                          fontWeight: 800,
+                          textTransform: 'none',
+                          bgcolor: estadoUi.actionBg,
+                          '&:hover': { bgcolor: estadoUi.actionHover }
+                        }}
+                      >
+                        {estadoUi.actionLabel}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="text"
+                        endIcon={<ArrowForwardIosIcon sx={{ fontSize: 13 }} />}
+                        onClick={() => handleVerDetalle(pago)}
+                        sx={{
+                          color: '#8a4b08',
+                          fontSize: 13,
+                          fontWeight: 800,
+                          textTransform: 'none',
+                          px: 0,
+                          minWidth: 'fit-content'
+                        }}
+                      >
+                        {estadoUi.actionLabel}
+                      </Button>
+                    )}
+                  </Box>
                 </Box>
               </CardContent>
             </Card>
           );
-        })
-      )}
-      {/* Controles de paginación */}
-      {totalPaginas > 1 && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
-          <Button disabled={pagina === 1} onClick={() => setPagina(pagina - 1)}>Anterior</Button>
-          {Array.from({ length: totalPaginas }, (_, i) => (
-            <Button key={i+1} variant={pagina === i+1 ? 'contained' : 'outlined'} onClick={() => setPagina(i+1)}>{i+1}</Button>
-          ))}
-          <Button disabled={pagina === totalPaginas} onClick={() => setPagina(pagina + 1)}>Siguiente</Button>
+            })
+          )}
+          {/* Controles de paginación */}
+          {totalPaginas > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
+              <Button disabled={pagina === 1} onClick={() => setPagina(pagina - 1)}>Anterior</Button>
+              {Array.from({ length: totalPaginas }, (_, i) => (
+                <Button key={i + 1} variant={pagina === i + 1 ? 'contained' : 'outlined'} onClick={() => setPagina(i + 1)}>{i + 1}</Button>
+              ))}
+              <Button disabled={pagina === totalPaginas} onClick={() => setPagina(pagina + 1)}>Siguiente</Button>
+            </Box>
+          )}
         </Box>
-      )}
+
+        <Box sx={{ position: { md: 'sticky' }, top: { md: 24 }, width: '100%', maxWidth: { md: 320 }, justifySelf: { md: 'end' } }}>
+          <Card
+            sx={{
+              mb: 1.75,
+              borderRadius: 4,
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)'
+            }}
+          >
+            <CardContent sx={{ p: 2.25 }}>
+              <Typography sx={{ fontSize: 12, letterSpacing: '0.08em', fontWeight: 800, color: '#475569' }}>
+                ESTADO DE CUENTA
+              </Typography>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mt: 1.4 }}>
+                <Box
+                  sx={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: '50%',
+                    backgroundColor: estadoCuenta.fondoIcono,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  {estadoCuenta.icono}
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: { xs: 22, md: 24 }, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{estadoCuenta.titulo}</Typography>
+                  <Typography sx={{ mt: 0.3, fontSize: 13, fontWeight: 700, color: estadoCuenta.color }}>{estadoCuenta.subtitulo}</Typography>
+                </Box>
+              </Box>
+
+              <Box sx={{ mt: 2.1, pt: 1.2, borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography sx={{ fontSize: 12, color: '#64748b' }}>Ultima mensualidad</Typography>
+                <Typography sx={{ fontSize: 13, color: '#0f172a', fontWeight: 800 }}>
+                  {ultimaMensualidadRegistrada ? formatFechaBonita(ultimaMensualidadRegistrada.fecha) : '-'}
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+
+          <Card
+            sx={{
+              borderRadius: 4,
+              background: 'linear-gradient(145deg, #cc6e00 0%, #e98300 100%)',
+              color: '#ffffff',
+              overflow: 'hidden',
+              boxShadow: '0 16px 28px rgba(204, 110, 0, 0.32)'
+            }}
+          >
+            <CardContent sx={{ p: 3, position: 'relative' }}>
+              <Typography sx={{ fontSize: 13, letterSpacing: '0.08em', fontWeight: 800, opacity: 0.92 }}>
+                BALANCE PENDIENTE
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 1.2 }}>
+                <Typography sx={{ fontSize: { xs: 40, md: 42 }, lineHeight: 1, fontWeight: 900 }}>
+                  ${formatMoney(balancePendiente)}
+                </Typography>
+                <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>USD</Typography>
+              </Box>
+
+              <Box
+                sx={{
+                  mt: 2,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.8,
+                  px: 1.5,
+                  py: 0.8,
+                  borderRadius: 999,
+                  bgcolor: 'rgba(255,255,255,0.24)',
+                  backdropFilter: 'blur(2px)'
+                }}
+              >
+                <AccessTimeIcon sx={{ fontSize: 14, opacity: 0.95 }} />
+                <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{textoVencimiento}</Typography>
+              </Box>
+
+              <Box
+                sx={{
+                  position: 'absolute',
+                  right: 16,
+                  bottom: 16,
+                  width: 74,
+                  height: 74,
+                  borderRadius: 3,
+                  bgcolor: 'rgba(255,255,255,0.16)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 38, color: 'rgba(255,255,255,0.45)' }} />
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      </Box>
       <Dialog
         open={modalDetalle}
         onClose={() => setModalDetalle(false)}

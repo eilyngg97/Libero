@@ -37,9 +37,9 @@ async function actualizarRetrasados() {
   const anio = hoy.getFullYear();
   const result = await Mensualidad.updateMany(
     { mes, anio, estatus: 'Pendiente', fecha_vencimiento: { $lt: hoy } },
-    { $set: { estatus: 'Retrasado' } }
+    { $set: { estatus: 'Insolvente' } }
   );
-  console.log(`Mensualidades actualizadas a Retrasado: ${result.modifiedCount}`);
+  console.log(`Mensualidades actualizadas a Insolvente: ${result.modifiedCount}`);
 }
 
 async function main() {
