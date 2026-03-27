@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, Typography, Box, Button, Chip, Snackbar, Alert, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, TextField, MenuItem } from '@mui/material';
+import { Card, CardContent, Typography, Box, Button, Chip, Snackbar, Alert, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, TextField, MenuItem, Tooltip } from '@mui/material';
 import { useLocation } from 'react-router-dom';
 import ModalPago from './ModalPago';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -100,6 +100,16 @@ function PagosAlumno(props) {
   const adelantarSiguienteMensualidad = async () => {
     if (!alumno?._id || adelantandoMensualidad) return;
 
+    const tieneMensualidadesBloqueantes = mensualidades.some((m) => {
+      const estado = normalizarEstado(m?.estado);
+      return estado === 'pendiente' || estado === 'retrasado' || estado === 'insolvente';
+    });
+
+    if (tieneMensualidadesBloqueantes) {
+      setError('No puedes adelantar mensualidades mientras tengas cuotas pendientes, retrasadas o insolventes.');
+      return;
+    }
+
     try {
       setAdelantandoMensualidad(true);
       setError(null);
@@ -191,9 +201,12 @@ function PagosAlumno(props) {
     (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
   );
 
+  const normalizarEstado = (value) => String(value || '').trim().toLowerCase();
+
   const pagosFiltrados = pagosOrdenados.filter(pago => {
-    if (filtro === 'porPagar') return pago.estado && pago.estado.toLowerCase() !== 'pagado';
-    if (filtro === 'pagados') return pago.estado && pago.estado.toLowerCase() === 'pagado';
+    const estado = normalizarEstado(pago.estado);
+    if (filtro === 'porPagar') return estado && estado !== 'pagado';
+    if (filtro === 'pagados') return estado === 'pagado';
     return true;
   });
 
@@ -387,8 +400,8 @@ function PagosAlumno(props) {
     }
   };
 
-  const estadosConSaldo = ['pendiente', 'retrasado', 'abono'];
-  const mensualidadesConSaldo = mensualidades.filter((m) => estadosConSaldo.includes(String(m.estado || '').toLowerCase()));
+  const estadosConSaldo = ['pendiente', 'retrasado', 'abono', 'insolvente'];
+  const mensualidadesConSaldo = mensualidades.filter((m) => estadosConSaldo.includes(normalizarEstado(m.estado)));
   const balancePendiente = mensualidadesConSaldo.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
   const saldoAFavorDisponible = Math.max(0, Number(alumno?.saldo_a_favor_mensualidades) || 0);
   const proximaMensualidadPorVencer = mensualidadesConSaldo
@@ -414,7 +427,7 @@ function PagosAlumno(props) {
   })();
 
   const estadoConteo = mensualidades.reduce((acc, item) => {
-    const estado = String(item?.estado || '').toLowerCase();
+    const estado = normalizarEstado(item?.estado);
     acc[estado] = (acc[estado] || 0) + 1;
     return acc;
   }, {});
@@ -424,14 +437,17 @@ function PagosAlumno(props) {
   const estadoRetrasado = estadoConteo['retrasado'] || 0;
   const estadoEnRevision = estadoConteo['en revision'] || 0;
   const estadoAbono = estadoConteo['abono'] || 0;
+  const estadoInsolvente = estadoConteo['insolvente'] || 0;
   const estadoExonerado = estadoConteo['exonerado'] || 0;
   const estadoExentoReposo = estadoConteo['exento por reposo'] || 0;
+  const bloqueaAdelantoPorDeuda = estadoPendiente > 0 || estadoRetrasado > 0 || estadoInsolvente > 0;
+  const tooltipBloqueoAdelanto = 'No puedes adelantar el proximo mes porque tienes mensualidades pendientes.';
 
   const ultimaMensualidadRegistrada = [...mensualidades]
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
 
   const estadoCuenta = (() => {
-    if (estadoRetrasado > 0) {
+    if (estadoRetrasado > 0 || estadoInsolvente > 0) {
       return {
         titulo: 'Con Retrasos',
         subtitulo: 'Tienes cuotas vencidas por regularizar',
@@ -567,24 +583,37 @@ function PagosAlumno(props) {
             >
               Todos
             </Button>
-            <Button
-              startIcon={<PaymentsIcon sx={{ fontSize: 17 }} />}
-              variant="contained"
-              onClick={() => setConfirmarAdelantoOpen(true)}
-              disabled={adelantandoMensualidad || !alumno?._id}
-              sx={{
-                borderRadius: 999,
-                px: 2.5,
-                fontWeight: 700,
-                textTransform: 'none',
-                bgcolor: '#e07d00',
-                color: '#ffffff',
-                boxShadow: '0 6px 14px rgba(255, 187, 0, 0.24)',
-                '&:hover': { bgcolor: '#8f5602' }
-              }}
+            <Tooltip
+              title={bloqueaAdelantoPorDeuda ? tooltipBloqueoAdelanto : ''}
+              arrow
+              disableHoverListener={!bloqueaAdelantoPorDeuda}
+              disableFocusListener={!bloqueaAdelantoPorDeuda}
+              disableTouchListener={!bloqueaAdelantoPorDeuda}
             >
-              {adelantandoMensualidad ? 'Creando...' : 'Adelantar proximo mes'}
-            </Button>
+              <span>
+                <Button
+                  startIcon={<PaymentsIcon sx={{ fontSize: 17 }} />}
+                  variant="contained"
+                  onClick={() => {
+                    if (bloqueaAdelantoPorDeuda) return;
+                    setConfirmarAdelantoOpen(true);
+                  }}
+                  disabled={adelantandoMensualidad || !alumno?._id || bloqueaAdelantoPorDeuda}
+                  sx={{
+                    borderRadius: 999,
+                    px: 2.5,
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    bgcolor: '#e07d00',
+                    color: '#ffffff',
+                    boxShadow: '0 6px 14px rgba(255, 187, 0, 0.24)',
+                    '&:hover': { bgcolor: '#8f5602' }
+                  }}
+                >
+                  {adelantandoMensualidad ? 'Creando...' : 'Adelantar proximo mes'}
+                </Button>
+              </span>
+            </Tooltip>
           </Box>
           {loading ? (
             <Typography variant="body2" color="text.secondary">Cargando mensualidades...</Typography>
@@ -594,7 +623,7 @@ function PagosAlumno(props) {
             <Typography variant="body2" color="text.secondary">No hay pagos para mostrar.</Typography>
           ) : (
             pagosPagina.map((pago) => {
-          const estado = String(pago.estado || '').toLowerCase();
+          const estado = normalizarEstado(pago.estado);
           const dateObj = new Date(pago.fecha + 'T00:00:00');
           const mesNombre = dateObj.toLocaleString('es-ES', { month: 'long', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
           const anio = dateObj.toLocaleString('es-ES', { year: 'numeric', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
@@ -605,7 +634,7 @@ function PagosAlumno(props) {
             : 0;
 
           const estadoUi = (() => {
-            if (estado === 'retrasado') {
+            if (estado === 'retrasado' || estado === 'insolvente') {
               return {
                 badge: 'VENCIDO',
                 bg: '#fff5f5',
@@ -683,7 +712,7 @@ function PagosAlumno(props) {
             ? `Atrasado por ${diasRetraso || 1} ${diasRetraso === 1 ? 'dia' : 'dias'}`
             : (tieneVencimiento ? `Vence: ${formatFechaBonita(vencimiento)}` : `Periodo: ${mesNombre} ${anio}`);
 
-          const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono';
+          const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
 
           return (
             <Card
