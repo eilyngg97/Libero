@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import './Login.css';
 import { motion } from 'framer-motion';
 
-import { Box, Paper, Typography, TextField, Button, FormControlLabel, Checkbox, Link, Snackbar, Alert } from '@mui/material';
+import { Box, Paper, Typography, TextField, Button, FormControlLabel, Checkbox, Link, Snackbar, Alert, InputAdornment, IconButton } from '@mui/material';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import logoImage from '../assets/logo.png';
 
 
@@ -14,6 +16,7 @@ function Login({ onLogin }) {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [openSnackbar, setOpenSnackbar] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -211,13 +214,24 @@ function Login({ onLogin }) {
 
             <TextField
               placeholder="********"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               variant="outlined"
               fullWidth
               margin="dense"
               value={password}
               onChange={e => setPassword(e.target.value)}
               InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOutlinedIcon /> : <VisibilityOffOutlinedIcon />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
                 sx: {
                   borderRadius: 3,
                   backgroundColor: '#f8fafc'

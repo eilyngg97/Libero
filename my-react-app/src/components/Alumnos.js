@@ -758,7 +758,7 @@ function Alumnos() {
             <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
-             <TextField id="outlined-basic-domicilio" label="Domicilio" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+             <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
             <TextField id="outlined-basic-peso" InputProps={{ endAdornment: <InputAdornment position="end">kg</InputAdornment> }} label="Peso" name="peso" variant="outlined" value={form.peso || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
