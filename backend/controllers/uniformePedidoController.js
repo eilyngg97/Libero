@@ -25,6 +25,7 @@ exports.createPedidoUniforme = async (req, res) => {
       prenda,
       talla,
       nombrePersonalizado,
+      numeroFranela,
     } = req.body;
 
     if (!alumnoId || !prenda || !talla) {
@@ -39,15 +40,39 @@ exports.createPedidoUniforme = async (req, res) => {
 
     const uniforme = await Uniforme.findOne({ prenda });
     const precio = uniforme?.precio || 0;
-    const alumno = await Alumno.findById(alumnoId).select('numero_franela');
+    const alumno = await Alumno.findById(alumnoId).select('numero_franela categoria activo');
 
     if (!alumno) {
       return res.status(404).json({ error: 'Alumno no encontrado' });
     }
 
-    const numeroFranelaAlumno = String(alumno.numero_franela || '').trim();
-    if (!numeroFranelaAlumno) {
-      return res.status(400).json({ error: 'El alumno no tiene numero de franela asignado' });
+    let numeroFranelaPedido = Number(alumno.numero_franela);
+
+    if (!Number.isInteger(numeroFranelaPedido) || numeroFranelaPedido < 1 || numeroFranelaPedido > 100) {
+      const numeroSolicitado = Number(numeroFranela);
+      if (!Number.isInteger(numeroSolicitado) || numeroSolicitado < 1 || numeroSolicitado > 100) {
+        return res.status(400).json({ error: 'Debes seleccionar un numero de franela valido (1-100).' });
+      }
+
+      const categoria = String(alumno.categoria || '').trim();
+      if (!categoria) {
+        return res.status(400).json({ error: 'El alumno no tiene categoria asignada para validar numero de franela.' });
+      }
+
+      const numeroOcupado = await Alumno.findOne({
+        _id: { $ne: alumno._id },
+        activo: { $ne: false },
+        categoria: { $regex: new RegExp(`^${String(categoria).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        numero_franela: numeroSolicitado
+      }).select('_id');
+
+      if (numeroOcupado) {
+        return res.status(409).json({ error: `El numero de franela ${numeroSolicitado} ya esta ocupado en la categoria ${categoria}.` });
+      }
+
+      alumno.numero_franela = numeroSolicitado;
+      await alumno.save();
+      numeroFranelaPedido = numeroSolicitado;
     }
 
     const pedido = await UniformePedido.create({
@@ -55,7 +80,7 @@ exports.createPedidoUniforme = async (req, res) => {
       sede: sedeId || undefined,
       prenda,
       nombre_personalizado: String(nombrePersonalizado || '').trim().toUpperCase() || undefined,
-      numero_franela: numeroFranelaAlumno,
+      numero_franela: String(numeroFranelaPedido),
       precio,
       talla,
       estado: ESTADOS_PEDIDO.PENDIENTE,

@@ -51,6 +51,22 @@ const ESTADO_STYLES = {
   cancelado: { bgcolor: '#fee2e2', color: '#b91c1c' }
 };
 
+function construirNombrePersonalizado(alumno) {
+  const apellidos = String(alumno?.apellidos || '').trim();
+  const nombres = String(alumno?.nombres || '').trim();
+
+  const primerApellido = apellidos.split(/\s+/).filter(Boolean)[0] || '';
+  const primerNombre = nombres.split(/\s+/).filter(Boolean)[0] || '';
+
+  const apellidoUpper = primerApellido.toUpperCase();
+  const inicialNombre = primerNombre ? primerNombre.charAt(0).toUpperCase() : '';
+
+  if (!apellidoUpper && !inicialNombre) return '';
+  if (!apellidoUpper) return inicialNombre;
+  if (!inicialNombre) return apellidoUpper;
+  return `${apellidoUpper} ${inicialNombre}`;
+}
+
 function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const { dolar } = useDolar();
   const [prendas, setPrendas] = useState([]);
@@ -58,7 +74,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [prendasError, setPrendasError] = useState('');
   const [prenda, setPrenda] = useState('');
   const [talla, setTalla] = useState('');
-  const [nombrePersonalizado, setNombrePersonalizado] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -72,10 +87,17 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [referencia, setReferencia] = useState('');
   const [comprobante, setComprobante] = useState(null);
   const [submittingPago, setSubmittingPago] = useState(false);
+  const [numeroFranelaAsignado, setNumeroFranelaAsignado] = useState(() => String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());
+  const [numeroFranelaSeleccionado, setNumeroFranelaSeleccionado] = useState('');
+  const [numerosFranelaDisponibles, setNumerosFranelaDisponibles] = useState([]);
+  const [numeroFranelaLoading, setNumeroFranelaLoading] = useState(false);
+  const [numeroFranelaError, setNumeroFranelaError] = useState('');
 
   const tasaBCV = Number(dolar?.promedio) || 0;
   const token = localStorage.getItem('token');
-  const numeroFranelaAlumno = String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim();
+  const numeroFranelaAlumno = String(numeroFranelaAsignado || '').trim();
+  const categoriaAlumno = String(alumno?.categoria || '').trim();
+  const nombrePersonalizado = construirNombrePersonalizado(alumno);
 
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -131,14 +153,79 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     fetchPedidos();
   }, [alumno?._id]);
 
+  useEffect(() => {
+    setNumeroFranelaAsignado(String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());
+    setNumeroFranelaSeleccionado('');
+    setNumeroFranelaError('');
+    setNumerosFranelaDisponibles([]);
+  }, [alumno?._id, alumno?.numero_franela, alumno?.numeroFranela]);
+
+  useEffect(() => {
+    const categoriaNormalizada = String(categoriaAlumno || '').trim().toUpperCase();
+
+    if (numeroFranelaAlumno) {
+      setNumeroFranelaError('');
+      setNumerosFranelaDisponibles([]);
+      setNumeroFranelaLoading(false);
+      return;
+    }
+
+    if (!categoriaNormalizada) {
+      setNumeroFranelaError('El alumno no tiene categoria asignada para mostrar numeros disponibles.');
+      setNumerosFranelaDisponibles([]);
+      setNumeroFranelaLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const cargarDisponibilidad = async () => {
+      try {
+        setNumeroFranelaLoading(true);
+        setNumeroFranelaError('');
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudo cargar la disponibilidad de nro de franela.');
+
+        if (!cancelled) {
+          const disponibles = Array.isArray(data?.disponibles) ? data.disponibles : [];
+          setNumerosFranelaDisponibles(disponibles);
+          if (disponibles.length === 0) {
+            setNumeroFranelaError(`No hay numeros de franela disponibles para la categoria ${categoriaNormalizada}.`);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setNumerosFranelaDisponibles([]);
+          setNumeroFranelaError(err.message || 'No se pudo cargar la disponibilidad de nro de franela.');
+        }
+      } finally {
+        if (!cancelled) {
+          setNumeroFranelaLoading(false);
+        }
+      }
+    };
+
+    cargarDisponibilidad();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [categoriaAlumno, numeroFranelaAlumno, token]);
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!prenda || !talla) {
       setErrorMessage('Completa todos los campos del pedido');
       return;
     }
-    if (!numeroFranelaAlumno) {
-      setErrorMessage('El alumno no tiene numero de franela asignado');
+    const numeroFranelaFinal = numeroFranelaAlumno || String(numeroFranelaSeleccionado || '').trim();
+
+    if (!numeroFranelaFinal) {
+      setErrorMessage('Debes seleccionar un numero de franela para continuar');
       return;
     }
 
@@ -151,7 +238,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       formData.append('prenda', prenda);
       formData.append('talla', talla);
       formData.append('nombrePersonalizado', nombrePersonalizado);
-      formData.append('numeroFranela', numeroFranelaAlumno);
+      formData.append('numeroFranela', numeroFranelaFinal);
 
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
         method: 'POST',
@@ -163,7 +250,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
       setPrenda('');
       setTalla('');
-      setNombrePersonalizado('');
+      if (!numeroFranelaAlumno) {
+        setNumeroFranelaAsignado(numeroFranelaFinal);
+      }
       setSuccessMessage('Pedido realizado con exito');
       onGuardar && onGuardar(data);
       await fetchPedidos();
@@ -340,17 +429,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     fullWidth
                     label="Nombre personalizado"
                     value={nombrePersonalizado}
-                    onChange={(event) => setNombrePersonalizado(event.target.value.toUpperCase())}
-                    helperText="Opcional"
-                  />
-                </Grid>
-                <Grid item size={{ xs: 12, md: 6 }}>
-                  <TextField
-                    fullWidth
-                    label="Numero de franela"
-                    value={numeroFranelaAlumno}
                     disabled
-                    error={!numeroFranelaAlumno}
                     sx={{
                       '& .MuiInputBase-input.Mui-disabled': {
                         WebkitTextFillColor: '#64748b'
@@ -359,12 +438,48 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         backgroundColor: '#f1f5f9'
                       }
                     }}
-                    helperText={
-                      numeroFranelaAlumno
-                        ? 'Se usa el numero asignado en la ficha del alumno'
-                        : 'El alumno no tiene numero de franela asignado'
-                    }
+                    helperText="Se asigna automaticamente: primer apellido + inicial del primer nombre"
                   />
+                </Grid>
+                <Grid item size={{ xs: 12, md: 6 }}>
+                  {numeroFranelaAlumno ? (
+                    <TextField
+                      fullWidth
+                      label="Numero de franela"
+                      value={numeroFranelaAlumno}
+                      disabled
+                      sx={{
+                        '& .MuiInputBase-input.Mui-disabled': {
+                          WebkitTextFillColor: '#64748b'
+                        },
+                        '& .MuiOutlinedInput-root.Mui-disabled': {
+                          backgroundColor: '#f1f5f9'
+                        }
+                      }}
+                      helperText="Se usa el numero asignado en la ficha del alumno"
+                    />
+                  ) : (
+                    <FormControl fullWidth required error={!!numeroFranelaError && !numeroFranelaLoading}>
+                      <InputLabel id="numero-franela-label">Numero de franela</InputLabel>
+                      <Select
+                        labelId="numero-franela-label"
+                        value={numeroFranelaSeleccionado}
+                        label="Numero de franela"
+                        onChange={(event) => setNumeroFranelaSeleccionado(event.target.value)}
+                        disabled={numeroFranelaLoading || numerosFranelaDisponibles.length === 0}
+                      >
+                        <MenuItem value=""><em>Seleccione</em></MenuItem>
+                        {numerosFranelaDisponibles.map((numero) => (
+                          <MenuItem key={numero} value={String(numero)}>{numero}</MenuItem>
+                        ))}
+                      </Select>
+                      <Typography variant="caption" sx={{ mt: 0.6, color: numeroFranelaError ? '#d32f2f' : '#64748b', display: 'block' }}>
+                        {numeroFranelaLoading
+                          ? 'Cargando numeros disponibles por categoria...'
+                          : (numeroFranelaError || `Disponibles: ${numerosFranelaDisponibles.length} de 100 en ${String(categoriaAlumno || '').toUpperCase()}`)}
+                      </Typography>
+                    </FormControl>
+                  )}
                 </Grid>
               </Grid>
               {prendasError && (
@@ -372,7 +487,14 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                   {prendasError}
                 </Typography>
               )}
-              <Button type="submit" variant="contained" color="primary" fullWidth size="large" disabled={guardando}>
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                fullWidth
+                size="large"
+                disabled={guardando || (!numeroFranelaAlumno && !numeroFranelaSeleccionado) || numeroFranelaLoading || !!numeroFranelaError}
+              >
                 {guardando ? 'Guardando...' : 'Guardar pedido'}
               </Button>
             </Box>

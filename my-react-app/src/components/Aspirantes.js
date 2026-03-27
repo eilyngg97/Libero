@@ -2,8 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -43,6 +48,9 @@ function Aspirantes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingId, setSavingId] = useState('');
+  const [deletingId, setDeletingId] = useState('');
+  const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
+  const [aspiranteAEliminar, setAspiranteAEliminar] = useState(null);
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
 
   const rows = useMemo(() => aspirantes, [aspirantes]);
@@ -119,6 +127,37 @@ function Aspirantes() {
     );
   };
 
+  const solicitarEliminarAspirante = (aspirante) => {
+    setAspiranteAEliminar(aspirante);
+    setConfirmarEliminarOpen(true);
+  };
+
+  const deleteAspirante = async () => {
+    if (!aspiranteAEliminar?._id) return;
+
+    try {
+      setDeletingId(aspiranteAEliminar._id);
+      const res = await fetch(`${apiBase}/api/aspirantes/${aspiranteAEliminar._id}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'No se pudo eliminar el aspirante.');
+      }
+
+      setAspirantes((prev) => prev.filter((item) => item._id !== aspiranteAEliminar._id));
+      setConfirmarEliminarOpen(false);
+      setAspiranteAEliminar(null);
+      setAlert({ open: true, message: 'Aspirante eliminado correctamente.', severity: 'success' });
+    } catch (err) {
+      setAlert({ open: true, message: err.message || 'No se pudo eliminar el aspirante.', severity: 'error' });
+    } finally {
+      setDeletingId('');
+    }
+  };
+
   return (
     <Box>
       <Typography variant="h4" sx={{ mb: 2, fontWeight: 800 }}>
@@ -145,12 +184,13 @@ function Aspirantes() {
                 <TableCell sx={{ fontWeight: 700 }}>Telefono</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Estado actual</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Cambiar estado</TableCell>
+                <TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>Acciones</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} sx={{ textAlign: 'center', py: 6, color: '#64748b' }}>
+                  <TableCell colSpan={7} sx={{ textAlign: 'center', py: 6, color: '#64748b' }}>
                     No hay aspirantes registrados por ahora.
                   </TableCell>
                 </TableRow>
@@ -180,6 +220,17 @@ function Aspirantes() {
                         </Select>
                       </FormControl>
                     </TableCell>
+                    <TableCell sx={{ textAlign: 'center', width: 140 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        onClick={() => solicitarEliminarAspirante(aspirante)}
+                        disabled={deletingId === aspirante._id || savingId === aspirante._id}
+                      >
+                        {deletingId === aspirante._id ? 'Eliminando...' : 'Eliminar'}
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -202,6 +253,41 @@ function Aspirantes() {
           {alert.message}
         </Alert>
       </Snackbar>
+
+      <Dialog
+        open={confirmarEliminarOpen}
+        onClose={() => {
+          if (deletingId) return;
+          setConfirmarEliminarOpen(false);
+          setAspiranteAEliminar(null);
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#b91c1c' }}>Eliminar aspirante</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mt: 1.5, mb: 1.5 }}>
+            Esta accion no se puede deshacer.
+          </Alert>
+          <Typography sx={{ color: '#334155' }}>
+            ¿Seguro que deseas eliminar este registro de aspirante?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setConfirmarEliminarOpen(false);
+              setAspiranteAEliminar(null);
+            }}
+            disabled={!!deletingId}
+          >
+            Cancelar
+          </Button>
+          <Button variant="contained" color="error" onClick={deleteAspirante} disabled={!!deletingId}>
+            {deletingId ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

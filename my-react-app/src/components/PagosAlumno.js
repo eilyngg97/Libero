@@ -747,6 +747,10 @@ function PagosAlumno(props) {
             return tieneVencimiento ? `Vence: ${formatFechaBonita(vencimiento)}` : `Periodo: ${mesNombre} ${anio}`;
           })();
 
+          const montoCard = (estado === 'pagado' || estado === 'en revision')
+            ? (Number(pago.total_pagado) || Number(pago.monto_total) || Number(pago.monto) || 0)
+            : pago.monto;
+
           const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
 
           return (
@@ -803,7 +807,7 @@ function PagosAlumno(props) {
 
                   <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.7 }}>
                     <Typography sx={{ color: estadoUi.amountColor, fontWeight: 900, fontSize: { xs: 25, md: 27 }, lineHeight: 1 }}>
-                      ${formatMoney(pago.monto)}
+                      ${formatMoney(montoCard)}
                     </Typography>
 
                     {showPrimaryAction ? (
