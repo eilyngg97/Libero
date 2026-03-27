@@ -582,7 +582,7 @@ function Alumnos() {
 
             <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
               <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#94a3b8', letterSpacing: '0.04em', mb: 1 }}>
-                CEDULA DE IDENTIDAD
+                CEDULA DE IDENTIDAD DEL ALUMNO
               </Typography>
               <Box
                 onClick={handleClickCedula}

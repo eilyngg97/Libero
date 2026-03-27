@@ -900,7 +900,16 @@ function Mensualidades() {
 				PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
 			>
 				<DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 17, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-					Detalle del Pago
+					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+						<Typography sx={{ fontWeight: 800, fontSize: 17, color: '#0b2a57' }}>
+							Detalle del Pago -
+						</Typography>
+						{mensualidadDetalle?.id_alumno && (
+							<Typography sx={{ color: '#516b94', fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: { xs: 160, sm: 260 } }}>
+								{`${mensualidadDetalle.id_alumno.nombres || ''} ${mensualidadDetalle.id_alumno.apellidos || ''}`.trim()}
+							</Typography>
+						)}
+					</Box>
 					<IconButton size="small" onClick={() => setModalDetalle(false)} sx={{ color: '#6b7280' }}>
 						&times;
 					</IconButton>

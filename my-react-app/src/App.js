@@ -29,11 +29,13 @@ import Aspirantes from './components/Aspirantes';
 import LandingConfig from './components/LandingConfig';
 import ConciliacionBancaria from './components/ConciliacionBancaria';
 
-import { SedeProvider } from './context/SedeContext';
+import { SedeProvider, useSede } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
 import './App.css';
 import Box from '@mui/material/Box';
+import Breadcrumbs from '@mui/material/Breadcrumbs';
 import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
  // Wrapper para pasar location.state a AlumnoEditar si viene de PanelOpcionesUsuario
 import AlumnoEditar from './components/AlumnoEditar';
@@ -88,6 +90,49 @@ function BackNavigationButton() {
   );
 }
 
+function obtenerNombreSede(sede) {
+  if (!sede) return '';
+  if (typeof sede?.nombre === 'object') {
+    return sede.nombre?.nombre || sede.nombre?.label || '';
+  }
+  return sede?.nombre || sede?.label || '';
+}
+
+function SedeBreadcrumb() {
+  const location = useLocation();
+  const { sedeSeleccionada } = useSede();
+
+  const rutaLabels = [
+    { startsWith: '/tabla-alumnos', label: 'Alumnos' },
+    { startsWith: '/alumnos', label: 'Alumnos' },
+    { startsWith: '/entrenadores', label: 'Entrenadores' },
+    { startsWith: '/mensualidades', label: 'Mensualidades' },
+    { startsWith: '/solicitud-uniforme', label: 'Solicitud de uniformes' },
+    { startsWith: '/listado-solicitudes-uniformes', label: 'Solicitud de uniformes' }
+  ];
+
+  const match = rutaLabels.find((item) => location.pathname.startsWith(item.startsWith));
+  if (!match) return null;
+
+  const sedeNombre = obtenerNombreSede(sedeSeleccionada) || obtenerNombreSede(location.state?.sede) || 'Sin sede seleccionada';
+
+  return (
+    <Box sx={{ mb: 1.25 }}>
+      <Breadcrumbs separator="›" aria-label="breadcrumb" sx={{ color: '#64748b' }}>
+        <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 600 }}>
+          Panel
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#334155', fontWeight: 700 }}>
+          {match.label}
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#0f766e', fontWeight: 700 }}>
+          Sede: {sedeNombre}
+        </Typography>
+      </Breadcrumbs>
+    </Box>
+  );
+}
+
 
 function App() {
   const [sedeSeleccionada, setSedeSeleccionada] = React.useState(null);
@@ -132,6 +177,7 @@ function App() {
                     />
                     <main style={{ flex: 1, padding: 16 }}>
                       <BackNavigationButton />
+                      <SedeBreadcrumb />
                       <Routes>
                         <Route path="dashboard" element={<ProtectedRoute allowedRoles={adminOnly}><Dashboard /></ProtectedRoute>} />
                         <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><Alumnos /></ProtectedRoute>} />
