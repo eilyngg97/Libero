@@ -87,7 +87,7 @@ async function recalcularMensualidadPorPagos(
 
   mensualidad.saldo_a_favor_generado = saldoGeneradoNuevo;
 
-  const mantenerRevision = estatusAnterior === 'En revision' || actorRol === 'usuario';
+  const requiereRevisionPagoCompleto = estatusAnterior === 'En revision' || actorRol === 'usuario';
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
   const debePreservarPagadoManual =
@@ -100,13 +100,13 @@ async function recalcularMensualidadPorPagos(
     mensualidad.estatus = 'Pagado';
   } else
   if (montoEsperado <= 0) {
-    mensualidad.estatus = mantenerRevision && totalPagado > 0 ? 'En revision' : 'Pagado';
+    mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
     mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
   } else if (totalPagado >= montoEsperado) {
-    mensualidad.estatus = mantenerRevision ? 'En revision' : 'Pagado';
+    mensualidad.estatus = requiereRevisionPagoCompleto ? 'En revision' : 'Pagado';
   } else {
-    mensualidad.estatus = mantenerRevision ? 'En revision' : 'Abono';
+    mensualidad.estatus = 'Abono';
   }
 
   await mensualidad.save();
@@ -648,9 +648,33 @@ exports.getMensualidades = async (req, res) => {
       }
     });
 
+    const mensualidadIds = mensualidades.map((m) => m._id);
+    const pagosPorMensualidad = mensualidadIds.length > 0
+      ? await PagoDetalle.aggregate([
+          { $match: { id_mensualidad: { $in: mensualidadIds } } },
+          {
+            $group: {
+              _id: '$id_mensualidad',
+              total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } }
+            }
+          }
+        ])
+      : [];
+
+    const totalPagadoMap = new Map(
+      pagosPorMensualidad.map((item) => [String(item._id), redondearMonto(item.total_pagado)])
+    );
+
     // Compatibilidad: data histórica con "Retrasado" se expone como "Insolvente".
     const mensualidadesCompat = mensualidades.map((m) => {
       const raw = m.toObject ? m.toObject() : m;
+      const totalPagado = totalPagadoMap.get(String(raw._id)) || 0;
+      const saldoPendiente = redondearMonto(Math.max(0, (Number(raw.monto_esperado) || 0) - totalPagado));
+
+      raw.total_pagado = totalPagado;
+      raw.saldo_pendiente = saldoPendiente;
+      raw.monto_total = redondearMonto(raw.monto_esperado || 0);
+
       if (esEstatusInsolvente(raw.estatus)) {
         raw.estatus = 'Insolvente';
       }

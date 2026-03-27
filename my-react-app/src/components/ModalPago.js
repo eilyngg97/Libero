@@ -53,6 +53,15 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const { dolar } = useDolar();
   const tasa = dolar?.promedio;
   const montoBs = (monto !== undefined && monto !== null && tasaPago) ? Number(monto) * Number(tasaPago) : null;
+  const montoPagadoEquivalenteUsd = (() => {
+    const montoBsIngresado = Number(montoPagado);
+    const tasaAplicada = Number(tasaPago);
+
+    if (!Number.isFinite(montoBsIngresado) || montoBsIngresado <= 0) return null;
+    if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) return null;
+
+    return montoBsIngresado / tasaAplicada;
+  })();
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
@@ -481,6 +490,11 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                       endAdornment: <InputAdornment position="end">Bs</InputAdornment>
                     }}
                   />
+                  {montoPagadoEquivalenteUsd !== null && (
+                    <Typography variant="caption" sx={{ color: '#64748b', mt: 0.35, display: 'block' }}>
+                      Equivalente: ${formatMoney(montoPagadoEquivalenteUsd)} USD
+                    </Typography>
+                  )}
                   <TextField
                     label="Fecha de pago"
                     type="date"

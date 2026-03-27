@@ -68,7 +68,9 @@ function PagosAlumno(props) {
     id_alumno: m.id_alumno,
     fecha: `${m.anio}-${String(m.mes).padStart(2, '0')}-01`,
     fecha_vencimiento: m.fecha_vencimiento,
-    monto: m.monto_esperado,
+    monto: m.saldo_pendiente ?? m.monto_esperado,
+    monto_total: m.monto_total ?? m.monto_esperado,
+    total_pagado: m.total_pagado || 0,
     estado: m.estatus,
     detalle: m.detalle || `Mensualidad correspondiente a ${m.mes}/${m.anio}`,
     descripcion: 'Mensualidad'
@@ -102,11 +104,11 @@ function PagosAlumno(props) {
 
     const tieneMensualidadesBloqueantes = mensualidades.some((m) => {
       const estado = normalizarEstado(m?.estado);
-      return estado === 'pendiente' || estado === 'retrasado' || estado === 'insolvente';
+      return estado === 'pendiente' || estado === 'retrasado' || estado === 'insolvente' || estado === 'abono';
     });
 
     if (tieneMensualidadesBloqueantes) {
-      setError('No puedes adelantar mensualidades mientras tengas cuotas pendientes, retrasadas o insolventes.');
+      setError('No puedes adelantar mensualidades mientras tengas cuotas pendientes, insolventes o con abonos.');
       return;
     }
 
@@ -252,6 +254,31 @@ function PagosAlumno(props) {
       return `$${montoUsd}`;
     }
     return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
+  };
+
+  const formatMontoPrincipal = (pago) => {
+    const montoBs = Number(pago?.monto_pagado_bs);
+    if (Number.isFinite(montoBs) && montoBs > 0) {
+      return `Bs ${formatMoney(montoBs)}`;
+    }
+
+    return `$${formatMoney(pago?.monto_pagado)} USD`;
+  };
+
+  const formatEquivalenteUsdDesdeBs = (pago) => {
+    const montoBs = Number(pago?.monto_pagado_bs);
+    const montoUsd = Number(pago?.monto_pagado);
+
+    if (!Number.isFinite(montoBs) || montoBs <= 0 || !Number.isFinite(montoUsd) || montoUsd <= 0) {
+      return null;
+    }
+
+    const tasaAplicada = montoBs / montoUsd;
+    if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) {
+      return null;
+    }
+
+    return `$${formatMoney(montoBs / tasaAplicada)} USD`;
   };
 
   const formatTasaAplicada = (pago) => {
@@ -440,8 +467,8 @@ function PagosAlumno(props) {
   const estadoInsolvente = estadoConteo['insolvente'] || 0;
   const estadoExonerado = estadoConteo['exonerado'] || 0;
   const estadoExentoReposo = estadoConteo['exento por reposo'] || 0;
-  const bloqueaAdelantoPorDeuda = estadoPendiente > 0 || estadoRetrasado > 0 || estadoInsolvente > 0;
-  const tooltipBloqueoAdelanto = 'No puedes adelantar el proximo mes porque tienes mensualidades pendientes.';
+  const bloqueaAdelantoPorDeuda = estadoPendiente > 0 || estadoRetrasado > 0 || estadoInsolvente > 0 || estadoAbono > 0;
+  const tooltipBloqueoAdelanto = 'No puedes adelantar el proximo mes porque tienes mensualidades pendientes, insolventes, retrasadas o con abonos pendientes.';
 
   const ultimaMensualidadRegistrada = [...mensualidades]
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
@@ -708,9 +735,17 @@ function PagosAlumno(props) {
             };
           })();
 
-          const subInfo = estado === 'retrasado'
-            ? `Atrasado por ${diasRetraso || 1} ${diasRetraso === 1 ? 'dia' : 'dias'}`
-            : (tieneVencimiento ? `Vence: ${formatFechaBonita(vencimiento)}` : `Periodo: ${mesNombre} ${anio}`);
+          const subInfo = (() => {
+            if (estado === 'abono') {
+              return `Abonado: $${formatMoney(pago.total_pagado)} | Restante: $${formatMoney(pago.monto)}`;
+            }
+
+            if (estado === 'retrasado' || estado === 'insolvente') {
+              return `Atrasado por ${diasRetraso || 1} ${diasRetraso === 1 ? 'dia' : 'dias'}`;
+            }
+
+            return tieneVencimiento ? `Vence: ${formatFechaBonita(vencimiento)}` : `Periodo: ${mesNombre} ${anio}`;
+          })();
 
           const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
 
@@ -1035,7 +1070,12 @@ function PagosAlumno(props) {
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoConBs(detallePago)}</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoPrincipal(detallePago)}</Typography>
+                    {formatEquivalenteUsdDesdeBs(detallePago) && (
+                      <Typography sx={{ mt: 0.45, fontSize: 13, fontWeight: 700, color: '#64748b', lineHeight: 1.2 }}>
+                        Equivalente: {formatEquivalenteUsdDesdeBs(detallePago)}
+                      </Typography>
+                    )}
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
@@ -1137,7 +1177,12 @@ function PagosAlumno(props) {
                     </Box>
                     <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Monto</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoConBs(pago)}</Typography>
+                      <Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoPrincipal(pago)}</Typography>
+                      {formatEquivalenteUsdDesdeBs(pago) && (
+                        <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
+                          Equivalente: {formatEquivalenteUsdDesdeBs(pago)}
+                        </Typography>
+                      )}
                     </Box>
                     <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Fecha</Typography>

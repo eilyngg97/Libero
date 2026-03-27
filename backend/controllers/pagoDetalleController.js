@@ -54,7 +54,7 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior) {
   const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
   const saldoGeneradoNuevo = redondearMonto(Math.max(0, totalPagado - montoEsperado));
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
-  const mantenerRevision = estatusAnterior === 'En revision' || actorRol === 'usuario';
+  const requiereRevisionPagoCompleto = estatusAnterior === 'En revision' || actorRol === 'usuario';
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
 
@@ -76,13 +76,13 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior) {
   mensualidad.saldo_a_favor_generado = saldoGeneradoNuevo;
 
   if (montoEsperado <= 0) {
-    mensualidad.estatus = mantenerRevision && totalPagado > 0 ? 'En revision' : 'Pagado';
+    mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
     mensualidad.estatus = (estatusAnteriorNormalizado === 'retrasado' || estaVencida) ? 'Retrasado' : 'Pendiente';
   } else if (totalPagado >= montoEsperado) {
-    mensualidad.estatus = mantenerRevision ? 'En revision' : 'Pagado';
+    mensualidad.estatus = requiereRevisionPagoCompleto ? 'En revision' : 'Pagado';
   } else {
-    mensualidad.estatus = mantenerRevision ? 'En revision' : 'Abono';
+    mensualidad.estatus = 'Abono';
   }
 
   await mensualidad.save();
