@@ -581,6 +581,29 @@ function Mensualidades() {
 		return <Chip label={estatusRaw || '-'} variant="outlined" />;
 	};
 
+	const renderEstadoAlumnoChip = (alumno) => {
+		const dadoDeBaja = alumno?.dado_de_baja === true;
+		const activo = alumno?.activo !== false;
+		const estadoRaw = String(alumno?.estado || '').toLowerCase();
+		const esBaja = dadoDeBaja || !activo || estadoRaw === 'baja' || estadoRaw === 'inactivo';
+
+		if (esBaja) {
+			return (
+				<Chip
+					label="Baja"
+					sx={{ borderRadius: 999, fontWeight: 700, bgcolor: '#ffe1e6', color: '#d32f2f' }}
+				/>
+			);
+		}
+
+		return (
+			<Chip
+				label="Activo"
+				sx={{ borderRadius: 999, fontWeight: 700, bgcolor: '#dff7ea', color: '#0f7a4a' }}
+			/>
+		);
+	};
+
 	const inputSx = {
 		'& .MuiOutlinedInput-root': {
 			borderRadius: 2,
@@ -732,6 +755,10 @@ function Mensualidades() {
 								{renderEstatusChip(m.estatus)}
 							</Box>
 							<Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Alumno:</b></Typography>
+									{renderEstadoAlumnoChip(m.id_alumno)}
+								</Box>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${m.monto_esperado}</Typography>
@@ -801,6 +828,7 @@ function Mensualidades() {
 						<TableHead>
 							<TableRow sx={{ backgroundColor: '#f8fafc' }}>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACTIVO/BAJA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
@@ -824,6 +852,7 @@ function Mensualidades() {
 											{m.id_alumno ? m.id_alumno.nombres + ' ' + m.id_alumno.apellidos : ''}
 										</Box>
 									</TableCell>
+									<TableCell>{renderEstadoAlumnoChip(m.id_alumno)}</TableCell>
 									<TableCell>
 										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 									</TableCell>
@@ -873,7 +902,7 @@ function Mensualidades() {
 						</TableBody>
 						<tfoot>
 							<TableRow>
-								<TableCell colSpan={8}>
+								<TableCell colSpan={9}>
 									<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
 										<TablePagination
 											component="div"
