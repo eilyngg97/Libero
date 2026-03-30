@@ -39,6 +39,7 @@ jest.mock('../models/Mensualidad', () => ({
   findById: jest.fn(),
   find: jest.fn(),
   findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
   create: jest.fn()
 }));
 
@@ -50,6 +51,7 @@ jest.mock('../models/PagoDetalle', () => ({
 }));
 
 jest.mock('../models/Reposo', () => ({
+  find: jest.fn(),
   findOne: jest.fn()
 }));
 
@@ -95,6 +97,11 @@ function makeToken(payload) {
 describe('Backend smoke tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    Reposo.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([])
+      })
+    });
     Reposo.findOne.mockReturnValue({
       sort: jest.fn().mockResolvedValue(null)
     });
@@ -123,7 +130,8 @@ describe('Backend smoke tests', () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
     const alumnos = [{ _id: 'a1', nombres: 'Ana', apellidos: 'Lopez' }];
 
-    const populateSede = jest.fn().mockResolvedValue(alumnos);
+    const lean = jest.fn().mockResolvedValue(alumnos);
+    const populateSede = jest.fn(() => ({ lean }));
     const populateRepresentante = jest.fn(() => ({ populate: populateSede }));
     Alumno.find.mockReturnValue({ populate: populateRepresentante });
 
@@ -369,6 +377,9 @@ describe('Backend smoke tests', () => {
     const populateSede = jest.fn().mockResolvedValue(alumnoDoc);
     const populateRepresentante = jest.fn(() => ({ populate: populateSede }));
     Alumno.findById.mockReturnValue({ populate: populateRepresentante });
+    Mensualidad.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([])
+    });
 
     const response = await request(app)
       .post('/api/constancias')
@@ -579,7 +590,7 @@ describe('Backend smoke tests', () => {
     expect(mensualidadReposo.ajuste_extraordinario).toBe(0);
   });
 
-  test('POST /api/mensualidades/ajuste-sede conserva estado retrasado', async () => {
+  test('POST /api/mensualidades/ajuste-sede conserva estado insolvente para data legacy retrasado', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 
     const alumnoDoc = {
@@ -620,7 +631,7 @@ describe('Backend smoke tests', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.mensualidades_actualizadas).toBe(1);
-    expect(mensualidadRetrasada.estatus).toBe('Retrasado');
+    expect(mensualidadRetrasada.estatus).toBe('Insolvente');
   });
 
   test('POST /api/mensualidades/ajuste-sede preserva pagado manual sin pagos', async () => {
@@ -719,5 +730,85 @@ describe('Backend smoke tests', () => {
     expect(response.body.mensualidades_actualizables).toBe(1);
     expect(response.body.mensualidades_omitidas).toBe(1);
     expect(response.body.mensualidades_no_compatibles).toBe(0);
+  });
+
+  test('PATCH /api/alumnos/:id/reposos/:reposoId al acortar un reposo total libera los meses fuera del nuevo rango', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const alumnoBasico = { _id: 'a1' };
+    const alumnoConfiguracion = {
+      _id: 'a1',
+      sede: 's1',
+      tipo_mensualidad: 'monto_personalizado',
+      monto_personalizado_valor: 100
+    };
+
+    const reposoDoc = {
+      _id: 'r1',
+      id_alumno: 'a1',
+      tipo: 'Total',
+      fecha_inicio: new Date('2026-03-01T12:00:00.000Z'),
+      fecha_fin: new Date('2026-04-30T12:00:00.000Z'),
+      estado: 'Activo',
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadMarzo = {
+      _id: 'm-mar',
+      id_alumno: 'a1',
+      mes: 3,
+      anio: 2026,
+      monto_base: 100,
+      credito_aplicado: 0,
+      ajuste_extraordinario: 0,
+      monto_esperado: 0,
+      saldo_a_favor_generado: 0,
+      estatus: 'Exento por reposo',
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadAbril = {
+      _id: 'm-abr',
+      id_alumno: 'a1',
+      mes: 4,
+      anio: 2026,
+      monto_base: 100,
+      credito_aplicado: 0,
+      ajuste_extraordinario: 0,
+      monto_esperado: 0,
+      saldo_a_favor_generado: 0,
+      estatus: 'Exento por reposo',
+      fecha_vencimiento: new Date('2026-04-05T23:59:59.000Z'),
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    Alumno.findById
+      .mockReturnValueOnce({ select: jest.fn().mockResolvedValue(alumnoBasico) })
+      .mockReturnValueOnce({ select: jest.fn().mockResolvedValue(alumnoConfiguracion) });
+
+    Reposo.findOne
+      .mockResolvedValueOnce(reposoDoc)
+      .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) })
+      .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue({ _id: 'r1' }) })
+      .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) })
+      .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) });
+
+    Mensualidad.findOne
+      .mockResolvedValueOnce(mensualidadMarzo)
+      .mockResolvedValueOnce(mensualidadAbril);
+
+    Mensualidad.findOneAndUpdate.mockResolvedValue(mensualidadMarzo);
+    PagoDetalle.find.mockResolvedValue([]);
+
+    const response = await request(app)
+      .patch('/api/alumnos/a1/reposos/r1')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fecha_fin: '2026-03-31' });
+
+    expect(response.status).toBe(200);
+    expect(reposoDoc.fecha_fin.toISOString()).toBe('2026-03-31T12:00:00.000Z');
+    expect(mensualidadAbril.monto_esperado).toBe(100);
+    expect(mensualidadAbril.estatus).toBe('Pendiente');
+    expect(mensualidadAbril.save).toHaveBeenCalled();
   });
 });

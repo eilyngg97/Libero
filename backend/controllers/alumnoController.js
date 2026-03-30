@@ -49,6 +49,7 @@ const User = require('../models/User');
 const Mensualidad = require('../models/Mensualidad');
 const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
+const PagoDetalle = require('../models/PagoDetalle');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 
@@ -149,6 +150,223 @@ function getPeriodoFromInput(rawValue, parsedDate) {
     mes: now.getUTCMonth() + 1,
     anio: now.getUTCFullYear()
   };
+}
+
+function redondearMonto(valor) {
+  return Number((Number(valor) || 0).toFixed(2));
+}
+
+function esEstatusInsolvente(estatus) {
+  const normalizado = String(estatus || '').toLowerCase();
+  return normalizado === 'retrasado' || normalizado === 'insolvente';
+}
+
+function buildPeriodoKey(mes, anio) {
+  return `${anio}-${String(mes).padStart(2, '0')}`;
+}
+
+async function resolverMontoBaseAlumno(alumno) {
+  if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
+    const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
+    const sede = await Sede.findById(sedeId).select('costo');
+    return redondearMonto(sede && sede.costo ? sede.costo : 0);
+  }
+
+  if (alumno.tipo_mensualidad === 'monto_personalizado') {
+    return redondearMonto(alumno.monto_personalizado_valor || 0);
+  }
+
+  return 0;
+}
+
+async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null) {
+  const pagos = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
+  const tienePagosRegistrados = pagos.length > 0;
+  const totalPagado = redondearMonto(
+    pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0)
+  );
+  const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
+  const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
+  const saldoGeneradoNuevo = redondearMonto(Math.max(0, totalPagado - montoEsperado));
+  const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
+
+  if (deltaSaldo !== 0) {
+    const alumnoDoc = await Alumno.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
+    if (alumnoDoc) {
+      const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
+      const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
+
+      if (saldoResultante < 0) {
+        throw new Error('El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.');
+      }
+
+      alumnoDoc.saldo_a_favor_mensualidades = saldoResultante;
+      await alumnoDoc.save();
+    }
+  }
+
+  mensualidad.saldo_a_favor_generado = saldoGeneradoNuevo;
+
+  const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
+  const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
+
+  if (montoEsperado <= 0) {
+    mensualidad.estatus = totalPagado > 0 ? 'En revision' : 'Pagado';
+  } else if (totalPagado <= 0) {
+    mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
+  } else if (totalPagado >= montoEsperado) {
+    mensualidad.estatus = 'Pagado';
+  } else {
+    mensualidad.estatus = 'Abono';
+  }
+
+  await mensualidad.save();
+}
+
+async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
+  const inicioMes = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
+  const finMes = new Date(Date.UTC(anio, mes, 0, 23, 59, 59, 999));
+
+  const reposoIndefinido = await Reposo.findOne({
+    id_alumno: alumnoId,
+    estado: { $ne: 'Inactivo' },
+    tipo: 'Indefinido',
+    fecha_inicio: { $lte: finMes },
+    $or: [
+      { fecha_fin: null },
+      { fecha_fin: { $gte: inicioMes } }
+    ]
+  }).sort({ fecha_inicio: -1 });
+
+  if (reposoIndefinido) {
+    return 'EXENTO_POR_REPOSO';
+  }
+
+  const reposoTotal = await Reposo.findOne({
+    id_alumno: alumnoId,
+    estado: { $ne: 'Inactivo' },
+    tipo: 'Total',
+    $or: [
+      {
+        fecha_fin: { $ne: null, $gte: inicioMes },
+        fecha_inicio: { $lte: finMes }
+      },
+      {
+        fecha_fin: null,
+        fecha_inicio: { $gte: inicioMes, $lte: finMes }
+      }
+    ]
+  }).sort({ fecha_inicio: -1 });
+
+  return reposoTotal ? 'EXENTO_POR_REPOSO' : 'NORMAL';
+}
+
+async function listarPeriodosAfectadosPorReposo(alumnoId, reposo) {
+  if (!reposo || !reposo.fecha_inicio) return [];
+
+  const tipo = normalizarTipoReposo(reposo.tipo);
+  if (!tipo) return [];
+
+  if (tipo === 'Parcial') return [];
+
+  if (tipo === 'Total') {
+    return listarPeriodosEntreFechas(reposo.fecha_inicio, reposo.fecha_fin || reposo.fecha_inicio);
+  }
+
+  if (reposo.fecha_fin) {
+    return listarPeriodosEntreFechas(reposo.fecha_inicio, reposo.fecha_fin);
+  }
+
+  const inicioMes = reposo.fecha_inicio.getUTCMonth() + 1;
+  const inicioAnio = reposo.fecha_inicio.getUTCFullYear();
+  const mensualidades = await Mensualidad.find({
+    id_alumno: alumnoId,
+    $or: [
+      { anio: { $gt: inicioAnio } },
+      { anio: inicioAnio, mes: { $gte: inicioMes } }
+    ]
+  }).select('mes anio').lean();
+
+  const periodosMap = new Map();
+  periodosMap.set(buildPeriodoKey(inicioMes, inicioAnio), { mes: inicioMes, anio: inicioAnio });
+  mensualidades.forEach((mensualidad) => {
+    periodosMap.set(buildPeriodoKey(mensualidad.mes, mensualidad.anio), {
+      mes: mensualidad.mes,
+      anio: mensualidad.anio
+    });
+  });
+
+  return Array.from(periodosMap.values());
+}
+
+async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos) {
+  if (!Array.isArray(periodos) || periodos.length === 0) return;
+
+  const alumno = await Alumno.findById(alumnoId).select('sede tipo_mensualidad monto_personalizado_valor');
+  if (!alumno) return;
+
+  const periodosUnicos = Array.from(
+    new Map(periodos.map((periodo) => [buildPeriodoKey(periodo.mes, periodo.anio), periodo])).values()
+  );
+
+  for (const periodo of periodosUnicos) {
+    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumnoId, periodo.mes, periodo.anio);
+    let mensualidad = await Mensualidad.findOne({ id_alumno: alumnoId, mes: periodo.mes, anio: periodo.anio });
+
+    if (reglaReposo === 'EXENTO_POR_REPOSO') {
+      await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio);
+      continue;
+    }
+
+    if (!mensualidad) continue;
+
+    const estatusActual = String(mensualidad.estatus || '').toLowerCase();
+    const estuvoExentaPorReposo = estatusActual === 'exento por reposo' || redondearMonto(mensualidad.monto_esperado || 0) <= 0;
+    if (!estuvoExentaPorReposo) continue;
+
+    const montoBase = mensualidad.monto_base !== undefined && mensualidad.monto_base !== null
+      ? redondearMonto(mensualidad.monto_base)
+      : await resolverMontoBaseAlumno(alumno);
+
+    mensualidad.monto_base = montoBase;
+    mensualidad.credito_aplicado = redondearMonto(mensualidad.credito_aplicado || 0);
+    mensualidad.ajuste_extraordinario = redondearMonto(mensualidad.ajuste_extraordinario || 0);
+    mensualidad.monto_esperado = redondearMonto(
+      Math.max(0, montoBase - mensualidad.credito_aplicado - mensualidad.ajuste_extraordinario)
+    );
+
+    await recalcularMensualidadPorPagos(mensualidad, estatusActual || 'Exento por reposo');
+  }
+}
+
+function listarPeriodosEntreFechas(inicioDate, finDate) {
+  const inicio = new Date(Date.UTC(inicioDate.getUTCFullYear(), inicioDate.getUTCMonth(), 1, 12, 0, 0));
+  const fin = new Date(Date.UTC(finDate.getUTCFullYear(), finDate.getUTCMonth(), 1, 12, 0, 0));
+  const periodos = [];
+
+  const cursor = new Date(inicio);
+  while (cursor <= fin) {
+    periodos.push({
+      mes: cursor.getUTCMonth() + 1,
+      anio: cursor.getUTCFullYear()
+    });
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  return periodos;
+}
+
+async function aplicarReposoTotalPorPeriodo(alumnoId, fechaInicio, fechaFin = null) {
+  if (!(fechaInicio instanceof Date) || Number.isNaN(fechaInicio.getTime())) return;
+
+  const fechaFinal = fechaFin instanceof Date && !Number.isNaN(fechaFin.getTime())
+    ? fechaFin
+    : fechaInicio;
+
+  const periodos = listarPeriodosEntreFechas(fechaInicio, fechaFinal);
+  for (const periodo of periodos) {
+    await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio);
+  }
 }
 
 async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio) {
@@ -264,11 +482,7 @@ exports.getAlumnos = async (req, res) => {
           id_alumno: { $in: alumnoIds },
           estado: 'Activo',
           fecha_inicio: { $lte: ahora },
-          $or: [
-            { tipo: 'Indefinido' },
-            { fecha_fin: null },
-            { fecha_fin: { $gte: ahora } }
-          ]
+          $or: [{ fecha_fin: null }, { fecha_fin: { $gte: ahora } }]
         }).select('id_alumno').lean()
       : [];
 
@@ -813,6 +1027,9 @@ exports.registrarReposoAlumno = async (req, res) => {
       if (!fecha_fin) {
         return res.status(400).json({ error: 'fecha_fin inválida' });
       }
+      if (fecha_fin.getTime() < fecha_inicio.getTime()) {
+        return res.status(400).json({ error: 'fecha_fin no puede ser anterior a fecha_inicio' });
+      }
     }
 
     let certificado = req.body.certificado || null;
@@ -833,28 +1050,32 @@ exports.registrarReposoAlumno = async (req, res) => {
     const { mes: mesInicio, anio: anioInicio } = getPeriodoFromInput(fecha_inicio_raw, fecha_inicio);
 
     if (tipo === 'Total') {
-      await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio);
+      await aplicarReposoTotalPorPeriodo(alumno._id, fecha_inicio, fecha_fin);
     }
 
     if (tipo === 'Indefinido') {
-      await Mensualidad.updateMany(
-        {
-          id_alumno: alumno._id,
-          estatus: { $ne: 'Pagado' },
-          $or: [
-            { anio: { $gt: anioInicio } },
-            { anio: anioInicio, mes: { $gte: mesInicio } }
-          ]
-        },
-        {
-          $set: {
-            monto_esperado: 0,
-            estatus: 'Exento por reposo'
+      if (fecha_fin) {
+        await aplicarReposoTotalPorPeriodo(alumno._id, fecha_inicio, fecha_fin);
+      } else {
+        await Mensualidad.updateMany(
+          {
+            id_alumno: alumno._id,
+            estatus: { $ne: 'Pagado' },
+            $or: [
+              { anio: { $gt: anioInicio } },
+              { anio: anioInicio, mes: { $gte: mesInicio } }
+            ]
+          },
+          {
+            $set: {
+              monto_esperado: 0,
+              estatus: 'Exento por reposo'
+            }
           }
-        }
-      );
+        );
 
-      await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio);
+        await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio);
+      }
     }
 
     res.status(201).json({ message: 'Reposo registrado', reposo });
@@ -872,12 +1093,21 @@ exports.editarReposoAlumno = async (req, res) => {
     const reposo = await Reposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
     if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
 
+    const reposoAnterior = {
+      tipo: reposo.tipo,
+      fecha_inicio: reposo.fecha_inicio,
+      fecha_fin: reposo.fecha_fin
+    };
+
     const fecha_inicio_raw = req.body.fecha_inicio || req.body.fechaInicio;
     const fecha_fin_raw = req.body.fecha_fin || req.body.fechaFin;
 
     if (fecha_inicio_raw !== undefined) {
       const fechaInicio = parseDateInput(fecha_inicio_raw);
       if (!fechaInicio) return res.status(400).json({ error: 'fecha_inicio inválida' });
+      if (reposo.fecha_fin && fechaInicio.getTime() > reposo.fecha_fin.getTime()) {
+        return res.status(400).json({ error: 'fecha_inicio no puede ser posterior a fecha_fin' });
+      }
       reposo.fecha_inicio = fechaInicio;
     }
 
@@ -888,6 +1118,9 @@ exports.editarReposoAlumno = async (req, res) => {
       } else {
         const fechaFin = parseDateInput(raw);
         if (!fechaFin) return res.status(400).json({ error: 'fecha_fin inválida' });
+        if (reposo.fecha_inicio && fechaFin.getTime() < reposo.fecha_inicio.getTime()) {
+          return res.status(400).json({ error: 'fecha_fin no puede ser anterior a fecha_inicio' });
+        }
         reposo.fecha_fin = fechaFin;
       }
     }
@@ -908,14 +1141,67 @@ exports.editarReposoAlumno = async (req, res) => {
       reposo.estado = req.body.estado || 'Activo';
     }
 
+    if (reposo.estado === 'Finalizado' && !reposo.fecha_fin) {
+      return res.status(400).json({ error: 'Debes indicar una fecha_fin para finalizar el reposo.' });
+    }
+
     if (req.file) {
       reposo.certificado = buildUploadUrl(req, req.file, 'reposos');
     }
 
     await reposo.save();
+
+    const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior);
+    const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, reposo);
+    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos]);
+
     return res.json({ message: 'Reposo actualizado', reposo });
   } catch (err) {
     return res.status(500).json({ error: 'Error al actualizar reposo', detalle: err.message });
+  }
+};
+
+exports.finalizarReposoIndefinido = async (req, res) => {
+  try {
+    const alumno = await Alumno.findById(req.params.id).select('_id');
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    const reposo = await Reposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
+    if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
+    if (reposo.tipo !== 'Indefinido') {
+      return res.status(400).json({ error: 'Solo los reposos indefinidos se pueden finalizar con esta acción.' });
+    }
+
+    const fecha_fin_raw = req.body.fecha_fin || req.body.fechaFin;
+    if (!fecha_fin_raw) {
+      return res.status(400).json({ error: 'La fecha_fin es obligatoria para finalizar el reposo.' });
+    }
+
+    const fecha_fin = parseDateInput(fecha_fin_raw);
+    if (!fecha_fin) {
+      return res.status(400).json({ error: 'fecha_fin inválida' });
+    }
+    if (fecha_fin.getTime() < reposo.fecha_inicio.getTime()) {
+      return res.status(400).json({ error: 'fecha_fin no puede ser anterior a fecha_inicio' });
+    }
+
+    const reposoAnterior = {
+      tipo: reposo.tipo,
+      fecha_inicio: reposo.fecha_inicio,
+      fecha_fin: reposo.fecha_fin
+    };
+
+    reposo.fecha_fin = fecha_fin;
+    reposo.estado = 'Finalizado';
+    await reposo.save();
+
+    const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior);
+    const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, reposo);
+    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos]);
+
+    return res.json({ message: 'Reposo finalizado', reposo });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al finalizar reposo', detalle: err.message });
   }
 };
 
@@ -927,6 +1213,9 @@ exports.eliminarReposoAlumno = async (req, res) => {
 
     const reposo = await Reposo.findOneAndDelete({ _id: req.params.reposoId, id_alumno: alumno._id });
     if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
+
+    const periodosAfectados = await listarPeriodosAfectadosPorReposo(alumno._id, reposo);
+    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, periodosAfectados);
 
     return res.json({ message: 'Reposo eliminado' });
   } catch (err) {

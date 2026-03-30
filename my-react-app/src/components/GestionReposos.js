@@ -10,6 +10,7 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import HistoryIcon from '@mui/icons-material/History';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined';
 
 const GestionReposos = () => {
   const [reposos, setReposos] = useState([]);
@@ -32,6 +33,10 @@ const GestionReposos = () => {
   const [reposoAEliminar, setReposoAEliminar] = useState(null);
   const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
   const [eliminandoReposo, setEliminandoReposo] = useState(false);
+  const [reposoAFinalizar, setReposoAFinalizar] = useState(null);
+  const [confirmarFinalizarOpen, setConfirmarFinalizarOpen] = useState(false);
+  const [fechaFinFinalizacion, setFechaFinFinalizacion] = useState('');
+  const [finalizandoReposo, setFinalizandoReposo] = useState(false);
   const [notificacion, setNotificacion] = useState({ open: false, severity: 'success', message: '' });
 
   const formatFecha = (fecha) => {
@@ -59,6 +64,14 @@ const GestionReposos = () => {
     const m = String(d.getUTCMonth() + 1).padStart(2, '0');
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+  };
+
+  const getTodayInputDate = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const cargarReposos = async () => {
@@ -165,7 +178,11 @@ const GestionReposos = () => {
   const handleTipoReposoChange = (event, newTipo) => {
     if (newTipo !== null) {
       setTipoReposo(newTipo);
-      setNuevoReposo({ ...nuevoReposo, tipo: newTipo });
+      setNuevoReposo((prev) => ({
+        ...prev,
+        tipo: newTipo,
+        fechaFin: newTipo === 'Indefinido' ? '' : prev.fechaFin
+      }));
     }
   };
 
@@ -185,6 +202,10 @@ const GestionReposos = () => {
     if (!editandoReposo?._id) return;
     if (!editandoReposo.fechaInicio || !editandoReposo.tipo) {
       setNotificacion({ open: true, severity: 'warning', message: 'Fecha inicio y tipo son obligatorios.' });
+      return;
+    }
+    if (editandoReposo.estado === 'Finalizado' && !editandoReposo.fechaFin) {
+      setNotificacion({ open: true, severity: 'warning', message: 'Debes indicar la fecha de finalización del reposo.' });
       return;
     }
 
@@ -219,6 +240,42 @@ const GestionReposos = () => {
     if (!reposo?._id) return;
     setReposoAEliminar(reposo);
     setConfirmarEliminarOpen(true);
+  };
+
+  const solicitarFinalizarReposo = (reposo) => {
+    if (!reposo?._id) return;
+    setReposoAFinalizar(reposo);
+    setFechaFinFinalizacion(getTodayInputDate());
+    setConfirmarFinalizarOpen(true);
+  };
+
+  const finalizarReposo = async () => {
+    if (!reposoAFinalizar?._id) return;
+    if (!fechaFinFinalizacion) {
+      setNotificacion({ open: true, severity: 'warning', message: 'Debes indicar la fecha de finalización.' });
+      return;
+    }
+
+    try {
+      setFinalizandoReposo(true);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos/${reposoAFinalizar._id}/finalizar`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha_fin: fechaFinFinalizacion })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo finalizar el reposo');
+
+      setConfirmarFinalizarOpen(false);
+      setReposoAFinalizar(null);
+      setFechaFinFinalizacion('');
+      await cargarReposos();
+      setNotificacion({ open: true, severity: 'success', message: 'Reposo finalizado correctamente.' });
+    } catch (error) {
+      setNotificacion({ open: true, severity: 'error', message: error.message || 'No se pudo finalizar el reposo' });
+    } finally {
+      setFinalizandoReposo(false);
+    }
   };
 
   const eliminarReposo = async () => {
@@ -271,6 +328,8 @@ const GestionReposos = () => {
             onChange={handleInputChange}
             fullWidth
             InputLabelProps={{ shrink: true }}
+            disabled={tipoReposo === 'Indefinido'}
+            helperText={tipoReposo === 'Indefinido' ? 'Se definirá cuando se finalice el reposo.' : ''}
             sx={{ mb: 2 }}
           />
           <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>TIPO DE REPOSO</Typography>
@@ -361,12 +420,17 @@ const GestionReposos = () => {
               </TableHead>
               <TableBody>
                 {reposos.map((reposo, index) => (
-                  <TableRow key={index}>
+                  <TableRow key={reposo._id || index}>
                     <TableCell>{reposo.tipo}</TableCell>
                     <TableCell>{formatFecha(reposo.fecha_inicio)} - {reposo.fecha_fin ? formatFecha(reposo.fecha_fin) : 'Indefinido'}</TableCell>
                     <TableCell>{reposo.motivo}</TableCell>
                     <TableCell>{reposo.estado}</TableCell>
                     <TableCell align="right">
+                      {reposo.tipo === 'Indefinido' && reposo.estado === 'Activo' && (
+                        <IconButton size="small" sx={{ color: '#15803d' }} onClick={() => solicitarFinalizarReposo(reposo)}>
+                          <TaskAltOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      )}
                       <IconButton size="small" color="primary" onClick={() => abrirEdicionReposo(reposo)}>
                         <EditIcon fontSize="small" />
                       </IconButton>
@@ -419,6 +483,8 @@ const GestionReposos = () => {
             value={editandoReposo?.fechaFin || ''}
             onChange={(e) => setEditandoReposo((prev) => ({ ...prev, fechaFin: e.target.value }))}
             InputLabelProps={{ shrink: true }}
+            disabled={editandoReposo?.tipo === 'Indefinido' && editandoReposo?.estado !== 'Finalizado'}
+            helperText={editandoReposo?.tipo === 'Indefinido' && editandoReposo?.estado !== 'Finalizado' ? 'Usa la acción de finalizar para cerrar un reposo indefinido.' : ''}
             fullWidth
           />
           <TextField
@@ -447,7 +513,7 @@ const GestionReposos = () => {
             onChange={(e) => setEditandoReposo((prev) => ({ ...prev, estado: e.target.value }))}
             fullWidth
           >
-            {['Activo', 'Inactivo'].map((estado) => (
+            {['Activo', 'Inactivo', 'Finalizado'].map((estado) => (
               <MenuItem key={estado} value={estado}>{estado}</MenuItem>
             ))}
           </TextField>
@@ -456,6 +522,60 @@ const GestionReposos = () => {
           <Button onClick={() => setEditDialogOpen(false)}>Cancelar</Button>
           <Button onClick={guardarEdicionReposo} variant="contained" disabled={guardandoEdicion}>
             {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={confirmarFinalizarOpen}
+        onClose={() => {
+          if (finalizandoReposo) return;
+          setConfirmarFinalizarOpen(false);
+          setReposoAFinalizar(null);
+          setFechaFinFinalizacion('');
+        }}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ bgcolor: '#ecfdf3', color: '#166534', fontWeight: 800 }}>
+          Finalizar reposo indefinido
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5, display: 'grid', gap: 2 }}>
+          <Typography sx={{ color: '#334155', fontSize: 14 }}>
+            El reposo quedará cerrado, conservará su historial y se recalcularán las mensualidades posteriores a la fecha indicada.
+          </Typography>
+          <TextField
+            label="Fecha de finalización"
+            type="date"
+            value={fechaFinFinalizacion}
+            onChange={(e) => setFechaFinFinalizacion(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            inputProps={{
+              min: reposoAFinalizar ? toInputDate(reposoAFinalizar.fecha_inicio) : undefined,
+              max: getTodayInputDate()
+            }}
+            fullWidth
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            onClick={() => {
+              setConfirmarFinalizarOpen(false);
+              setReposoAFinalizar(null);
+              setFechaFinFinalizacion('');
+            }}
+            disabled={finalizandoReposo}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={finalizarReposo}
+            disabled={finalizandoReposo}
+            sx={{ bgcolor: '#15803d', '&:hover': { bgcolor: '#166534' } }}
+          >
+            {finalizandoReposo ? 'Finalizando...' : 'Finalizar'}
           </Button>
         </DialogActions>
       </Dialog>

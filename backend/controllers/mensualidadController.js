@@ -120,13 +120,18 @@ async function recalcularMensualidadPorPagos(
 }
 
 async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
-  const inicioMes = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
-  const finMes = new Date(anio, mes, 0, 23, 59, 59, 999);
+  const inicioMes = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
+  const finMes = new Date(Date.UTC(anio, mes, 0, 23, 59, 59, 999));
 
   const reposoIndefinido = await Reposo.findOne({
     id_alumno: alumnoId,
+    estado: { $ne: 'Inactivo' },
     tipo: 'Indefinido',
-    fecha_inicio: { $lte: finMes }
+    fecha_inicio: { $lte: finMes },
+    $or: [
+      { fecha_fin: null },
+      { fecha_fin: { $gte: inicioMes } }
+    ]
   }).sort({ fecha_inicio: -1 });
 
   if (reposoIndefinido) {
@@ -135,8 +140,18 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
 
   const reposoTotal = await Reposo.findOne({
     id_alumno: alumnoId,
+    estado: { $ne: 'Inactivo' },
     tipo: 'Total',
-    fecha_inicio: { $gte: inicioMes, $lte: finMes }
+    $or: [
+      {
+        fecha_fin: { $ne: null, $gte: inicioMes },
+        fecha_inicio: { $lte: finMes }
+      },
+      {
+        fecha_fin: null,
+        fecha_inicio: { $gte: inicioMes, $lte: finMes }
+      }
+    ]
   }).sort({ fecha_inicio: -1 });
 
   if (reposoTotal) {
@@ -425,7 +440,7 @@ exports.actualizarRetrasados = async (req, res) => {
   try {
     const actualizadas = await actualizarRetrasadosCore();
     if (!actualizadas) return res.json({ message: 'Solo se ejecuta el día 6' });
-    res.json({ message: `Mensualidades actualizadas a Retrasado: ${actualizadas}` });
+    res.json({ message: `Mensualidades actualizadas a Insolvente: ${actualizadas}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -762,7 +777,7 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
     ];
 
     const data = await Mensualidad.aggregate(pipeline);
-    const estados = ['pagado', 'pendiente', 'retrasado', 'en revision', 'exonerado', 'abono', 'exento por reposo'];
+    const estados = ['pagado', 'pendiente', 'insolvente', 'retrasado', 'en revision', 'exonerado', 'abono', 'exento por reposo'];
     const resultado = data.map(item => {
       const conteos = {};
       estados.forEach(e => { conteos[e] = 0; });
@@ -770,6 +785,10 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
         const key = String(e.estatus || '').toLowerCase();
         if (conteos[key] !== undefined) conteos[key] = e.count;
       });
+
+      // Compatibilidad: sumar data histórica "retrasado" al bucket "insolvente".
+      conteos.insolvente = (conteos.insolvente || 0) + (conteos.retrasado || 0);
+
       return {
         sedeId: item.sedeId,
         sedeNombre: item.sedeNombre || 'Sin sede',

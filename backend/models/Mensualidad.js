@@ -13,7 +13,7 @@ const MensualidadSchema = new mongoose.Schema({
   ajuste_fecha: { type: Date },
   monto_esperado: { type: Number, required: true },
   fecha_vencimiento: { type: Date, required: true },
-  estatus: { type: String, enum: ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado', 'En revision', 'Abono', 'Exento por reposo'], default: 'Pendiente' }
+  estatus: { type: String, enum: ['Pendiente', 'Pagado', 'Retrasado', 'Insolvente', 'Exonerado', 'En revision', 'Abono', 'Exento por reposo'], default: 'Pendiente' }
 }, { timestamps: true });
 
 MensualidadSchema.index({ id_alumno: 1, mes: 1, anio: 1 }, { unique: true });

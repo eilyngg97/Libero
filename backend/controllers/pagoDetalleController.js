@@ -10,6 +10,11 @@ function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
 }
 
+function esEstatusInsolvente(estatus) {
+  const normalizado = String(estatus || '').toLowerCase();
+  return normalizado === 'retrasado' || normalizado === 'insolvente';
+}
+
 function normalizarMonto(value) {
   return Number(value);
 }
@@ -78,7 +83,7 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior) {
   if (montoEsperado <= 0) {
     mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
-    mensualidad.estatus = (estatusAnteriorNormalizado === 'retrasado' || estaVencida) ? 'Retrasado' : 'Pendiente';
+    mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
   } else if (totalPagado >= montoEsperado) {
     mensualidad.estatus = requiereRevisionPagoCompleto ? 'En revision' : 'Pagado';
   } else {
