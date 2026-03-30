@@ -40,6 +40,8 @@ router.post('/', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 
 router.get('/por-representante/:representanteId', authMiddleware, ensureRepresentanteOwnershipFromParam('representanteId'), alumnoController.getAlumnosPorRepresentante);
 router.get('/:id/reposos', authMiddleware, rolMiddleware('admin'), alumnoController.getRepososAlumno);
 router.post('/:id/reposos', authMiddleware, rolMiddleware('admin'), upload.single('certificado'), alumnoController.registrarReposoAlumno);
+router.patch('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), upload.single('certificado'), alumnoController.editarReposoAlumno);
+router.delete('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), alumnoController.eliminarReposoAlumno);
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
 router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.updateAlumno);
 router.patch('/:id/baja', authMiddleware, rolMiddleware('admin'), alumnoController.darDeBajaAlumno);

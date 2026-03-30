@@ -33,6 +33,7 @@ function Sedes() {
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
   const [openConfirm, setOpenConfirm] = useState(false);
   const [sedeAEliminar, setSedeAEliminar] = useState(null);
+  const [eliminandoSede, setEliminandoSede] = useState(false);
 
   // Cargar sedes desde el backend al montar
   const fetchSedes = async () => {
@@ -82,6 +83,7 @@ function Sedes() {
   const eliminarSede = async () => {
     if (!sedeAEliminar) return;
     try {
+      setEliminandoSede(true);
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/sedes/${sedeAEliminar.id}`, {
         method: 'DELETE',
       });
@@ -91,6 +93,7 @@ function Sedes() {
     } catch (err) {
       setAlert({ open: true, message: err.message, severity: 'error' });
     } finally {
+      setEliminandoSede(false);
       setOpenConfirm(false);
       setSedeAEliminar(null);
     }
@@ -258,14 +261,29 @@ function Sedes() {
           )}
         </DialogContent>
       </Dialog>
-      <Dialog open={openConfirm} onClose={() => setOpenConfirm(false)}>
-        <DialogTitle>Confirmar eliminación</DialogTitle>
-        <DialogContent>
-          ¿Estás seguro que deseas eliminar la sede <b>{sedeAEliminar?.nombre}</b>?
+      <Dialog
+        open={openConfirm}
+        onClose={() => {
+          if (eliminandoSede) return;
+          setOpenConfirm(false);
+        }}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }}>
+          Confirmar eliminación
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
+          <Typography sx={{ color: '#334155', fontSize: 14 }}>
+            ¿Estás seguro que deseas eliminar la sede <b>{sedeAEliminar?.nombre}</b>? Esta acción no se puede deshacer.
+          </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenConfirm(false)} color="primary">Cancelar</Button>
-          <Button onClick={eliminarSede} color="error" variant="contained">Eliminar</Button>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setOpenConfirm(false)} disabled={eliminandoSede}>Cancelar</Button>
+          <Button onClick={eliminarSede} color="error" variant="contained" disabled={eliminandoSede}>
+            {eliminandoSede ? 'Eliminando...' : 'Eliminar'}
+          </Button>
         </DialogActions>
       </Dialog>
     </div>

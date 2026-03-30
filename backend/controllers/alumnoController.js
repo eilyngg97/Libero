@@ -110,6 +110,47 @@ function normalizarTipoReposo(tipo) {
   return null;
 }
 
+function parseDateInput(value) {
+  const raw = String(value || '').trim();
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (matchIso) {
+    const year = Number(matchIso[1]);
+    const month = Number(matchIso[2]);
+    const day = Number(matchIso[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getPeriodoFromInput(rawValue, parsedDate) {
+  const raw = String(rawValue || '').trim();
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (matchIso) {
+    return {
+      mes: Number(matchIso[2]),
+      anio: Number(matchIso[1])
+    };
+  }
+
+  if (parsedDate instanceof Date && !Number.isNaN(parsedDate.getTime())) {
+    return {
+      mes: parsedDate.getUTCMonth() + 1,
+      anio: parsedDate.getUTCFullYear()
+    };
+  }
+
+  const now = new Date();
+  return {
+    mes: now.getUTCMonth() + 1,
+    anio: now.getUTCFullYear()
+  };
+}
+
 async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio) {
   const fechaVencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
   await Mensualidad.findOneAndUpdate(
@@ -214,9 +255,34 @@ exports.getAlumnos = async (req, res) => {
     if (req.query.sede) {
       filtro.sede = req.query.sede;
     }
-    const alumnos = await Alumno.find(filtro).populate('representante').populate('sede');
-    console.log('Alumnos obtenidos:', alumnos);
-    res.json(alumnos);
+    const alumnos = await Alumno.find(filtro).populate('representante').populate('sede').lean();
+
+    const alumnoIds = alumnos.map((alumno) => alumno._id);
+    const ahora = new Date();
+    const repososActivos = alumnoIds.length > 0
+      ? await Reposo.find({
+          id_alumno: { $in: alumnoIds },
+          estado: 'Activo',
+          fecha_inicio: { $lte: ahora },
+          $or: [
+            { tipo: 'Indefinido' },
+            { fecha_fin: null },
+            { fecha_fin: { $gte: ahora } }
+          ]
+        }).select('id_alumno').lean()
+      : [];
+
+    const alumnosConReposoActivo = new Set(
+      repososActivos.map((reposo) => String(reposo.id_alumno))
+    );
+
+    const resultado = alumnos.map((alumno) => ({
+      ...alumno,
+      tiene_reposo_activo: alumnosConReposoActivo.has(String(alumno._id))
+    }));
+
+    console.log('Alumnos obtenidos:', resultado);
+    res.json(resultado);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener alumnos' });
   }
@@ -736,15 +802,15 @@ exports.registrarReposoAlumno = async (req, res) => {
       return res.status(400).json({ error: 'Tipo de reposo inválido. Valores permitidos: Indefinido, Total, Parcial' });
     }
 
-    const fecha_inicio = new Date(fecha_inicio_raw);
-    if (Number.isNaN(fecha_inicio.getTime())) {
+    const fecha_inicio = parseDateInput(fecha_inicio_raw);
+    if (!fecha_inicio) {
       return res.status(400).json({ error: 'fecha_inicio inválida' });
     }
 
     let fecha_fin = null;
     if (req.body.fecha_fin || req.body.fechaFin) {
-      fecha_fin = new Date(req.body.fecha_fin || req.body.fechaFin);
-      if (Number.isNaN(fecha_fin.getTime())) {
+      fecha_fin = parseDateInput(req.body.fecha_fin || req.body.fechaFin);
+      if (!fecha_fin) {
         return res.status(400).json({ error: 'fecha_fin inválida' });
       }
     }
@@ -764,8 +830,7 @@ exports.registrarReposoAlumno = async (req, res) => {
       estado: 'Activo'
     });
 
-    const mesInicio = fecha_inicio.getMonth() + 1;
-    const anioInicio = fecha_inicio.getFullYear();
+    const { mes: mesInicio, anio: anioInicio } = getPeriodoFromInput(fecha_inicio_raw, fecha_inicio);
 
     if (tipo === 'Total') {
       await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio);
@@ -795,5 +860,76 @@ exports.registrarReposoAlumno = async (req, res) => {
     res.status(201).json({ message: 'Reposo registrado', reposo });
   } catch (err) {
     res.status(500).json({ error: 'Error al registrar reposo', detalle: err.message });
+  }
+};
+
+// Editar reposo de un alumno
+exports.editarReposoAlumno = async (req, res) => {
+  try {
+    const alumno = await Alumno.findById(req.params.id).select('_id');
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    const reposo = await Reposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
+    if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
+
+    const fecha_inicio_raw = req.body.fecha_inicio || req.body.fechaInicio;
+    const fecha_fin_raw = req.body.fecha_fin || req.body.fechaFin;
+
+    if (fecha_inicio_raw !== undefined) {
+      const fechaInicio = parseDateInput(fecha_inicio_raw);
+      if (!fechaInicio) return res.status(400).json({ error: 'fecha_inicio inválida' });
+      reposo.fecha_inicio = fechaInicio;
+    }
+
+    if (fecha_fin_raw !== undefined) {
+      const raw = String(fecha_fin_raw || '').trim();
+      if (raw === '') {
+        reposo.fecha_fin = null;
+      } else {
+        const fechaFin = parseDateInput(raw);
+        if (!fechaFin) return res.status(400).json({ error: 'fecha_fin inválida' });
+        reposo.fecha_fin = fechaFin;
+      }
+    }
+
+    if (req.body.tipo !== undefined) {
+      const tipo = normalizarTipoReposo(req.body.tipo);
+      if (!tipo) {
+        return res.status(400).json({ error: 'Tipo de reposo inválido. Valores permitidos: Indefinido, Total, Parcial' });
+      }
+      reposo.tipo = tipo;
+    }
+
+    if (req.body.motivo !== undefined) {
+      reposo.motivo = req.body.motivo || '';
+    }
+
+    if (req.body.estado !== undefined) {
+      reposo.estado = req.body.estado || 'Activo';
+    }
+
+    if (req.file) {
+      reposo.certificado = buildUploadUrl(req, req.file, 'reposos');
+    }
+
+    await reposo.save();
+    return res.json({ message: 'Reposo actualizado', reposo });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al actualizar reposo', detalle: err.message });
+  }
+};
+
+// Eliminar reposo de un alumno
+exports.eliminarReposoAlumno = async (req, res) => {
+  try {
+    const alumno = await Alumno.findById(req.params.id).select('_id');
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    const reposo = await Reposo.findOneAndDelete({ _id: req.params.reposoId, id_alumno: alumno._id });
+    if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
+
+    return res.json({ message: 'Reposo eliminado' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al eliminar reposo', detalle: err.message });
   }
 };

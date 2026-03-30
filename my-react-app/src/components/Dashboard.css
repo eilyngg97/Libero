@@ -136,7 +136,6 @@
   padding: 20px;
   min-width: 260px;
   flex: 1;
-  max-width: 340px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -149,13 +148,220 @@
   margin-right: 0;
 }
 
+.dashboard-top-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.dashboard-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .sedes-panel {
   max-width: none;
 }
 
+.sedes-panel-compact {
+  padding: 14px 14px 16px;
+}
+
+.sedes-panel-compact .sedes-header {
+  margin-bottom: 10px;
+}
+
+.sedes-panel-compact .sedes-header h3 {
+  font-size: 1.02rem;
+}
+
+.sedes-panel-compact .sedes-list {
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.sedes-panel-compact .sede-item {
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.sedes-panel-compact .sede-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.sedes-panel-compact .sede-info strong {
+  font-size: 0.88rem;
+}
+
+.sedes-panel-compact .sede-direccion {
+  font-size: 0.75rem;
+}
+
+.sedes-panel-compact .alumnos-count {
+  font-size: 1.25rem;
+}
+
+.pagos-sede-panel {
+  border: 1px solid #e8edf4;
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  padding: 14px 14px 16px;
+}
+
+.pagos-sede-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.pagos-sede-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.02rem;
+}
+
+.pagos-sede-anio-select {
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+}
+
+.pagos-sede-anio-select:focus {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
+}
+
+.pagos-sede-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 12px;
+  width: 100%;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.pagos-sede-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 10px 10px 8px;
+}
+
+.pagos-sede-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pagos-sede-card-head strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.pagos-sede-card-head span {
+  color: #15803d;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pagos-sede-chart-wrap {
+  width: 100%;
+  height: 290px;
+}
+
+.pagos-sede-empty {
+  color: #64748b;
+  font-size: 0.86rem;
+  padding: 20px 4px;
+}
+
+.revision-sede-panel {
+  border: 1px solid #e8edf4;
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, #ffffff 0%, #fff9f3 100%);
+  padding: 14px 14px 16px;
+}
+
+.revision-total-badge {
+  background: #fff2e5;
+  color: #9a4d00;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.revision-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 210px;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-bottom: 12px;
+}
+
+.revision-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid #f1e3d2;
+  background: #ffffff;
+  color: #334155;
+  font-size: 0.88rem;
+}
+
+.revision-item b {
+  min-width: 32px;
+  text-align: center;
+  border-radius: 999px;
+  background: #fff3e6;
+  color: #b45309;
+  padding: 3px 8px;
+}
+
+.revision-cta-btn {
+  margin-top: auto;
+  width: 100%;
+  border: 1px solid #e7c9a6;
+  background: #fff4e8;
+  color: #8f4300;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.revision-cta-btn:hover {
+  background: #ffe7cf;
+  border-color: #d9a66d;
+}
+
 .cumple-card {
-  position: sticky;
-  top: 24px;
+  position: static;
 }
 
 .finanzas-wrapper {
@@ -555,6 +761,10 @@
     width: 100%;
   }
 
+  .dashboard-top-grid {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-card {
     max-width: 100%;
     min-width: 0;
@@ -578,6 +788,19 @@
 
   .sedes-panel-card {
     padding: 14px;
+  }
+
+  .pagos-sede-panel {
+    padding: 14px;
+  }
+
+  .revision-sede-panel {
+    padding: 14px;
+  }
+
+  .pagos-sede-grid {
+    max-height: none;
+    grid-template-columns: 1fr;
   }
 
   .sede-item {

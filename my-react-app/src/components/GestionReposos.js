@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, TextField, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
+import { Box, Typography, TextField, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem } from '@mui/material';
 import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
 import { useParams } from 'react-router-dom';
@@ -8,6 +8,8 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import './GestionReposos.css';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import HistoryIcon from '@mui/icons-material/History';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 
 const GestionReposos = () => {
   const [reposos, setReposos] = useState([]);
@@ -24,13 +26,51 @@ const GestionReposos = () => {
   const { id } = useParams();
   const [studentName, setStudentName] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [editandoReposo, setEditandoReposo] = useState(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [reposoAEliminar, setReposoAEliminar] = useState(null);
+  const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
+  const [eliminandoReposo, setEliminandoReposo] = useState(false);
   const [notificacion, setNotificacion] = useState({ open: false, severity: 'success', message: '' });
 
   const formatFecha = (fecha) => {
     if (!fecha) return '';
-    const d = new Date(fecha);
+
+    const raw = String(fecha).trim();
+    const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (matchIso) {
+      return `${matchIso[3]}/${matchIso[2]}/${matchIso[1]}`;
+    }
+
+    const d = new Date(raw);
     if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('es-VE');
+    return d.toLocaleDateString('es-VE', { timeZone: 'UTC' });
+  };
+
+  const toInputDate = (fecha) => {
+    if (!fecha) return '';
+    const raw = String(fecha).trim();
+    const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (matchIso) return `${matchIso[1]}-${matchIso[2]}-${matchIso[3]}`;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const cargarReposos = async () => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos`);
+      if (!response.ok) throw new Error('Error al obtener reposos');
+      const data = await response.json();
+      setReposos(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error(error);
+      setReposos([]);
+    }
   };
 
   useEffect(() => {
@@ -46,19 +86,8 @@ const GestionReposos = () => {
       }
     };
 
-    const fetchReposos = async () => {
-      try {
-        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos`);
-        if (!response.ok) throw new Error('Error al obtener reposos');
-        const data = await response.json();
-        setReposos(Array.isArray(data) ? data : []);
-      } catch (error) {
-        console.error(error);
-      }
-    };
-
     fetchStudentName();
-    fetchReposos();
+    cargarReposos();
   }, [id]);
 
   const handleInputChange = (e) => {
@@ -100,11 +129,7 @@ const GestionReposos = () => {
       setFotoCertificado(null);
       setPreviewCertificado(null);
 
-      const responseReposos = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos`);
-      if (responseReposos.ok) {
-        const repososActualizados = await responseReposos.json();
-        setReposos(Array.isArray(repososActualizados) ? repososActualizados : []);
-      }
+      await cargarReposos();
 
       setNotificacion({ open: true, severity: 'success', message: 'Reposo guardado correctamente.' });
     } catch (error) {
@@ -141,6 +166,80 @@ const GestionReposos = () => {
     if (newTipo !== null) {
       setTipoReposo(newTipo);
       setNuevoReposo({ ...nuevoReposo, tipo: newTipo });
+    }
+  };
+
+  const abrirEdicionReposo = (reposo) => {
+    setEditandoReposo({
+      _id: reposo._id,
+      fechaInicio: toInputDate(reposo.fecha_inicio),
+      fechaFin: toInputDate(reposo.fecha_fin),
+      tipo: reposo.tipo || '',
+      motivo: reposo.motivo || '',
+      estado: reposo.estado || 'Activo'
+    });
+    setEditDialogOpen(true);
+  };
+
+  const guardarEdicionReposo = async () => {
+    if (!editandoReposo?._id) return;
+    if (!editandoReposo.fechaInicio || !editandoReposo.tipo) {
+      setNotificacion({ open: true, severity: 'warning', message: 'Fecha inicio y tipo son obligatorios.' });
+      return;
+    }
+
+    try {
+      setGuardandoEdicion(true);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos/${editandoReposo._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fecha_inicio: editandoReposo.fechaInicio,
+          fecha_fin: editandoReposo.fechaFin || '',
+          tipo: editandoReposo.tipo,
+          motivo: editandoReposo.motivo,
+          estado: editandoReposo.estado
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo actualizar el reposo');
+
+      setEditDialogOpen(false);
+      setEditandoReposo(null);
+      await cargarReposos();
+      setNotificacion({ open: true, severity: 'success', message: 'Reposo actualizado correctamente.' });
+    } catch (error) {
+      setNotificacion({ open: true, severity: 'error', message: error.message || 'No se pudo actualizar el reposo' });
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  };
+
+  const solicitarEliminarReposo = (reposo) => {
+    if (!reposo?._id) return;
+    setReposoAEliminar(reposo);
+    setConfirmarEliminarOpen(true);
+  };
+
+  const eliminarReposo = async () => {
+    if (!reposoAEliminar?._id) return;
+
+    try {
+      setEliminandoReposo(true);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos/${reposoAEliminar._id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo eliminar el reposo');
+
+      setConfirmarEliminarOpen(false);
+      setReposoAEliminar(null);
+      await cargarReposos();
+      setNotificacion({ open: true, severity: 'success', message: 'Reposo eliminado correctamente.' });
+    } catch (error) {
+      setNotificacion({ open: true, severity: 'error', message: error.message || 'No se pudo eliminar el reposo' });
+    } finally {
+      setEliminandoReposo(false);
     }
   };
 
@@ -257,6 +356,7 @@ const GestionReposos = () => {
                   <TableCell>Periodo</TableCell>
                   <TableCell>Diagnóstico</TableCell>
                   <TableCell>Estado</TableCell>
+                  <TableCell align="right">Acciones</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -266,6 +366,14 @@ const GestionReposos = () => {
                     <TableCell>{formatFecha(reposo.fecha_inicio)} - {reposo.fecha_fin ? formatFecha(reposo.fecha_fin) : 'Indefinido'}</TableCell>
                     <TableCell>{reposo.motivo}</TableCell>
                     <TableCell>{reposo.estado}</TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" color="primary" onClick={() => abrirEdicionReposo(reposo)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" color="error" onClick={() => solicitarEliminarReposo(reposo)}>
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -293,6 +401,104 @@ const GestionReposos = () => {
           {notificacion.message}
         </MuiAlert>
       </Snackbar>
+
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar reposo</DialogTitle>
+        <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
+          <TextField
+            label="Fecha Inicio"
+            type="date"
+            value={editandoReposo?.fechaInicio || ''}
+            onChange={(e) => setEditandoReposo((prev) => ({ ...prev, fechaInicio: e.target.value }))}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            label="Fecha Fin"
+            type="date"
+            value={editandoReposo?.fechaFin || ''}
+            onChange={(e) => setEditandoReposo((prev) => ({ ...prev, fechaFin: e.target.value }))}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            select
+            label="Tipo"
+            value={editandoReposo?.tipo || ''}
+            onChange={(e) => setEditandoReposo((prev) => ({ ...prev, tipo: e.target.value }))}
+            fullWidth
+          >
+            {['Parcial', 'Total', 'Indefinido'].map((tipo) => (
+              <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            label="Motivo / Diagnóstico"
+            multiline
+            rows={3}
+            value={editandoReposo?.motivo || ''}
+            onChange={(e) => setEditandoReposo((prev) => ({ ...prev, motivo: e.target.value }))}
+            fullWidth
+          />
+          <TextField
+            select
+            label="Estado"
+            value={editandoReposo?.estado || 'Activo'}
+            onChange={(e) => setEditandoReposo((prev) => ({ ...prev, estado: e.target.value }))}
+            fullWidth
+          >
+            {['Activo', 'Inactivo'].map((estado) => (
+              <MenuItem key={estado} value={estado}>{estado}</MenuItem>
+            ))}
+          </TextField>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={guardarEdicionReposo} variant="contained" disabled={guardandoEdicion}>
+            {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={confirmarEliminarOpen}
+        onClose={() => {
+          if (eliminandoReposo) return;
+          setConfirmarEliminarOpen(false);
+          setReposoAEliminar(null);
+        }}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }}>
+          Confirmar eliminación
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
+          <Typography sx={{ color: '#334155', fontSize: 14 }}>
+            ¿Seguro que deseas eliminar este reposo? Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            onClick={() => {
+              setConfirmarEliminarOpen(false);
+              setReposoAEliminar(null);
+            }}
+            disabled={eliminandoReposo}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={eliminarReposo}
+            disabled={eliminandoReposo}
+          >
+            {eliminandoReposo ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

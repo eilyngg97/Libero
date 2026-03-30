@@ -448,11 +448,14 @@ function TablaAlumnos() {
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Gestionar reposos">
+                <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
                   <IconButton
                     aria-label="gestionar reposos"
                     size="small"
-                    sx={{ color: '#64748b', bgcolor: '#f8fafc' }}
+                    sx={{
+                      color: alumno.tiene_reposo_activo ? '#15803d' : '#64748b',
+                      bgcolor: alumno.tiene_reposo_activo ? '#f0fdf4' : '#f8fafc'
+                    }}
                     onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
                   >
                     <LocalHospitalIcon fontSize="small" />
@@ -599,11 +602,14 @@ function TablaAlumnos() {
                         <DeleteIcon />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="Gestionar reposos">
+                    <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
                       <IconButton
                         aria-label="gestionar reposos"
                         size="small"
-                        sx={{ color: '#94a3b8', ml: 1 }}
+                        sx={{
+                          color: alumno.tiene_reposo_activo ? '#15803d' : '#94a3b8',
+                          ml: 1
+                        }}
                         onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
                       >
                         <LocalHospitalIcon />

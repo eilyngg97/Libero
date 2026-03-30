@@ -783,3 +783,103 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// Dolares pagados por sede para el mes/anio seleccionado
+exports.getDolaresPagadosPorSede = async (req, res) => {
+  try {
+    const hoy = new Date();
+    const mes = req.query.mes ? Number(req.query.mes) : hoy.getMonth() + 1;
+    const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
+
+    if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+      return res.status(400).json({ error: 'Mes inválido' });
+    }
+    if (!Number.isInteger(anio) || anio < 2000) {
+      return res.status(400).json({ error: 'Año inválido' });
+    }
+
+    const pipeline = [
+      { $match: { mes, anio } },
+      {
+        $lookup: {
+          from: 'alumnos',
+          localField: 'id_alumno',
+          foreignField: '_id',
+          as: 'alumno'
+        }
+      },
+      { $unwind: '$alumno' },
+      {
+        $match: {
+          'alumno.activo': { $ne: false },
+          'alumno.dado_de_baja': { $ne: true }
+        }
+      },
+      {
+        $lookup: {
+          from: 'sedes',
+          localField: 'alumno.sede',
+          foreignField: '_id',
+          as: 'sede'
+        }
+      },
+      { $unwind: { path: '$sede', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'pagodetalles',
+          let: { mensualidadId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$id_mensualidad', '$$mensualidadId'] }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } }
+              }
+            }
+          ],
+          as: 'pagos'
+        }
+      },
+      {
+        $addFields: {
+          total_pagado_mensualidad: {
+            $ifNull: [{ $arrayElemAt: ['$pagos.total_pagado', 0] }, 0]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            sedeId: '$sede._id',
+            sedeNombre: '$sede.nombre'
+          },
+          monto_pagado: { $sum: '$total_pagado_mensualidad' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          sedeId: '$_id.sedeId',
+          sedeNombre: { $ifNull: ['$_id.sedeNombre', 'Sin sede'] },
+          monto_pagado: 1
+        }
+      },
+      { $sort: { sedeNombre: 1 } }
+    ];
+
+    const data = await Mensualidad.aggregate(pipeline);
+    const sedes = data.map((item) => ({
+      sedeId: item.sedeId,
+      sedeNombre: item.sedeNombre,
+      monto_pagado: redondearMonto(item.monto_pagado)
+    }));
+
+    return res.json({ mes, anio, sedes });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};

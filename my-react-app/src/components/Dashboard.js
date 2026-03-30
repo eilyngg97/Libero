@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import CakeIcon from '@mui/icons-material/Cake';
@@ -21,9 +21,14 @@ function Dashboard() {
   const [alumnosPorSede, setAlumnosPorSede] = useState({});
   const [cumpleaneros, setCumpleaneros] = useState([]);
   const [resumenMensualidades, setResumenMensualidades] = useState({ mes: null, anio: null, sedes: [] });
+  const [dolaresPagadosPorSede, setDolaresPagadosPorSede] = useState({ mes: null, anio: null, sedes: [] });
+  const [revisionPorSede, setRevisionPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [resumenLoading, setResumenLoading] = useState(false);
+  const [dolaresLoading, setDolaresLoading] = useState(false);
+  const [revisionLoading, setRevisionLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [mesSeleccionado, setMesSeleccionado] = useState(new Date().getMonth() + 1);
+  const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(new Date().getMonth() + 1);
   const mesesAnio = [
     { value: 1, label: 'Enero' },
     { value: 2, label: 'Febrero' },
@@ -44,6 +49,7 @@ function Dashboard() {
   const totalPaginasCumple = Math.ceil(cumpleaneros.length / cumplePorPagina);
   const cumpleanerosPagina = cumpleaneros.slice((cumplePage - 1) * cumplePorPagina, cumplePage * cumplePorPagina);
 console.log('Cumpleañeros en página:', cumpleanerosPagina);
+
   useEffect(() => {
     const fetchCumpleaneros = async () => {
       try {
@@ -136,6 +142,54 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     };
     fetchResumenMensualidades();
   }, [mesSeleccionado]);
+
+  useEffect(() => {
+    const fetchDolaresPagadosPorSede = async () => {
+      setDolaresLoading(true);
+      try {
+        const anioActual = new Date().getFullYear();
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/mensualidades/dolares-pagados-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}`
+        );
+        const data = await res.json();
+        if (res.ok && data && Array.isArray(data.sedes)) {
+          setDolaresPagadosPorSede(data);
+        } else {
+          setDolaresPagadosPorSede({ mes: mesGraficaSeleccionado, anio: anioActual, sedes: [] });
+        }
+      } catch {
+        setDolaresPagadosPorSede({ mes: mesGraficaSeleccionado, anio: new Date().getFullYear(), sedes: [] });
+      } finally {
+        setDolaresLoading(false);
+      }
+    };
+
+    fetchDolaresPagadosPorSede();
+  }, [mesGraficaSeleccionado]);
+
+  useEffect(() => {
+    const fetchRevisionPorSede = async () => {
+      setRevisionLoading(true);
+      try {
+        const anioActual = new Date().getFullYear();
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}`
+        );
+        const data = await res.json();
+        if (res.ok && data && Array.isArray(data.sedes)) {
+          setRevisionPorSede(data);
+        } else {
+          setRevisionPorSede({ mes: mesGraficaSeleccionado, anio: anioActual, sedes: [] });
+        }
+      } catch {
+        setRevisionPorSede({ mes: mesGraficaSeleccionado, anio: new Date().getFullYear(), sedes: [] });
+      } finally {
+        setRevisionLoading(false);
+      }
+    };
+
+    fetchRevisionPorSede();
+  }, [mesGraficaSeleccionado]);
   const dataFinanzas = [
     { name: 'Ingresos', monto: 12500 },
     { name: 'Egresos', monto: 7200 },
@@ -313,6 +367,16 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     return 'Crítico';
   };
 
+  const sedesRevisionOrdenadas = (revisionPorSede.sedes || [])
+    .map((sede) => ({
+      sedeId: sede.sedeId,
+      sedeNombre: sede.sedeNombre,
+      enRevision: Number(sede['en revision'] || 0)
+    }))
+    .sort((a, b) => b.enRevision - a.enRevision);
+
+  const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
+
   return (
     <div className="dashboard-container">
       <div className="dashboard-header-row">
@@ -368,34 +432,81 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       </div>
       <div className="dashboard-quick-access">
         <div className="dashboard-left">
-          <div className="dashboard-card sedes-panel sedes-panel-card">
-            <div className="sedes-header">
-              <h3>Gestión de Sedes</h3>
-              <button type="button" className="sedes-link" onClick={() => navigate('/sedes')}>
-                Ver todas
-              </button>
+          <div className="dashboard-top-grid">
+            <div className="dashboard-card sedes-panel sedes-panel-card sedes-panel-compact">
+              <div className="sedes-header">
+                <h3>Gestión de Sedes</h3>
+                <button type="button" className="sedes-link" onClick={() => navigate('/sedes')}>
+                  Ver todas
+                </button>
+              </div>
+              <div className="sedes-list">
+                {sedes.map((sede, idx) => (
+                  <div key={idx} className="sede-item" onClick={() => handleSedeClick(sede)}>
+                    <div className="sede-left">
+                      <div className="sede-icon">
+                        <LocationCityIcon />
+                      </div>
+                      <div className="sede-info">
+                        <strong>{sede.nombre}</strong>
+                        <span className="sede-direccion">{sede.direccion}</span>
+                      </div>
+                    </div>
+                    <div className="sede-alumnos">
+                      <span className="alumnos-count">{alumnosPorSede[sede._id] || 0}</span>
+                      <span className="alumnos-label">ALUMNOS</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <span className="sedes-tip">Haz clic en una sede para ver sus alumnos</span>
             </div>
-            <div className="sedes-list">
-              {sedes.map((sede, idx) => (
-                <div key={idx} className="sede-item" onClick={() => handleSedeClick(sede)}>
-                  <div className="sede-left">
-                    <div className="sede-icon">
-                      <LocationCityIcon />
-                    </div>
-                    <div className="sede-info">
-                      <strong>{sede.nombre}</strong>
-                      <span className="sede-direccion">{sede.direccion}</span>
-                    </div>
-                  </div>
-                  <div className="sede-alumnos">
-                    <span className="alumnos-count">{alumnosPorSede[sede._id] || 0}</span>
-                    <span className="alumnos-label">ALUMNOS</span>
-                  </div>
+
+            <div className="dashboard-card pagos-sede-panel">
+              <div className="pagos-sede-header">
+                <h3>Dólares pagados por sede</h3>
+                <select
+                  className="pagos-sede-anio-select"
+                  value={mesGraficaSeleccionado}
+                  onChange={(event) => setMesGraficaSeleccionado(Number(event.target.value))}
+                >
+                  {mesesAnio.map((mes) => (
+                    <option key={mes.value} value={mes.value}>
+                      {mes.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {dolaresLoading ? (
+                <div className="pagos-sede-empty">Cargando gráficas...</div>
+              ) : dolaresPagadosPorSede.sedes.length === 0 ? (
+                <div className="pagos-sede-empty">Sin pagos registrados para el mes seleccionado</div>
+              ) : (
+                <div className="pagos-sede-chart-wrap">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart
+                      data={dolaresPagadosPorSede.sedes.map((sede) => ({
+                        sedeNombre: sede.sedeNombre,
+                        monto_pagado: Number(sede.monto_pagado || 0)
+                      }))}
+                      margin={{ top: 8, right: 12, left: 8, bottom: 32 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="sedeNombre" tick={{ fontSize: 11, fill: '#64748b' }} angle={-15} textAnchor="end" interval={0} height={60} />
+                      <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <Tooltip
+                        formatter={(value) => [`$${formatMoney(value)}`, 'Pagado']}
+                        labelFormatter={(label) => `Sede: ${label}`}
+                      />
+                      <Bar dataKey="monto_pagado" fill="#16a34a" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
+              )}
             </div>
-            <span className="sedes-tip">Haz clic en una sede para ver sus alumnos</span>
           </div>
+
           <div className="finanzas-wrapper">
             <div className="finanzas-header">
               <h3>Resumen financiero del mes</h3>
@@ -481,76 +592,108 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
             </div>
           </div>
         </div>
-        <div className="dashboard-card cumple-card">
-          <div style={{ marginTop: 2 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
-              <CakeIcon style={{ color: '#ff9800', fontSize: 28 }} />
-              <span style={{ fontWeight: 600, fontSize: 18 }}>Cumpleaños del mes</span>
+        <div className="dashboard-right">
+          <div className="dashboard-card revision-sede-panel">
+            <div className="pagos-sede-header">
+              <h3>Pagos en revisión por sede</h3>
+              <span className="revision-total-badge">Total {totalEnRevision}</span>
             </div>
-            {cumpleaneros.length === 0 && <div style={{ color: '#888', fontSize: 15 }}>No hay cumpleaños este mes</div>}
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {cumpleanerosPagina.map((al, idx) => (
-                <li
-                  key={al._id || idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    marginBottom: 10,
-                    background: '#ffffff',
-                    borderRadius: 16,
-                    padding: '10px 12px',
-                    border: '1px solid #e5e7eb',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Avatar src={mediaUrl(al.foto) || ''} alt={al.nombres} sx={{ width: 42, height: 42, fontSize: 18, bgcolor: '#f4c9b0' }}>
-                      {(!al.foto && al.nombres) ? al.nombres[0] : ''}
-                    </Avatar>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <div style={{ fontWeight: 700, color: '#1f2937' }}>
-                        {al.nombres} {al.apellidos}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                        {al.sede?.nombre || 'Sin sede'}
-                        {calcularEdad(al.fecha_nacimiento) !== '' ? ` · ${calcularEdad(al.fecha_nacimiento)} años` : ''}
-                      </div>
-                    </div>
+
+            {revisionLoading ? (
+              <div className="pagos-sede-empty">Cargando estatus...</div>
+            ) : sedesRevisionOrdenadas.length === 0 ? (
+              <div className="pagos-sede-empty">Sin datos para el mes seleccionado</div>
+            ) : (
+              <div className="revision-list">
+                {sedesRevisionOrdenadas.map((sede) => (
+                  <div key={sede.sedeId || sede.sedeNombre} className="revision-item">
+                    <span>{sede.sedeNombre}</span>
+                    <b>{sede.enRevision}</b>
                   </div>
-                  <div
-                    style={{
-                      minWidth: 44,
-                      padding: '6px 8px',
-                      borderRadius: 12,
-                      background: '#fff3e6',
-                      color: '#ff7a00',
-                      fontWeight: 800,
-                      textAlign: 'center',
-                      lineHeight: 1.1
-                    }}
-                  >
-                    <div style={{ fontSize: 14 }}>{formatDiaMes(al.fecha_nacimiento).dia}</div>
-                    <div style={{ fontSize: 10 }}>{formatDiaMes(al.fecha_nacimiento).mes}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {totalPaginasCumple > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
-                <Pagination
-                  count={totalPaginasCumple}
-                  page={cumplePage}
-                  onChange={(_, value) => setCumplePage(value)}
-                  color="primary"
-                  shape="rounded"
-                  size="small"
-                  showFirstButton
-                  showLastButton
-                />
+                ))}
               </div>
             )}
+
+            <button
+              type="button"
+              className="revision-cta-btn"
+              onClick={() => navigate('/conciliacion-bancaria')}
+            >
+              Ir a conciliación bancaria
+            </button>
+          </div>
+
+          <div className="dashboard-card cumple-card">
+            <div style={{ marginTop: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
+                <CakeIcon style={{ color: '#ff9800', fontSize: 28 }} />
+                <span style={{ fontWeight: 600, fontSize: 18 }}>Cumpleaños del mes</span>
+              </div>
+              {cumpleaneros.length === 0 && <div style={{ color: '#888', fontSize: 15 }}>No hay cumpleaños este mes</div>}
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {cumpleanerosPagina.map((al, idx) => (
+                  <li
+                    key={al._id || idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      marginBottom: 10,
+                      background: '#ffffff',
+                      borderRadius: 16,
+                      padding: '10px 12px',
+                      border: '1px solid #e5e7eb',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Avatar src={mediaUrl(al.foto) || ''} alt={al.nombres} sx={{ width: 42, height: 42, fontSize: 18, bgcolor: '#f4c9b0' }}>
+                        {(!al.foto && al.nombres) ? al.nombres[0] : ''}
+                      </Avatar>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ fontWeight: 700, color: '#1f2937' }}>
+                          {al.nombres} {al.apellidos}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                          {al.sede?.nombre || 'Sin sede'}
+                          {calcularEdad(al.fecha_nacimiento) !== '' ? ` · ${calcularEdad(al.fecha_nacimiento)} años` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        minWidth: 44,
+                        padding: '6px 8px',
+                        borderRadius: 12,
+                        background: '#fff3e6',
+                        color: '#ff7a00',
+                        fontWeight: 800,
+                        textAlign: 'center',
+                        lineHeight: 1.1
+                      }}
+                    >
+                      <div style={{ fontSize: 14 }}>{formatDiaMes(al.fecha_nacimiento).dia}</div>
+                      <div style={{ fontSize: 10 }}>{formatDiaMes(al.fecha_nacimiento).mes}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {totalPaginasCumple > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+                  <Pagination
+                    count={totalPaginasCumple}
+                    page={cumplePage}
+                    onChange={(_, value) => setCumplePage(value)}
+                    color="primary"
+                    shape="rounded"
+                    size="small"
+                    showFirstButton
+                    showLastButton
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
