@@ -634,6 +634,51 @@ describe('Backend smoke tests', () => {
     expect(mensualidadRetrasada.estatus).toBe('Insolvente');
   });
 
+  test('POST /api/mensualidades/ajuste-sede no convierte a pagado un insolvente sin pagos cuando monto esperado queda en 0', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const alumnoDoc = {
+      _id: 'a1',
+      saldo_a_favor_mensualidades: 0,
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadInsolvente = {
+      _id: 'm1',
+      id_alumno: 'a1',
+      monto_base: 100,
+      credito_aplicado: 0,
+      ajuste_extraordinario: 0,
+      monto_esperado: 100,
+      saldo_a_favor_generado: 0,
+      estatus: 'Insolvente',
+      fecha_vencimiento: '2026-03-05T23:59:59.000Z',
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    Alumno.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([alumnoDoc])
+    });
+    Mensualidad.find.mockResolvedValue([mensualidadInsolvente]);
+    PagoDetalle.find.mockResolvedValue([]);
+
+    const response = await request(app)
+      .post('/api/mensualidades/ajuste-sede')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        id_sede: 's1',
+        mes: 3,
+        anio: 2026,
+        nuevo_monto: 0,
+        descripcion: 'Ajuste de prueba a cero'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.mensualidades_actualizadas).toBe(1);
+    expect(mensualidadInsolvente.monto_esperado).toBe(0);
+    expect(mensualidadInsolvente.estatus).toBe('Insolvente');
+  });
+
   test('POST /api/mensualidades/ajuste-sede preserva pagado manual sin pagos', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 

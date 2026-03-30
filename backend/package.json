@@ -13,7 +13,9 @@
     "mensualidades:enero:pagadas:dry": "node scripts/marcar_mensualidades_enero_pagadas.js",
     "mensualidades:enero:pagadas": "node scripts/marcar_mensualidades_enero_pagadas.js --apply",
     "migrate:media:dry": "node scripts/migrar_media_base64_a_archivos.js --dry-run",
-    "migrate:media": "node scripts/migrar_media_base64_a_archivos.js --apply"
+    "migrate:media": "node scripts/migrar_media_base64_a_archivos.js --apply",
+    "mensualidades:repair:sin-detalle:dry": "node scripts/reparar_mensualidades_sin_detalle_a_insolvente.js",
+    "mensualidades:repair:sin-detalle": "node scripts/reparar_mensualidades_sin_detalle_a_insolvente.js --apply"
   },
   "keywords": [],
   "author": "",

@@ -58,7 +58,12 @@ async function consumirSaldoAFavor(alumno, montoBase) {
 
 async function recalcularMensualidadPorPagos(
   mensualidad,
-  { actorRol = 'admin', estatusAnterior = null, preservarPagadoSinPagos = false } = {}
+  {
+    actorRol = 'admin',
+    estatusAnterior = null,
+    preservarPagadoSinPagos = false,
+    preservarInsolventeSinPagosCuandoMontoCero = false
+  } = {}
 ) {
   const pagos = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
   const tienePagosRegistrados = pagos.length > 0;
@@ -96,8 +101,17 @@ async function recalcularMensualidadPorPagos(
     totalPagado <= 0 &&
     estatusAnteriorNormalizado === 'pagado';
 
+  const debePreservarInsolventeSinPagos =
+    preservarInsolventeSinPagosCuandoMontoCero &&
+    !tienePagosRegistrados &&
+    totalPagado <= 0 &&
+    montoEsperado <= 0 &&
+    esEstatusInsolvente(estatusAnteriorNormalizado);
+
   if (debePreservarPagadoManual) {
     mensualidad.estatus = 'Pagado';
+  } else if (debePreservarInsolventeSinPagos) {
+    mensualidad.estatus = 'Insolvente';
   } else
   if (montoEsperado <= 0) {
     mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
@@ -567,7 +581,8 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       const resultado = await recalcularMensualidadPorPagos(mensualidad, {
         actorRol: 'admin',
         estatusAnterior: mensualidad.estatus,
-        preservarPagadoSinPagos: true
+        preservarPagadoSinPagos: true,
+        preservarInsolventeSinPagosCuandoMontoCero: true
       });
 
       actualizadas += 1;
