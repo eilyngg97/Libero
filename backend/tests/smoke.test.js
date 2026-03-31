@@ -197,7 +197,7 @@ describe('Backend smoke tests', () => {
       .post('/api/pagos')
       .set('Authorization', `Bearer ${token}`)
       .field('id_mensualidad', 'm1')
-      .field('monto_pagado', '100')
+      .field('monto_pagado', '100.18')
       .field('monto_pagado_bs', '7075')
       .field('monto_esperado_usd', '100')
       .field('monto_esperado_bs', '7075')
@@ -208,7 +208,7 @@ describe('Backend smoke tests', () => {
     expect(response.status).toBe(200);
     expect(response.body.estatus).toBe('Pagado');
     expect(PagoDetalle.create).toHaveBeenCalledWith(expect.objectContaining({
-      monto_pagado: 100,
+      monto_pagado: 100.18,
       monto_pagado_bs: 7075,
       monto_esperado_usd: 100,
       monto_esperado_bs: 7075

@@ -177,10 +177,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
     return { error: { status: 400, payload: { error: 'El monto excede el saldo pendiente' } } };
   }
 
-  let montoARegistrar = monto;
-  if (!permiteSobrepagoAdelantado && restante > 0 && Math.abs(monto - restante) <= toleranciaUsd) {
-    montoARegistrar = redondearMonto(restante);
-  }
+  const montoARegistrar = redondearMonto(monto);
 
   return {
     totalPrevio,
