@@ -766,8 +766,9 @@ function PagosAlumno(props) {
             return tieneVencimiento ? `Vence: ${formatFechaBonita(vencimiento)}` : `Periodo: ${mesNombre} ${anio}`;
           })();
 
-          const montoCard = (estado === 'pagado' || estado === 'en revision')
-            ? (Number(pago.total_pagado) || Number(pago.monto_total) || Number(pago.monto) || 0)
+          const mostrarMontoEsperado = estado === 'pagado' || estado === 'en revision';
+          const montoCard = mostrarMontoEsperado
+            ? (Number(pago.monto_total) || Number(pago.monto) || 0)
             : pago.monto;
 
           const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
@@ -828,6 +829,11 @@ function PagosAlumno(props) {
                     <Typography sx={{ color: estadoUi.amountColor, fontWeight: 900, fontSize: { xs: 25, md: 27 }, lineHeight: 1 }}>
                       ${formatMoney(montoCard)}
                     </Typography>
+                    {mostrarMontoEsperado && (
+                      <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+                        Monto esperado (USD)
+                      </Typography>
+                    )}
 
                     {showPrimaryAction ? (
                       <Button
