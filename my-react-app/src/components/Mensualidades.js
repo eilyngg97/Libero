@@ -441,11 +441,19 @@ function Mensualidades() {
 		try {
 			setGuardandoPago(true);
 			const formData = new FormData();
+			const montoEsperadoUsd = Number(pagoInfo?.monto_esperado) || 0;
+			const montoEsperadoBs = montoEsperadoUsd * (tasaPagoHistorica || tasaBCV);
 			if (!pagoEnEdicion) {
 				formData.append('id_mensualidad', pagoInfo._id);
 			}
 			formData.append('monto_pagado', montoToPay);
 			formData.append('monto_pagado_bs', ((Number(montoToPay) || 0) * (tasaPagoHistorica || tasaBCV)).toFixed(2));
+			if (montoEsperadoUsd > 0) {
+				formData.append('monto_esperado_usd', montoEsperadoUsd.toFixed(2));
+			}
+			if (Number.isFinite(montoEsperadoBs) && montoEsperadoBs > 0) {
+				formData.append('monto_esperado_bs', montoEsperadoBs.toFixed(2));
+			}
 			formData.append('fecha_pago', fechaPago);
 			formData.append('metodo_pago', normalizeMetodoPago(metodoPago));
 			if (metodoRequiereReferencia(metodoPago)) {
@@ -517,6 +525,27 @@ function Mensualidades() {
 			return '-';
 		}
 		return `${formatMoney(montoBs / montoUsd)} Bs/USD`;
+	};
+
+	const formatMontoEsperadoPago = (pago, fallbackMontoUsd = null) => {
+		const montoBs = Number(pago?.monto_esperado_bs);
+		const montoUsd = Number.isFinite(Number(pago?.monto_esperado_usd))
+			? Number(pago?.monto_esperado_usd)
+			: Number(fallbackMontoUsd);
+
+		if (Number.isFinite(montoBs) && montoBs > 0 && Number.isFinite(montoUsd) && montoUsd > 0) {
+			return `Bs ${formatMoney(montoBs)} / $${formatMoney(montoUsd)} USD`;
+		}
+
+		if (Number.isFinite(montoBs) && montoBs > 0) {
+			return `Bs ${formatMoney(montoBs)}`;
+		}
+
+		if (Number.isFinite(montoUsd) && montoUsd > 0) {
+			return `$${formatMoney(montoUsd)} USD`;
+		}
+
+		return '-';
 	};
 
 	const formatMontoConBs = (pago) => {
@@ -983,6 +1012,11 @@ function Mensualidades() {
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado</Typography>
+										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatMontoEsperadoPago(detallePago, mensualidadDetalle?.monto_esperado)}</Typography>
+									</Box>
+
+									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
 										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFechaBonita(detallePago.fecha_pago)}</Typography>
 									</Box>
@@ -1082,6 +1116,11 @@ function Mensualidades() {
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Monto</Typography>
 											<Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoConBs(pago)}</Typography>
+											{formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado) !== '-' && (
+												<Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
+													Esperado: {formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado)}
+												</Typography>
+											)}
 										</Box>
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Fecha</Typography>
@@ -1376,6 +1415,25 @@ function Mensualidades() {
 						>
 							Ver historial de abonos
 						</Button>
+					)}
+					{pagoInfo?.id_alumno && (
+						<Box
+							sx={{
+								mb: 2,
+								px: 1.75,
+								py: 1.25,
+								borderRadius: 2,
+								border: '1px solid #e2e8f0',
+								bgcolor: '#ffffff'
+							}}
+						>
+							<Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: '#94a3b8' }}>
+								ALUMNO SELECCIONADO
+							</Typography>
+							<Typography sx={{ mt: 0.45, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+								{`${pagoInfo.id_alumno.nombres || ''} ${pagoInfo.id_alumno.apellidos || ''}`.trim() || '-'}
+							</Typography>
+						</Box>
 					)}
 					<TextField
 						select

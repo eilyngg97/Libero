@@ -265,6 +265,25 @@ function PagosAlumno(props) {
     return `$${formatMoney(pago?.monto_pagado)} USD`;
   };
 
+  const formatMontoEsperado = (pago) => {
+    const montoBs = Number(pago?.monto_esperado_bs);
+    const montoUsd = Number(pago?.monto_esperado_usd);
+
+    if (Number.isFinite(montoBs) && montoBs > 0 && Number.isFinite(montoUsd) && montoUsd > 0) {
+      return `Bs ${formatMoney(montoBs)} / $${formatMoney(montoUsd)} USD`;
+    }
+
+    if (Number.isFinite(montoBs) && montoBs > 0) {
+      return `Bs ${formatMoney(montoBs)}`;
+    }
+
+    if (Number.isFinite(montoUsd) && montoUsd > 0) {
+      return `$${formatMoney(montoUsd)} USD`;
+    }
+
+    return '-';
+  };
+
   const formatEquivalenteUsdDesdeBs = (pago) => {
     const montoBs = Number(pago?.monto_pagado_bs);
     const montoUsd = Number(pago?.monto_pagado);
@@ -1083,6 +1102,11 @@ function PagosAlumno(props) {
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatMontoEsperado(detallePago)}</Typography>
+                  </Box>
+
+                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
                     <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFechaBonita(detallePago.fecha_pago)}</Typography>
                   </Box>
@@ -1185,6 +1209,11 @@ function PagosAlumno(props) {
                       {formatEquivalenteUsdDesdeBs(pago) && (
                         <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
                           Equivalente: {formatEquivalenteUsdDesdeBs(pago)}
+                        </Typography>
+                      )}
+                      {formatMontoEsperado(pago) !== '-' && (
+                        <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
+                          Esperado: {formatMontoEsperado(pago)}
                         </Typography>
                       )}
                     </Box>

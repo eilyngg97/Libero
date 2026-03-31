@@ -24,6 +24,31 @@ function normalizarMontoBs(value) {
   return Number(value);
 }
 
+function enriquecerPagoConMontoEsperado(pago, mensualidad) {
+  const pagoPlano = typeof pago?.toObject === 'function' ? pago.toObject() : { ...pago };
+  const montoEsperadoPagoUsd = Number(pagoPlano?.monto_esperado_usd);
+  const montoEsperadoPagoBs = Number(pagoPlano?.monto_esperado_bs);
+  const montoEsperadoMensualidadUsd = Number(mensualidad?.monto_esperado);
+
+  const montoEsperadoUsd = Number.isFinite(montoEsperadoPagoUsd)
+    ? redondearMonto(montoEsperadoPagoUsd)
+    : (Number.isFinite(montoEsperadoMensualidadUsd) ? redondearMonto(montoEsperadoMensualidadUsd) : undefined);
+
+  const montoEsperadoBs = Number.isFinite(montoEsperadoPagoBs)
+    ? redondearMonto(montoEsperadoPagoBs)
+    : undefined;
+
+  if (Number.isFinite(montoEsperadoUsd)) {
+    pagoPlano.monto_esperado_usd = montoEsperadoUsd;
+  }
+
+  if (Number.isFinite(montoEsperadoBs)) {
+    pagoPlano.monto_esperado_bs = montoEsperadoBs;
+  }
+
+  return pagoPlano;
+}
+
 function ordenarPagos(pagos = []) {
   return [...pagos].sort((a, b) => {
     const fechaA = new Date(a.fecha_pago || a.createdAt || 0).getTime();
@@ -169,11 +194,22 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
 // Registrar un pago y actualizar mensualidad
 exports.registrarPago = async (req, res) => {
   try {
-    const { id_mensualidad, monto_pagado, monto_pagado_bs, fecha_pago, metodo_pago, referencia } = req.body;
+    const {
+      id_mensualidad,
+      monto_pagado,
+      monto_pagado_bs,
+      monto_esperado_usd,
+      monto_esperado_bs,
+      fecha_pago,
+      metodo_pago,
+      referencia
+    } = req.body;
     const comprobante_url = req.file ? `/uploads/comprobantes/${req.file.filename}` : null;
     if (!id_mensualidad) return res.status(400).json({ error: 'id_mensualidad requerido' });
     const monto = normalizarMonto(monto_pagado);
     const montoBs = normalizarMontoBs(monto_pagado_bs);
+    const montoEsperadoUsd = normalizarMonto(monto_esperado_usd);
+    const montoEsperadoBs = normalizarMontoBs(monto_esperado_bs);
     const mensualidad = await obtenerMensualidadConAlumno(id_mensualidad);
     const validacion = await validarPago({ mensualidad, monto, montoBs, actorRol: req.user?.rol });
     if (validacion.error) {
@@ -184,6 +220,8 @@ exports.registrarPago = async (req, res) => {
       id_mensualidad,
       monto_pagado: validacion.montoARegistrar,
       monto_pagado_bs: montoBs,
+      monto_esperado_usd: Number.isFinite(montoEsperadoUsd) ? redondearMonto(montoEsperadoUsd) : undefined,
+      monto_esperado_bs: montoEsperadoBs !== null ? redondearMonto(montoEsperadoBs) : undefined,
       fecha_pago,
       metodo_pago,
       referencia,
@@ -204,13 +242,24 @@ exports.registrarPago = async (req, res) => {
 
 exports.editarPago = async (req, res) => {
   try {
-    const { monto_pagado, monto_pagado_bs, fecha_pago, metodo_pago, referencia, eliminar_comprobante } = req.body;
+    const {
+      monto_pagado,
+      monto_pagado_bs,
+      monto_esperado_usd,
+      monto_esperado_bs,
+      fecha_pago,
+      metodo_pago,
+      referencia,
+      eliminar_comprobante
+    } = req.body;
     const pago = await PagoDetalle.findById(req.params.id_pago);
     if (!pago) return res.status(404).json({ error: 'Pago no encontrado' });
 
     const mensualidad = await obtenerMensualidadConAlumno(pago.id_mensualidad);
     const monto = normalizarMonto(monto_pagado);
     const montoBs = normalizarMontoBs(monto_pagado_bs);
+    const montoEsperadoUsd = normalizarMonto(monto_esperado_usd);
+    const montoEsperadoBs = normalizarMontoBs(monto_esperado_bs);
     const validacion = await validarPago({
       mensualidad,
       monto,
@@ -226,6 +275,12 @@ exports.editarPago = async (req, res) => {
     const comprobanteAnterior = pago.comprobante_url;
     pago.monto_pagado = validacion.montoARegistrar;
     pago.monto_pagado_bs = montoBs;
+    if (Number.isFinite(montoEsperadoUsd)) {
+      pago.monto_esperado_usd = redondearMonto(montoEsperadoUsd);
+    }
+    if (montoEsperadoBs !== null) {
+      pago.monto_esperado_bs = redondearMonto(montoEsperadoBs);
+    }
     pago.fecha_pago = fecha_pago;
     pago.metodo_pago = metodo_pago;
     pago.referencia = referencia;
@@ -289,8 +344,14 @@ exports.eliminarPago = async (req, res) => {
 // Consultar pagos por mensualidad
 exports.getPagosPorMensualidad = async (req, res) => {
   try {
-    const pagos = await PagoDetalle.find({ id_mensualidad: req.params.id_mensualidad });
-    res.json(ordenarPagos(pagos));
+    const [pagos, mensualidad] = await Promise.all([
+      PagoDetalle.find({ id_mensualidad: req.params.id_mensualidad }),
+      Mensualidad.findById(req.params.id_mensualidad).select('monto_esperado')
+    ]);
+
+    res.json(
+      ordenarPagos(pagos).map((pago) => enriquecerPagoConMontoEsperado(pago, mensualidad))
+    );
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -169,6 +169,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     const montoPagadoNum = Number(montoPagado);
     const tasaAplicada = Number(tasaPago) || Number(tasa) || null;
     const montoPagadoUsd = tasaAplicada ? (montoPagadoNum / tasaAplicada) : null;
+    const montoEsperadoUsd = Number(monto);
+    const montoEsperadoBs = montoBs !== null ? Number(montoBs) : null;
     if (!montoPagadoNum || Number.isNaN(montoPagadoNum)) {
       setSubmitError('Monto pagado invalido');
       return;
@@ -184,6 +186,12 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       formData.append('id_mensualidad', pago.id);
       formData.append('monto_pagado', montoPagadoUsd.toFixed(2));
       formData.append('monto_pagado_bs', montoPagadoNum.toFixed(2));
+      if (Number.isFinite(montoEsperadoUsd)) {
+        formData.append('monto_esperado_usd', montoEsperadoUsd.toFixed(2));
+      }
+      if (Number.isFinite(montoEsperadoBs)) {
+        formData.append('monto_esperado_bs', montoEsperadoBs.toFixed(2));
+      }
       formData.append('fecha_pago', fechaPago);
       formData.append('metodo_pago', metodoSeleccionado?.nombre || metodoSeleccionado?.id || '');
       if (referencia) formData.append('referencia', referencia);

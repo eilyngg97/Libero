@@ -198,12 +198,74 @@ describe('Backend smoke tests', () => {
       .set('Authorization', `Bearer ${token}`)
       .field('id_mensualidad', 'm1')
       .field('monto_pagado', '100')
+      .field('monto_pagado_bs', '7075')
+      .field('monto_esperado_usd', '100')
+      .field('monto_esperado_bs', '7075')
       .field('fecha_pago', '2026-03-06')
       .field('metodo_pago', 'Pago movil')
       .field('referencia', 'ABC123');
 
     expect(response.status).toBe(200);
     expect(response.body.estatus).toBe('Pagado');
+    expect(PagoDetalle.create).toHaveBeenCalledWith(expect.objectContaining({
+      monto_pagado: 100,
+      monto_pagado_bs: 7075,
+      monto_esperado_usd: 100,
+      monto_esperado_bs: 7075
+    }));
+  });
+
+  test('POST /api/conciliacion/previsualizar incluye monto esperado del sistema', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 100,
+      estatus: 'En revision',
+      id_alumno: {
+        nombres: 'Ana',
+        apellidos: 'Lopez'
+      }
+    };
+
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([mensualidadDoc])
+      })
+    });
+
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([
+        {
+          _id: 'p1',
+          id_mensualidad: 'm1',
+          referencia: '123456',
+          monto_pagado_bs: 7075,
+          monto_esperado_bs: 7075,
+          monto_esperado_usd: 100,
+          fecha_pago: '2026-03-06'
+        }
+      ])
+    });
+
+    const archivoTxt = Buffer.from('Referencia;Monto;Fecha\n123456;7075;06/03/2026\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.match_total).toHaveLength(1);
+    expect(response.body.match_total[0].sistema).toEqual(expect.objectContaining({
+      monto_esperado_bs: 7075,
+      monto_esperado_usd: 100,
+      monto_bs: 7075,
+      alumno: 'Ana Lopez'
+    }));
   });
 
   test('POST /api/pagos allows admin overpayment and generates saldo a favor', async () => {
@@ -285,6 +347,42 @@ describe('Backend smoke tests', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.estatus).toBe('Pagado');
+  });
+
+  test('GET /api/pagos/:id_mensualidad completa monto esperado usd para pagos historicos sin inferir bs', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    PagoDetalle.find.mockResolvedValue([
+      {
+        _id: 'p1',
+        id_mensualidad: 'm1',
+        monto_pagado: 100,
+        monto_pagado_bs: 7075,
+        fecha_pago: '2026-03-06',
+        metodo_pago: 'Pago movil',
+        referencia: '123456'
+      }
+    ]);
+
+    Mensualidad.findById.mockReturnValue({
+      select: jest.fn().mockResolvedValue({
+        _id: 'm1',
+        monto_esperado: 100
+      })
+    });
+
+    const response = await request(app)
+      .get('/api/pagos/m1')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+    expect(response.body[0]).toEqual(expect.objectContaining({
+      monto_esperado_usd: 100,
+      monto_pagado: 100,
+      monto_pagado_bs: 7075
+    }));
+    expect(response.body[0].monto_esperado_bs).toBeUndefined();
   });
 
   test('DELETE /api/pagos/:id_pago deletes payment', async () => {

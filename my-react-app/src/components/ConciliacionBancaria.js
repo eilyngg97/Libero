@@ -48,6 +48,25 @@ function formatDiferenciaMonto(montoSistema, montoExcel) {
   return `${signo}${formatMoney(diferencia)}`;
 }
 
+function formatMontoEsperado(montoBs, montoUsd) {
+  const bsValido = montoBs !== null && montoBs !== undefined && !Number.isNaN(Number(montoBs));
+  const usdValido = montoUsd !== null && montoUsd !== undefined && !Number.isNaN(Number(montoUsd));
+
+  if (bsValido && usdValido) {
+    return `Bs ${formatMoney(montoBs)} / $${formatMoney(montoUsd)} USD`;
+  }
+
+  if (bsValido) {
+    return `Bs ${formatMoney(montoBs)}`;
+  }
+
+  if (usdValido) {
+    return `$${formatMoney(montoUsd)} USD`;
+  }
+
+  return '-';
+}
+
 function estadoChip(tipo) {
   if (tipo === 'match_total') {
     return <Chip icon={<CheckCircleIcon />} label="Match total" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 700 }} />;
@@ -162,6 +181,8 @@ export default function ConciliacionBancaria() {
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
       montoSistema: row.sistema?.monto_bs,
+      montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
+      montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
       montoExcel: row.excel?.monto_bs,
       fechaSistema: row.sistema?.fecha || '-',
       fechaExcel: row.excel?.fecha || '-',
@@ -174,6 +195,8 @@ export default function ConciliacionBancaria() {
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
       montoSistema: row.sistema?.monto_bs,
+      montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
+      montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
       montoExcel: row.excel?.monto_bs,
       fechaSistema: row.sistema?.fecha || '-',
       fechaExcel: row.excel?.fecha || '-',
@@ -186,6 +209,8 @@ export default function ConciliacionBancaria() {
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: '-',
       montoSistema: row.sistema?.monto_bs,
+      montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
+      montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
       montoExcel: null,
       fechaSistema: row.sistema?.fecha || '-',
       fechaExcel: '-',
@@ -198,6 +223,8 @@ export default function ConciliacionBancaria() {
       referenciaSistema: '-',
       referenciaExcel: row.excel?.referencia || '-',
       montoSistema: null,
+      montoEsperadoSistemaBs: null,
+      montoEsperadoSistemaUsd: null,
       montoExcel: row.excel?.monto_bs,
       fechaSistema: '-',
       fechaExcel: row.excel?.fecha || '-',
@@ -307,6 +334,7 @@ export default function ConciliacionBancaria() {
                   <TableCell>Alumno</TableCell>
                   <TableCell>Ref. Sistema</TableCell>
                   <TableCell>Ref. Excel</TableCell>
+                  <TableCell>Monto esperado</TableCell>
                   <TableCell>Monto Sistema (Bs)</TableCell>
                   <TableCell>Monto Excel (Bs)</TableCell>
                   <TableCell>Diferencia (Bs)</TableCell>
@@ -322,6 +350,7 @@ export default function ConciliacionBancaria() {
                     <TableCell>{fila.alumno}</TableCell>
                     <TableCell>{fila.referenciaSistema}</TableCell>
                     <TableCell>{fila.referenciaExcel}</TableCell>
+                    <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</TableCell>
                     <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
                     <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
                     <TableCell>{formatDiferenciaMonto(fila.montoSistema, fila.montoExcel)}</TableCell>
@@ -332,7 +361,7 @@ export default function ConciliacionBancaria() {
                 ))}
                 {filasComparativas.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10}>
+                    <TableCell colSpan={11}>
                       <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
                         No hay filas para mostrar.
                       </Typography>

@@ -337,6 +337,8 @@ function buildMatchRecord({ banco, sistema, tipo, motivo = [] }) {
       mensualidad_id: String(sistema.id_mensualidad),
       referencia: sistema.referencia || '-',
       monto_bs: sistema.monto_pagado_bs,
+      monto_esperado_bs: sistema.monto_esperado_bs,
+      monto_esperado_usd: sistema.monto_esperado_usd,
       fecha: sistema.fecha_pago,
       alumno: sistema.alumno
     }
@@ -373,7 +375,7 @@ exports.previsualizarConciliacion = async (req, res) => {
 
     const pagosSistema = await PagoDetalle.find({
       id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) }
-    }).select('_id id_mensualidad referencia monto_pagado_bs fecha_pago');
+    }).select('_id id_mensualidad referencia monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
 
     const sistemaRows = pagosSistema.map((pago) => {
       const mensualidad = mensualidadMap.get(String(pago.id_mensualidad));
@@ -386,6 +388,10 @@ exports.previsualizarConciliacion = async (req, res) => {
         id_mensualidad: pago.id_mensualidad,
         referencia: normalizarReferencia(pago.referencia),
         monto_pagado_bs: parseMonto(pago.monto_pagado_bs),
+        monto_esperado_bs: parseMonto(pago.monto_esperado_bs),
+        monto_esperado_usd: pago.monto_esperado_usd === null || pago.monto_esperado_usd === undefined
+          ? null
+          : Number(pago.monto_esperado_usd),
         fecha_pago: parseFecha(pago.fecha_pago),
         alumno: alumnoNombre
       };
@@ -485,6 +491,8 @@ exports.previsualizarConciliacion = async (req, res) => {
           mensualidad_id: String(row.id_mensualidad),
           referencia: row.referencia || '-',
           monto_bs: row.monto_pagado_bs,
+          monto_esperado_bs: row.monto_esperado_bs,
+          monto_esperado_usd: row.monto_esperado_usd,
           fecha: row.fecha_pago,
           alumno: row.alumno
         }
