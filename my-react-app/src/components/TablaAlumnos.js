@@ -251,11 +251,16 @@ function TablaAlumnos() {
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
           <Button
             variant="contained"
-            sx={{ bgcolor: '#f97316', fontWeight: 700, '&:hover': { bgcolor: '#ea580c' }, width: { xs: '100%', sm: 'auto' } }}
+            color="secondary"
+            sx={{
+              width: { xs: '100%', sm: 'auto' },
+              py: 0.8,
+              borderRadius: 999,
+            }}
             startIcon={<PersonAddAlt1Icon />}
             onClick={() => navigate('/alumnos')}
           >
-            Registrar Alumno
+            Nueva inscripción
           </Button>
           <Button
             variant="outlined"

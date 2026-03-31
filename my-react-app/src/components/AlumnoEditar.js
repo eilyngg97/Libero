@@ -7,6 +7,8 @@ import { useSede } from '../context/SedeContext';
 import { mediaUrl } from '../utils/mediaUrl';
 import './Alumnos.css';
 const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado'];
+const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
+const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
 
 function AlumnoEditar({ locationState }) {
   const { id } = useParams();
@@ -577,7 +579,25 @@ function AlumnoEditar({ locationState }) {
             <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
           </div>
           <div className="form-row">
-            <TextField id="outlined-basic-tipo-sangre" label="Tipo de sangre" name="tipo_sangre" variant="outlined" value={form.tipo_sangre || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="tipo-sangre-label">Tipo de sangre</InputLabel>
+              <Select
+                labelId="tipo-sangre-label"
+                id="select-tipo-sangre"
+                name="tipo_sangre"
+                value={form.tipo_sangre || ''}
+                label="Tipo de sangre"
+                onChange={handleChange}
+              >
+                <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                {TIPOS_SANGRE.map((tipo) => (
+                  <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
+                ))}
+                {form.tipo_sangre && !TIPOS_SANGRE.includes(form.tipo_sangre) && (
+                  <MenuItem value={form.tipo_sangre}>{form.tipo_sangre}</MenuItem>
+                )}
+              </Select>
+            </FormControl>
            <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
@@ -621,7 +641,21 @@ function AlumnoEditar({ locationState }) {
                 </div>
                 <div className="form-row">
                   <TextField id="outlined-basic-rep-cedula" label="Cédula del representante *" name="rep_cedula" variant="outlined" value={form.rep_cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-                  <TextField id="outlined-basic-parentesco" label="Parentesco *" name="parentesco" variant="outlined" value={form.parentesco || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+                  <FormControl fullWidth size="small" sx={{ my: 1 }}>
+                    <InputLabel id="select-parentesco-editar-label">Parentesco *</InputLabel>
+                    <Select
+                      labelId="select-parentesco-editar-label"
+                      id="select-parentesco-editar"
+                      name="parentesco"
+                      value={form.parentesco || ''}
+                      label="Parentesco *"
+                      onChange={handleChange}
+                    >
+                      {PARENTESCOS.map((op) => (
+                        <MenuItem key={op} value={op}>{op}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                 </div>
                 <div className="form-row">
                   <TextField id="outlined-basic-rep-telefono" label="Teléfono del representante" name="rep_telefono" type="tel" variant="outlined" value={form.rep_telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>

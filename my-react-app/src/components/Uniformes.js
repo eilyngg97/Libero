@@ -128,9 +128,9 @@ export default function Uniformes() {
       )}
       <Button
         variant="contained"
-        color="primary"
+        color="secondary"
         onClick={() => handleOpen()}
-        sx={{ mb: 2 }}
+        sx={{ mb: 2, borderRadius: 999 }}
         disabled={!token}
       >
         Agregar Prenda
@@ -193,7 +193,7 @@ export default function Uniformes() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleSave} variant="contained" disabled={!token}>Guardar</Button>
+          <Button onClick={handleSave} variant="contained" color="secondary" sx={{ borderRadius: 999 }} disabled={!token}>Guardar</Button>
         </DialogActions>
       </Dialog>
     </Box>

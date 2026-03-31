@@ -116,7 +116,7 @@ function Sedes() {
     <div>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <h2 style={{ margin: 0 }}>Gestión de Sedes</h2>
-        <Button variant="contained" onClick={handleOpen} sx={{ backgroundColor: '#f97316', '&:hover': { backgroundColor: '#ea580c' } }} startIcon={<AddIcon />}>
+        <Button variant="contained" color="secondary" onClick={handleOpen} sx={{ borderRadius: 999 }} startIcon={<AddIcon />}>
           Agregar Sede
         </Button>
       </Box>

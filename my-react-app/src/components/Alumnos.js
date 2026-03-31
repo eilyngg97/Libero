@@ -23,6 +23,8 @@ const PARENTESCOS = [
   'Otro'
 ];
 
+const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
+
 
 // Opciones de tipo de mensualidad
 export const OPCIONES_MENSUALIDAD = [
@@ -770,7 +772,22 @@ function Alumnos() {
             <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
-            <TextField id="outlined-basic-tipo-sangre" label="Tipo de sangre" name="tipo_sangre" variant="outlined" value={form.tipo_sangre || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="tipo-sangre-label">Tipo de sangre</InputLabel>
+              <Select
+                labelId="tipo-sangre-label"
+                id="select-tipo-sangre"
+                name="tipo_sangre"
+                value={form.tipo_sangre || ''}
+                label="Tipo de sangre"
+                onChange={handleChange}
+              >
+                <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                {TIPOS_SANGRE.map((tipo) => (
+                  <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
            <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">

@@ -9,19 +9,23 @@
 }
 
 .dashboard-export-btn {
-  background: #1e293b;
+  background: linear-gradient(90deg, #d7267a 0%, #ff7a18 100%);
   color: #fff;
   border: none;
   padding: 10px 16px;
-  border-radius: 8px;
+  border-radius: 999px;
   font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.2s, opacity 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
   width: fit-content;
+  box-shadow: 0 8px 18px rgba(215, 38, 122, 0.28);
 }
 
 .dashboard-export-btn:hover {
-  background: #334155;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(215, 38, 122, 0.34);
 }
 
 .dashboard-export-btn:disabled {
@@ -344,20 +348,22 @@
 .revision-cta-btn {
   margin-top: auto;
   width: 100%;
-  border: 1px solid #e7c9a6;
-  background: #fff4e8;
-  color: #8f4300;
-  border-radius: 10px;
+  border: none;
+  background: linear-gradient(90deg, #d7267a 0%, #ff7a18 100%);
+  color: #ffffff;
+  border-radius: 999px;
   padding: 10px 12px;
   font-size: 0.9rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 8px 18px rgba(215, 38, 122, 0.28);
 }
 
 .revision-cta-btn:hover {
-  background: #ffe7cf;
-  border-color: #d9a66d;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(215, 38, 122, 0.34);
 }
 
 .cumple-card {

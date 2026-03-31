@@ -5,6 +5,100 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 
+const appTheme = createTheme({
+  palette: {
+    primary: {
+      main: '#1E3A8A',
+      contrastText: '#FFFFFF',
+    },
+    secondary: {
+      main: '#D7267A',
+      contrastText: '#FFFFFF',
+    },
+    warning: {
+      main: '#FF7A18',
+      contrastText: '#FFFFFF',
+    },
+    info: {
+      main: '#00C2C7',
+      contrastText: '#0B0F2A',
+    },
+    background: {
+      default: '#FFFFFF',
+      paper: '#FFFFFF',
+    },
+    text: {
+      primary: '#0B0F2A',
+      secondary: '#1E3A8A',
+    },
+  },
+  components: {
+    MuiFormLabel: {
+      styleOverrides: {
+        root: {
+          color: '#64748B',
+          '&.Mui-focused': {
+            color: '#334155',
+          },
+        },
+      },
+    },
+    MuiInputLabel: {
+      styleOverrides: {
+        root: {
+          color: '#64748B',
+          '&.Mui-focused': {
+            color: '#334155',
+          },
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#94A3B8',
+          },
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#64748B',
+          },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#475569',
+            borderWidth: '1px',
+          },
+          '&.Mui-disabled .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#CBD5E1',
+          },
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 700,
+          letterSpacing: '0.01em',
+        },
+        containedSecondary: {
+          borderRadius: 999,
+          paddingInline: 16,
+          color: '#FFFFFF',
+          background: 'linear-gradient(90deg, #D7267A 0%, #FF7A18 100%)',
+          boxShadow: '0 8px 18px rgba(215, 38, 122, 0.28)',
+          '&:hover': {
+            background: 'linear-gradient(90deg, #c71f6f 0%, #f56f0f 100%)',
+            boxShadow: '0 10px 22px rgba(215, 38, 122, 0.34)',
+          },
+          '&.Mui-disabled': {
+            color: 'rgba(255,255,255,0.74)',
+            background: 'linear-gradient(90deg, rgba(215, 38, 122, 0.6) 0%, rgba(255, 122, 24, 0.6) 100%)',
+          },
+        },
+      },
+    },
+  },
+});
+
 const defaultSessionTimeoutMinutes = process.env.NODE_ENV === 'production' ? 10 : 15;
 const configuredSessionTimeoutMinutes = Number(process.env.REACT_APP_INACTIVITY_TIMEOUT_MINUTES);
 const sessionTimeoutMinutes = Number.isFinite(configuredSessionTimeoutMinutes) && configuredSessionTimeoutMinutes > 0
@@ -110,7 +204,7 @@ initializeSessionInactivityMonitor();
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <ThemeProvider theme={createTheme()}>
+    <ThemeProvider theme={appTheme}>
       <App />
     </ThemeProvider>
   </React.StrictMode>

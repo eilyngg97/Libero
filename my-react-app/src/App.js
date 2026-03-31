@@ -171,11 +171,11 @@ function App() {
                     open={drawerOpen}
                     onClose={() => setDrawerOpen(false)}
                   />
-                  <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#FFFFFF' }}>
                     <Header
                       onMenuClick={isMobile ? () => setDrawerOpen(true) : undefined}
                     />
-                    <main style={{ flex: 1, padding: 16 }}>
+                    <main style={{ flex: 1, padding: 16, background: '#FFFFFF', color: '#0B0F2A' }}>
                       <BackNavigationButton />
                       <SedeBreadcrumb />
                       <Routes>

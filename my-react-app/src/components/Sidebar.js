@@ -134,7 +134,9 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
         [`& .MuiDrawer-paper`]: {
           width: drawerWidth,
           boxSizing: 'border-box',
-          background: '#1e293b',
+          background: 'linear-gradient(180deg, #0B0F2A 0%, #131A47 100%)',
+          color: '#FFFFFF',
+          borderRight: '1px solid rgba(0, 194, 199, 0.24)',
           transition: 'width 0.3s',
           overflowX: 'hidden',
         },
@@ -143,11 +145,28 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
     >
       <Toolbar sx={{ display: 'flex', justifyContent: collapsed ? 'center' : 'space-between', alignItems: 'center', minHeight: 64 }}>
         {!collapsed && (
-          <Typography noWrap component="div" sx={{ color: '#ff9800', fontWeight: 'bold', fontSize: '2rem' }}>
-            Libero.
+          <Typography
+            noWrap
+            component="div"
+            sx={{
+              color: '#FFFFFF',
+              fontWeight: 800,
+              letterSpacing: 0.6,
+              fontSize: '1.55rem',
+              textShadow: '0 0 20px rgba(215, 38, 122, 0.35)',
+            }}
+          >
+            APEX
           </Typography>
         )}
-        <IconButton onClick={() => setCollapsed((prev) => !prev)} sx={{ color: '#fff', ml: collapsed ? 0 : 1 }}>
+        <IconButton
+          onClick={() => setCollapsed((prev) => !prev)}
+          sx={{
+            color: '#FFFFFF',
+            ml: collapsed ? 0 : 1,
+            '&:hover': { bgcolor: 'rgba(0, 194, 199, 0.16)' },
+          }}
+        >
           {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
         </IconButton>
       </Toolbar>
@@ -168,16 +187,16 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
                     minHeight: 48,
                     justifyContent: collapsed ? 'center' : 'flex-start',
                     px: collapsed ? 1 : 2,
-                    color: '#fff',
+                    color: '#FFFFFF',
                     backgroundColor: 'transparent',
                     '&:hover': {
-                      backgroundColor: 'rgba(255,255,255,0.18)',
+                      backgroundColor: 'rgba(0, 194, 199, 0.15)',
                     },
                     position: 'relative',
                   }}
                 >
-                  <ListItemIcon sx={{ color: '#fff', minWidth: 0, justifyContent: 'center' }}>{option.icon}</ListItemIcon>
-                  {!collapsed && <ListItemText primary={option.text} sx={{ color: '#fff', pl: 2 }} />}
+                  <ListItemIcon sx={{ color: '#FFFFFF', minWidth: 0, justifyContent: 'center' }}>{option.icon}</ListItemIcon>
+                  {!collapsed && <ListItemText primary={option.text} sx={{ color: '#FFFFFF', pl: 2 }} />}
                 </ListItemButton>
               </ListItem>
             );
@@ -194,14 +213,16 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
                   minHeight: 48,
                   justifyContent: collapsed ? 'center' : 'flex-start',
                   px: collapsed ? 1 : 2,
-                  color: '#fff',
-                  backgroundColor: selected ? '#452b03a7' : 'transparent',
+                  color: '#FFFFFF',
+                  background: selected
+                    ? 'linear-gradient(90deg, rgba(215, 38, 122, 0.96) 0%, rgba(255, 122, 24, 0.92) 100%)'
+                    : 'transparent',
                   '&:hover': {
-                    backgroundColor: 'rgba(72, 42, 2, 0.43)',
+                    backgroundColor: selected ? undefined : 'rgba(0, 194, 199, 0.15)',
                   },
                   position: 'relative',
                   ...(selected && {
-                    boxShadow: '0 6px 14px rgba(0,0,0,0.18)',
+                    boxShadow: '0 10px 20px rgba(215, 38, 122, 0.28)',
                     '&:after': {
                       content: '""',
                       position: 'absolute',
@@ -210,7 +231,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
                       bottom: 8,
                       width: '4px',
                       borderRadius: '4px',
-                      background: '#ff9800',
+                      background: '#00C2C7',
                     },
                   }),
                 }}
@@ -218,7 +239,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
               >
                 <ListItemIcon
                   sx={{
-                    color: selected ? '#ff9800' : '#fff',
+                    color: selected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.86)',
                     minWidth: 0,
                     justifyContent: 'center'
                   }}
@@ -228,7 +249,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
                 {!collapsed && (
                   <ListItemText
                     primary={option.text}
-                    sx={{ color: selected ? '#ffffff' : '#fff', pl: 2 }}
+                    sx={{ color: selected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.92)', pl: 2 }}
                   />
                 )}
               </ListItemButton>
