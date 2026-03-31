@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import './Login.css';
 import { motion } from 'framer-motion';
 
@@ -11,12 +11,32 @@ import logoImage from '../assets/logo.png';
 
 function Login({ onLogin }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [openSnackbar, setOpenSnackbar] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const sessionNotice = useMemo(() => {
+    const params = new URLSearchParams(location.search || '');
+    if (params.get('expired') !== '1') return '';
+    const reason = params.get('reason');
+    if (reason === 'inactive') {
+      return 'Tu sesión se cerró por inactividad. Inicia sesión nuevamente.';
+    }
+    return 'Tu sesión expiró. Inicia sesión nuevamente.';
+  }, [location.search]);
+
+  const redirectAfterLogin = useMemo(() => {
+    const params = new URLSearchParams(location.search || '');
+    const redirect = params.get('redirect') || '';
+    if (!redirect.startsWith('/') || redirect.startsWith('//') || redirect.startsWith('/login')) {
+      return null;
+    }
+    return redirect;
+  }, [location.search]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -33,6 +53,12 @@ function Login({ onLogin }) {
       localStorage.setItem('usuario', JSON.stringify(data.user));
       localStorage.setItem('rol', data.user.rol);
       if (onLogin) onLogin(data);
+
+      if (redirectAfterLogin) {
+        navigate(redirectAfterLogin, { replace: true });
+        return;
+      }
+
       if (data.user.rol === 'usuario') {
         try {
           let alumnosFinal = [];
@@ -183,6 +209,12 @@ function Login({ onLogin }) {
               Entra a tu cuenta para gestionar alumnos, pagos y seguimiento academico.
             </Typography>
           </Box>
+
+          {!!sessionNotice && (
+            <Alert severity="warning" sx={{ borderRadius: 2 }}>
+              {sessionNotice}
+            </Alert>
+          )}
 
           <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <Typography variant="caption" sx={{ color: '#475569', fontWeight: 700 }}>
