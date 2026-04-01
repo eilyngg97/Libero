@@ -165,6 +165,23 @@ function buildPeriodoKey(mes, anio) {
   return `${anio}-${String(mes).padStart(2, '0')}`;
 }
 
+function getPeriodoZonaCaracas() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(now);
+
+  const monthPart = parts.find((p) => p.type === 'month');
+  const yearPart = parts.find((p) => p.type === 'year');
+
+  return {
+    mes: Number(monthPart?.value || now.getUTCMonth() + 1),
+    anio: Number(yearPart?.value || now.getUTCFullYear())
+  };
+}
+
 async function resolverMontoBaseAlumno(alumno) {
   if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
     const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
@@ -887,9 +904,7 @@ exports.updateAlumno = async (req, res) => {
       updateData.monto_personalizado_valor !== undefined ||
       updateData.sede !== undefined;
     if (debeRecalcularMonto) {
-      const hoy = new Date();
-      const mes = hoy.getMonth() + 1;
-      const anio = hoy.getFullYear();
+      const { mes, anio } = getPeriodoZonaCaracas();
       let monto = 0;
       if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
         const sede = await Sede.findById(alumno.sede);
