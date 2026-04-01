@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Button, TextField, Typography, Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch } from '@mui/material';
+import { useParams } from 'react-router-dom';
+import { Button, TextField, Typography, Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle } from '@mui/material';
 import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useSede } from '../context/SedeContext';
@@ -12,8 +12,8 @@ const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por det
 
 function AlumnoEditar({ locationState }) {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { sedeSeleccionada } = useSede();
+  const token = localStorage.getItem('token');
   const [form, setForm] = useState({
     tipo_mensualidad: 'monto_sede',
     numero_franela: '',
@@ -27,6 +27,8 @@ function AlumnoEditar({ locationState }) {
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [successOpen, setSuccessOpen] = useState(false);
   const [categoria, setCategoria] = useState('');
   const [numeroFranelaDuplicado, setNumeroFranelaDuplicado] = useState(false);
   const [numeroFranelaCheckLoading, setNumeroFranelaCheckLoading] = useState(false);
@@ -36,69 +38,62 @@ function AlumnoEditar({ locationState }) {
   const inputRef = useRef(null);
   const inputCedulaRef = useRef(null);
 
-  useEffect(() => {
-    // Si locationState tiene alumno, usarlo directamente
-    if (locationState && locationState.alumno) {
-      const data = locationState.alumno;
-      console.log('Usando alumno desde location.state:', data);
-      let { representante, ...rest } = data;
-      if (rest.fecha_nacimiento) {
-        rest.fecha_nacimiento = rest.fecha_nacimiento.slice(0, 10);
-      }
-      if (rest.fecha_inscripcion) {
-        rest.fecha_inscripcion = rest.fecha_inscripcion.slice(0, 10);
-      }
-      let formData = { ...rest };
-      if (representante) {
-        formData = {
-          ...formData,
-          rep_nombres: representante.nombres || '',
-          rep_apellidos: representante.apellidos || '',
-          rep_cedula: representante.cedula || '',
-          rep_telefono: representante.telefono || ''
-        };
-      }
-      setForm(formData);
-      if (data.foto) setPreview(mediaUrl(data.foto));
-      if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
-      setLoading(false);
-    } else {
-      // Si no, hacer fetch normal
-      const fetchAlumno = async () => {
-        try {
-          const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}`);
-          if (!res.ok) throw new Error('Error al obtener alumno');
-          const data = await res.json();
-          console.log('Alumno obtenido del API:', data);
-          let { representante, ...rest } = data;
-          if (rest.fecha_nacimiento) {
-            rest.fecha_nacimiento = rest.fecha_nacimiento.slice(0, 10);
-          }
-          if (rest.fecha_inscripcion) {
-            rest.fecha_inscripcion = rest.fecha_inscripcion.slice(0, 10);
-          }
-          let formData = { ...rest };
-          if (representante) {
-            formData = {
-              ...formData,
-              rep_nombres: representante.nombres || '',
-              rep_apellidos: representante.apellidos || '',
-              rep_cedula: representante.cedula || '',
-              rep_telefono: representante.telefono || ''
-            };
-          }
-          setForm(formData);
-          if (data.foto) setPreview(mediaUrl(data.foto));
-          if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchAlumno();
+  const hidratarFormularioAlumno = (data) => {
+    let { representante, ...rest } = data;
+    if (rest.fecha_nacimiento) {
+      rest.fecha_nacimiento = rest.fecha_nacimiento.slice(0, 10);
     }
-  }, [id, locationState]);
+    if (rest.fecha_inscripcion) {
+      rest.fecha_inscripcion = rest.fecha_inscripcion.slice(0, 10);
+    }
+    let formData = { ...rest };
+    if (representante) {
+      formData = {
+        ...formData,
+        rep_nombres: representante.nombres || '',
+        rep_apellidos: representante.apellidos || '',
+        rep_cedula: representante.cedula || '',
+        rep_telefono: representante.telefono || ''
+      };
+    }
+    setForm(formData);
+    if (data.foto) setPreview(mediaUrl(data.foto));
+    if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
+  };
+
+  const fetchAlumnoFresco = async () => {
+    const url = `${process.env.REACT_APP_API_URL}/api/alumnos/${id}?_t=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined
+    });
+    if (!res.ok) throw new Error('Error al obtener alumno');
+    const data = await res.json();
+    console.log('Alumno obtenido del API:', data);
+    hidratarFormularioAlumno(data);
+    return data;
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const cargar = async () => {
+      try {
+        if (locationState?.alumno && mounted) {
+          console.log('Usando alumno inicial desde location.state:', locationState.alumno);
+          hidratarFormularioAlumno(locationState.alumno);
+        }
+        await fetchAlumnoFresco();
+      } catch (err) {
+        if (mounted) setError(err.message);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    cargar();
+    return () => { mounted = false; };
+  }, [id, locationState, token]);
 
   useEffect(() => {
     if (form.fecha_nacimiento) {
@@ -264,6 +259,8 @@ function AlumnoEditar({ locationState }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setSuccessMessage('');
+    setSuccessOpen(false);
     if (form.numero_franela) {
       const nro = Number(form.numero_franela);
       if (Number.isNaN(nro) || nro < 1 || nro > 100) {
@@ -278,13 +275,53 @@ function AlumnoEditar({ locationState }) {
     setLoading(true);
     try {
       const formData = new FormData();
-      Object.entries(form).forEach(([key, value]) => {
-        // No enviar el base64 de foto/foto_cedula
-        if (key === 'foto' || key === 'foto_cedula') return;
-        if (typeof value === 'object' && value !== null) {
+      const camposEditables = [
+        'nombres', 'apellidos', 'fecha_nacimiento', 'fecha_inscripcion', 'cedula',
+        'domicilio', 'telefono', 'talla', 'peso', 'alcance', 'envergadura', 'proyeccion',
+        'tipo_sangre', 'alergias', 'antecedentes_patologicos', 'observaciones',
+        'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
+        'sede', 'categoria', 'usuario', 'parentesco', 'tipo_mensualidad',
+        'monto_personalizado_valor', 'sinRepresentante',
+        'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_domicilio'
+      ];
+
+      camposEditables.forEach((key) => {
+        if (!Object.prototype.hasOwnProperty.call(form, key)) return;
+        let value = form[key];
+
+        if (key === 'numero_franela') {
+          if (value === null || value === undefined || value === '' || String(value).toLowerCase() === 'null') {
+            formData.append('numero_franela', '');
+            return;
+          }
+          formData.append('numero_franela', String(value));
+          return;
+        }
+
+        if (key === 'sede') {
+          const sedeId = typeof value === 'object' && value !== null ? (value._id || '') : value;
+          formData.append('sede', sedeId || '');
+          return;
+        }
+
+        if (key === 'etiquetas') {
+          if (Array.isArray(value)) {
+            formData.append('etiquetas', JSON.stringify(value));
+          } else {
+            formData.append('etiquetas', '[]');
+          }
+          return;
+        }
+
+        if (value === undefined || value === null) {
+          formData.append(key, '');
+          return;
+        }
+
+        if (typeof value === 'object') {
           formData.append(key, JSON.stringify(value));
         } else {
-          formData.append(key, value);
+          formData.append(key, String(value));
         }
       });
       if (fotoFile) {
@@ -295,13 +332,14 @@ function AlumnoEditar({ locationState }) {
       }
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}`, {
         method: 'PUT',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: formData
       });
       if (!res.ok) {
         let errorMsg = 'Error al actualizar alumno';
         try {
           const errData = await res.json();
-          errorMsg = errData.error || JSON.stringify(errData) || errorMsg;
+          errorMsg = errData.detalle || errData.error || JSON.stringify(errData) || errorMsg;
         } catch (jsonErr) {
           // Si no es JSON, intentar leer como texto
           try {
@@ -311,7 +349,11 @@ function AlumnoEditar({ locationState }) {
         }
         throw new Error(errorMsg);
       }
-      navigate('/tabla-alumnos');
+      setSuccessMessage('Alumno editado con exito.');
+      setSuccessOpen(true);
+      await fetchAlumnoFresco();
+      setFotoFile(null);
+      setFotoCedulaFile(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -324,6 +366,21 @@ function AlumnoEditar({ locationState }) {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#f1f5f9', py: { xs: 2, md: 3 } }}>
+      <Snackbar
+        open={successOpen}
+        autoHideDuration={3500}
+        onClose={() => setSuccessOpen(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSuccessOpen(false)}
+          severity="success"
+          variant="filled"
+          sx={{ width: '100%', minWidth: 320, borderRadius: 2 }}
+        >
+          <AlertTitle sx={{ mb: 0.25, fontWeight: 800 }}>Alumno actualizado</AlertTitle>
+        </Alert>
+      </Snackbar>
       <Box
         sx={{
           mx: 'auto',

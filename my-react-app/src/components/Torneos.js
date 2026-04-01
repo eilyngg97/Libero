@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, List, ListItem, ListItemText, IconButton, Typography, Accordion, AccordionSummary, AccordionDetails, Box, Grid, Chip, InputAdornment, Snackbar, Alert, Paper, Avatar } from '@mui/material';
+import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, List, ListItem, ListItemText, IconButton, Typography, Accordion, AccordionSummary, AccordionDetails, Box, Grid, Chip, InputAdornment, Snackbar, Alert, AlertTitle, Paper, Avatar } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { DataGrid } from '@mui/x-data-grid';
 import EditIcon from '@mui/icons-material/Edit';
@@ -25,6 +25,21 @@ import { mediaUrl } from '../utils/mediaUrl';
 
 
 function Torneos() {
+  const token = localStorage.getItem('token');
+  const buildAuthHeaders = (baseHeaders = {}) => ({
+    ...baseHeaders,
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  });
+  const fetchTorneosFrescos = async () => {
+    const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos?_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: buildAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data)) throw new Error('Respuesta inválida');
+    setTorneos(data);
+    return data;
+  };
   const [dialogEliminarOpen, setDialogEliminarOpen] = useState(false);
   const [torneoAEliminar, setTorneoAEliminar] = useState(null);
     // Estado para saber si se está editando un partido
@@ -60,7 +75,7 @@ function Torneos() {
   const [partidos, setPartidos] = useState([]);
   const [partidoLoading, setPartidoLoading] = useState(false);
   const [partidoError, setPartidoError] = useState('');
-  const [partidoSuccess, setPartidoSuccess] = useState(false);
+  const [uiAlert, setUiAlert] = useState({ open: false, severity: 'success', title: '', message: '' });
   const [partidoForm, setPartidoForm] = useState({
     nombre: '',
     direccion: '',
@@ -79,13 +94,19 @@ function Torneos() {
     { id: 3, nombre: 'Luis Torres' },
   ];
 
+  const showUiAlert = (severity, title, message) => {
+    setUiAlert({ open: true, severity, title, message });
+  };
+
   useEffect(() => {
     if (!open) return;
     const fetchAlumnos = async () => {
       setAlumnosLoading(true);
       setAlumnosError('');
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos`);
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos`, {
+          headers: buildAuthHeaders()
+        });
         const data = await res.json();
         if (!res.ok || !Array.isArray(data)) throw new Error('Error al obtener alumnos');
         setAlumnos(data);
@@ -97,7 +118,7 @@ function Torneos() {
       }
     };
     fetchAlumnos();
-  }, [open]);
+  }, [open, token]);
 
   useEffect(() => {
     if (!open) return;
@@ -108,7 +129,9 @@ function Torneos() {
         const hoy = new Date();
         const mes = hoy.getMonth() + 1;
         const anio = hoy.getFullYear();
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?mes=${mes}&anio=${anio}`);
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?mes=${mes}&anio=${anio}`, {
+          headers: buildAuthHeaders()
+        });
         const data = await res.json();
         if (!res.ok || !Array.isArray(data)) throw new Error('Error al obtener mensualidades');
         const map = {};
@@ -127,25 +150,22 @@ function Torneos() {
       }
     };
     fetchSolvencias();
-  }, [open]);
+  }, [open, token]);
 
   useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }));
   }, [filtroNombre, filtroDesde, filtroHasta]);
 
   useEffect(() => {
-    const fetchTorneos = async () => {
+    const cargar = async () => {
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos`);
-        const data = await res.json();
-        if (!res.ok || !Array.isArray(data)) throw new Error('Respuesta inválida');
-        setTorneos(data);
+        await fetchTorneosFrescos();
       } catch {
         setTorneos([]);
       }
     };
-    fetchTorneos();
-  }, []);
+    cargar();
+  }, [token]);
 
   // Torneo CRUD
   const handleClose = () => {
@@ -170,7 +190,7 @@ function Torneos() {
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${editId}` , {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           nombre,
           descripcion,
@@ -180,10 +200,12 @@ function Torneos() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al actualizar torneo');
-      setTorneos(prev => prev.map(t => (t._id === data._id ? data : t)));
+      await fetchTorneosFrescos();
       handleClose();
+      showUiAlert('success', 'Operacion completada', 'Torneo actualizado con exito.');
     } catch (err) {
       setSaveError(err.message);
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo actualizar el torneo.');
     } finally {
       setSaveLoading(false);
     }
@@ -193,7 +215,10 @@ function Torneos() {
     if (!torneoId) return;
     setSaveError('');
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}`);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: buildAuthHeaders()
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al obtener torneo');
       setEditId(data._id);
@@ -213,23 +238,26 @@ function Torneos() {
       setOpen(true);
     } catch (err) {
       setSaveError(err.message);
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo cargar el torneo.');
     }
   };
   const handleEliminar = async () => {
     if (!torneoAEliminar) return;
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoAEliminar}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: buildAuthHeaders()
       });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'No se pudo eliminar el torneo');
       }
-      setTorneos(prev => prev.filter(t => (t._id || t.id) !== torneoAEliminar));
+      await fetchTorneosFrescos();
       setDialogEliminarOpen(false);
       setTorneoAEliminar(null);
+      showUiAlert('success', 'Operacion completada', 'Torneo eliminado con exito.');
     } catch (err) {
-      window.alert(err.message);
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo eliminar el torneo.');
       setDialogEliminarOpen(false);
       setTorneoAEliminar(null);
     }
@@ -273,7 +301,7 @@ function Torneos() {
         // Editar partido existente
         res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos/${partidoEditId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             ...partidoForm,
             jugadores: Array.isArray(partidoForm.jugadores) ? partidoForm.jugadores : []
@@ -282,16 +310,11 @@ function Torneos() {
         data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error al editar partido');
         setPartidos(prev => prev.map(p => (p._id === data._id ? data : p)));
-        setTorneos(prev => prev.map(t => {
-          if ((t._id || t.id) !== torneoId) return t;
-          const partidosActuales = Array.isArray(t.partidos) ? t.partidos : [];
-          return { ...t, partidos: partidosActuales.map(p => (p._id === data._id ? data : p)) };
-        }));
       } else {
         // Crear partido nuevo
         res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             ...partidoForm,
           })
@@ -299,12 +322,8 @@ function Torneos() {
         data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error al crear partido');
         setPartidos(prev => [...prev, data]);
-        setTorneos(prev => prev.map(t => {
-          if ((t._id || t.id) !== torneoId) return t;
-          const partidosActuales = Array.isArray(t.partidos) ? t.partidos : [];
-          return { ...t, partidos: [...partidosActuales, data] };
-        }));
       }
+      await fetchTorneosFrescos();
       setPartidoForm({
         nombre: '',
         direccion: '',
@@ -320,9 +339,10 @@ function Torneos() {
       setModalPartidos(false);
       setEditandoPartido(false);
       setPartidoEditId(null);
-      setPartidoSuccess(true);
+      showUiAlert('success', 'Operacion completada', editandoPartido ? 'Juego actualizado con exito.' : 'Juego creado con exito.');
     } catch (err) {
       setPartidoError(err.message);
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo guardar el juego.');
     } finally {
       setPartidoLoading(false);
     }
@@ -1188,13 +1208,21 @@ function Torneos() {
         </DialogActions>
       </Dialog>
       <Snackbar
-        open={partidoSuccess}
-        autoHideDuration={3000}
-        onClose={() => setPartidoSuccess(false)}
+        open={uiAlert.open}
+        autoHideDuration={3500}
+        onClose={() => setUiAlert((prev) => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       >
-        <Alert onClose={() => setPartidoSuccess(false)} severity="success" variant="filled" sx={{ width: '100%' }}>
-          Juego creado con exito
+        <Alert
+          onClose={() => setUiAlert((prev) => ({ ...prev, open: false }))}
+          severity={uiAlert.severity}
+          variant="filled"
+          sx={{ width: '100%', minWidth: 320, borderRadius: 2 }}
+        >
+          <AlertTitle sx={{ mb: 0.25, fontWeight: 800 }}>
+            {uiAlert.title || (uiAlert.severity === 'success' ? 'Operacion completada' : 'Operacion fallida')}
+          </AlertTitle>
+          {uiAlert.message}
         </Alert>
       </Snackbar>
         <Dialog

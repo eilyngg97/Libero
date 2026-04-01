@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Snackbar from '@mui/material/Snackbar';
-import MuiAlert from '@mui/material/Alert';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
 import TextField from '@mui/material/TextField';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
@@ -11,6 +12,10 @@ import InputLabel from '@mui/material/InputLabel';
 
 
 function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
+	const token = localStorage.getItem('token');
+	const authHeaders = {
+		...(token ? { Authorization: `Bearer ${token}` } : {})
+	};
 	const [nombre, setNombre] = useState('');
 	const [direccion, setDireccion] = useState('');
 	const [costo, setCosto] = useState('');
@@ -45,29 +50,51 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 				// Editar sede existente
 				const res = await fetch(`${process.env.REACT_APP_API_URL}/api/sedes/${sedeEditar._id}`, {
 					method: 'PUT',
-					headers: { 'Content-Type': 'application/json' },
+					headers: {
+						'Content-Type': 'application/json',
+						...authHeaders
+					},
 					body: JSON.stringify({ nombre, direccion, costo, estado, horario_constancia: horarioConstancia })
 				});
 				const data = await res.json();
 				if (!res.ok) throw new Error(data.detalle || data.error || 'Error al editar sede');
+
+				// Reconsulta para asegurar estado fresco luego de editar.
+				const fresca = await fetch(`${process.env.REACT_APP_API_URL}/api/sedes/${sedeEditar._id}?_t=${Date.now()}`, {
+					cache: 'no-store',
+					headers: authHeaders
+				});
+				const sedeFresca = await fresca.json().catch(() => data);
 				setAlert({ open: true, message: '¡Sede editada con éxito!', severity: 'success' });
-				if (typeof onEditSede === 'function') onEditSede(data);
+				if (typeof onEditSede === 'function') onEditSede(fresca.ok ? sedeFresca : data);
 			} else {
 				// Agregar nueva sede
 				const res = await fetch(`${process.env.REACT_APP_API_URL}/api/sedes`, {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: {
+						'Content-Type': 'application/json',
+						...authHeaders
+					},
 					body: JSON.stringify({ nombre, direccion, costo, estado, horario_constancia: horarioConstancia })
 				});
 				const data = await res.json();
 				if (!res.ok) throw new Error(data.detalle || data.error || 'Error al crear sede');
+
+				let sedeCreada = data;
+				if (data?._id) {
+					const fresca = await fetch(`${process.env.REACT_APP_API_URL}/api/sedes/${data._id}?_t=${Date.now()}`, {
+						cache: 'no-store',
+						headers: authHeaders
+					});
+					sedeCreada = await fresca.json().catch(() => data);
+				}
 				setAlert({ open: true, message: '¡Sede agregada con éxito!', severity: 'success' });
 				setNombre('');
 				setDireccion('');
 				setCosto('');
 				setEstado('Activa');
 				setHorarioConstancia('');
-				if (typeof onAgregarSede === 'function') onAgregarSede(data);
+				if (typeof onAgregarSede === 'function') onAgregarSede(sedeCreada);
 			}
 		} catch (err) {
 			setAlert({ open: true, message: err.message, severity: 'error' });
@@ -128,10 +155,23 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 					{loading ? (modoEdicion ? 'Editando...' : 'Agregando...') : (modoEdicion ? 'Editar Sede' : 'Agregar Sede')}
 				</Button>
 			</form>
-			<Snackbar open={alert.open} autoHideDuration={2500} onClose={() => setAlert({ ...alert, open: false })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
-				<MuiAlert onClose={() => setAlert({ ...alert, open: false })} severity={alert.severity} sx={{ width: '100%' }}>
+			<Snackbar
+				open={alert.open}
+				autoHideDuration={3500}
+				onClose={() => setAlert({ ...alert, open: false })}
+				anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+			>
+				<Alert
+					onClose={() => setAlert({ ...alert, open: false })}
+					severity={alert.severity}
+					variant="filled"
+					sx={{ width: '100%', minWidth: 320, borderRadius: 2 }}
+				>
+					<AlertTitle sx={{ mb: 0.25, fontWeight: 800 }}>
+						{alert.severity === 'success' ? 'Operacion completada' : 'Operacion fallida'}
+					</AlertTitle>
 					{alert.message}
-				</MuiAlert>
+				</Alert>
 			</Snackbar>
 		</>
 	);

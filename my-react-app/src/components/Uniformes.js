@@ -4,6 +4,9 @@ import {
   Typography,
   Button,
   TextField,
+  Snackbar,
+  Alert,
+  AlertTitle,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -31,6 +34,7 @@ export default function Uniformes() {
   const [form, setForm] = useState(initialForm);
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
   const token = localStorage.getItem('token');
 
   // Obtener uniformes del backend
@@ -41,13 +45,16 @@ export default function Uniformes() {
     }
     setLoading(true);
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(`${API_URL}?_t=${Date.now()}`, {
+        cache: 'no-store',
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudieron cargar los uniformes');
       setUniformes(data);
     } catch (e) {
       setUniformes([]);
+      setAlert({ open: true, message: e.message || 'Error al cargar uniformes', severity: 'error' });
     }
     setLoading(false);
   };
@@ -84,7 +91,7 @@ export default function Uniformes() {
     if (!token || !form.prenda || !form.precio) return;
     try {
       if (editId) {
-        await fetch(`${API_URL}/${editId}`, {
+        const res = await fetch(`${API_URL}/${editId}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -92,8 +99,11 @@ export default function Uniformes() {
           },
           body: JSON.stringify(form)
         });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Error al actualizar uniforme');
+        setAlert({ open: true, message: 'Uniforme editado con exito.', severity: 'success' });
       } else {
-        await fetch(API_URL, {
+        const res = await fetch(API_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -101,21 +111,31 @@ export default function Uniformes() {
           },
           body: JSON.stringify(form)
         });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Error al crear uniforme');
+        setAlert({ open: true, message: 'Uniforme agregado con exito.', severity: 'success' });
       }
-      fetchUniformes();
+      await fetchUniformes();
       handleClose();
-    } catch (e) {}
+    } catch (e) {
+      setAlert({ open: true, message: e.message || 'No se pudo guardar el uniforme', severity: 'error' });
+    }
   };
 
   const handleDelete = async (id) => {
     if (!token) return;
     try {
-      await fetch(`${API_URL}/${id}`, {
+      const res = await fetch(`${API_URL}/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
-      fetchUniformes();
-    } catch (e) {}
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'No se pudo eliminar el uniforme');
+      setAlert({ open: true, message: 'Uniforme eliminado con exito.', severity: 'success' });
+      await fetchUniformes();
+    } catch (e) {
+      setAlert({ open: true, message: e.message || 'No se pudo eliminar el uniforme', severity: 'error' });
+    }
   };
 
   return (
@@ -196,6 +216,24 @@ export default function Uniformes() {
           <Button onClick={handleSave} variant="contained" color="secondary" sx={{ borderRadius: 999 }} disabled={!token}>Guardar</Button>
         </DialogActions>
       </Dialog>
+      <Snackbar
+        open={alert.open}
+        autoHideDuration={3500}
+        onClose={() => setAlert((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setAlert((prev) => ({ ...prev, open: false }))}
+          severity={alert.severity}
+          variant="filled"
+          sx={{ width: '100%', minWidth: 320, borderRadius: 2 }}
+        >
+          <AlertTitle sx={{ mb: 0.25, fontWeight: 800 }}>
+            {alert.severity === 'success' ? 'Operacion completada' : 'Operacion fallida'}
+          </AlertTitle>
+          {alert.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

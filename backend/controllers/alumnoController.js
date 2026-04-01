@@ -911,7 +911,17 @@ exports.updateAlumno = async (req, res) => {
     }
     res.json(alumno);
   } catch (err) {
-    res.status(400).json({ error: 'Error al actualizar alumno' });
+    console.error('Error al actualizar alumno:', {
+      alumnoId: req.params.id,
+      name: err?.name,
+      message: err?.message,
+      code: err?.code
+    });
+    res.status(400).json({
+      error: 'Error al actualizar alumno',
+      detalle: err?.message || 'Error desconocido al actualizar alumno',
+      tipo: err?.name || 'Error'
+    });
   }
 };
 

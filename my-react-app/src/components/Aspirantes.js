@@ -59,7 +59,8 @@ function Aspirantes() {
     try {
       setLoading(true);
       setError('');
-      const res = await fetch(`${apiBase}/api/aspirantes`, {
+      const res = await fetch(`${apiBase}/api/aspirantes?_t=${Date.now()}`, {
+        cache: 'no-store',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       const data = await res.json().catch(() => []);
@@ -79,7 +80,7 @@ function Aspirantes() {
 
   useEffect(() => {
     fetchAspirantes();
-  }, []);
+  }, [apiBase, token]);
 
   const updateEstado = async (aspiranteId, estado) => {
     try {
