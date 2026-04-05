@@ -448,10 +448,10 @@ const LandingPage = () => {
                   Villa Sport y desarrolla tu juego con un equipo que enseña y compite.
                 </Typography>
                 <div className="heroActions">
-                  <Button className="ctaButton" variant="contained" endIcon={<MdArrowForward />} href="#contacto">
-                    Inscríbete Ahora
+                  <Button className="ctaButton" variant="contained" endIcon={<MdArrowForward />} href="/login">
+                    Iniciar Sesión
                   </Button>
-                  <Button className="ctaButton ctaButtonSecondary" variant="outlined" href="#beneficios">
+                  <Button className="ctaButton ctaButtonSecondary" variant="outlined" href="#contacto">
                     Prueba una Clase Gratis
                   </Button>
                 </div>
