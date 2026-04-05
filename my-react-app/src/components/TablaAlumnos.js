@@ -220,7 +220,7 @@ function TablaAlumnos() {
     const fetchAlumnos = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos`);
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos?incluirBajas=1`);
         if (!res.ok) throw new Error('Error al obtener alumnos');
         let data;
         try {
