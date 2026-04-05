@@ -9,7 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Checkbox, FormControlLabel, Avatar, Chip, Box } from '@mui/material';
+import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Chip, Box, MenuItem } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -37,13 +37,48 @@ function calcularEdad(fechaNacimiento) {
   return edad;
 }
 
+function obtenerTipoMensualidad(alumno) {
+  const tipo = alumno?.tipo_mensualidad || alumno?.tipoMensualidad;
+  if (!tipo) return '-';
+
+  const etiquetas = {
+    monto_sede: 'Monto sede',
+    monto_personalizado: 'Monto personalizado',
+    beca_completa: 'Beca completa'
+  };
+
+  return etiquetas[tipo] || tipo.replace(/_/g, ' ');
+}
+
+function obtenerTipoMensualidadKey(alumno) {
+  return String(alumno?.tipo_mensualidad || alumno?.tipoMensualidad || 'monto_sede').toLowerCase();
+}
+
+function obtenerEstadoAlumno(alumno) {
+  if (alumno?.dado_de_baja || alumno?.activo === false) return 'Baja';
+  return alumno?.estado || 'Activo';
+}
+
+function parseFechaLocal(fecha) {
+  if (!fecha) return null;
+  const raw = String(fecha).trim();
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchIso) {
+    return new Date(Number(matchIso[1]), Number(matchIso[2]) - 1, Number(matchIso[3]));
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
 function TablaAlumnos() {
       // Estados para filtros
-      const [filtroNombre, setFiltroNombre] = useState('');
-      const [filtroApellido, setFiltroApellido] = useState('');
-      const [filtroCategoria, setFiltroCategoria] = useState('');
-      const [filtroAnio, setFiltroAnio] = useState('');
-      const [filtroFechaInscripcion, setFiltroFechaInscripcion] = useState('');
+      const [filtroNombreApellido, setFiltroNombreApellido] = useState('');
+      const [filtroFechaNacimientoDesde, setFiltroFechaNacimientoDesde] = useState('');
+      const [filtroFechaNacimientoHasta, setFiltroFechaNacimientoHasta] = useState('');
+      const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
+      const [filtroEstado, setFiltroEstado] = useState('');
     // Formatear fecha a DD/MM/YYYY (corrige desfase por zona horaria)
     const formatFecha = (fecha) => {
       if (!fecha) return '';
@@ -74,7 +109,6 @@ function TablaAlumnos() {
   const [reactivarId, setReactivarId] = useState(null);
   const [reactivarLoading, setReactivarLoading] = useState(false);
   const [reactivarSuccess, setReactivarSuccess] = useState({ open: false, message: '' });
-  const [incluirBajas, setIncluirBajas] = useState(false);
   // Función para descargar CSV
   const handleDownloadExcel = () => {
     const alumnosActivos = alumnosFiltrados.filter(a => !(a.dado_de_baja || a.activo === false || a.estado === 'Baja'));
@@ -186,8 +220,7 @@ function TablaAlumnos() {
     const fetchAlumnos = async () => {
       setLoading(true);
       try {
-        const incluirBajasParam = incluirBajas ? '?incluirBajas=1' : '';
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos${incluirBajasParam}`);
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos`);
         if (!res.ok) throw new Error('Error al obtener alumnos');
         let data;
         try {
@@ -206,7 +239,7 @@ function TablaAlumnos() {
       }
     };
     fetchAlumnos();
-  }, [incluirBajas]);
+  }, []);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -217,6 +250,15 @@ function TablaAlumnos() {
     setPage(0);
   };
 
+  const handleLimpiarFiltros = () => {
+    setFiltroNombreApellido('');
+    setFiltroFechaNacimientoDesde('');
+    setFiltroFechaNacimientoHasta('');
+    setFiltroTipoMensualidad('');
+    setFiltroEstado('');
+    setPage(0);
+  };
+
   // Filtrar alumnos por sede seleccionada
   let alumnosFiltrados = sedeSeleccionada && sedeSeleccionada._id
     ? alumnos.filter(a => a.sede && a.sede._id === sedeSeleccionada._id)
@@ -224,18 +266,22 @@ function TablaAlumnos() {
   console.log('Alumnos después de filtrar por sede:', alumnosFiltrados);
   // Aplicar filtros adicionales
   alumnosFiltrados = alumnosFiltrados.filter(a => {
-    const nombreMatch = filtroNombre === '' || (a.nombres && a.nombres.toLowerCase().includes(filtroNombre.toLowerCase()));
-    const apellidoMatch = filtroApellido === '' || (a.apellidos && a.apellidos.toLowerCase().includes(filtroApellido.toLowerCase()));
-    // Asegurar que categoría sea string
-    let categoriaValue = a.categoria;
-    if (typeof categoriaValue === 'object' && categoriaValue !== null) {
-      categoriaValue = categoriaValue.nombre || '';
-    }
-    const categoriaMatch = filtroCategoria === '' || (categoriaValue && categoriaValue.toLowerCase().includes(filtroCategoria.toLowerCase()));
-    const anioMatch = filtroAnio === '' || (a.fecha_nacimiento && new Date(a.fecha_nacimiento).getFullYear().toString() === filtroAnio);
-    // Filtro por fecha de inscripción (formato YYYY-MM-DD)
-    const fechaInscripcionMatch = filtroFechaInscripcion === '' || (a.fecha_inscripcion && a.fecha_inscripcion.startsWith(filtroFechaInscripcion));
-    return nombreMatch && apellidoMatch && categoriaMatch && anioMatch && fechaInscripcionMatch;
+    const textoBusqueda = `${a.nombres || ''} ${a.apellidos || ''}`.toLowerCase().trim();
+    const nombreApellidoMatch = filtroNombreApellido === '' || textoBusqueda.includes(filtroNombreApellido.toLowerCase());
+
+    const fechaNacimientoAlumno = parseFechaLocal(a.fecha_nacimiento);
+    const fechaDesde = parseFechaLocal(filtroFechaNacimientoDesde);
+    const fechaHasta = parseFechaLocal(filtroFechaNacimientoHasta);
+    const fechaDesdeMatch = !fechaDesde || (fechaNacimientoAlumno && fechaNacimientoAlumno >= fechaDesde);
+    const fechaHastaMatch = !fechaHasta || (fechaNacimientoAlumno && fechaNacimientoAlumno <= fechaHasta);
+
+    const tipoMensualidad = obtenerTipoMensualidadKey(a);
+    const tipoMensualidadMatch = filtroTipoMensualidad === '' || tipoMensualidad === filtroTipoMensualidad;
+
+    const estadoAlumno = String(obtenerEstadoAlumno(a)).toLowerCase();
+    const estadoMatch = filtroEstado === '' || estadoAlumno === filtroEstado.toLowerCase();
+
+    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && tipoMensualidadMatch && estadoMatch;
   });
   const alumnosPaginados = alumnosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
@@ -289,17 +335,17 @@ function TablaAlumnos() {
           mb: 2,
           display: 'grid',
           gap: 2,
-          gridTemplateColumns: { xs: '1fr', md: 'repeat(5, minmax(0, 1fr))' }
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(6, minmax(0, 1fr))' }
         }}
       >
         <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>NOMBRE</Typography>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>ALUMNO</Typography>
           <TextField
             variant="outlined"
             size="small"
-            placeholder="Filtrar por nombre"
-            value={filtroNombre}
-            onChange={e => setFiltroNombre(e.target.value)}
+            placeholder="Nombre o apellido"
+            value={filtroNombreApellido}
+            onChange={e => setFiltroNombreApellido(e.target.value)}
             sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
             InputProps={{
               startAdornment: (
@@ -311,46 +357,70 @@ function TablaAlumnos() {
           />
         </Box>
         <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>APELLIDO</Typography>
-          <TextField
-            variant="outlined"
-            size="small"
-            placeholder="Filtrar por apellido"
-            value={filtroApellido}
-            onChange={e => setFiltroApellido(e.target.value)}
-            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start" sx={{ mr: 0.5 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                </InputAdornment>
-              )
-            }}
-          />
-        </Box>
-        <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>FECHA</Typography>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>NAC. DESDE</Typography>
           <TextField
             type="date"
             size="small"
-            value={filtroFechaInscripcion}
-            onChange={e => setFiltroFechaInscripcion(e.target.value)}
+            value={filtroFechaNacimientoDesde}
+            onChange={e => setFiltroFechaNacimientoDesde(e.target.value)}
             sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
             InputLabelProps={{ shrink: true }}
           />
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={incluirBajas}
-                onChange={(e) => setIncluirBajas(e.target.checked)}
-                color="primary"
-              />
-            }
-            label="Incluir de baja"
-            sx={{ color: '#64748b', '& .MuiFormControlLabel-label': { fontSize: 13 } }}
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>NAC. HASTA</Typography>
+          <TextField
+            type="date"
+            size="small"
+            value={filtroFechaNacimientoHasta}
+            onChange={e => setFiltroFechaNacimientoHasta(e.target.value)}
+            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
+            InputLabelProps={{ shrink: true }}
           />
+        </Box>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>TIPO MENSUALIDAD</Typography>
+          <TextField
+            select
+            size="small"
+            value={filtroTipoMensualidad}
+            onChange={(e) => setFiltroTipoMensualidad(e.target.value)}
+            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
+          >
+            <MenuItem value="">Todos</MenuItem>
+            <MenuItem value="monto_sede">Monto sede</MenuItem>
+            <MenuItem value="monto_personalizado">Monto personalizado</MenuItem>
+            <MenuItem value="beca_completa">Beca completa</MenuItem>
+          </TextField>
+        </Box>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>ESTADO</Typography>
+          <TextField
+            select
+            size="small"
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value)}
+            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
+          >
+            <MenuItem value="">Todos</MenuItem>
+            <MenuItem value="Activo">Activo</MenuItem>
+            <MenuItem value="Baja">Baja</MenuItem>
+          </TextField>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={handleLimpiarFiltros}
+            sx={{
+              borderColor: '#cbd5e1',
+              color: '#475569',
+              fontWeight: 700,
+              textTransform: 'none'
+            }}
+          >
+            Limpiar filtros
+          </Button>
         </Box>
       </Box>
       <Box sx={{ display: 'none' }} />
@@ -408,7 +478,7 @@ function TablaAlumnos() {
 
               <Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
-                  <strong>Sede:</strong> {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : (alumno.sede || '-')}
+                  <strong>Tipo de mensualidad:</strong> {obtenerTipoMensualidad(alumno)}
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Representante:</strong> {alumno.representante && typeof alumno.representante === 'object'
@@ -516,7 +586,7 @@ function TablaAlumnos() {
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE DEL ALUMNO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>EDAD</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEDE</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>TIPO DE MENSUALIDAD</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>REPRESENTANTE</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
@@ -549,7 +619,7 @@ function TablaAlumnos() {
                   </TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{calcularEdad(alumno.fecha_nacimiento)}</TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
-                    {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : (alumno.sede || '-')}
+                    {obtenerTipoMensualidad(alumno)}
                   </TableCell>
                   <TableCell>
                     <Tooltip

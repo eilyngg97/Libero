@@ -102,6 +102,11 @@ function PagosAlumno(props) {
   const adelantarSiguienteMensualidad = async () => {
     if (!alumno?._id || adelantandoMensualidad) return;
 
+    if (bloqueaAdelantoPorBeca) {
+      setError('No se puede adelantar mensualidades para alumnos becados.');
+      return;
+    }
+
     const tieneMensualidadesBloqueantes = mensualidades.some((m) => {
       const estado = normalizarEstado(m?.estado);
       return estado === 'pendiente' || estado === 'retrasado' || estado === 'insolvente' || estado === 'abono';
@@ -204,6 +209,9 @@ function PagosAlumno(props) {
   );
 
   const normalizarEstado = (value) => String(value || '').trim().toLowerCase();
+  const esAlumnoBecado = String(alumno?.tipo_mensualidad || '').toLowerCase() === 'beca_completa';
+  const tieneMensualidadBecado = mensualidades.some((m) => normalizarEstado(m?.estado) === 'becado');
+  const bloqueaAdelantoPorBeca = esAlumnoBecado || tieneMensualidadBecado;
 
   const pagosFiltrados = pagosOrdenados.filter(pago => {
     const estado = normalizarEstado(pago.estado);
@@ -488,6 +496,7 @@ function PagosAlumno(props) {
   const estadoExentoReposo = estadoConteo['exento por reposo'] || 0;
   const bloqueaAdelantoPorDeuda = estadoPendiente > 0 || estadoRetrasado > 0 || estadoInsolvente > 0 || estadoAbono > 0;
   const tooltipBloqueoAdelanto = 'No puedes adelantar el proximo mes porque tienes mensualidades pendientes, insolventes, retrasadas o con abonos pendientes.';
+  const tooltipBloqueoAdelantoBeca = 'Los alumnos con beca completa no pueden adelantar mensualidades.';
 
   const ultimaMensualidadRegistrada = [...mensualidades]
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
@@ -630,34 +639,36 @@ function PagosAlumno(props) {
               Todos
             </Button>
             <Tooltip
-              title={bloqueaAdelantoPorDeuda ? tooltipBloqueoAdelanto : ''}
+              title={bloqueaAdelantoPorBeca ? tooltipBloqueoAdelantoBeca : (bloqueaAdelantoPorDeuda ? tooltipBloqueoAdelanto : '')}
               arrow
-              disableHoverListener={!bloqueaAdelantoPorDeuda}
-              disableFocusListener={!bloqueaAdelantoPorDeuda}
-              disableTouchListener={!bloqueaAdelantoPorDeuda}
+              disableHoverListener={!bloqueaAdelantoPorBeca && !bloqueaAdelantoPorDeuda}
+              disableFocusListener={!bloqueaAdelantoPorBeca && !bloqueaAdelantoPorDeuda}
+              disableTouchListener={!bloqueaAdelantoPorBeca && !bloqueaAdelantoPorDeuda}
             >
               <span>
-                <Button
-                  startIcon={<PaymentsIcon sx={{ fontSize: 17 }} />}
-                  variant="contained"
-                  onClick={() => {
-                    if (bloqueaAdelantoPorDeuda) return;
-                    setConfirmarAdelantoOpen(true);
-                  }}
-                  disabled={adelantandoMensualidad || !alumno?._id || bloqueaAdelantoPorDeuda}
-                  sx={{
-                    borderRadius: 999,
-                    px: 2.5,
-                    fontWeight: 700,
-                    textTransform: 'none',
-                    bgcolor: '#e07d00',
-                    color: '#ffffff',
-                    boxShadow: '0 6px 14px rgba(255, 187, 0, 0.24)',
-                    '&:hover': { bgcolor: '#8f5602' }
-                  }}
-                >
-                  {adelantandoMensualidad ? 'Creando...' : 'Adelantar proximo mes'}
-                </Button>
+                {!bloqueaAdelantoPorBeca && (
+                  <Button
+                    startIcon={<PaymentsIcon sx={{ fontSize: 17 }} />}
+                    variant="contained"
+                    onClick={() => {
+                      if (bloqueaAdelantoPorDeuda) return;
+                      setConfirmarAdelantoOpen(true);
+                    }}
+                    disabled={adelantandoMensualidad || !alumno?._id || bloqueaAdelantoPorDeuda}
+                    sx={{
+                      borderRadius: 999,
+                      px: 2.5,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      bgcolor: '#e07d00',
+                      color: '#ffffff',
+                      boxShadow: '0 6px 14px rgba(255, 187, 0, 0.24)',
+                      '&:hover': { bgcolor: '#8f5602' }
+                    }}
+                  >
+                    {adelantandoMensualidad ? 'Creando...' : 'Adelantar proximo mes'}
+                  </Button>
+                )}
               </span>
             </Tooltip>
           </Box>

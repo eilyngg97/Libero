@@ -161,6 +161,23 @@ function esEstatusInsolvente(estatus) {
   return normalizado === 'retrasado' || normalizado === 'insolvente';
 }
 
+function esTipoMensualidadBecaCompleta(tipoMensualidad) {
+  return String(tipoMensualidad || '').toLowerCase() === 'beca_completa';
+}
+
+async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad) {
+  const tipoDesdePopulate = mensualidad?.id_alumno?.tipo_mensualidad;
+  if (tipoDesdePopulate !== undefined) {
+    return tipoDesdePopulate;
+  }
+
+  const alumnoId = mensualidad?.id_alumno?._id || mensualidad?.id_alumno;
+  if (!alumnoId) return null;
+
+  const alumno = await Alumno.findById(alumnoId).select('tipo_mensualidad').lean();
+  return alumno?.tipo_mensualidad || null;
+}
+
 function buildPeriodoKey(mes, anio) {
   return `${anio}-${String(mes).padStart(2, '0')}`;
 }
@@ -226,8 +243,13 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
 
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
+  const estatusActualNormalizado = String(mensualidad.estatus || '').toLowerCase();
+  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad);
+  const esBecado = esTipoMensualidadBecaCompleta(tipoMensualidadAlumno);
 
-  if (montoEsperado <= 0) {
+  if (esBecado && estatusActualNormalizado !== 'exento por reposo') {
+    mensualidad.estatus = 'Becado';
+  } else if (montoEsperado <= 0) {
     mensualidad.estatus = totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
     mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
@@ -914,15 +936,18 @@ exports.updateAlumno = async (req, res) => {
       } else if (alumno.tipo_mensualidad === 'beca_completa') {
         monto = 0;
       }
-      await Mensualidad.updateMany(
-        {
-          id_alumno: alumno._id,
-          mes,
-          anio,
-          estatus: { $nin: ['Pagado', 'Exonerado'] }
-        },
-        { $set: { monto_esperado: monto } }
-      );
+      const mensualidadesPeriodo = await Mensualidad.find({
+        id_alumno: alumno._id,
+        mes,
+        anio,
+        estatus: { $nin: ['Pagado', 'Exonerado', 'Exento por reposo'] }
+      });
+
+      for (const mensualidad of mensualidadesPeriodo) {
+        mensualidad.monto_esperado = redondearMonto(monto);
+        const estatusAnteriorMensualidad = mensualidad.estatus;
+        await recalcularMensualidadPorPagos(mensualidad, estatusAnteriorMensualidad);
+      }
     }
     res.json(alumno);
   } catch (err) {

@@ -352,13 +352,15 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       acc.total += Number(sede.total || 0);
       acc.pagado += Number(sede.pagado || 0);
       acc.abono += Number(sede.abono || 0);
+      acc.becado += Number(sede.becado || 0);
       return acc;
     },
-    { total: 0, pagado: 0, abono: 0 }
+    { total: 0, pagado: 0, abono: 0, becado: 0 }
   );
-  const porcentajePagado = resumenTotales.total > 0 ? (resumenTotales.pagado / resumenTotales.total) * 100 : 0;
-  const porcentajeAbono = resumenTotales.total > 0 ? (resumenTotales.abono / resumenTotales.total) * 100 : 0;
-  const porcentajeNoPagado = resumenTotales.total > 0 ? Math.max(0, 100 - porcentajePagado - porcentajeAbono) : 0;
+  const totalFacturable = Math.max(0, resumenTotales.total - resumenTotales.becado);
+  const porcentajePagado = totalFacturable > 0 ? (resumenTotales.pagado / totalFacturable) * 100 : 0;
+  const porcentajeAbono = totalFacturable > 0 ? (resumenTotales.abono / totalFacturable) * 100 : 0;
+  const porcentajeNoPagado = totalFacturable > 0 ? Math.max(0, 100 - porcentajePagado - porcentajeAbono) : 0;
 
   const getProgressStatus = (progress) => {
     if (progress >= 80) return 'Excelente';

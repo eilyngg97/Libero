@@ -14,6 +14,23 @@ function esEstatusInsolvente(estatus) {
   return normalizado === 'retrasado' || normalizado === 'insolvente';
 }
 
+function esTipoMensualidadBecaCompleta(tipoMensualidad) {
+  return String(tipoMensualidad || '').toLowerCase() === 'beca_completa';
+}
+
+async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad) {
+  const tipoDesdePopulate = mensualidad?.id_alumno?.tipo_mensualidad;
+  if (tipoDesdePopulate !== undefined) {
+    return tipoDesdePopulate;
+  }
+
+  const alumnoId = mensualidad?.id_alumno?._id || mensualidad?.id_alumno;
+  if (!alumnoId) return null;
+
+  const alumno = await Alumno.findById(alumnoId).select('tipo_mensualidad').lean();
+  return alumno?.tipo_mensualidad || null;
+}
+
 function obtenerMontoBaseMensualidad(mensualidad) {
   if (mensualidad?.monto_base !== undefined && mensualidad?.monto_base !== null) {
     return redondearMonto(mensualidad.monto_base);
@@ -108,10 +125,16 @@ async function recalcularMensualidadPorPagos(
     montoEsperado <= 0 &&
     esEstatusInsolvente(estatusAnteriorNormalizado);
 
+  const estatusActualNormalizado = String(mensualidad.estatus || '').toLowerCase();
+  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad);
+  const esBecado = esTipoMensualidadBecaCompleta(tipoMensualidadAlumno);
+
   if (debePreservarPagadoManual) {
     mensualidad.estatus = 'Pagado';
   } else if (debePreservarInsolventeSinPagos) {
     mensualidad.estatus = 'Insolvente';
+  } else if (esBecado && estatusActualNormalizado !== 'exento por reposo') {
+    mensualidad.estatus = 'Becado';
   } else
   if (montoEsperado <= 0) {
     mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
@@ -264,6 +287,9 @@ async function generarMensualidadesMesCore() {
       if (reglaReposo === 'EXENTO_POR_REPOSO') {
         monto = 0;
         estatus = 'Exento por reposo';
+      } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
+        monto = 0;
+        estatus = 'Becado';
       } else {
         const credito = await consumirSaldoAFavor(alumno, montoBase);
         creditoAplicado = credito.creditoAplicado;
@@ -330,12 +356,17 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     }
 
     const reglaReposo = await obtenerReglaReposoParaPeriodo(id_alumno, mes, anio);
-    const montoBase = redondearMonto(monto_esperado);
+    const esBecado = esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad);
+    const montoBase = esBecado ? 0 : redondearMonto(monto_esperado);
     let creditoAplicado = 0;
     let montoFinal = montoBase;
-    const estatusFinal = reglaReposo === 'EXENTO_POR_REPOSO' ? 'Exento por reposo' : (estatus || 'Pendiente');
+    const estatusFinal = reglaReposo === 'EXENTO_POR_REPOSO'
+      ? 'Exento por reposo'
+      : (esBecado ? 'Becado' : (estatus || 'Pendiente'));
 
     if (reglaReposo === 'EXENTO_POR_REPOSO') {
+      montoFinal = 0;
+    } else if (esBecado) {
       montoFinal = 0;
     } else {
       const credito = await consumirSaldoAFavor(alumno, montoBase);
@@ -399,6 +430,10 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       return res.status(400).json({ error: 'No se puede adelantar mensualidad para un alumno inactivo o dado de baja' });
     }
 
+    if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
+      return res.status(400).json({ error: 'No se puede adelantar mensualidad para alumnos con beca completa' });
+    }
+
     const { mes, anio } = obtenerMesSiguiente(new Date());
     const existente = await Mensualidad.findOne({ id_alumno, mes, anio }).populate('id_alumno');
     if (existente) {
@@ -419,6 +454,9 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
     if (reglaReposo === 'EXENTO_POR_REPOSO') {
       monto = 0;
       estatus = 'Exento por reposo';
+    } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
+      monto = 0;
+      estatus = 'Becado';
     } else {
       const credito = await consumirSaldoAFavor(alumno, montoBase);
       creditoAplicado = credito.creditoAplicado;
@@ -792,7 +830,7 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
     ];
 
     const data = await Mensualidad.aggregate(pipeline);
-    const estados = ['pagado', 'pendiente', 'insolvente', 'retrasado', 'en revision', 'exonerado', 'abono', 'exento por reposo'];
+    const estados = ['pagado', 'pendiente', 'insolvente', 'retrasado', 'en revision', 'exonerado', 'abono', 'exento por reposo', 'becado'];
     const resultado = data.map(item => {
       const conteos = {};
       estados.forEach(e => { conteos[e] = 0; });

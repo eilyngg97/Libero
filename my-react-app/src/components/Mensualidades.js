@@ -37,6 +37,13 @@ const getInputDateFromApi = (value) => {
 	return getLocalInputDate(new Date(value));
 };
 
+const esAlumnoBecado = (alumno) => String(alumno?.tipo_mensualidad || '').toLowerCase() === 'beca_completa';
+
+const esMensualidadDeBecado = (mensualidad) => {
+	if (esAlumnoBecado(mensualidad?.id_alumno)) return true;
+	return String(mensualidad?.estatus || '').toLowerCase() === 'becado';
+};
+
 function Mensualidades() {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
@@ -296,7 +303,7 @@ function Mensualidades() {
 
 	const adelantarSiguienteMensualidadAdmin = async (mensualidadBase) => {
 		const alumnoId = mensualidadBase?.id_alumno?._id || mensualidadBase?.id_alumno;
-		if (!alumnoId || adelantandoAlumnoId) return;
+		if (!alumnoId || adelantandoAlumnoId || esMensualidadDeBecado(mensualidadBase)) return;
 
 		try {
 			setAdelantandoAlumnoId(String(alumnoId));
@@ -326,7 +333,7 @@ function Mensualidades() {
 	};
 
 	const solicitarAdelantoMensualidad = (mensualidadBase) => {
-		if (!mensualidadBase || adelantandoAlumnoId) return;
+		if (!mensualidadBase || adelantandoAlumnoId || esMensualidadDeBecado(mensualidadBase)) return;
 		setMensualidadAAdelantar(mensualidadBase);
 		setConfirmarAdelantoOpen(true);
 	};
@@ -595,6 +602,12 @@ function Mensualidades() {
 				sx={{ ...chipSxBase, bgcolor: '#e3f2fd', color: '#0288d1' }}
 			/>
 		);
+		if (estado === 'becado') return (
+			<Chip
+				label="Becado"
+				sx={{ ...chipSxBase, bgcolor: '#e0f2fe', color: '#0284c7' }}
+			/>
+		);
 		if (estado === 'abono') return (
 			<Chip
 				label="Abono"
@@ -738,7 +751,7 @@ function Mensualidades() {
 				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
 				<TextField select label="Estado" value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
-					{['Pendiente','Pagado','Insolvente', 'Exonerado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
+					{['Pendiente','Pagado','Insolvente', 'Exonerado', 'Becado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
 			</Box>
 			<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', mb: 2, mt: 2 }}>
@@ -795,11 +808,11 @@ function Mensualidades() {
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo generado:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 							</Box>
 							<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
-								{esAdmin && (
+								{esAdmin && !esMensualidadDeBecado(m) && (
 									<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
 										<span>
 											<IconButton
-												onClick={() => solicitarAdelantoMensualidad(m)}
+													onClick={() => solicitarAdelantoMensualidad(m)}
 												disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
 												sx={{
 													border: '1px solid #99f6e4',
@@ -892,12 +905,12 @@ function Mensualidades() {
 									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
 									<TableCell>
 										<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
-											{esAdmin && (
+														{esAdmin && !esMensualidadDeBecado(m) && (
 												<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
 													<span>
 														<IconButton
 															size="small"
-															onClick={() => solicitarAdelantoMensualidad(m)}
+																		onClick={() => solicitarAdelantoMensualidad(m)}
 															disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
 															sx={{
 																color: '#0f766e',
