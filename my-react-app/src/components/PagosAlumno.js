@@ -699,7 +699,7 @@ function PagosAlumno(props) {
                 iconBg: '#fde2e2',
                 icon: <ErrorIcon sx={{ color: '#dc2626', fontSize: 20 }} />,
                 amountColor: '#dc2626',
-                actionLabel: 'Resolver',
+                actionLabel: 'Pagar Ahora',
                 actionBg: '#dc2626',
                 actionHover: '#b91c1c',
                 infoColor: '#b91c1c'
