@@ -9,6 +9,66 @@ function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
 }
 
+function getPeriodoZonaCaracas(fechaBase = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(fechaBase);
+
+  const monthPart = parts.find((part) => part.type === 'month');
+  const yearPart = parts.find((part) => part.type === 'year');
+
+  return {
+    mes: Number(monthPart?.value || fechaBase.getUTCMonth() + 1),
+    anio: Number(yearPart?.value || fechaBase.getUTCFullYear())
+  };
+}
+
+function obtenerPeriodoDesdeFecha(fecha, periodoFallback = getPeriodoZonaCaracas()) {
+  if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) {
+    return periodoFallback;
+  }
+
+  return {
+    mes: fecha.getUTCMonth() + 1,
+    anio: fecha.getUTCFullYear()
+  };
+}
+
+function compararPeriodos(a, b) {
+  if (a.anio !== b.anio) return a.anio - b.anio;
+  return a.mes - b.mes;
+}
+
+function listarPeriodosEntrePeriodos(inicio, fin) {
+  if (!inicio || !fin || compararPeriodos(inicio, fin) > 0) {
+    return [];
+  }
+
+  const cursor = new Date(Date.UTC(inicio.anio, inicio.mes - 1, 1, 12, 0, 0));
+  const finDate = new Date(Date.UTC(fin.anio, fin.mes - 1, 1, 12, 0, 0));
+  const periodos = [];
+
+  while (cursor <= finDate) {
+    periodos.push({
+      mes: cursor.getUTCMonth() + 1,
+      anio: cursor.getUTCFullYear()
+    });
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  return periodos;
+}
+
+function obtenerFechaVencimientoPeriodo(mes, anio) {
+  return new Date(anio, mes - 1, 5, 23, 59, 59);
+}
+
+function obtenerEstatusPendientePorVencimiento(fechaVencimiento) {
+  return fechaVencimiento < new Date() ? 'Insolvente' : 'Pendiente';
+}
+
 function esEstatusInsolvente(estatus) {
   const normalizado = String(estatus || '').toLowerCase();
   return normalizado === 'retrasado' || normalizado === 'insolvente';
@@ -71,6 +131,118 @@ async function consumirSaldoAFavor(alumno, montoBase) {
     creditoAplicado,
     montoEsperado: redondearMonto(montoBase - creditoAplicado)
   };
+}
+
+async function crearMensualidadParaPeriodo(
+  alumno,
+  periodo,
+  {
+    montoBaseManual,
+    estatusManual,
+    fechaVencimientoManual,
+    crearPagoSiPagado = false,
+    referenciaPago = 'primera-mensualidad'
+  } = {}
+) {
+  const existente = await Mensualidad.findOne({
+    id_alumno: alumno._id,
+    mes: periodo.mes,
+    anio: periodo.anio
+  }).populate('id_alumno');
+
+  if (existente) {
+    return { mensualidad: existente, creada: false, pagoRegistrado: false };
+  }
+
+  const fechaVencimiento = fechaVencimientoManual || obtenerFechaVencimientoPeriodo(periodo.mes, periodo.anio);
+  const tieneMontoManual = montoBaseManual !== undefined && montoBaseManual !== null;
+  const montoBase = tieneMontoManual
+    ? redondearMonto(montoBaseManual)
+    : await resolverMontoBaseAlumno(alumno);
+
+  let monto = montoBase;
+  let creditoAplicado = 0;
+  let estatus = estatusManual || obtenerEstatusPendientePorVencimiento(fechaVencimiento);
+
+  const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, periodo.mes, periodo.anio);
+  if (reglaReposo === 'EXENTO_POR_REPOSO') {
+    monto = 0;
+    estatus = 'Exento por reposo';
+  } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
+    monto = 0;
+    estatus = 'Becado';
+  } else {
+    const credito = await consumirSaldoAFavor(alumno, montoBase);
+    creditoAplicado = credito.creditoAplicado;
+    monto = credito.montoEsperado;
+  }
+
+  const mensualidad = await Mensualidad.create({
+    id_alumno: alumno._id,
+    mes: periodo.mes,
+    anio: periodo.anio,
+    monto_base: montoBase,
+    credito_aplicado: creditoAplicado,
+    ajuste_extraordinario: 0,
+    saldo_a_favor_generado: 0,
+    monto_esperado: monto,
+    fecha_vencimiento: fechaVencimiento,
+    estatus
+  });
+
+  let pagoRegistrado = false;
+  if (
+    crearPagoSiPagado &&
+    String(estatus || '').toLowerCase() === 'pagado' &&
+    monto > 0
+  ) {
+    await PagoDetalle.create({
+      id_mensualidad: mensualidad._id,
+      monto_pagado: monto,
+      fecha_pago: new Date(),
+      metodo_pago: 'Registro inicial admin',
+      referencia: referenciaPago
+    });
+    pagoRegistrado = true;
+  }
+
+  const mensualidadPopulada = await Mensualidad.findById(mensualidad._id).populate('id_alumno');
+  return { mensualidad: mensualidadPopulada, creada: true, pagoRegistrado };
+}
+
+async function generarMensualidadesPendientesAlumno(
+  alumno,
+  {
+    periodoInicio,
+    periodoFin,
+    overridePeriodoActual,
+    crearPagoSiPagado = false,
+    referenciaPago = 'primera-mensualidad'
+  } = {}
+) {
+  const periodoActual = periodoFin || getPeriodoZonaCaracas();
+  const periodoInicial = periodoInicio || obtenerPeriodoDesdeFecha(alumno.fecha_inscripcion, periodoActual);
+  const periodos = listarPeriodosEntrePeriodos(periodoInicial, periodoActual);
+  const resultados = [];
+
+  for (const periodo of periodos) {
+    const esPeriodoOverride =
+      overridePeriodoActual &&
+      periodo.mes === overridePeriodoActual.mes &&
+      periodo.anio === overridePeriodoActual.anio;
+
+    resultados.push(
+      await crearMensualidadParaPeriodo(alumno, periodo, {
+        montoBaseManual: esPeriodoOverride ? overridePeriodoActual.montoBaseManual : undefined,
+        estatusManual: esPeriodoOverride ? overridePeriodoActual.estatusManual : undefined,
+        fechaVencimientoManual: esPeriodoOverride ? overridePeriodoActual.fechaVencimientoManual : undefined,
+        crearPagoSiPagado: esPeriodoOverride ? crearPagoSiPagado : false,
+        referenciaPago
+      })
+    );
+  }
+
+  return resultados;
 }
 
 async function recalcularMensualidadPorPagos(
@@ -265,10 +437,7 @@ function generarVistaPreviaAjusteSede(mensualidades, nuevoMonto) {
 }
 
 async function generarMensualidadesMesCore() {
-  const hoy = new Date();
-  const mes = hoy.getMonth() + 1;
-  const anio = hoy.getFullYear();
-  const fecha_vencimiento = new Date(anio, mes - 1, 5, 23, 59, 59); // Día 5 del mes actual
+  const periodoActual = getPeriodoZonaCaracas();
   const alumnos = await Alumno.find({
     activo: { $ne: false },
     dado_de_baja: { $ne: true }
@@ -276,40 +445,8 @@ async function generarMensualidadesMesCore() {
   let creadas = 0;
 
   for (const alumno of alumnos) {
-    const existe = await Mensualidad.findOne({ id_alumno: alumno._id, mes, anio });
-    if (!existe) {
-      const montoBase = await resolverMontoBaseAlumno(alumno);
-      let monto = montoBase;
-      let creditoAplicado = 0;
-      let estatus = 'Pendiente';
-
-      const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, mes, anio);
-      if (reglaReposo === 'EXENTO_POR_REPOSO') {
-        monto = 0;
-        estatus = 'Exento por reposo';
-      } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
-        monto = 0;
-        estatus = 'Becado';
-      } else {
-        const credito = await consumirSaldoAFavor(alumno, montoBase);
-        creditoAplicado = credito.creditoAplicado;
-        monto = credito.montoEsperado;
-      }
-
-      await Mensualidad.create({
-        id_alumno: alumno._id,
-        mes,
-        anio,
-        monto_base: montoBase,
-        credito_aplicado: creditoAplicado,
-        ajuste_extraordinario: 0,
-        saldo_a_favor_generado: 0,
-        monto_esperado: monto,
-        fecha_vencimiento,
-        estatus
-      });
-      creadas++;
-    }
+    const resultados = await generarMensualidadesPendientesAlumno(alumno, { periodoFin: periodoActual });
+    creadas += resultados.filter((resultado) => resultado.creada).length;
   }
 
   return creadas;
@@ -343,62 +480,42 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     if (!id_alumno || !monto_esperado) {
       return res.status(400).json({ error: 'Faltan datos requeridos' });
     }
-    const hoy = new Date();
-    const mes = hoy.getMonth() + 1;
-    const anio = hoy.getFullYear();
     const alumno = await Alumno.findById(id_alumno);
     if (!alumno) {
       return res.status(404).json({ error: 'Alumno no encontrado' });
     }
-    const existe = await Mensualidad.findOne({ id_alumno, mes, anio });
-    if (existe) {
-      return res.status(400).json({ error: 'Ya existe una mensualidad para este alumno este mes' });
+    if (alumno.activo === false || alumno.dado_de_baja === true) {
+      return res.status(400).json({ error: 'No se puede registrar mensualidades para un alumno inactivo o dado de baja' });
     }
 
-    const reglaReposo = await obtenerReglaReposoParaPeriodo(id_alumno, mes, anio);
-    const esBecado = esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad);
-    const montoBase = esBecado ? 0 : redondearMonto(monto_esperado);
-    let creditoAplicado = 0;
-    let montoFinal = montoBase;
-    const estatusFinal = reglaReposo === 'EXENTO_POR_REPOSO'
-      ? 'Exento por reposo'
-      : (esBecado ? 'Becado' : (estatus || 'Pendiente'));
-
-    if (reglaReposo === 'EXENTO_POR_REPOSO') {
-      montoFinal = 0;
-    } else if (esBecado) {
-      montoFinal = 0;
-    } else {
-      const credito = await consumirSaldoAFavor(alumno, montoBase);
-      creditoAplicado = credito.creditoAplicado;
-      montoFinal = credito.montoEsperado;
-    }
-
-    const mensualidad = await Mensualidad.create({
-      id_alumno,
-      mes,
-      anio,
-      monto_base: montoBase,
-      credito_aplicado: creditoAplicado,
-      ajuste_extraordinario: 0,
-      saldo_a_favor_generado: 0,
-      monto_esperado: montoFinal,
-      fecha_vencimiento: fecha_vencimiento || new Date(anio, mes - 1, 5, 23, 59, 59),
-      estatus: estatusFinal
+    const periodoActual = getPeriodoZonaCaracas();
+    const resultados = await generarMensualidadesPendientesAlumno(alumno, {
+      periodoFin: periodoActual,
+      overridePeriodoActual: {
+        mes: periodoActual.mes,
+        anio: periodoActual.anio,
+        montoBaseManual: monto_esperado,
+        estatusManual: estatus || undefined,
+        fechaVencimientoManual: fecha_vencimiento
+      },
+      crearPagoSiPagado: true,
+      referenciaPago: 'primera-mensualidad'
     });
 
-    const estatusNormalizado = String(estatusFinal || '').toLowerCase();
-    if (estatusNormalizado === 'pagado' && montoFinal > 0) {
-      await PagoDetalle.create({
-        id_mensualidad: mensualidad._id,
-        monto_pagado: montoFinal,
-        fecha_pago: new Date(),
-        metodo_pago: 'Registro inicial admin',
-        referencia: 'primera-mensualidad'
-      });
-    }
+    const creadas = resultados.filter((resultado) => resultado.creada).length;
+    const mensualidadActual = resultados.find(
+      (resultado) =>
+        resultado.mensualidad &&
+        resultado.mensualidad.mes === periodoActual.mes &&
+        resultado.mensualidad.anio === periodoActual.anio
+    );
 
-    res.json(mensualidad);
+    return res.json({
+      message: `Mensualidades procesadas: ${creadas}`,
+      mensualidad: mensualidadActual?.mensualidad || null,
+      mensualidades_creadas: creadas,
+      mensualidades: resultados.map((resultado) => resultado.mensualidad).filter(Boolean)
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -444,7 +561,6 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       });
     }
 
-    const fecha_vencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
     const montoBase = await resolverMontoBaseAlumno(alumno);
     let monto = montoBase;
     let creditoAplicado = 0;
@@ -472,7 +588,7 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       ajuste_extraordinario: 0,
       saldo_a_favor_generado: 0,
       monto_esperado: monto,
-      fecha_vencimiento,
+      fecha_vencimiento: obtenerFechaVencimientoPeriodo(mes, anio),
       estatus
     });
 
