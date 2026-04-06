@@ -14,6 +14,7 @@ import { exportToCsv } from '../utils/exportCsv';
 import { mediaUrl } from '../utils/mediaUrl';
 
 function Dashboard() {
+  const mesActual = new Date().getMonth() + 1;
   const { setSedeSeleccionada } = useSede();
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
   const navigate = useNavigate();
@@ -27,8 +28,9 @@ function Dashboard() {
   const [dolaresLoading, setDolaresLoading] = useState(false);
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
-  const [mesSeleccionado, setMesSeleccionado] = useState(new Date().getMonth() + 1);
-  const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(new Date().getMonth() + 1);
+  const [mesSeleccionado, setMesSeleccionado] = useState(mesActual);
+  const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(mesActual);
+  const [mesRevisionSeleccionado, setMesRevisionSeleccionado] = useState(mesActual);
   const mesesAnio = [
     { value: 1, label: 'Enero' },
     { value: 2, label: 'Febrero' },
@@ -173,23 +175,23 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       try {
         const anioActual = new Date().getFullYear();
         const res = await fetch(
-          `${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}`
+          `${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede?mes=${mesRevisionSeleccionado}&anio=${anioActual}`
         );
         const data = await res.json();
         if (res.ok && data && Array.isArray(data.sedes)) {
           setRevisionPorSede(data);
         } else {
-          setRevisionPorSede({ mes: mesGraficaSeleccionado, anio: anioActual, sedes: [] });
+          setRevisionPorSede({ mes: mesRevisionSeleccionado, anio: anioActual, sedes: [] });
         }
       } catch {
-        setRevisionPorSede({ mes: mesGraficaSeleccionado, anio: new Date().getFullYear(), sedes: [] });
+        setRevisionPorSede({ mes: mesRevisionSeleccionado, anio: new Date().getFullYear(), sedes: [] });
       } finally {
         setRevisionLoading(false);
       }
     };
 
     fetchRevisionPorSede();
-  }, [mesGraficaSeleccionado]);
+  }, [mesRevisionSeleccionado]);
   const dataFinanzas = [
     { name: 'Ingresos', monto: 12500 },
     { name: 'Egresos', monto: 7200 },
@@ -471,6 +473,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                   className="pagos-sede-anio-select"
                   value={mesGraficaSeleccionado}
                   onChange={(event) => setMesGraficaSeleccionado(Number(event.target.value))}
+                  aria-label="Filtrar dólares pagados por mes"
                 >
                   {mesesAnio.map((mes) => (
                     <option key={mes.value} value={mes.value}>
@@ -597,8 +600,21 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
         <div className="dashboard-right">
           <div className="dashboard-card revision-sede-panel">
             <div className="pagos-sede-header">
-              <h3>Pagos en revisión por sede</h3>
-              <span className="revision-total-badge">Total {totalEnRevision}</span>
+              <h3>Pagos en revisión</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select
+                  className="pagos-sede-anio-select"
+                  value={mesRevisionSeleccionado}
+                  onChange={(event) => setMesRevisionSeleccionado(Number(event.target.value))}
+                  aria-label="Filtrar pagos en revisión por mes"
+                >
+                  {mesesAnio.map((mes) => (
+                    <option key={mes.value} value={mes.value}>
+                      {mes.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {revisionLoading ? (
@@ -615,7 +631,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 ))}
               </div>
             )}
-
+            <span className="revision-total-badge">Total {totalEnRevision}</span>
             <button
               type="button"
               className="revision-cta-btn"

@@ -304,10 +304,13 @@
 }
 
 .revision-total-badge {
+  display: inline-flex;
   background: #fff2e5;
   color: #9a4d00;
   border-radius: 999px;
   padding: 6px 10px;
+  margin-left: auto;
+  margin-bottom: 10px;
   font-size: 0.78rem;
   font-weight: 700;
 }
