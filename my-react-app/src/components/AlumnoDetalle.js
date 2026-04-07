@@ -43,6 +43,15 @@ function formatFecha(fecha) {
   return `${dia}/${mes}/${anio}`;
 }
 
+function formatTipoMensualidad(tipo) {
+  const normalizado = String(tipo || '').trim().toLowerCase();
+  if (!normalizado) return '-';
+  if (normalizado === 'monto_sede') return 'Monto por sede';
+  if (normalizado === 'monto_personalizado') return 'Monto personalizado';
+  if (normalizado === 'beca_completa') return 'Beca completa';
+  return tipo;
+}
+
 // Calcula el IMC y su clasificación
 function calcularIMC(peso, talla) {
   const pesoNum = parseFloat(peso);
@@ -114,11 +123,15 @@ function AlumnoDetalle() {
   const imcPercent = imcNumero ? Math.min(100, (imcNumero / 40) * 100) : 0;
   const sedeNombre = alumno.sede && typeof alumno.sede === "object" ? alumno.sede.nombre : alumno.sede;
   const estaRetirado = alumno.dado_de_baja || alumno.activo === false;
+  const observacionesTexto = alumno.observaciones?.trim() || 'Sin observaciones registradas';
+  const etiquetas = Array.isArray(alumno.etiquetas) ? alumno.etiquetas : [];
   const infoItems = [
-    { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de nacimiento", value: alumno.fecha_nacimiento?.substring(0, 10) || "-" },
+    { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de nacimiento", value: formatFecha(alumno.fecha_nacimiento) },
+    { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de inscripcion", value: formatFecha(alumno.fecha_inscripcion) },
     { icon: <EmojiPeopleIcon sx={{ fontSize: 16 }} />, label: "Edad", value: `${calcularEdad(alumno.fecha_nacimiento)} Años` },
     { icon: <BadgeIcon sx={{ fontSize: 16 }} />, label: "Cedula", value: alumno.cedula || "-" },
-    { icon: <SportsVolleyballIcon sx={{ fontSize: 16 }} />, label: "Nro de franela", value: alumno.numero_franela || "-" }
+    { icon: <SportsVolleyballIcon sx={{ fontSize: 16 }} />, label: "Nro de franela", value: alumno.numero_franela || "-" },
+    { icon: <ShowChartIcon sx={{ fontSize: 16 }} />, label: "Tipo de mensualidad", value: formatTipoMensualidad(alumno.tipo_mensualidad) }
   ];
   const contactItems = [
     { icon: <HomeIcon sx={{ fontSize: 16 }} />, label: "Domicilio", value: alumno.domicilio || "-" },
@@ -230,17 +243,25 @@ function AlumnoDetalle() {
                   <Typography sx={{ fontSize: 12, color: '#64748b' }}>Pago en cuotas</Typography>
                   <Chip label={alumno.habilitar_pago_cuotas ? 'SI' : 'NO'} size="small" sx={{ bgcolor: alumno.habilitar_pago_cuotas ? '#dcfce7' : '#fee2e2', color: alumno.habilitar_pago_cuotas ? '#166534' : '#b91c1c', fontWeight: 700 }} />
                 </Box>
-                {alumno.observaciones && (
-                  <Typography sx={{ fontSize: 12, color: '#64748b' }}>{alumno.observaciones}</Typography>
+              </Box>
+              <Box sx={{ mt: 2, p: 1.5, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em', mb: 0.75 }}>
+                  OBSERVACIONES
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: '#334155' }}>{observacionesTexto}</Typography>
+                <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em', mt: 1.25, mb: 0.75 }}>
+                  ETIQUETAS
+                </Typography>
+                {etiquetas.length > 0 ? (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                    {etiquetas.map((etiqueta, index) => (
+                      <Chip key={`${etiqueta}-${index}`} label={etiqueta} size="small" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 600 }} />
+                    ))}
+                  </Box>
+                ) : (
+                  <Typography sx={{ fontSize: 12, color: '#64748b' }}>Sin etiquetas registradas</Typography>
                 )}
               </Box>
-              {Array.isArray(alumno.etiquetas) && alumno.etiquetas.length > 0 && (
-                <Box sx={{ mt: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                  {alumno.etiquetas.map((etiqueta, index) => (
-                    <Chip key={`${etiqueta}-${index}`} label={etiqueta} size="small" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 600 }} />
-                  ))}
-                </Box>
-              )}
             </Paper>
             <Paper sx={{ p: 2.5, borderRadius: 3, bgcolor: '#0f172a', color: '#e2e8f0' }}>
               <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#94a3b8', mb: 1 }}>
@@ -304,9 +325,9 @@ function AlumnoDetalle() {
                 </Box>
                 <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>Datos Medicos</Typography>
               </Box>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={4}>
-                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc' }}>
+              <Grid container spacing={2} alignItems="stretch">
+                <Grid size={{ xs: 12, md: 3 }} sx={{ display: 'flex' }}>
+                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', minHeight: 154, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>IMC</Typography>
                       {clasificacion && (
@@ -319,8 +340,8 @@ function AlumnoDetalle() {
                     </Box>
                   </Paper>
                 </Grid>
-                <Grid item xs={12} md={4}>
-                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Grid size={{ xs: 12, md: 3 }} sx={{ display: 'flex' }}>
+                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', minHeight: 154, width: '100%', display: 'flex', alignItems: 'center', gap: 1.5 }}>
                     <Box sx={{ width: 34, height: 34, borderRadius: 1.5, bgcolor: '#ffe4e6', color: '#f43f5e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <BloodtypeIcon sx={{ fontSize: 18 }} />
                     </Box>
@@ -330,8 +351,8 @@ function AlumnoDetalle() {
                     </Box>
                   </Paper>
                 </Grid>
-                <Grid item xs={12} md={4}>
-                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Grid size={{ xs: 12, md: 3 }} sx={{ display: 'flex' }}>
+                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', minHeight: 154, width: '100%', display: 'flex', alignItems: 'center', gap: 1.5 }}>
                     <Box sx={{ width: 34, height: 34, borderRadius: 1.5, bgcolor: '#e0f2fe', color: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <HealingIcon sx={{ fontSize: 18 }} />
                     </Box>
@@ -341,8 +362,8 @@ function AlumnoDetalle() {
                     </Box>
                   </Paper>
                 </Grid>
-                <Grid item xs={12}>
-                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc' }}>
+                <Grid size={{ xs: 12, md: 3 }} sx={{ display: 'flex' }}>
+                  <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', minHeight: 154, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em', mb: 0.5 }}>ANTECEDENTES PATOLOGICOS</Typography>
                     <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{alumno.antecedentes_patologicos || 'Ninguno'}</Typography>
                   </Paper>

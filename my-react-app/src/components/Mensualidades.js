@@ -646,6 +646,39 @@ function Mensualidades() {
 		);
 	};
 
+	const renderEtiquetasAlumno = (alumno) => {
+		const etiquetas = Array.isArray(alumno?.etiquetas)
+			? alumno.etiquetas.filter((etiqueta) => String(etiqueta || '').trim().length > 0)
+			: [];
+
+		if (etiquetas.length === 0) {
+			return <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>-</Typography>;
+		}
+
+		const visibles = etiquetas.slice(0, 2);
+		const restantes = etiquetas.length - visibles.length;
+
+		return (
+			<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+				{visibles.map((etiqueta, index) => (
+					<Chip
+						key={`${etiqueta}-${index}`}
+						label={etiqueta}
+						size="small"
+						sx={{ bgcolor: '#eef2ff', color: '#3730a3', fontWeight: 700, maxWidth: 130 }}
+					/>
+				))}
+				{restantes > 0 && (
+					<Chip
+						label={`+${restantes}`}
+						size="small"
+						sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700 }}
+					/>
+				)}
+			</Box>
+		);
+	};
+
 	const inputSx = {
 		'& .MuiOutlinedInput-root': {
 			borderRadius: 2,
@@ -802,10 +835,14 @@ function Mensualidades() {
 									{renderEstadoAlumnoChip(m.id_alumno)}
 								</Box>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Etiquetas:</b></Typography>
+									{renderEtiquetasAlumno(m.id_alumno)}
+								</Box>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${m.monto_esperado}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
-								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo generado:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
+								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 							</Box>
 							<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
 								{esAdmin && !esMensualidadDeBecado(m) && (
@@ -872,10 +909,11 @@ function Mensualidades() {
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACTIVO/BAJA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ETIQUETAS</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
-								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO GENERADO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO A FAVOR</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
 							</TableRow>
@@ -898,6 +936,7 @@ function Mensualidades() {
 									<TableCell>
 										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 									</TableCell>
+									<TableCell>{renderEtiquetasAlumno(m.id_alumno)}</TableCell>
 									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
 									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${m.monto_esperado}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
@@ -944,7 +983,7 @@ function Mensualidades() {
 						</TableBody>
 						<tfoot>
 							<TableRow>
-								<TableCell colSpan={9}>
+								<TableCell colSpan={10}>
 									<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
 										<TablePagination
 											component="div"
