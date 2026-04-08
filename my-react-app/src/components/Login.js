@@ -203,10 +203,10 @@ function Login({ onLogin }) {
 
           <Box sx={{ textAlign: 'left' }}>
             <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 0.4 }}>
-              Iniciar Sesion
+              Iniciar Sesión
             </Typography>
             <Typography variant="body2" sx={{ color: '#64748b', lineHeight: 1.6 }}>
-              Entra a tu cuenta para gestionar alumnos, pagos y seguimiento academico.
+              Entra a tu cuenta para gestionar alumnos, pagos y seguimiento académico.
             </Typography>
           </Box>
 
@@ -218,10 +218,10 @@ function Login({ onLogin }) {
 
           <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <Typography variant="caption" sx={{ color: '#475569', fontWeight: 700 }}>
-              Numero de identificacion
+              Número de identificación
             </Typography>
             <TextField
-              label="Cedula"
+              label="Cédula"
               variant="outlined"
               fullWidth
               margin="normal"
@@ -240,7 +240,7 @@ function Login({ onLogin }) {
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
               <Typography variant="caption" sx={{ color: '#475569', fontWeight: 700 }}>
-                Contrasena
+                Contraseña
               </Typography>
             </Box>
 

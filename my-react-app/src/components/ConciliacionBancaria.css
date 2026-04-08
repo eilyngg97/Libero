@@ -1,0 +1,411 @@
+.conciliacionPage {
+  padding: 10px;
+  margin: 0 auto;
+}
+
+.conciliacionTitle {
+  font-weight: bold !important;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.conciliacionSubtitle {
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.conciliacionInfoBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f3f4f6;
+  color: #4b5563;
+  border-left: 4px solid #f97316;
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 0.94rem;
+}
+
+.conciliacionInfoBar strong {
+  color: #c2410c;
+}
+
+.conciliacionTopGrid {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.conciliacionUploadPanel,
+.conciliacionStatusPanel {
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.conciliacionUploadPanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 340px;
+}
+
+.conciliacionStatusPanel {
+  min-height: 340px;
+}
+
+.conciliacionPanelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.conciliacionDropzone {
+  border: 2px dashed #d1d5db;
+  border-radius: 14px;
+  min-height: 200px;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-align: center;
+  padding: 10px;
+  transition: border-color 0.2s, background 0.2s;
+  flex: 1;
+}
+
+.conciliacionDropzone.isDragging {
+  border-color: #fb923c;
+  background: #fff7ed;
+}
+
+.conciliacionDropIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.09);
+  margin-bottom: 2px;
+}
+
+.conciliacionSelectBtn {
+  margin-top: 10px;
+  border-radius: 999px !important;
+  text-transform: none !important;
+  font-weight: 700 !important;
+  border-color: #d1d5db !important;
+  color: #374151 !important;
+}
+
+.conciliacionSelectedFile {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef2ff;
+  color: #1e3a8a;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conciliacionActionRow {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+}
+
+.conciliacionProcessBtn {
+  flex: 1;
+  border-radius: 999px !important;
+  text-transform: none !important;
+  font-weight: 800 !important;
+  background: linear-gradient(90deg, #f97316 0%, #ea580c 100%) !important;
+  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.28) !important;
+}
+
+.conciliacionConfirmBtn {
+  flex: 1;
+  border-radius: 999px !important;
+  text-transform: none !important;
+  font-weight: 800 !important;
+  background: #1f2940 !important;
+  box-shadow: 0 8px 18px rgba(31, 41, 64, 0.3) !important;
+}
+
+.conciliacionMetricCard {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 11px;
+  background: #f3f4f6;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  color: #374151;
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+}
+
+.conciliacionMetricCard.warn {
+  background: #fff7ed;
+  color: #9a3412;
+  border-color: rgba(249, 115, 22, 0.18);
+}
+
+.conciliacionMetricCard strong {
+  font-size: 1.1rem;
+  color: #111827;
+}
+
+.conciliacionStatusChips {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chipTotal,
+.chipParcial,
+.chipSin {
+  font-weight: 800 !important;
+  font-size: 0.72rem !important;
+}
+
+.chipTotal {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+}
+
+.chipParcial {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+.chipSin {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
+.conciliacionTableSection {
+  margin-top: 14px;
+}
+
+.conciliacionTableSection .MuiPaper-root {
+  border: 1px solid #e5e7eb;
+}
+
+.conciliacionTableContainer {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.conciliacionTable {
+  min-width: 1240px;
+}
+
+.conciliacionTable .MuiTableCell-root {
+  white-space: nowrap;
+}
+
+.conciliacionTable .MuiTableCell-head {
+  font-weight: 800;
+  color: #334155;
+  background: #f1f5f9;
+}
+
+.conciliacionTable .MuiTableCell-body {
+  color: #1f2937;
+}
+
+.conciliacionTableContainer .MuiTablePagination-root {
+  border-top: 1px solid #e5e7eb;
+}
+
+.conciliacionMobileResults {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.conciliacionMobileCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.conciliacionMobileCard:last-child {
+  margin-bottom: 0;
+}
+
+.conciliacionMobileCardHead {
+  margin-bottom: 8px;
+}
+
+.conciliacionMobileRow {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.conciliacionMobileRow:last-child {
+  border-bottom: none;
+}
+
+.conciliacionMobileRow .label {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.conciliacionMobileRow .value {
+  color: #0f172a;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+@media (max-width: 980px) {
+  .conciliacionTopGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .conciliacionActionRow {
+    flex-direction: column;
+  }
+
+  .conciliacionPage {
+    padding: 8px;
+  }
+
+  .conciliacionPanelHead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .conciliacionUploadPanel,
+  .conciliacionStatusPanel {
+    min-height: auto;
+    padding: 12px;
+  }
+
+  .conciliacionDropzone {
+    min-height: 180px;
+    padding: 12px 10px;
+  }
+
+  .conciliacionDropzone .MuiTypography-root {
+    max-width: 30ch;
+  }
+
+  .conciliacionSelectBtn {
+    width: 100%;
+    max-width: 220px;
+  }
+
+  .conciliacionActionRow .MuiButton-root {
+    min-height: 42px;
+  }
+
+  .conciliacionTable {
+    min-width: 1080px;
+  }
+
+  .conciliacionTable .MuiTableCell-root {
+    padding: 8px 10px;
+    font-size: 0.78rem;
+  }
+
+  .conciliacionTable .MuiTableCell-head {
+    font-size: 0.74rem;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .conciliacionTableContainer .MuiTablePagination-toolbar {
+    min-height: 48px;
+    padding-left: 8px;
+    padding-right: 8px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .conciliacionTableContainer .MuiTablePagination-selectLabel,
+  .conciliacionTableContainer .MuiTablePagination-displayedRows {
+    font-size: 0.76rem;
+    margin: 0;
+  }
+
+  .conciliacionTableContainer .MuiTablePagination-actions {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .conciliacionTitle {
+    font-size: 1.22rem !important;
+  }
+
+  .conciliacionSubtitle {
+    font-size: 0.84rem;
+  }
+
+  .conciliacionInfoBar {
+    font-size: 0.82rem;
+    padding: 9px 11px;
+  }
+
+  .conciliacionMetricCard {
+    padding: 9px 10px;
+    font-size: 0.86rem;
+  }
+
+  .conciliacionMetricCard strong {
+    font-size: 1rem;
+  }
+
+  .conciliacionStatusChips .MuiChip-root {
+    height: 23px;
+  }
+
+  .conciliacionStatusChips .MuiChip-label {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .conciliacionMobileResults {
+    padding: 8px;
+  }
+
+  .conciliacionMobileCard {
+    padding: 8px;
+  }
+
+  .conciliacionMobileRow {
+    grid-template-columns: 98px 1fr;
+    gap: 6px;
+  }
+
+  .conciliacionTableSection .MuiTypography-body2 {
+    font-size: 0.8rem;
+  }
+}

@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Box,
   Button,
   Chip,
   CircularProgress,
@@ -12,13 +11,21 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Typography
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
+import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded';
+import './ConciliacionBancaria.css';
 
 const MONTO_TOLERANCIA_BS = 100;
 const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'txt'];
@@ -68,13 +75,27 @@ function formatMontoEsperado(montoBs, montoUsd) {
 }
 
 function estadoChip(tipo) {
+  const sharedSx = {
+    minWidth: 146,
+    height: 32,
+    justifyContent: 'flex-start',
+    fontWeight: 700,
+    '& .MuiChip-icon': {
+      fontSize: 18
+    },
+    '& .MuiChip-label': {
+      width: '100%',
+      textAlign: 'left'
+    }
+  };
+
   if (tipo === 'match_total') {
-    return <Chip icon={<CheckCircleIcon />} label="Match total" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 700 }} />;
+    return <Chip icon={<CheckCircleIcon />} label="Match total" sx={{ ...sharedSx, bgcolor: '#dcfce7', color: '#166534' }} />;
   }
   if (tipo === 'match_parcial') {
-    return <Chip icon={<WarningAmberIcon />} label="Match parcial" sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 700 }} />;
+    return <Chip icon={<WarningAmberIcon />} label="Match parcial" sx={{ ...sharedSx, bgcolor: '#fef3c7', color: '#92400e' }} />;
   }
-  return <Chip icon={<ErrorOutlineIcon />} label="Sin coincidencia" sx={{ bgcolor: '#fee2e2', color: '#991b1b', fontWeight: 700 }} />;
+  return <Chip icon={<ErrorOutlineIcon />} label="Sin coincidencia" sx={{ ...sharedSx, bgcolor: '#fee2e2', color: '#991b1b' }} />;
 }
 
 export default function ConciliacionBancaria() {
@@ -85,6 +106,10 @@ export default function ConciliacionBancaria() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [resultado, setResultado] = useState(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const headers = useMemo(() => {
     const token = localStorage.getItem('token');
@@ -234,144 +259,287 @@ export default function ConciliacionBancaria() {
     return [...total, ...parcial, ...noSistema, ...noExcel];
   }, [resultado]);
 
+  const filasPaginadas = useMemo(() => {
+    const inicio = page * rowsPerPage;
+    const fin = inicio + rowsPerPage;
+    return filasComparativas.slice(inicio, fin);
+  }, [filasComparativas, page, rowsPerPage]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [resultado]);
+
+  const handleChangePage = (_, nuevaPagina) => {
+    setPage(nuevaPagina);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    const nuevoValor = parseInt(event.target.value, 10);
+    setRowsPerPage(nuevoValor);
+    setPage(0);
+  };
+
+  const summary = resultado?.summary || {};
+  const totalExcel = summary.total_excel || 0;
+  const totalRevision = summary.total_sistema_en_revision || 0;
+  const totalMatch = summary.match_total || 0;
+  const totalParcial = summary.match_parcial || 0;
+  const totalSinMatch = (summary.sin_coincidencia_excel || 0) + (summary.sin_coincidencia_sistema || 0);
+
   return (
-    <Box sx={{ p: { xs: 1, md: 2 } }}>
-      <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a', mb: 1 }}>
+    <div className="conciliacionPage">
+      <Typography variant="h5" className="conciliacionTitle">
         Conciliacion Bancaria
       </Typography>
-      <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
+      <Typography variant="body2" className="conciliacionSubtitle" sx={{ mb: 2 }}>
         Sube el estado de cuenta en Excel o TXT para validar pagos en revision con tres niveles de coincidencia.
       </Typography>
 
-      <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
-        La conciliacion usa una tolerancia de monto de hasta Bs {MONTO_TOLERANCIA_BS.toFixed(2)} para los matches.
-      </Alert>
+      <div className="conciliacionInfoBar" role="status" aria-live="polite">
+        <InfoOutlinedIcon sx={{ fontSize: 19 }} />
+        <span>
+          La conciliacion usa una tolerancia de monto de hasta <strong>Bs {MONTO_TOLERANCIA_BS.toFixed(2)}</strong> para los matches.
+        </span>
+      </div>
 
-      <Paper
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        sx={{
-          border: `2px dashed ${dragging ? '#fb923c' : '#cbd5e1'}`,
-          borderRadius: 3,
-          p: 3,
-          textAlign: 'center',
-          bgcolor: dragging ? '#fff7ed' : '#f8fafc'
-        }}
-      >
-        <CloudUploadIcon sx={{ fontSize: 38, color: '#fb923c', mb: 1 }} />
-        <Typography sx={{ fontWeight: 700, color: '#1e293b' }}>
-          Arrastra y suelta tu archivo aqui
-        </Typography>
-        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
-          Formatos permitidos: .xlsx, .xls y .txt
-        </Typography>
+      <div className="conciliacionTopGrid">
+        <Paper className="conciliacionUploadPanel" elevation={0}>
+          <div className="conciliacionPanelHead">
+            <Typography variant="h6" sx={{ fontWeight: 800, color: '#1f2937' }}>
+              Procesamiento de Archivos
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+              Formatos: .xlsx, .xls, .txt
+            </Typography>
+          </div>
 
-        <Box sx={{ mt: 1.5, display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Button variant="outlined" component="label">
-            Seleccionar archivo
-            <input
-              type="file"
-              hidden
-              accept=".xlsx,.xls,.txt"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  if (!isAllowedFile(file)) {
-                    setError('Formato no permitido. Usa .xlsx, .xls o .txt');
-                    return;
+          <div
+            className={`conciliacionDropzone ${dragging ? 'isDragging' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+          >
+            <div className="conciliacionDropIcon">
+              <CloudUploadIcon sx={{ fontSize: 28, color: '#f97316' }} />
+            </div>
+            <Typography sx={{ fontWeight: 700, color: '#4b5563' }}>
+              Arrastra y suelta tu estado de cuenta aqui
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#9ca3af' }}>
+              o haz clic para explorar tus archivos
+            </Typography>
+
+            <Button variant="outlined" component="label" className="conciliacionSelectBtn">
+              Seleccionar archivo
+              <input
+                type="file"
+                hidden
+                accept=".xlsx,.xls,.txt"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    if (!isAllowedFile(file)) {
+                      setError('Formato no permitido. Usa .xlsx, .xls o .txt');
+                      return;
+                    }
+                    setArchivo(file);
+                    setResultado(null);
                   }
-                  setArchivo(file);
-                  setResultado(null);
-                }
-              }}
-            />
-          </Button>
-          <Button
-            variant="contained"
-            onClick={() => procesarArchivo()}
-            disabled={!archivo || loading}
-            sx={{ bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' } }}
-          >
-            {loading ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'Procesar conciliacion'}
-          </Button>
-          <Button
-            variant="contained"
-            color="success"
-            onClick={confirmarTodo}
-            disabled={!resultado?.pago_ids_confirmables?.length || confirmando}
-          >
-            {confirmando ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : `Confirmar Todo (${resultado?.pago_ids_confirmables?.length || 0})`}
-          </Button>
-        </Box>
+                }}
+              />
+            </Button>
 
-        {archivo && (
-          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#475569' }}>
-            Archivo seleccionado: {archivo.name}
+            {archivo && (
+              <div className="conciliacionSelectedFile">
+                <InsertDriveFileOutlinedIcon sx={{ fontSize: 18 }} />
+                <span>{archivo.name}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="conciliacionActionRow">
+            <Button
+              variant="contained"
+              onClick={() => procesarArchivo()}
+              disabled={!archivo || loading}
+              className="conciliacionProcessBtn"
+              startIcon={!loading ? <AutorenewRoundedIcon /> : null}
+            >
+              {loading ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'Procesar conciliacion'}
+            </Button>
+
+            <Button
+              variant="contained"
+              onClick={confirmarTodo}
+              disabled={!resultado?.pago_ids_confirmables?.length || confirmando}
+              className="conciliacionConfirmBtn"
+              startIcon={!confirmando ? <DoneAllRoundedIcon /> : null}
+            >
+              {confirmando ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'Confirmar Todo'}
+            </Button>
+          </div>
+        </Paper>
+
+        <Paper className="conciliacionStatusPanel" elevation={0}>
+          <Typography variant="h6" sx={{ fontWeight: 800, color: '#1f2937', mb: 1 }}>
+            Estado Actual
           </Typography>
-        )}
-      </Paper>
+
+          <div className="conciliacionMetricCard">
+            <InsertDriveFileOutlinedIcon sx={{ fontSize: 18, color: '#111827' }} />
+            <span>Total Excel</span>
+            <strong>{totalExcel}</strong>
+          </div>
+
+          <div className="conciliacionMetricCard warn">
+            <WarningAmberIcon sx={{ fontSize: 18, color: '#ea580c' }} />
+            <span>En revision</span>
+            <strong>{totalRevision}</strong>
+          </div>
+
+          <div className="conciliacionStatusChips">
+            <Chip size="small" label={`TOTAL: ${totalMatch}`} className="chipTotal" />
+            <Chip size="small" label={`PARCIAL: ${totalParcial}`} className="chipParcial" />
+            <Chip size="small" label={`SIN MATCH: ${totalSinMatch}`} className="chipSin" />
+          </div>
+        </Paper>
+      </div>
 
       {resultado && (
-        <Box sx={{ mt: 2 }}>
+        <div className="conciliacionTableSection">
           <Typography variant="body2" sx={{ color: '#475569', mb: 1.5, fontWeight: 600 }}>
             Criterio actual: si la diferencia entre monto banco y monto sistema es menor o igual a Bs {MONTO_TOLERANCIA_BS.toFixed(2)}, el monto se considera coincidente.
           </Typography>
 
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
-            <Chip label={`Excel: ${resultado.summary?.total_excel || 0}`} sx={{ bgcolor: '#e2e8f0', fontWeight: 700 }} />
-            <Chip label={`En revision: ${resultado.summary?.total_sistema_en_revision || 0}`} sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 700 }} />
-            <Chip label={`Total: ${resultado.summary?.match_total || 0}`} sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 700 }} />
-            <Chip label={`Parcial: ${resultado.summary?.match_parcial || 0}`} sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 700 }} />
-            <Chip label={`Sin match: ${(resultado.summary?.sin_coincidencia_excel || 0) + (resultado.summary?.sin_coincidencia_sistema || 0)}`} sx={{ bgcolor: '#fee2e2', color: '#991b1b', fontWeight: 700 }} />
-          </Box>
+          {isMobile ? (
+            <Paper className="conciliacionMobileResults" elevation={0}>
+              {filasPaginadas.map((fila, idx) => (
+                <article className="conciliacionMobileCard" key={`${fila.tipo}-${page * rowsPerPage + idx}`}>
+                  <div className="conciliacionMobileCardHead">{estadoChip(fila.tipo)}</div>
 
-          <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: '#f1f5f9' }}>
-                  <TableCell>Estado</TableCell>
-                  <TableCell>Alumno</TableCell>
-                  <TableCell>Ref. Sistema</TableCell>
-                  <TableCell>Ref. Excel</TableCell>
-                  <TableCell>Monto esperado</TableCell>
-                  <TableCell>Monto Sistema (Bs)</TableCell>
-                  <TableCell>Monto Excel (Bs)</TableCell>
-                  <TableCell>Diferencia (Bs)</TableCell>
-                  <TableCell>Fecha Sistema</TableCell>
-                  <TableCell>Fecha Excel</TableCell>
-                  <TableCell>Motivo</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filasComparativas.map((fila, idx) => (
-                  <TableRow key={`${fila.tipo}-${idx}`}>
-                    <TableCell>{estadoChip(fila.tipo)}</TableCell>
-                    <TableCell>{fila.alumno}</TableCell>
-                    <TableCell>{fila.referenciaSistema}</TableCell>
-                    <TableCell>{fila.referenciaExcel}</TableCell>
-                    <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</TableCell>
-                    <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
-                    <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
-                    <TableCell>{formatDiferenciaMonto(fila.montoSistema, fila.montoExcel)}</TableCell>
-                    <TableCell>{fila.fechaSistema || '-'}</TableCell>
-                    <TableCell>{fila.fechaExcel || '-'}</TableCell>
-                    <TableCell>{fila.motivo}</TableCell>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Alumno</span>
+                    <span className="value">{fila.alumno}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Ref. Sistema</span>
+                    <span className="value">{fila.referenciaSistema}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Ref. Excel</span>
+                    <span className="value">{fila.referenciaExcel}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Monto esperado</span>
+                    <span className="value">{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Monto Sistema</span>
+                    <span className="value">Bs {formatMoney(fila.montoSistema)}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Monto Excel</span>
+                    <span className="value">Bs {formatMoney(fila.montoExcel)}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Diferencia</span>
+                    <span className="value">{formatDiferenciaMonto(fila.montoSistema, fila.montoExcel)}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Fecha Sistema</span>
+                    <span className="value">{fila.fechaSistema || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Fecha Excel</span>
+                    <span className="value">{fila.fechaExcel || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Motivo</span>
+                    <span className="value">{fila.motivo}</span>
+                  </div>
+                </article>
+              ))}
+
+              {filasComparativas.length === 0 && (
+                <Typography variant="body2" sx={{ py: 1.5, color: '#64748b', textAlign: 'center' }}>
+                  No hay filas para mostrar.
+                </Typography>
+              )}
+
+              {filasComparativas.length > 0 && (
+                <TablePagination
+                  component="div"
+                  count={filasComparativas.length}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  rowsPerPage={rowsPerPage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  rowsPerPageOptions={[10, 25, 50]}
+                  labelRowsPerPage="Filas por pagina"
+                />
+              )}
+            </Paper>
+          ) : (
+            <TableContainer component={Paper} className="conciliacionTableContainer" sx={{ borderRadius: 2 }}>
+              <Table size="small" stickyHeader className="conciliacionTable">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f1f5f9' }}>
+                    <TableCell>Estado</TableCell>
+                    <TableCell>Alumno</TableCell>
+                    <TableCell>Ref. Sistema</TableCell>
+                    <TableCell>Ref. Excel</TableCell>
+                    <TableCell>Monto esperado</TableCell>
+                    <TableCell>Monto Sistema (Bs)</TableCell>
+                    <TableCell>Monto Excel (Bs)</TableCell>
+                    <TableCell>Diferencia (Bs)</TableCell>
+                    <TableCell>Fecha Sistema</TableCell>
+                    <TableCell>Fecha Excel</TableCell>
+                    <TableCell>Motivo</TableCell>
                   </TableRow>
-                ))}
-                {filasComparativas.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={11}>
-                      <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
-                        No hay filas para mostrar.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Box>
+                </TableHead>
+                <TableBody>
+                  {filasPaginadas.map((fila, idx) => (
+                    <TableRow key={`${fila.tipo}-${page * rowsPerPage + idx}`}>
+                      <TableCell>{estadoChip(fila.tipo)}</TableCell>
+                      <TableCell>{fila.alumno}</TableCell>
+                      <TableCell>{fila.referenciaSistema}</TableCell>
+                      <TableCell>{fila.referenciaExcel}</TableCell>
+                      <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</TableCell>
+                      <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
+                      <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
+                      <TableCell>{formatDiferenciaMonto(fila.montoSistema, fila.montoExcel)}</TableCell>
+                      <TableCell>{fila.fechaSistema || '-'}</TableCell>
+                      <TableCell>{fila.fechaExcel || '-'}</TableCell>
+                      <TableCell>{fila.motivo}</TableCell>
+                    </TableRow>
+                  ))}
+                  {filasComparativas.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={11}>
+                        <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
+                          No hay filas para mostrar.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+
+              {filasComparativas.length > 0 && (
+                <TablePagination
+                  component="div"
+                  count={filasComparativas.length}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  rowsPerPage={rowsPerPage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  rowsPerPageOptions={[10, 25, 50]}
+                  labelRowsPerPage="Filas por pagina"
+                />
+              )}
+            </TableContainer>
+          )}
+        </div>
       )}
 
       <Snackbar open={!!error} autoHideDuration={3500} onClose={() => setError('')} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
@@ -380,6 +548,6 @@ export default function ConciliacionBancaria() {
       <Snackbar open={!!success} autoHideDuration={2800} onClose={() => setSuccess('')} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert severity="success" onClose={() => setSuccess('')} sx={{ width: '100%' }}>{success}</Alert>
       </Snackbar>
-    </Box>
+    </div>
   );
 }
