@@ -165,17 +165,17 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/*" element={
               <ProtectedRoute>
-                <div style={{ display: 'flex' }}>
+                <div style={{ display: 'flex', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
                   <Sidebar
                     variant={isMobile ? 'temporary' : 'permanent'}
                     open={drawerOpen}
                     onClose={() => setDrawerOpen(false)}
                   />
-                  <div style={{ flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#FFFFFF' }}>
+                  <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#FFFFFF', overflowX: 'hidden' }}>
                     <Header
                       onMenuClick={isMobile ? () => setDrawerOpen(true) : undefined}
                     />
-                    <main style={{ flex: 1, padding: 16, background: '#FFFFFF', color: '#0B0F2A' }}>
+                    <main style={{ flex: 1, minWidth: 0, maxWidth: '100%', overflowX: 'hidden', padding: 16, background: '#FFFFFF', color: '#0B0F2A' }}>
                       <BackNavigationButton />
                       <SedeBreadcrumb />
                       <Routes>
