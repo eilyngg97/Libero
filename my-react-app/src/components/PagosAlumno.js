@@ -781,6 +781,7 @@ function PagosAlumno(props) {
           const montoCard = mostrarMontoEsperado
             ? (Number(pago.monto_total) || Number(pago.monto) || 0)
             : pago.monto;
+          const montoPagadoCard = Number(pago.total_pagado) || 0;
 
           const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
 
@@ -843,6 +844,11 @@ function PagosAlumno(props) {
                     {mostrarMontoEsperado && (
                       <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
                         Monto esperado (USD)
+                      </Typography>
+                    )}
+                    {mostrarMontoEsperado && (
+                      <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+                        Pagado: ${formatMoney(montoPagadoCard)} USD
                       </Typography>
                     )}
 
