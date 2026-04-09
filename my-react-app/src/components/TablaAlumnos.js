@@ -20,9 +20,7 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-
-
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return '';
@@ -73,11 +71,15 @@ function TablaAlumnos() {
   const [incluirBajas, setIncluirBajas] = useState(false);
   // Función para descargar Excel
   const handleDownloadExcel = () => {
-    const data = alumnosFiltrados.map(a => ({
+    const alumnosActivos = alumnosFiltrados.filter(a => !(a.dado_de_baja || a.activo === false || a.estado === 'Baja'));
+    const data = alumnosActivos.map(a => ({
       Nombre: a.nombres,
       Apellido: a.apellidos,
       Fecha_Nacimiento: formatFecha(a.fecha_nacimiento),
-      Edad: calcularEdad(a.fecha_nacimiento)
+      Edad: calcularEdad(a.fecha_nacimiento),
+      Cedula: a.cedula,
+      Representante: a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
+      Telefono: a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-'),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -88,14 +90,16 @@ function TablaAlumnos() {
   // Función para descargar PDF
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
-    const columns = ["N°", "Nombre", "Apellido", "Fecha de Nacimiento", "Edad", "Cedula"];
+    const columns = ["N°", "Nombre", "Apellido", "Fecha de Nacimiento", "Edad", "Cedula", "Representante", "Telefono"];
     const rows = alumnosFiltrados.map((a, i) => [
       i + 1,
       a.nombres,
       a.apellidos,
       formatFecha(a.fecha_nacimiento),
       calcularEdad(a.fecha_nacimiento),
-      a.cedula
+      a.cedula,
+      a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
+      a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-')
     ]);
     doc.text(`Lista de Alumnos (Total: ${alumnosFiltrados.length})`, 14, 10);
     autoTable(doc, { head: [columns], body: rows, startY: 20 });
@@ -170,7 +174,6 @@ function TablaAlumnos() {
         let data;
         try {
           data = await res.json();
-          console.log('Alumnos obtenidos:', data);
         } catch (jsonErr) {
           // Si la respuesta no es JSON, intenta leer el texto y mostrarlo como error
           const text = await res.text();
@@ -200,7 +203,7 @@ function TablaAlumnos() {
   let alumnosFiltrados = sedeSeleccionada && sedeSeleccionada._id
     ? alumnos.filter(a => a.sede && a.sede._id === sedeSeleccionada._id)
     : alumnos;
-
+  console.log('Alumnos después de filtrar por sede:', alumnosFiltrados);
   // Aplicar filtros adicionales
   alumnosFiltrados = alumnosFiltrados.filter(a => {
     const nombreMatch = filtroNombre === '' || (a.nombres && a.nombres.toLowerCase().includes(filtroNombre.toLowerCase()));
@@ -303,17 +306,6 @@ function TablaAlumnos() {
           />
         </Box>
         <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>CATEGORIA</Typography>
-          <TextField
-            variant="outlined"
-            size="small"
-            placeholder="Todas las categorias"
-            value={filtroCategoria}
-            onChange={e => setFiltroCategoria(e.target.value)}
-            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
-          />
-        </Box>
-        <Box>
           <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>FECHA</Typography>
           <TextField
             type="date"
@@ -358,7 +350,7 @@ function TablaAlumnos() {
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE DEL ALUMNO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>EDAD</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEDE</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>REPRESENTANTE</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
               </TableRow>
@@ -383,7 +375,7 @@ function TablaAlumnos() {
                           {alumno.nombres} {alumno.apellidos}
                         </Typography>
                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
-                          Inscrito: {formatFecha(alumno.fecha_inscripcion) || '-'}
+                          Fecha Nac: {formatFecha(alumno.fecha_nacimiento) || '-'}
                         </Typography>
                       </Box>
                     </Box>
@@ -394,7 +386,7 @@ function TablaAlumnos() {
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={alumno.categoria || '-'}
+                      label={alumno.estado || '-'}
                       size="small"
                       sx={{ bgcolor: '#eef2ff', color: '#2563eb', fontWeight: 700 }}
                     />
@@ -432,12 +424,22 @@ function TablaAlumnos() {
                         <DeleteIcon />
                       </IconButton>
                     </Tooltip>
+                    <Tooltip title="Gestionar reposos">
+                      <IconButton
+                        aria-label="gestionar reposos"
+                        size="small"
+                        sx={{ color: '#94a3b8', ml: 1 }}
+                        onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
+                      >
+                        <LocalHospitalIcon />
+                      </IconButton>
+                    </Tooltip>
                     {alumno.foto_cedula && (
                       <Tooltip title="Descargar cédula">
                         <IconButton
                           aria-label="descargar cédula"
                           size="small"
-                          sx={{ color: '#1976d2', ml: 1 }}
+                          sx={{ color: '#94a3b8', ml: 1 }}
                           onClick={() => {
                             const link = document.createElement('a');
                             link.href = alumno.foto_cedula;

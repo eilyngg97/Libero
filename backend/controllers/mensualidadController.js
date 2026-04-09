@@ -1,6 +1,34 @@
 const Mensualidad = require('../models/Mensualidad');
 const Alumno = require('../models/Alumno');
 const Sede = require('../models/Sede');
+const Reposo = require('../models/Reposo');
+
+async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
+  const inicioMes = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
+  const finMes = new Date(anio, mes, 0, 23, 59, 59, 999);
+
+  const reposoIndefinido = await Reposo.findOne({
+    id_alumno: alumnoId,
+    tipo: 'Indefinido',
+    fecha_inicio: { $lte: finMes }
+  }).sort({ fecha_inicio: -1 });
+
+  if (reposoIndefinido) {
+    return 'EXENTO_POR_REPOSO';
+  }
+
+  const reposoTotal = await Reposo.findOne({
+    id_alumno: alumnoId,
+    tipo: 'Total',
+    fecha_inicio: { $gte: inicioMes, $lte: finMes }
+  }).sort({ fecha_inicio: -1 });
+
+  if (reposoTotal) {
+    return 'EXENTO_POR_REPOSO';
+  }
+
+  return 'NORMAL';
+}
 
 async function generarMensualidadesMesCore() {
   const hoy = new Date();
@@ -14,6 +42,7 @@ async function generarMensualidadesMesCore() {
     const existe = await Mensualidad.findOne({ id_alumno: alumno._id, mes, anio });
     if (!existe) {
       let monto = 0;
+      let estatus = 'Pendiente';
       if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
         let sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
         const sede = await Sede.findById(sedeId);
@@ -23,13 +52,20 @@ async function generarMensualidadesMesCore() {
       } else if (alumno.tipo_mensualidad === 'beca_completa') {
         monto = 0;
       }
+
+      const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, mes, anio);
+      if (reglaReposo === 'EXENTO_POR_REPOSO') {
+        monto = 0;
+        estatus = 'Exento por reposo';
+      }
+
       await Mensualidad.create({
         id_alumno: alumno._id,
         mes,
         anio,
         monto_esperado: monto,
         fecha_vencimiento,
-        estatus: 'Pendiente'
+        estatus
       });
       creadas++;
     }
@@ -64,13 +100,18 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     if (existe) {
       return res.status(400).json({ error: 'Ya existe una mensualidad para este alumno este mes' });
     }
+
+    const reglaReposo = await obtenerReglaReposoParaPeriodo(id_alumno, mes, anio);
+    const estatusFinal = reglaReposo === 'EXENTO_POR_REPOSO' ? 'Exento por reposo' : (estatus || 'Pendiente');
+    const montoFinal = reglaReposo === 'EXENTO_POR_REPOSO' ? 0 : monto_esperado;
+
     const mensualidad = await Mensualidad.create({
       id_alumno,
       mes,
       anio,
-      monto_esperado,
+      monto_esperado: montoFinal,
       fecha_vencimiento: fecha_vencimiento || new Date(anio, mes - 1, 5, 23, 59, 59),
-      estatus: estatus || 'Pendiente'
+      estatus: estatusFinal
     });
     res.json(mensualidad);
   } catch (err) {
@@ -199,7 +240,7 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
     ];
 
     const data = await Mensualidad.aggregate(pipeline);
-    const estados = ['pagado', 'pendiente', 'retrasado', 'en revision', 'exonerado', 'abono'];
+    const estados = ['pagado', 'pendiente', 'retrasado', 'en revision', 'exonerado', 'abono', 'exento por reposo'];
     const resultado = data.map(item => {
       const conteos = {};
       estados.forEach(e => { conteos[e] = 0; });

@@ -30,7 +30,35 @@ const Representante = require('../models/Representante');
 const User = require('../models/User');
 const Mensualidad = require('../models/Mensualidad');
 const Sede = require('../models/Sede');
+const Reposo = require('../models/Reposo');
 const bcrypt = require('bcryptjs');
+
+function normalizarTipoReposo(tipo) {
+  const valor = String(tipo || '').trim().toLowerCase();
+  if (valor === 'indefinido') return 'Indefinido';
+  if (valor === 'total') return 'Total';
+  if (valor === 'parcial') return 'Parcial';
+  return null;
+}
+
+async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio) {
+  const fechaVencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
+  await Mensualidad.findOneAndUpdate(
+    { id_alumno: alumnoId, mes, anio, estatus: { $ne: 'Pagado' } },
+    {
+      $set: {
+        monto_esperado: 0,
+        estatus: 'Exento por reposo',
+        fecha_vencimiento: fechaVencimiento
+      }
+    },
+    {
+      upsert: true,
+      setDefaultsOnInsert: true,
+      new: true
+    }
+  );
+}
 
 // Obtener todos los alumnos
 exports.getAlumnos = async (req, res) => {
@@ -334,5 +362,98 @@ exports.reactivarAlumno = async (req, res) => {
     res.json({ message: 'Alumno reactivado', alumno });
   } catch (err) {
     res.status(400).json({ error: 'Error al reactivar al alumno' });
+  }
+};
+
+// Listar historial de reposos de un alumno
+exports.getRepososAlumno = async (req, res) => {
+  try {
+    const alumno = await Alumno.findById(req.params.id);
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    const reposos = await Reposo.find({ id_alumno: alumno._id }).sort({ fecha_inicio: -1, createdAt: -1 });
+    res.json(reposos);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener reposos del alumno' });
+  }
+};
+
+// Registrar reposo y aplicar lógica de mensualidad según tipo
+exports.registrarReposoAlumno = async (req, res) => {
+  try {
+    const alumno = await Alumno.findById(req.params.id);
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    const fecha_inicio_raw = req.body.fecha_inicio || req.body.fechaInicio;
+    const tipo_raw = req.body.tipo;
+
+    if (!fecha_inicio_raw || !tipo_raw) {
+      return res.status(400).json({ error: 'Los campos obligatorios son fecha_inicio y tipo' });
+    }
+
+    const tipo = normalizarTipoReposo(tipo_raw);
+    if (!tipo) {
+      return res.status(400).json({ error: 'Tipo de reposo inválido. Valores permitidos: Indefinido, Total, Parcial' });
+    }
+
+    const fecha_inicio = new Date(fecha_inicio_raw);
+    if (Number.isNaN(fecha_inicio.getTime())) {
+      return res.status(400).json({ error: 'fecha_inicio inválida' });
+    }
+
+    let fecha_fin = null;
+    if (req.body.fecha_fin || req.body.fechaFin) {
+      fecha_fin = new Date(req.body.fecha_fin || req.body.fechaFin);
+      if (Number.isNaN(fecha_fin.getTime())) {
+        return res.status(400).json({ error: 'fecha_fin inválida' });
+      }
+    }
+
+    let certificado = req.body.certificado || null;
+    if (req.file) {
+      certificado = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    }
+
+    const reposo = await Reposo.create({
+      id_alumno: alumno._id,
+      fecha_inicio,
+      fecha_fin,
+      tipo,
+      motivo: req.body.motivo || '',
+      certificado,
+      estado: 'Activo'
+    });
+
+    const mesInicio = fecha_inicio.getMonth() + 1;
+    const anioInicio = fecha_inicio.getFullYear();
+
+    if (tipo === 'Total') {
+      await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio);
+    }
+
+    if (tipo === 'Indefinido') {
+      await Mensualidad.updateMany(
+        {
+          id_alumno: alumno._id,
+          estatus: { $ne: 'Pagado' },
+          $or: [
+            { anio: { $gt: anioInicio } },
+            { anio: anioInicio, mes: { $gte: mesInicio } }
+          ]
+        },
+        {
+          $set: {
+            monto_esperado: 0,
+            estatus: 'Exento por reposo'
+          }
+        }
+      );
+
+      await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio);
+    }
+
+    res.status(201).json({ message: 'Reposo registrado', reposo });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al registrar reposo', detalle: err.message });
   }
 };

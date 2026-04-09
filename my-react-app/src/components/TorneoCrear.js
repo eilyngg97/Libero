@@ -8,7 +8,6 @@ import { useNavigate } from 'react-router-dom';
 function TorneoCrear() {
   const navigate = useNavigate();
   const [nombre, setNombre] = useState('');
-  const [liga, setLiga] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [fechaLimite, setFechaLimite] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -178,7 +177,6 @@ function TorneoCrear() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre,
-          liga,
           descripcion,
           fecha_limite: fechaLimite || null,
           convocados
@@ -212,7 +210,6 @@ function TorneoCrear() {
             <Box sx={{ bgcolor: '#fff', borderRadius: 3, p: 2.5, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>Datos del torneo</Typography>
               <TextField label="Nombre del Torneo" fullWidth margin="normal" value={nombre} onChange={e => setNombre(e.target.value)} />
-              <TextField label="Liga" placeholder="Selecciona la Liga" fullWidth margin="normal" value={liga} onChange={e => setLiga(e.target.value)} />
               <TextField label="Descripcion" fullWidth margin="normal" multiline rows={3} value={descripcion} onChange={e => setDescripcion(e.target.value)} />
               <TextField
                 label="Fecha limite de respuesta"
@@ -239,7 +236,7 @@ function TorneoCrear() {
                 <Button
                   onClick={handleCrear}
                   variant="contained"
-                  disabled={!nombre || !liga || !descripcion || saveLoading}
+                  disabled={!nombre || !descripcion || saveLoading}
                   sx={{ bgcolor: '#f97316', fontWeight: 700, '&:hover': { bgcolor: '#ea580c' } }}
                 >
                   {saveLoading ? 'Guardando...' : 'Crear'}

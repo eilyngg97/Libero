@@ -1,4 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Chip from '@mui/material/Chip';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
 import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
 import SedeForm from './SedeForm';
@@ -16,6 +20,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
+import AddIcon from '@mui/icons-material/Add';
 
 
 function Sedes() {
@@ -106,10 +111,12 @@ function Sedes() {
 
   return (
     <div>
-      <h2>Sedes</h2>
-      <Button variant="contained" color="primary" onClick={handleOpen} sx={{ mb: 2 }}>
-        Agregar Sede
-      </Button>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <h2 style={{ margin: 0 }}>Gestión de Sedes</h2>
+        <Button variant="contained" onClick={handleOpen} sx={{ backgroundColor: '#f97316', '&:hover': { backgroundColor: '#ea580c' } }} startIcon={<AddIcon />}>
+          Agregar Sede
+        </Button>
+      </Box>
       <Dialog open={open} onClose={handleClose}>
         <DialogTitle sx={{ m: 0, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           Agregar Sede
@@ -139,36 +146,91 @@ function Sedes() {
           {alert.message}
         </MuiAlert>
       </Snackbar>
-      <TableContainer component={Paper} sx={{ marginTop: 2 }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Nombre</TableCell>
-              <TableCell>Dirección</TableCell>
-              <TableCell>Monto Mensualidad</TableCell>
-              <TableCell>Estado</TableCell>
-              <TableCell>Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {sedes.map((sede, idx) => (
-              <TableRow key={sede.id || `sede-row-${idx}`}>
-                <TableCell>{sede.nombre}</TableCell>
-                <TableCell>{sede.direccion || '-'}</TableCell>
-                <TableCell>{sede.costo || '-'}</TableCell>
-                <TableCell style={{ color: sede.estado === 'Activa' ? 'green' : sede.estado === 'Inactiva' ? '#800000' : undefined }}>
-                  {sede.estado}
-                </TableCell>
-                <TableCell>
-                  <Button variant="outlined" size="small" onClick={() => verSede(sede.id)} sx={{ mr: 1 }}>Ver</Button>
-                  <Button variant="outlined" size="small" onClick={() => editarSede(sede.id)} sx={{ mr: 1 }}>Editar</Button>
-                  <Button variant="outlined" color="error" size="small" onClick={() => handleEliminarClick(sede.id)}>Eliminar</Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {sedes.map((sede, idx) => {
+          const porcentaje = sede.meta && sede.costo ? Math.round((sede.costo / sede.meta) * 100) : null;
+          return (
+            <Paper key={sede.id || `sede-card-${idx}`}
+              sx={{
+                p: 3,
+                borderRadius: 3,
+                boxShadow: '0 2px 8px rgba(15,23,42,0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 3,
+                flexWrap: 'wrap',
+                minHeight: 120
+              }}
+            >
+              <Box sx={{ minWidth: 180, flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <LocationOnIcon sx={{ color: '#f59e0b', fontSize: 28 }} />
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f172a' }}>{sede.nombre}</Typography>
+                </Box>
+                <Typography sx={{ color: '#64748b', fontSize: 14 }}>{sede.direccion || '-'}</Typography>
+                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Chip label={sede.estado} size="small" sx={{ bgcolor: sede.estado === 'Activa' ? '#dcfce7' : '#fee2e2', color: sede.estado === 'Activa' ? '#16a34a' : '#dc2626', fontWeight: 700 }} />
+                  <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>Mensualidad: ${sede.costo || '-'}</Typography>
+                </Box>
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 180 }}>
+                <Typography sx={{ fontSize: 13, color: '#64748b', fontWeight: 700, mb: 0.5 }}>Horario constancia</Typography>
+                <Typography sx={{ fontSize: 15, color: '#0f172a', fontWeight: 700 }}>{sede.horario_constancia || '-'}</Typography>
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => editarSede(sede.id)}
+                      sx={{
+                        borderRadius: 2,
+                        color: '#334155',
+                        borderColor: '#cbd5e1',
+                        bgcolor: '#fff',
+                        fontWeight: 800,
+                        textTransform: 'uppercase',
+                        boxShadow: 'none',
+                        letterSpacing: 1,
+                        px: 2.5,
+                        '&:hover': {
+                          bgcolor: '#f1f5f9',
+                          borderColor: '#cbd5e1',
+                          boxShadow: 'none'
+                        }
+                      }}
+                    >
+                      Editar
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => handleEliminarClick(sede.id)}
+                      sx={{
+                        borderRadius: 2,
+                        color: '#ef4444',
+                        borderColor: '#fecaca',
+                        bgcolor: '#fff',
+                        fontWeight: 800,
+                        textTransform: 'uppercase',
+                        boxShadow: 'none',
+                        letterSpacing: 1,
+                        px: 2.5,
+                        '&:hover': {
+                          bgcolor: '#fef2f2',
+                          borderColor: '#fca5a5',
+                          boxShadow: 'none'
+                        }
+                      }}
+                    >
+                      Eliminar
+                    </Button>
+                </Box>
+              </Box>
+            </Paper>
+          );
+        })}
+      </Box>
 
       {/* Diálogo para ver sede */}
       <Dialog open={openVer} onClose={() => setOpenVer(false)}>
