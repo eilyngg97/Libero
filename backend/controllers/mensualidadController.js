@@ -25,6 +25,29 @@ function getPeriodoZonaCaracas(fechaBase = new Date()) {
   };
 }
 
+function buildPeriodoMatchStage(mes, anio) {
+  return {
+    $match: {
+      $expr: {
+        $and: [
+          {
+            $eq: [
+              { $convert: { input: '$mes', to: 'int', onError: null, onNull: null } },
+              mes
+            ]
+          },
+          {
+            $eq: [
+              { $convert: { input: '$anio', to: 'int', onError: null, onNull: null } },
+              anio
+            ]
+          }
+        ]
+      }
+    }
+  };
+}
+
 function obtenerPeriodoDesdeFecha(fecha, periodoFallback = getPeriodoZonaCaracas()) {
   if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) {
     return periodoFallback;
@@ -72,6 +95,14 @@ function obtenerEstatusPendientePorVencimiento(fechaVencimiento) {
 function esEstatusInsolvente(estatus) {
   const normalizado = String(estatus || '').toLowerCase();
   return normalizado === 'retrasado' || normalizado === 'insolvente';
+}
+
+function normalizarEstatusKey(estatus) {
+  return String(estatus || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 function esTipoMensualidadBecaCompleta(tipoMensualidad) {
@@ -892,7 +923,7 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
     const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
 
     const pipeline = [
-      { $match: { mes, anio } },
+      buildPeriodoMatchStage(mes, anio),
       {
         $lookup: {
           from: 'alumnos',
@@ -951,7 +982,7 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
       const conteos = {};
       estados.forEach(e => { conteos[e] = 0; });
       item.estatuses.forEach(e => {
-        const key = String(e.estatus || '').toLowerCase();
+        const key = normalizarEstatusKey(e.estatus);
         if (conteos[key] !== undefined) conteos[key] = e.count;
       });
 
@@ -987,7 +1018,7 @@ exports.getDolaresPagadosPorSede = async (req, res) => {
     }
 
     const pipeline = [
-      { $match: { mes, anio } },
+      buildPeriodoMatchStage(mes, anio),
       {
         $lookup: {
           from: 'alumnos',

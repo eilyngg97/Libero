@@ -25,14 +25,17 @@ async function getAlumnosCountBySede(req, res) {
         }
       },
       {
-        $unwind: '$sedeInfo'
+        $unwind: {
+          path: '$sedeInfo',
+          preserveNullAndEmptyArrays: true
+        }
       },
       {
         $project: {
           _id: 1,
           count: 1,
-          nombre: '$sedeInfo.nombre',
-          direccion: '$sedeInfo.direccion'
+          nombre: { $ifNull: ['$sedeInfo.nombre', 'Sin sede'] },
+          direccion: { $ifNull: ['$sedeInfo.direccion', 'Sin direccion'] }
         }
       }
     ]);

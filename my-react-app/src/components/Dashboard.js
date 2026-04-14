@@ -31,6 +31,28 @@ function Dashboard() {
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActual);
   const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(mesActual);
   const [mesRevisionSeleccionado, setMesRevisionSeleccionado] = useState(mesActual);
+
+  const fetchConSesion = async (url, options = {}, retryOn401 = true) => {
+    const token = localStorage.getItem('token');
+    const headers = {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+
+    let res = await fetch(url, { ...options, headers });
+
+    if (retryOn401 && res.status === 401) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const tokenRetry = localStorage.getItem('token');
+      const headersRetry = {
+        ...(options.headers || {}),
+        ...(tokenRetry ? { Authorization: `Bearer ${tokenRetry}` } : {})
+      };
+      res = await fetch(url, { ...options, headers: headersRetry });
+    }
+
+    return res;
+  };
   const mesesAnio = [
     { value: 1, label: 'Enero' },
     { value: 2, label: 'Febrero' },
@@ -89,7 +111,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   useEffect(() => {
     const fetchSedes = async () => {
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/sedes`);
+        const res = await fetchConSesion(`${process.env.REACT_APP_API_URL}/api/sedes`);
         const data = await res.json();
         if (res.ok) setSedes(data);
         else setSedes([]);
@@ -103,9 +125,8 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   useEffect(() => {
     const fetchAlumnosCount = async () => {
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/count-by-sede`);
+        const res = await fetchConSesion(`${process.env.REACT_APP_API_URL}/api/alumnos/count-by-sede`);
         const data = await res.json();
-        console.log(data);
         if (res.ok && Array.isArray(data)) {
           // data: [{ _id: 'Sede Principal', count: 10 }, ...]
           const map = {};
@@ -127,7 +148,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       setResumenLoading(true);
       try {
         const anioActual = new Date().getFullYear();
-        const res = await fetch(
+        const res = await fetchConSesion(
           `${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede?mes=${mesSeleccionado}&anio=${anioActual}`
         );
         const data = await res.json();
@@ -150,7 +171,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       setDolaresLoading(true);
       try {
         const anioActual = new Date().getFullYear();
-        const res = await fetch(
+        const res = await fetchConSesion(
           `${process.env.REACT_APP_API_URL}/api/mensualidades/dolares-pagados-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}`
         );
         const data = await res.json();
@@ -174,7 +195,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       setRevisionLoading(true);
       try {
         const anioActual = new Date().getFullYear();
-        const res = await fetch(
+        const res = await fetchConSesion(
           `${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede?mes=${mesRevisionSeleccionado}&anio=${anioActual}`
         );
         const data = await res.json();
@@ -371,12 +392,38 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     return 'Crítico';
   };
 
+  const normalizarClaveRevision = (valor) => String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
   const sedesRevisionOrdenadas = (revisionPorSede.sedes || [])
-    .map((sede) => ({
-      sedeId: sede.sedeId,
-      sedeNombre: sede.sedeNombre,
-      enRevision: Number(sede['en revision'] || 0)
-    }))
+    .map((sede) => {
+      const totalDesdeEstatuses = Array.isArray(sede.estatuses)
+        ? sede.estatuses.reduce((acc, item) => {
+            const clave = normalizarClaveRevision(item?.estatus);
+            if (clave === 'en_revision') {
+              return acc + (Number(item?.count) || 0);
+            }
+            return acc;
+          }, 0)
+        : 0;
+
+      return {
+        sedeId: sede.sedeId,
+        sedeNombre: sede.sedeNombre,
+        enRevision: Number(
+          sede.enRevision ||
+          sede.en_revision ||
+          sede.en_revision_count ||
+          sede['en revision'] ||
+          sede['en_revision'] ||
+          sede['en revisión'] ||
+          totalDesdeEstatuses
+        )
+      };
+    })
     .sort((a, b) => b.enRevision - a.enRevision);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
@@ -541,7 +588,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                       const pagado = Number(sede.pagado || 0);
                       const abono = Number(sede.abono || 0);
                       const recaudado = pagado + abono;
-                      const noPagado = Number(sede.pendiente || 0) + Number(sede.retrasado || 0);
+                      const noPagado = Number(sede.pendiente || 0) + Number(sede.insolvente || 0);
                       const progreso = total > 0 ? Math.round((recaudado / total) * 100) : 0;
 
                       return (
