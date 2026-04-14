@@ -229,6 +229,29 @@ function Mensualidades() {
 		return Array.isArray(data) ? data : [];
 	};
 
+	const parsePagoDate = (value) => {
+		if (!value) return 0;
+		const time = new Date(value).getTime();
+		return Number.isFinite(time) ? time : 0;
+	};
+
+	const ordenarPagosCronologicamente = (pagos = []) => {
+		return [...pagos]
+			.map((pago, index) => ({ pago, index }))
+			.sort((a, b) => {
+				const creadoA = parsePagoDate(a.pago?.createdAt);
+				const creadoB = parsePagoDate(b.pago?.createdAt);
+				if (creadoA !== creadoB) return creadoA - creadoB;
+
+				const fechaA = parsePagoDate(a.pago?.fecha_pago);
+				const fechaB = parsePagoDate(b.pago?.fecha_pago);
+				if (fechaA !== fechaB) return fechaA - fechaB;
+
+				return a.index - b.index;
+			})
+			.map((item) => item.pago);
+	};
+
 	const prepararModalPago = async (mensualidad, pagoEditar = null) => {
 		const puedePagarCuotas = esAdmin || mensualidad?.id_alumno?.habilitar_pago_cuotas === true;
 		setPagoInfo(mensualidad);
@@ -266,8 +289,9 @@ function Mensualidades() {
 		try {
 			const data = await cargarPagosMensualidad(mensualidad._id);
 			if (data.length > 0) {
-				setDetallePago(data[data.length - 1]);
-				setPagosDetalle(data);
+				const pagosOrdenados = ordenarPagosCronologicamente(data);
+				setDetallePago(pagosOrdenados[pagosOrdenados.length - 1]);
+				setPagosDetalle(pagosOrdenados);
 			} else {
 				setDetallePago(null);
 				setPagosDetalle([]);
@@ -350,14 +374,17 @@ function Mensualidades() {
 	const confirmarMensualidad = async () => {
 		if (!mensualidadDetalle?._id) return;
 		try {
-			await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}/confirmar`, {
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}/confirmar`, {
 				method: 'PATCH',
 				headers: getAuthHeaders()
 			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'Error al confirmar mensualidad');
 			setModalDetalle(false);
 			await cargarMensualidades();
+			setSuccessMessage('Pago confirmado con exito');
 		} catch (err) {
-			alert('Error al confirmar mensualidad');
+			alert(err.message || 'Error al confirmar mensualidad');
 		}
 	};
 
@@ -426,8 +453,8 @@ function Mensualidades() {
 	const registrarPago = async () => {
 		if (guardandoPago) return;
 		// Validar numero de digitos de referencia
-		if (metodoRequiereReferencia(metodoPago) && referencia.length !== 6) {
-			setErrorRef('Debes ingresar los 6 últimos dígitos de la referencia');
+		if (metodoRequiereReferencia(metodoPago) && referencia.length < 6) {
+			setErrorRef('Debes ingresar al menos 6 dígitos de la referencia');
 			return;
 		}
 		const habilitarCuotas = esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas === true;
@@ -1562,14 +1589,14 @@ function Mensualidades() {
 					)}
 					{metodoRequiereReferencia(metodoPago) && (
 						<TextField
-							label="6 últimos dígitos de referencia"
+							label="Referencia (mínimo 6 últimos dígitos)"
 							fullWidth
 							margin="normal"
 							size="small"
 							sx={inputSx}
 							value={referencia}
 							onChange={e => setReferencia(e.target.value.replace(/[^0-9]/g, ''))}
-							inputProps={{ maxLength: 6 }}
+							inputProps={{ minLength: 6 }}
 							error={!!errorRef}
 							helperText={errorRef}
 						/>

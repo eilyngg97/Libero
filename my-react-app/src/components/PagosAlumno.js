@@ -154,16 +154,37 @@ function PagosAlumno(props) {
     return Array.isArray(data) ? data : [];
   };
 
+  const parsePagoDate = (value) => {
+    if (!value) return 0;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) ? time : 0;
+  };
+
+  const ordenarPagosCronologicamente = (pagos = []) => {
+    return [...pagos]
+      .map((pago, index) => ({ pago, index }))
+      .sort((a, b) => {
+        const creadoA = parsePagoDate(a.pago?.createdAt);
+        const creadoB = parsePagoDate(b.pago?.createdAt);
+        if (creadoA !== creadoB) return creadoA - creadoB;
+
+        const fechaA = parsePagoDate(a.pago?.fecha_pago);
+        const fechaB = parsePagoDate(b.pago?.fecha_pago);
+        if (fechaA !== fechaB) return fechaA - fechaB;
+
+        return a.index - b.index;
+      })
+      .map((item) => item.pago);
+  };
+
   const actualizarDetalleMensualidad = async (mensualidad, abrirModal = true) => {
     setMensualidadDetalle(mensualidad);
     try {
       const data = await cargarPagosMensualidad(mensualidad.id);
       if (data.length > 0) {
-        const pagosOrdenadosPorFecha = [...data].sort(
-          (a, b) => new Date(a.fecha_pago || 0).getTime() - new Date(b.fecha_pago || 0).getTime()
-        );
-        setDetallePago(pagosOrdenadosPorFecha[pagosOrdenadosPorFecha.length - 1]);
-        setPagosDetalle(pagosOrdenadosPorFecha);
+        const pagosOrdenados = ordenarPagosCronologicamente(data);
+        setDetallePago(pagosOrdenados[pagosOrdenados.length - 1]);
+        setPagosDetalle(pagosOrdenados);
       } else {
         setDetallePago(null);
         setPagosDetalle([]);

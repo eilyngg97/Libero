@@ -38,10 +38,27 @@ const metodos = [
   }
 ];
 
+const getTodayInCaracas = () => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+
+  if (!year || !month || !day) return '';
+  return `${year}-${month}-${day}`;
+};
+
 function ModalPago({ open, onClose, pago, onSuccess }) {
   const [metodoSeleccionado, setMetodoSeleccionado] = useState(null);
   const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
   const [montoPagado, setMontoPagado] = useState('');
+  const [montoPagadoBs, setMontoPagadoBs] = useState('');
   const [fechaPago, setFechaPago] = useState('');
   const [referencia, setReferencia] = useState('');
   const [comprobante, setComprobante] = useState(null);
@@ -49,12 +66,28 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const [submitError, setSubmitError] = useState(null);
   const [copySuccess, setCopySuccess] = useState('');
   const [tasaPago, setTasaPago] = useState(null);
+  const [preferenciaCuota, setPreferenciaCuota] = useState(null);
   const monto = pago?.monto;
+  const cuotasHabilitadas = pago?.id_alumno?.habilitar_pago_cuotas === true;
   const { dolar } = useDolar();
   const tasa = dolar?.promedio;
   const montoBs = (monto !== undefined && monto !== null && tasaPago) ? Number(monto) * Number(tasaPago) : null;
+  const esAbonoParcial = preferenciaCuota === 'parcial';
+  const montoAbonoUsd = esAbonoParcial ? Number(montoPagado) : null;
+  const montoAbonoBs = (esAbonoParcial && Number.isFinite(montoAbonoUsd) && montoAbonoUsd > 0 && Number.isFinite(Number(tasaPago)) && Number(tasaPago) > 0)
+    ? (montoAbonoUsd * Number(tasaPago))
+    : null;
   const montoPagadoEquivalenteUsd = (() => {
     const montoBsIngresado = Number(montoPagado);
+    const tasaAplicada = Number(tasaPago);
+
+    if (!Number.isFinite(montoBsIngresado) || montoBsIngresado <= 0) return null;
+    if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) return null;
+
+    return montoBsIngresado / tasaAplicada;
+  })();
+  const montoPagadoBsEquivalenteUsd = (() => {
+    const montoBsIngresado = Number(montoPagadoBs);
     const tasaAplicada = Number(tasaPago);
 
     if (!Number.isFinite(montoBsIngresado) || montoBsIngresado <= 0) return null;
@@ -73,6 +106,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setMetodoSeleccionado(null);
       setMostrarFormularioPago(false);
       setMontoPagado('');
+      setMontoPagadoBs('');
       setFechaPago('');
       setReferencia('');
       setComprobante(null);
@@ -80,6 +114,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setSubmitError(null);
       setCopySuccess('');
       setTasaPago(Number(tasa) || null);
+      setPreferenciaCuota(null);
     }
   }, [open, tasa]);
 
@@ -132,13 +167,18 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       try {
         const tasaHistorica = await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
         if (cancelled) return;
-        setTasaPago(Number(tasaHistorica) || null);
-        setMontoPagado(tasaHistorica ? formatMoney(Number(monto) * Number(tasaHistorica)) : '');
+        const tasaNormalizada = Number(tasaHistorica) || null;
+        setTasaPago(tasaNormalizada);
+        if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
+          setMontoPagado(tasaNormalizada ? formatMoney(Number(monto) * Number(tasaNormalizada)) : '');
+        }
       } catch {
         if (cancelled) return;
         const tasaActual = Number(tasa) || null;
         setTasaPago(tasaActual);
-        setMontoPagado(tasaActual ? formatMoney(Number(monto) * tasaActual) : '');
+        if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
+          setMontoPagado(tasaActual ? formatMoney(Number(monto) * tasaActual) : '');
+        }
       }
     };
 
@@ -147,31 +187,64 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return () => {
       cancelled = true;
     };
-  }, [open, mostrarFormularioPago, fechaPago, monto, tasa]);
+  }, [open, mostrarFormularioPago, fechaPago, monto, tasa, cuotasHabilitadas, preferenciaCuota]);
 
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);
     setMostrarFormularioPago(false);
+    setPreferenciaCuota(null);
   };
 
   const handleYaPague = () => {
     setMostrarFormularioPago(true);
+    if (esAbonoParcial) {
+      setMontoPagadoBs(montoAbonoBs !== null ? formatMoney(montoAbonoBs) : '');
+    }
     if (fechaPago === '') {
-      setFechaPago(new Date().toISOString().slice(0, 10));
+      setFechaPago(getTodayInCaracas());
+    }
+  };
+
+  const handleSeleccionPreferenciaCuota = (tipo) => {
+    setPreferenciaCuota(tipo);
+    if (tipo === 'parcial') {
+      setMontoPagado('');
+      setMontoPagadoBs('');
+      setMostrarFormularioPago(false);
+      if (fechaPago === '') {
+        setFechaPago(getTodayInCaracas());
+      }
+      return;
+    }
+
+    // Para pago completo se conserva el flujo clásico: mostrar datos del método
+    // y continuar con "Ya pagué".
+    setMostrarFormularioPago(false);
+    if (fechaPago === '') {
+      setFechaPago(getTodayInCaracas());
     }
   };
 
   const handleConfirmar = async () => {
-    if (referenciaInvalida || !pago?.id || !montoPagado || !fechaPago) {
+    const montoRequerido = esAbonoParcial ? montoPagadoBs : montoPagado;
+    if (referenciaInvalida || !pago?.id || !montoRequerido || !fechaPago) {
       setSubmitError('Completa los campos requeridos');
       return;
     }
     const montoPagadoNum = Number(montoPagado);
+    const montoPagadoBsNum = Number(montoPagadoBs);
     const tasaAplicada = Number(tasaPago) || Number(tasa) || null;
-    const montoPagadoUsd = tasaAplicada ? (montoPagadoNum / tasaAplicada) : null;
+    const montoPagadoUsd = esAbonoParcial
+      ? (tasaAplicada ? (montoPagadoBsNum / tasaAplicada) : null)
+      : (tasaAplicada ? (montoPagadoNum / tasaAplicada) : null);
+    const montoPagadoBsFinal = esAbonoParcial ? montoPagadoBsNum : montoPagadoNum;
     const montoEsperadoUsd = Number(monto);
     const montoEsperadoBs = montoBs !== null ? Number(montoBs) : null;
-    if (!montoPagadoNum || Number.isNaN(montoPagadoNum)) {
+    if (esAbonoParcial && (!montoPagadoBsNum || Number.isNaN(montoPagadoBsNum))) {
+      setSubmitError('Monto pagado en Bs invalido');
+      return;
+    }
+    if (!esAbonoParcial && (!montoPagadoNum || Number.isNaN(montoPagadoNum))) {
       setSubmitError('Monto pagado invalido');
       return;
     }
@@ -185,7 +258,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       const formData = new FormData();
       formData.append('id_mensualidad', pago.id);
       formData.append('monto_pagado', montoPagadoUsd.toFixed(2));
-      formData.append('monto_pagado_bs', montoPagadoNum.toFixed(2));
+      formData.append('monto_pagado_bs', montoPagadoBsFinal.toFixed(2));
       if (Number.isFinite(montoEsperadoUsd)) {
         formData.append('monto_esperado_usd', montoEsperadoUsd.toFixed(2));
       }
@@ -235,6 +308,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const headerTitle = !metodoSeleccionado
     ? '¿Como vas a pagar?'
+    : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
+      ? 'Pago por cuotas habilitado'
+    : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
+      ? 'Abono parcial'
     : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Confirma los datos del pago'
       : metodoSeleccionado.id === 'deposito-usd'
@@ -243,6 +320,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const headerSubtitle = !metodoSeleccionado
     ? 'Selecciona tu metodo de pago preferido para continuar.'
+    : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
+      ? 'Se ha habilitado el pago por cuotas para su cuenta. Seleccione su preferencia:'
+    : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
+      ? 'Ingresa el monto en USD y usa el equivalente en Bs para realizar la transferencia.'
     : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Completa los datos y carga el comprobante para finalizar.'
       : metodoSeleccionado.id === 'deposito-usd'
@@ -366,7 +447,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </CardContent>
               </Card>
             )}
-            {metodoSeleccionado.detalles && !mostrarFormularioPago && (
+            {metodoSeleccionado.detalles && !mostrarFormularioPago && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
               <Card
                 sx={{
                   mb: 2,
@@ -453,7 +534,74 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </CardContent>
               </Card>
             )}
-            {metodoSeleccionado.id !== 'deposito-usd' && !mostrarFormularioPago && (
+            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
+                <Card
+                  sx={{
+                    borderRadius: 2.5,
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 10px 20px rgba(15, 23, 42, 0.06)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => handleSeleccionPreferenciaCuota('completo')}
+                >
+                  <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, py: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Box
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          backgroundColor: '#fff2e7',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <PaymentsIcon sx={{ color: '#f97316' }} />
+                      </Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                        Pagar Mensualidad Completa
+                      </Typography>
+                    </Box>
+                    <ArrowForwardIosIcon sx={{ color: '#cbd5f0', fontSize: 18 }} />
+                  </CardContent>
+                </Card>
+
+                <Card
+                  sx={{
+                    borderRadius: 2.5,
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 10px 20px rgba(15, 23, 42, 0.06)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => handleSeleccionPreferenciaCuota('parcial')}
+                >
+                  <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, py: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Box
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          backgroundColor: '#fff2e7',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <PaymentsIcon sx={{ color: '#f97316' }} />
+                      </Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                        Realizar Abono Parcial
+                      </Typography>
+                    </Box>
+                    <ArrowForwardIosIcon sx={{ color: '#cbd5f0', fontSize: 18 }} />
+                  </CardContent>
+                </Card>
+              </Box>
+            )}
+            {metodoSeleccionado.id !== 'deposito-usd' && !mostrarFormularioPago && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
               <Button
                 variant="contained"
                 fullWidth
@@ -468,6 +616,123 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
               >
                 Ya pague
               </Button>
+            )}
+            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && preferenciaCuota === 'parcial' && !mostrarFormularioPago && (
+              <Card
+                sx={{
+                  mt: 2,
+                  borderRadius: 2.5,
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: '#ffffff'
+                }}
+              >
+                <CardContent sx={{ p: 2.5 }}>
+                  {metodoSeleccionado.detalles && (
+                    <Card
+                      sx={{
+                        mb: 2,
+                        borderRadius: 2,
+                        border: '1px solid #e2e8f0',
+                        backgroundColor: '#f8fafc'
+                      }}
+                    >
+                      <CardContent sx={{ p: 2 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.08em', color: '#0f172a' }}>
+                          DATOS PARA EL PAGO
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+                          {Object.entries(metodoSeleccionado.detalles).map(([k, v]) => {
+                            const valorFormateado = formatearValorDetallePago(k, v);
+                            return (
+                              <Box key={k}>
+                                <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                  {k.replace('_', ' ')}
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
+                                    {valorFormateado}
+                                  </Typography>
+                                  <IconButton size="small" onClick={() => copiarDatoPago(k, v)} sx={{ color: '#64748b' }}>
+                                    <ContentCopyIcon fontSize="inherit" />
+                                  </IconButton>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {copySuccess && (
+                    <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 700, display: 'block', mb: 1 }}>
+                      {copySuccess}
+                    </Typography>
+                  )}
+                  <TextField
+                    label="Monto a pagar (USD)"
+                    fullWidth
+                    margin="dense"
+                    size="small"
+                    sx={inputSx}
+                    value={montoPagado}
+                    onChange={(e) => setMontoPagado(e.target.value)}
+                    InputProps={{
+                      endAdornment: <InputAdornment position="end">USD</InputAdornment>
+                    }}
+                  />
+                  <Box
+                    sx={{
+                      mt: 1,
+                      borderRadius: 2,
+                      backgroundColor: '#343e48',
+                      color: '#ffffff',
+                      px: 1.5,
+                      py: 1.25,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="caption" sx={{ opacity: 0.9, letterSpacing: '0.08em' }}>
+                        MONTO A TRANSFERIR EN BS
+                      </Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                        {montoAbonoBs !== null ? `${formatMoney(montoAbonoBs)} Bs` : '-'}
+                      </Typography>
+                    </Box>
+                    <IconButton
+                      size="small"
+                      onClick={() => copiarDatoPago('monto_bs', montoAbonoBs !== null ? formatMoney(montoAbonoBs) : '')}
+                      disabled={montoAbonoBs === null}
+                      sx={{ color: '#ffffff', opacity: montoAbonoBs === null ? 0.45 : 0.9 }}
+                      aria-label="Copiar monto en Bs"
+                    >
+                      <ContentCopyIcon fontSize="inherit" />
+                    </IconButton>
+                  </Box>
+                  <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
+                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/USD` : 'No disponible'}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleYaPague}
+                    disabled={montoAbonoBs === null}
+                    sx={{
+                      mt: 2,
+                      bgcolor: '#f97316',
+                      '&:hover': { bgcolor: '#ea580c' },
+                      fontWeight: 800,
+                      borderRadius: 2,
+                      py: 1.2
+                    }}
+                  >
+                    Ya pague
+                  </Button>
+                </CardContent>
+              </Card>
             )}
             {mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd' && (
               <Card
@@ -486,22 +751,45 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     </Typography>
                   </Box>
                   <Box sx={{ height: 1, backgroundColor: '#e2e8f0', mb: 2 }} />
-                  <TextField
-                    label="Monto pagado (Bs)"
-                    fullWidth
-                    margin="dense"
-                    size="small"
-                    sx={inputSx}
-                    value={montoPagado}
-                    onChange={(e) => setMontoPagado(e.target.value)}
-                    InputProps={{
-                      endAdornment: <InputAdornment position="end">Bs</InputAdornment>
-                    }}
-                  />
-                  {montoPagadoEquivalenteUsd !== null && (
+                  {!esAbonoParcial && (
+                    <TextField
+                      label="Monto pagado (Bs)"
+                      fullWidth
+                      margin="dense"
+                      size="small"
+                      sx={inputSx}
+                      value={montoPagado}
+                      onChange={(e) => setMontoPagado(e.target.value)}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">Bs</InputAdornment>
+                      }}
+                    />
+                  )}
+                  {!esAbonoParcial && montoPagadoEquivalenteUsd !== null && (
                     <Typography variant="caption" sx={{ color: '#64748b', mt: 0.35, display: 'block' }}>
                       Equivalente: ${formatMoney(montoPagadoEquivalenteUsd)} USD
                     </Typography>
+                  )}
+                  {esAbonoParcial && (
+                    <>
+                      <TextField
+                        label="Monto pagado (Bs)"
+                        fullWidth
+                        margin="dense"
+                        size="small"
+                        sx={inputSx}
+                        value={montoPagadoBs}
+                        onChange={(e) => setMontoPagadoBs(e.target.value)}
+                        InputProps={{
+                          endAdornment: <InputAdornment position="end">Bs</InputAdornment>
+                        }}
+                      />
+                      {montoPagadoBsEquivalenteUsd !== null && (
+                        <Typography variant="caption" sx={{ color: '#64748b', mt: 0.35, display: 'block' }}>
+                          Equivalente: ${formatMoney(montoPagadoBsEquivalenteUsd)} USD
+                        </Typography>
+                      )}
+                    </>
                   )}
                   <TextField
                     label="Fecha de pago"
@@ -526,7 +814,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     value={referencia}
                     onChange={(e) => setReferencia(e.target.value)}
                     error={referenciaInvalida}
-                    helperText={referenciaInvalida ? 'La referencia debe tener mínimo 6 dígitos' : ''}
+                    helperText={referenciaInvalida ? 'La referencia debe incluir, como mínimo, los últimos 6 dígitos.' : ''}
                     inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
                   />
                   <Box
