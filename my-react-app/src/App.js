@@ -151,6 +151,84 @@ function RequireSedeSelection({ children }) {
   return children;
 }
 
+function TenantHostGate({ children }) {
+  const [state, setState] = React.useState({ status: 'loading', message: '' });
+
+  React.useEffect(() => {
+    let isActive = true;
+    const controller = new AbortController();
+
+    async function validateTenantHost() {
+      try {
+        const response = await fetch('/api/tenant/context', {
+          signal: controller.signal,
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        });
+
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch (_) {
+          payload = null;
+        }
+
+        if (!isActive) return;
+
+        if (!response.ok || !payload?.tenantId) {
+          setState({
+            status: 'invalid',
+            message: payload?.error || 'Este host no está registrado para ningún tenant.'
+          });
+          return;
+        }
+
+        setState({ status: 'ready', message: '' });
+      } catch (err) {
+        if (!isActive || err.name === 'AbortError') return;
+        setState({
+          status: 'error',
+          message: 'No se pudo validar el tenant del host actual.'
+        });
+      }
+    }
+
+    validateTenantHost();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, []);
+
+  if (state.status === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f8fafc', color: '#0f172a', padding: 24 }}>
+        <div style={{ textAlign: 'center', maxWidth: 480 }}>
+          <h1 style={{ marginBottom: 12 }}>Validando tenant...</h1>
+          <p style={{ margin: 0, color: '#475569' }}>Verificando que el host actual esté asociado a una academia registrada.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'invalid' || state.status === 'error') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f8fafc', color: '#0f172a', padding: 24 }}>
+        <div style={{ width: '100%', maxWidth: 560, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 20, padding: 28, boxShadow: '0 20px 45px rgba(15, 23, 42, 0.08)' }}>
+          <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#b91c1c' }}>Host no autorizado</p>
+          <h1 style={{ margin: '0 0 12px', fontSize: 28, lineHeight: 1.1 }}>Este subdominio no está habilitado.</h1>
+          <p style={{ margin: '0 0 8px', color: '#334155' }}>{state.message}</p>
+          <p style={{ margin: 0, color: '#64748b' }}>Host detectado: {window.location.host}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return children;
+}
+
 
 function App() {
   const [sedeSeleccionada, setSedeSeleccionada] = React.useState(null);
@@ -178,57 +256,59 @@ function App() {
       <SedeProvider>
         <DolarProvider>
           <Router>
-            <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/*" element={
-              <ProtectedRoute>
-                <div style={{ display: 'flex', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
-                  <Sidebar
-                    variant={isMobile ? 'temporary' : 'permanent'}
-                    open={drawerOpen}
-                    onClose={() => setDrawerOpen(false)}
-                  />
-                  <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#FFFFFF', overflowX: 'hidden' }}>
-                    <Header
-                      onMenuClick={isMobile ? () => setDrawerOpen(true) : undefined}
+            <TenantHostGate>
+              <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/*" element={
+                <ProtectedRoute>
+                  <div style={{ display: 'flex', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
+                    <Sidebar
+                      variant={isMobile ? 'temporary' : 'permanent'}
+                      open={drawerOpen}
+                      onClose={() => setDrawerOpen(false)}
                     />
-                    <main style={{ flex: 1, minWidth: 0, maxWidth: '100%', overflowX: 'hidden', padding: 16, background: '#FFFFFF', color: '#0B0F2A' }}>
-                      <BackNavigationButton />
-                      <SedeBreadcrumb />
-                      <Routes>
-                        <Route path="dashboard" element={<ProtectedRoute allowedRoles={adminOnly}><Dashboard /></ProtectedRoute>} />
-                        <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><Alumnos /></RequireSedeSelection></ProtectedRoute>} />
-                        <Route path="entrenadores" element={<ProtectedRoute allowedRoles={adminOnly}><Entrenadores /></ProtectedRoute>} />
-                        <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly}><Horarios /></ProtectedRoute>} />
-                        <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
-                        <Route path="pagos-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={adminAndUser}><PagosAlumno /></ProtectedRoute>} />
-                        <Route path="mensualidades" element={<ProtectedRoute allowedRoles={adminOnly}><Mensualidades /></ProtectedRoute>} />
-                        <Route path="sedes" element={<ProtectedRoute allowedRoles={adminOnly}><Sedes /></ProtectedRoute>} />
-                        <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly}><PanelOpciones /></ProtectedRoute>} />
-                        <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><TablaAlumnos /></RequireSedeSelection></ProtectedRoute>} />
-                        <Route path="alumno/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoDetalle').default)}</ProtectedRoute>} />
-                        <Route path="alumno/editar/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoEditar').default)}</ProtectedRoute>} />
-                        <Route path="alumno-editar/:id" element={<ProtectedRoute allowedRoles={adminAndUser}><EntrypointAlumnoEditar /></ProtectedRoute>} />
-                        <Route path="torneos" element={<ProtectedRoute allowedRoles={adminOnly}><Torneos /></ProtectedRoute>} />
-                        <Route path="torneos/crear" element={<ProtectedRoute allowedRoles={adminOnly}><TorneoCrear /></ProtectedRoute>} />
-                        <Route path="dashboard-usuario" element={<ProtectedRoute allowedRoles={userOnly}><DashboardUsuario /></ProtectedRoute>} />
-                        <Route path="constancias" element={<ProtectedRoute allowedRoles={adminAndUser}><Constancias /></ProtectedRoute>} />
-                        <Route path="panel-opciones-usuario/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><PanelOpcionesUsuario /></ProtectedRoute>} />
-                        <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
-                        <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />
-                        <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><Aspirantes /></ProtectedRoute>} />
-                        <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><LandingConfig /></ProtectedRoute>} />
-                        <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
-                        <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
-                        <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
-                      </Routes>
-                    </main>
+                    <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#FFFFFF', overflowX: 'hidden' }}>
+                      <Header
+                        onMenuClick={isMobile ? () => setDrawerOpen(true) : undefined}
+                      />
+                      <main style={{ flex: 1, minWidth: 0, maxWidth: '100%', overflowX: 'hidden', padding: 16, background: '#FFFFFF', color: '#0B0F2A' }}>
+                        <BackNavigationButton />
+                        <SedeBreadcrumb />
+                        <Routes>
+                          <Route path="dashboard" element={<ProtectedRoute allowedRoles={adminOnly}><Dashboard /></ProtectedRoute>} />
+                          <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><Alumnos /></RequireSedeSelection></ProtectedRoute>} />
+                          <Route path="entrenadores" element={<ProtectedRoute allowedRoles={adminOnly}><Entrenadores /></ProtectedRoute>} />
+                          <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly}><Horarios /></ProtectedRoute>} />
+                          <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
+                          <Route path="pagos-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={adminAndUser}><PagosAlumno /></ProtectedRoute>} />
+                          <Route path="mensualidades" element={<ProtectedRoute allowedRoles={adminOnly}><Mensualidades /></ProtectedRoute>} />
+                          <Route path="sedes" element={<ProtectedRoute allowedRoles={adminOnly}><Sedes /></ProtectedRoute>} />
+                          <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly}><PanelOpciones /></ProtectedRoute>} />
+                          <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><TablaAlumnos /></RequireSedeSelection></ProtectedRoute>} />
+                          <Route path="alumno/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoDetalle').default)}</ProtectedRoute>} />
+                          <Route path="alumno/editar/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoEditar').default)}</ProtectedRoute>} />
+                          <Route path="alumno-editar/:id" element={<ProtectedRoute allowedRoles={adminAndUser}><EntrypointAlumnoEditar /></ProtectedRoute>} />
+                          <Route path="torneos" element={<ProtectedRoute allowedRoles={adminOnly}><Torneos /></ProtectedRoute>} />
+                          <Route path="torneos/crear" element={<ProtectedRoute allowedRoles={adminOnly}><TorneoCrear /></ProtectedRoute>} />
+                          <Route path="dashboard-usuario" element={<ProtectedRoute allowedRoles={userOnly}><DashboardUsuario /></ProtectedRoute>} />
+                          <Route path="constancias" element={<ProtectedRoute allowedRoles={adminAndUser}><Constancias /></ProtectedRoute>} />
+                          <Route path="panel-opciones-usuario/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><PanelOpcionesUsuario /></ProtectedRoute>} />
+                          <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
+                          <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />
+                          <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><Aspirantes /></ProtectedRoute>} />
+                          <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><LandingConfig /></ProtectedRoute>} />
+                          <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
+                          <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
+                          <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
+                        </Routes>
+                      </main>
+                    </div>
                   </div>
-                </div>
-              </ProtectedRoute>
-            } />
-            </Routes>
+                </ProtectedRoute>
+              } />
+              </Routes>
+            </TenantHostGate>
           </Router>
         </DolarProvider>
       </SedeProvider>
