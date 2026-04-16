@@ -12,6 +12,13 @@ const MensualidadSchema = new mongoose.Schema({
   ajuste_descripcion: { type: String },
   ajuste_fecha: { type: Date },
   monto_esperado: { type: Number, required: true },
+  monto_inscripcion: { type: Number },
+  monto_primera_mensualidad: { type: Number },
+  monto_equivalente_bs: { type: Number },
+  fecha_pago: { type: Date },
+  metodo_pago: { type: String },
+  referencia: { type: String },
+  comprobante_url: { type: String },
   fecha_vencimiento: { type: Date, required: true },
   estatus: { type: String, enum: ['Pendiente', 'Pagado', 'Retrasado', 'Insolvente', 'Exonerado', 'En revision', 'Abono', 'Exento por reposo', 'Becado'], default: 'Pendiente' }
 }, { timestamps: true });

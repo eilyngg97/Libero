@@ -22,6 +22,26 @@ function applySingleTenantFallback(req, res, next) {
   return next();
 }
 
+function getConfiguredDefaultTenantDomains() {
+  return String(process.env.DEFAULT_TENANT_DOMAINS || '')
+    .split(',')
+    .map((item) => normalizeHost(item))
+    .filter(Boolean);
+}
+
+function applyConfiguredDefaultTenant(req, res, next, mode = 'default-tenant-domain') {
+  const tenantId = (process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
+  req.tenantId = tenantId;
+  req.tenant = {
+    tenantId,
+    nombre: process.env.DEFAULT_TENANT_NAME || 'Villasport',
+    modo: mode,
+    domains: getConfiguredDefaultTenantDomains()
+  };
+  res.setHeader('X-Tenant-Id', tenantId);
+  return next();
+}
+
 async function tenantResolver(req, res, next) {
   if (process.env.MULTI_TENANT_MODE !== 'true') {
     return applySingleTenantFallback(req, res, next);
@@ -35,6 +55,11 @@ async function tenantResolver(req, res, next) {
 
     const tenant = await resolveTenantByHost(host);
     if (!tenant) {
+      const defaultTenantDomains = getConfiguredDefaultTenantDomains();
+      if (defaultTenantDomains.includes(host)) {
+        return applyConfiguredDefaultTenant(req, res, next);
+      }
+
       if (process.env.ALLOW_DEFAULT_TENANT_FALLBACK === 'true') {
         return applySingleTenantFallback(req, res, next);
       }

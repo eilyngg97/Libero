@@ -11,6 +11,12 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import { MenuItem, FormControl, InputLabel, Select, TextField, Autocomplete, CircularProgress, Checkbox, FormControlLabel, InputAdornment, Box, Paper, Typography, Switch } from '@mui/material';
 import './Alumnos.css';
+import { useDolar } from '../context/DolarContext';
+import { metodoRequiereReferencia, normalizeMetodoPago } from '../utils/paymentMethod';
+import PaymentIcon from '@mui/icons-material/Payment';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import CloseIcon from '@mui/icons-material/Close';
+import IconButton from '@mui/material/IconButton';
 
 // ...existing code...
 // Opciones de parentesco para el representante
@@ -34,7 +40,14 @@ export const OPCIONES_MENSUALIDAD = [
 ];
 
 // Estados permitidos para mensualidad
-const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado'];
+const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Insolvente', 'Exonerado'];
+const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
+
+const getLocalInputDate = (dateValue = new Date()) => {
+  const date = new Date(dateValue);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+};
 
 
 function Alumnos() {
@@ -101,9 +114,41 @@ function Alumnos() {
   const [loadingMensualidad, setLoadingMensualidad] = useState(false);
   const [errorMensualidad, setErrorMensualidad] = useState(null);
   const [estadoMensualidad, setEstadoMensualidad] = useState('Pendiente');
+  const [montoInscripcion, setMontoInscripcion] = useState('');
+  const [montoPagadoInscripcion, setMontoPagadoInscripcion] = useState('');
+  const [metodoPagoInscripcion, setMetodoPagoInscripcion] = useState(METODOS_PAGO[0]);
+  const [fechaPagoInscripcion, setFechaPagoInscripcion] = useState(() => getLocalInputDate());
+  const [referenciaPagoInscripcion, setReferenciaPagoInscripcion] = useState('');
+  const [comprobantePagoInscripcion, setComprobantePagoInscripcion] = useState(null);
   // const [sedes, setSedes] = useState([]); // Eliminado porque no se usa
   const [categoria, setCategoria] = useState('');
   const navigate = useNavigate();
+  const { dolar } = useDolar();
+
+  const montoInscripcionNum = Number(montoInscripcion) || 0;
+  const montoPrimeraMensualidadNum = Number(montoMensualidad) || 0;
+  const montoPagadoInscripcionNum = Number(montoPagadoInscripcion) || 0;
+  const totalInscripcionUsd = Number((montoInscripcionNum + montoPrimeraMensualidadNum).toFixed(2));
+  const tasaBCV = Number(dolar?.promedio) || 0;
+  const totalInscripcionBs = tasaBCV > 0
+    ? Number((totalInscripcionUsd * tasaBCV).toFixed(2))
+    : null;
+  const montoPagadoInscripcionBs = tasaBCV > 0
+    ? Number((montoPagadoInscripcionNum * tasaBCV).toFixed(2))
+    : null;
+
+  const modalInputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      backgroundColor: '#ffffff'
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: '#e2e8f0'
+    },
+    '& .MuiInputLabel-root': {
+      color: '#64748b'
+    }
+  };
     // Calcular categoría automáticamente
     useEffect(() => {
       if (form.fecha_nacimiento) {
@@ -336,6 +381,24 @@ function Alumnos() {
       setLoadingMensualidad(false);
       return;
     }
+
+    const metodoPagoNormalizado = normalizeMetodoPago(metodoPagoInscripcion);
+    if (form.habilitar_pago_cuotas) {
+      const montoPagado = Number(montoPagadoInscripcion);
+      if (!Number.isFinite(montoPagado) || montoPagado <= 0) {
+        setErrorMensualidad('Debes ingresar un monto pagado en USD mayor a 0 para registrar el abono.');
+        setLoadingMensualidad(false);
+        return;
+      }
+    }
+    if (metodoRequiereReferencia(metodoPagoNormalizado)) {
+      if (!/^[0-9]{6,}$/.test(String(referenciaPagoInscripcion || '').trim())) {
+        setErrorMensualidad('Debes ingresar minimo 6 ultimos digitos de la referencia de pago.');
+        setLoadingMensualidad(false);
+        return;
+      }
+    }
+
     try {
       // 1. Crear alumno
       const formData = buildAlumnoFormData(form, fotoFile, fotoCedulaFile);
@@ -353,14 +416,35 @@ function Alumnos() {
       }
       const dataAlumno = await resAlumno.json();
       // 2. Registrar mensualidad
+      const estatusPrimeraMensualidad = form.habilitar_pago_cuotas ? 'Abono' : estadoMensualidad;
+      const formDataMensualidad = new FormData();
+      formDataMensualidad.append('es_registro_alumno', 'true');
+      formDataMensualidad.append('id_alumno', dataAlumno._id);
+      formDataMensualidad.append('monto_esperado', String(totalInscripcionUsd));
+      formDataMensualidad.append('monto_primera_mensualidad', String(montoMensualidad));
+      formDataMensualidad.append('monto_inscripcion', String(montoInscripcion));
+      formDataMensualidad.append('monto_equivalente_bs', totalInscripcionBs !== null ? String(totalInscripcionBs) : '');
+      formDataMensualidad.append('monto_esperado_bs', totalInscripcionBs !== null ? String(totalInscripcionBs) : '');
+      formDataMensualidad.append('estatus', estatusPrimeraMensualidad);
+      if (form.habilitar_pago_cuotas) {
+        formDataMensualidad.append('monto_pagado', String(montoPagadoInscripcion));
+        formDataMensualidad.append('monto_pagado_bs', montoPagadoInscripcionBs !== null ? String(montoPagadoInscripcionBs) : '');
+      }
+      formDataMensualidad.append('metodo_pago', metodoPagoNormalizado);
+      formDataMensualidad.append(
+        'referencia',
+        metodoRequiereReferencia(metodoPagoNormalizado)
+          ? String(referenciaPagoInscripcion || '').trim()
+          : ''
+      );
+      formDataMensualidad.append('fecha_pago', fechaPagoInscripcion);
+      if (comprobantePagoInscripcion) {
+        formDataMensualidad.append('comprobante', comprobantePagoInscripcion);
+      }
+
       const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/primera`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id_alumno: dataAlumno._id,
-          monto_esperado: montoMensualidad,
-          estatus: estadoMensualidad
-        })
+        body: formDataMensualidad
       });
       if (!resMens.ok) {
         const errData = await resMens.json();
@@ -368,7 +452,13 @@ function Alumnos() {
       }
       setShowMensualidadModal(false);
       setMontoMensualidad('');
+      setMontoInscripcion('');
+      setMontoPagadoInscripcion('');
       setEstadoMensualidad('Pendiente');
+      setMetodoPagoInscripcion(METODOS_PAGO[0]);
+      setFechaPagoInscripcion(getLocalInputDate());
+      setReferenciaPagoInscripcion('');
+      setComprobantePagoInscripcion(null);
       resetAlumnoForm();
       setSuccess(true);
     } catch (err) {
@@ -500,8 +590,15 @@ function Alumnos() {
       }
     } else {
       const montoSede = Number(form.sede?.costo);
-      setMontoMensualidad(Number.isFinite(montoSede) && montoSede > 0 ? String(montoSede) : '');
-      setEstadoMensualidad('Pendiente');
+      const montoSugerido = Number.isFinite(montoSede) && montoSede > 0 ? String(montoSede) : '';
+      setMontoMensualidad(montoSugerido);
+      setMontoInscripcion(montoSugerido);
+      setMontoPagadoInscripcion('');
+      setEstadoMensualidad(form.habilitar_pago_cuotas ? 'Abono' : 'Pendiente');
+      setMetodoPagoInscripcion(METODOS_PAGO[0]);
+      setFechaPagoInscripcion(getLocalInputDate());
+      setReferenciaPagoInscripcion('');
+      setComprobantePagoInscripcion(null);
       setShowMensualidadModal(true);
     }
   };
@@ -954,63 +1051,289 @@ function Alumnos() {
       <Dialog
         open={!!showMensualidadModal}
         onClose={() => setShowMensualidadModal(false)}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
         PaperProps={{
           sx: {
             borderRadius: 3,
-            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)'
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)',
+            px: { xs: 0.5, sm: 1.5 },
+            py: 0.5
           }
         }}
       >
         <DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pb: 0.5 }}>
-          Registrar primera mensualidad
+          Registrar inscripcion
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 1.25, pb: 1.5 }}>
           <DialogContentText sx={{ color: '#64748b', mb: 1.25 }}>
-            Se sugiere el monto de la sede, pero puedes modificarlo si aplica prorrateo.
+            Se sugiere el monto base de la sede para ambos conceptos, pero puedes ajustarlo si aplica.
           </DialogContentText>
-          <Box sx={{ p: 1.2, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#f8fafc', mb: 1.5 }}>
-            <Typography variant="body2" sx={{ color: '#475569' }}>
-              Sede: <b>{form.sede?.nombre || '-'}</b>
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2.5,
+              border: '1px solid #dbe3ef',
+              borderLeft: '4px solid #f97316',
+              background: 'linear-gradient(135deg, #f8fbff 0%, #f1f5f9 100%)',
+              mb: 2
+            }}
+          >
+            <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', mb: 0.5 }}>
+              Datos base
             </Typography>
-            <Typography variant="body2" sx={{ color: '#475569' }}>
-              Monto base sede: <b>{form.sede?.costo !== undefined && form.sede?.costo !== null && form.sede?.costo !== '' ? `$${Number(form.sede.costo).toFixed(2)}` : 'No disponible'}</b>
-            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.75, alignItems: 'center' }}>
+              <Typography variant="body2" sx={{ color: '#334155' }}>
+                Sede seleccionada
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {form.sede?.nombre || '-'}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#334155' }}>
+                Monto base sede
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {form.sede?.costo !== undefined && form.sede?.costo !== null && form.sede?.costo !== ''
+                  ? `$${Number(form.sede.costo).toFixed(2)}`
+                  : 'No disponible'}
+              </Typography>
+            </Box>
           </Box>
-          <TextField
-            label="Monto"
-            type="number"
-            value={montoMensualidad}
-            onChange={e => setMontoMensualidad(e.target.value)}
-            fullWidth
-            size="small"
-            sx={{ my: 1.25 }}
-            inputProps={{ min: 0, step: '0.01' }}
-            InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-            helperText="Puedes ajustar este monto para prorrateos o casos especiales."
-          />
-          <FormControl fullWidth sx={{ my: 1.25 }} size="small">
-            <InputLabel id="estado-label">Estado</InputLabel>
-            <Select
-              labelId="estado-label"
-              value={estadoMensualidad}
-              label="Estado"
-              onChange={e => setEstadoMensualidad(e.target.value)}
-            >
-              {ESTADOS_MENSUALIDAD.map(e => (
-                <MenuItem key={e} value={e}>{e}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, my: 1.5 }}>
+            <TextField
+              label="Monto de inscripcion"
+              type="number"
+              value={montoInscripcion}
+              onChange={e => setMontoInscripcion(e.target.value)}
+              fullWidth
+              size="small"
+              sx={modalInputSx}
+              inputProps={{ min: 0, step: '0.01' }}
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+            />
+            <TextField
+              label="Monto de primera mensualidad"
+              type="number"
+              value={montoMensualidad}
+              onChange={e => setMontoMensualidad(e.target.value)}
+              fullWidth
+              size="small"
+              sx={modalInputSx}
+              inputProps={{ min: 0, step: '0.01' }}
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+            />
+          </Box>
+
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2.5,
+              border: '1px solid #1e2a57',
+              background: '#0B0F2A',
+              mb: 4
+            }}
+          >
+            <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#cbd5e1', mb: 0.75 }}>
+              Resumen de inscripcion
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.75, alignItems: 'center' }}>
+              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>
+                Total USD
+              </Typography>
+              <Typography sx={{ color: '#ffffff', fontWeight: 900, fontSize: 20, lineHeight: 1.1 }}>
+                ${totalInscripcionUsd.toFixed(2)}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>
+                Equivalente Bs
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#ffffff', fontWeight: 800 }}>
+                {totalInscripcionBs !== null ? `Bs ${totalInscripcionBs.toFixed(2)}` : 'No disponible (sin tasa BCV)'}
+              </Typography>
+            </Box>
+          </Box>
+
+          <Paper
+            sx={{
+              p: 1.5,
+              borderRadius: 2,
+              border: '1px solid #e2e8f0',
+              bgcolor: '#ffffff',
+              mb: 2
+            }}
+          >
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Checkbox
+                  checked={!!form.habilitar_pago_cuotas}
+                  onChange={(e) => {
+                    const habilitar = e.target.checked;
+                    setForm((prev) => ({ ...prev, habilitar_pago_cuotas: habilitar }));
+                    setEstadoMensualidad(habilitar ? 'Abono' : 'Pendiente');
+                  }}
+                  color="primary"
+                />
+              }
+              label="Habilitar pago en cuotas"
+            />
+          </Paper>
+
+          {form.habilitar_pago_cuotas && (
+            <TextField
+              label="Monto pagado (USD)"
+              type="number"
+              value={montoPagadoInscripcion}
+              onChange={e => setMontoPagadoInscripcion(e.target.value)}
+              fullWidth
+              size="small"
+              sx={{ ...modalInputSx, mb: 1.5 }}
+              inputProps={{ min: 0, step: '0.01' }}
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              helperText="Monto abonado en este primer pago."
+            />
+          )}
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+            <TextField
+              label="Fecha de pago"
+              type="date"
+              value={fechaPagoInscripcion}
+              onChange={e => setFechaPagoInscripcion(e.target.value)}
+              fullWidth
+              size="small"
+              sx={modalInputSx}
+              InputLabelProps={{ shrink: true }}
+            />
+            <FormControl fullWidth size="small" sx={modalInputSx}>
+              <InputLabel id="metodo-pago-inscripcion-label">Metodo de pago</InputLabel>
+              <Select
+                labelId="metodo-pago-inscripcion-label"
+                value={metodoPagoInscripcion}
+                label="Metodo de pago"
+                onChange={e => setMetodoPagoInscripcion(normalizeMetodoPago(e.target.value))}
+              >
+                {METODOS_PAGO.map((metodo) => (
+                  <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          {metodoRequiereReferencia(metodoPagoInscripcion) && (
+            <TextField
+              label="Referencia de pago (minimo 6 ultimos digitos)"
+              value={referenciaPagoInscripcion}
+              onChange={(e) => setReferenciaPagoInscripcion(e.target.value.replace(/\D/g, ''))}
+              fullWidth
+              size="small"
+              sx={{ ...modalInputSx, mt: 1.5, mb: 0.5 }}
+              inputProps={{ minLength: 6 }}
+            />
+          )}
+
+          {metodoRequiereReferencia(metodoPagoInscripcion) && (
+            <>
+              <Box
+                component="label"
+                sx={{
+                  mt: 2,
+                  border: '1px dashed #cbd5f0',
+                  borderRadius: 2,
+                  p: 2,
+                  textAlign: 'center',
+                  backgroundColor: '#f8fafc',
+                  display: 'block',
+                  cursor: 'pointer'
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    backgroundColor: '#fff2e7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 1
+                  }}
+                >
+                  <PaymentIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
+                </Box>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                  Haz clic para adjuntar comprobante
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG hasta 5MB</Typography>
+                <input
+                  type="file"
+                  hidden
+                  accept="image/*"
+                  onChange={(e) => setComprobantePagoInscripcion(e.target.files?.[0] || null)}
+                />
+              </Box>
+              {comprobantePagoInscripcion && (
+                <Box
+                  sx={{
+                    mt: 1.5,
+                    px: 1.5,
+                    py: 1,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 2,
+                    bgcolor: '#ffffff',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 1
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                    <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
+                    <Typography
+                      variant="body2"
+                      sx={{ color: '#475569', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    >
+                      {comprobantePagoInscripcion.name}
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" onClick={() => setComprobantePagoInscripcion(null)}>
+                    <CloseIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+                  </IconButton>
+                </Box>
+              )}
+            </>
+          )}
+
+          {!form.habilitar_pago_cuotas && (
+            <FormControl fullWidth sx={{ ...modalInputSx, my: 1.25, mt: 2 }} size="small">
+              <InputLabel id="estado-label">Estado de pago</InputLabel>
+              <Select
+                labelId="estado-label"
+                value={estadoMensualidad}
+                label="Estado de pago"
+                onChange={e => setEstadoMensualidad(e.target.value)}
+              >
+                {ESTADOS_MENSUALIDAD.map(e => (
+                  <MenuItem key={e} value={e}>{e}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
           {errorMensualidad && <div style={{ color: 'red', marginBottom: 8 }}>{errorMensualidad}</div>}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.25 }}>
-          <Button onClick={() => setShowMensualidadModal(false)} disabled={loadingMensualidad}>Cancelar</Button>
+          <Button
+            onClick={() => setShowMensualidadModal(false)}
+            disabled={loadingMensualidad}
+            sx={{ color: '#64748b', fontWeight: 700 }}
+          >
+            Cancelar
+          </Button>
           <Button
             variant="contained"
             onClick={registrarPrimeraMensualidad}
-            disabled={!montoMensualidad || loadingMensualidad}
+            disabled={!montoMensualidad || !montoInscripcion || (form.habilitar_pago_cuotas && !montoPagadoInscripcion) || loadingMensualidad}
+            sx={{ bgcolor: '#ff7a00', '&:hover': { bgcolor: '#f97316' }, fontWeight: 800, borderRadius: 2, px: 3 }}
           >
             {loadingMensualidad ? 'Registrando...' : 'Registrar'}
           </Button>

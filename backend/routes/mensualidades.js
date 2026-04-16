@@ -3,12 +3,29 @@ const router = express.Router();
 const mensualidadController = require('../controllers/mensualidadController');
 const { authMiddleware, rolMiddleware } = require('../middleware/auth');
 const { ensureAlumnoOwnershipFromBody } = require('../middleware/ownership');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const uploadDir = path.join(__dirname, '..', 'uploads', 'comprobantes');
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+	destination: (req, file, cb) => cb(null, uploadDir),
+	filename: (req, file, cb) => {
+		const ext = path.extname(file.originalname || '').toLowerCase();
+		const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+		cb(null, name);
+	}
+});
+
+const upload = multer({ storage });
 
 // Generar mensualidades automáticamente
 router.post('/generar', authMiddleware, rolMiddleware('admin'), mensualidadController.generarMensualidadesMes);
 
 // Registrar la primera mensualidad manualmente
-router.post('/primera', authMiddleware, rolMiddleware('admin'), mensualidadController.registrarPrimeraMensualidad);
+router.post('/primera', authMiddleware, rolMiddleware('admin'), upload.single('comprobante'), mensualidadController.registrarPrimeraMensualidad);
 // Crear mensualidad del mes siguiente para permitir pago adelantado
 router.post('/adelantar', authMiddleware, ensureAlumnoOwnershipFromBody('id_alumno'), mensualidadController.adelantarMensualidadSiguiente);
 // Actualizar retrasados (día 6)

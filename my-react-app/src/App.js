@@ -157,10 +157,11 @@ function TenantHostGate({ children }) {
   React.useEffect(() => {
     let isActive = true;
     const controller = new AbortController();
+    const apiBase = (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/$/, '');
 
     async function validateTenantHost() {
       try {
-        const response = await fetch('/api/tenant/context', {
+        const response = await fetch(`${apiBase}/api/tenant/context`, {
           signal: controller.signal,
           headers: {
             'Cache-Control': 'no-cache'

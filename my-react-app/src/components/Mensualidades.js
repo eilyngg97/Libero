@@ -253,7 +253,8 @@ function Mensualidades() {
 	};
 
 	const prepararModalPago = async (mensualidad, pagoEditar = null) => {
-		const puedePagarCuotas = esAdmin || mensualidad?.id_alumno?.habilitar_pago_cuotas === true;
+		const esMensualidadAbono = String(mensualidad?.estatus || '').toLowerCase() === 'abono';
+		const puedePagarCuotas = esAdmin || mensualidad?.id_alumno?.habilitar_pago_cuotas === true || esMensualidadAbono;
 		setPagoInfo(mensualidad);
 		setPagoEnEdicion(pagoEditar);
 		setComprobante(null);
@@ -457,7 +458,8 @@ function Mensualidades() {
 			setErrorRef('Debes ingresar al menos 6 dígitos de la referencia');
 			return;
 		}
-		const habilitarCuotas = esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas === true;
+		const esMensualidadAbono = String(pagoInfo?.estatus || '').toLowerCase() === 'abono';
+		const habilitarCuotas = esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas === true || esMensualidadAbono;
 		const permiteSobrepagoAdelantado = esAdmin;
 		const montoEsperado = Number(pagoInfo?.monto_esperado) || 0;
 		const montoToPay = habilitarCuotas ? Number(montoPago) : montoEsperado;
@@ -475,7 +477,19 @@ function Mensualidades() {
 		try {
 			setGuardandoPago(true);
 			const formData = new FormData();
-			const montoEsperadoUsd = Number(pagoInfo?.monto_esperado) || 0;
+			const montoEsperadoUsd = (() => {
+				const esperadoDesdeEdicion = Number(pagoEnEdicion?.monto_esperado_usd);
+				if (Number.isFinite(esperadoDesdeEdicion) && esperadoDesdeEdicion > 0) {
+					return esperadoDesdeEdicion;
+				}
+
+				if (habilitarCuotas) {
+					const pendienteActual = Number(montoPendiente) || 0;
+					if (pendienteActual > 0) return pendienteActual;
+				}
+
+				return Number(pagoInfo?.monto_esperado) || 0;
+			})();
 			const montoEsperadoBs = montoEsperadoUsd * (tasaPagoHistorica || tasaBCV);
 			if (!pagoEnEdicion) {
 				formData.append('id_mensualidad', pagoInfo._id);
@@ -1159,6 +1173,54 @@ function Mensualidades() {
 						<Typography sx={{ color: '#334155' }}>No hay información de pago registrada.</Typography>
 					)}
 
+					{((mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null) || (mensualidadDetalle?.monto_equivalente_bs !== undefined && mensualidadDetalle?.monto_equivalente_bs !== null)) && (
+						<Box
+							sx={{
+								mt: 2,
+								bgcolor: '#ffffff',
+								border: '1px solid #e8ebf2',
+								borderRadius: 2,
+								p: { xs: 1.5, sm: 2 }
+							}}
+						>
+							<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800, mb: 1.2 }}>
+								Resumen de pagos
+							</Typography>
+							<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.2 }}>
+								{mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null && (
+									<Box>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+											Monto de inscripcion
+										</Typography>
+										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+											{`$${formatMoney(mensualidadDetalle?.monto_inscripcion)} USD`}
+										</Typography>
+									</Box>
+								)}
+								{mensualidadDetalle?.monto_primera_mensualidad !== undefined && mensualidadDetalle?.monto_primera_mensualidad !== null && (
+									<Box>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+											Monto de primera mensualidad
+										</Typography>
+										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+											{`$${formatMoney(mensualidadDetalle?.monto_primera_mensualidad)} USD`}
+										</Typography>
+									</Box>
+								)}
+								{mensualidadDetalle?.monto_equivalente_bs !== undefined && mensualidadDetalle?.monto_equivalente_bs !== null && (
+									<Box>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+											Equivalente total en Bs
+										</Typography>
+										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+											{`Bs ${formatMoney(mensualidadDetalle?.monto_equivalente_bs)}`}
+										</Typography>
+									</Box>
+								)}
+							</Box>
+						</Box>
+					)}
+
 					{pagosDetalle.length > 0 && (
 						<Box sx={{ mt: 3.25 }}>
 							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
@@ -1542,7 +1604,7 @@ function Mensualidades() {
 						onChange={e => setFechaPago(e.target.value)}
 						InputLabelProps={{ shrink: true }}
 					/>
-					{(esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas) ? (
+					{(esAdmin || pagoInfo?.id_alumno?.habilitar_pago_cuotas || (pagoInfo?.estatus || '').toLowerCase() === 'abono') ? (
 						<>
 							<TextField
 								label="Monto a pagar"
