@@ -1,5 +1,17 @@
 const Aspirante = require('../models/Aspirante');
 const Alumno = require('../models/Alumno');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantAspiranteModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  return {
+    Aspirante: getTenantModel(connection, 'Aspirante'),
+    Alumno: getTenantModel(connection, 'Alumno')
+  };
+}
 
 const nivelesValidos = new Set(['Principiante', 'Intermedio', 'Avanzado']);
 const estadosValidos = new Set(['pendiente', 'contactado', 'inscrito', 'descartado']);
@@ -38,6 +50,11 @@ function mismaFechaCalendario(a, b) {
 
 exports.createAspirante = async (req, res) => {
   try {
+    const {
+      Aspirante: TenantAspirante,
+      Alumno: TenantAlumno
+    } = await getTenantAspiranteModels(req);
+
     const nombreCompleto = (req.body?.nombreCompleto || '').trim();
     const fechaNacimiento = req.body?.fechaNacimiento;
     const nivelExperiencia = (req.body?.nivelExperiencia || '').trim();
@@ -70,7 +87,7 @@ exports.createAspirante = async (req, res) => {
       condicionesCoincidencia.push({ telefono: { $regex: regexTelefono } });
     }
 
-    const alumnosCoincidencia = await Alumno.find({
+    const alumnosCoincidencia = await TenantAlumno.find({
       activo: { $ne: false },
       dado_de_baja: { $ne: true },
       $or: condicionesCoincidencia
@@ -93,7 +110,7 @@ exports.createAspirante = async (req, res) => {
       });
     }
 
-    const aspirante = new Aspirante({
+    const aspirante = new TenantAspirante({
       nombreCompleto,
       fechaNacimiento: fecha,
       nivelExperiencia,
@@ -113,7 +130,8 @@ exports.createAspirante = async (req, res) => {
 
 exports.getAspirantes = async (req, res) => {
   try {
-    const aspirantes = await Aspirante.find().sort({ createdAt: -1 });
+    const { Aspirante: TenantAspirante } = await getTenantAspiranteModels(req);
+    const aspirantes = await TenantAspirante.find().sort({ createdAt: -1 });
     return res.json(aspirantes);
   } catch (err) {
     return res.status(500).json({ error: 'Error al obtener aspirantes.' });
@@ -122,12 +140,13 @@ exports.getAspirantes = async (req, res) => {
 
 exports.updateEstadoAspirante = async (req, res) => {
   try {
+    const { Aspirante: TenantAspirante } = await getTenantAspiranteModels(req);
     const estado = (req.body?.estado || '').trim().toLowerCase();
     if (!estadosValidos.has(estado)) {
       return res.status(400).json({ error: 'Estado invalido.' });
     }
 
-    const aspirante = await Aspirante.findByIdAndUpdate(
+    const aspirante = await TenantAspirante.findByIdAndUpdate(
       req.params.id,
       { estado },
       { new: true }
@@ -145,7 +164,8 @@ exports.updateEstadoAspirante = async (req, res) => {
 
 exports.deleteAspirante = async (req, res) => {
   try {
-    const aspirante = await Aspirante.findByIdAndDelete(req.params.id);
+    const { Aspirante: TenantAspirante } = await getTenantAspiranteModels(req);
+    const aspirante = await TenantAspirante.findByIdAndDelete(req.params.id);
 
     if (!aspirante) {
       return res.status(404).json({ error: 'Aspirante no encontrado.' });

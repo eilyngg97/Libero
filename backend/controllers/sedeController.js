@@ -1,8 +1,16 @@
-const Sede = require('../models/Sede');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantSedeModel(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+  return getTenantModel(connection, 'Sede');
+}
 
 // Obtener todas las sedes
 exports.getSedes = async (req, res) => {
   try {
+    const Sede = await getTenantSedeModel(req);
     const sedes = await Sede.find();
     res.json(sedes);
   } catch (err) {
@@ -13,6 +21,7 @@ exports.getSedes = async (req, res) => {
 // Crear una sede
 exports.createSede = async (req, res) => {
   try {
+    const Sede = await getTenantSedeModel(req);
     const sede = new Sede(req.body);
     await sede.save();
     res.status(201).json(sede);
@@ -24,6 +33,7 @@ exports.createSede = async (req, res) => {
 // Obtener una sede por ID
 exports.getSedeById = async (req, res) => {
   try {
+    const Sede = await getTenantSedeModel(req);
     const sede = await Sede.findById(req.params.id);
     if (!sede) return res.status(404).json({ error: 'Sede no encontrada' });
     res.json(sede);
@@ -35,6 +45,7 @@ exports.getSedeById = async (req, res) => {
 // Actualizar una sede
 exports.updateSede = async (req, res) => {
   try {
+    const Sede = await getTenantSedeModel(req);
     const sede = await Sede.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!sede) return res.status(404).json({ error: 'Sede no encontrada' });
     res.json(sede);
@@ -46,6 +57,7 @@ exports.updateSede = async (req, res) => {
 // Eliminar una sede
 exports.deleteSede = async (req, res) => {
   try {
+    const Sede = await getTenantSedeModel(req);
     const sede = await Sede.findByIdAndDelete(req.params.id);
     if (!sede) return res.status(404).json({ error: 'Sede no encontrada' });
     res.json({ message: 'Sede eliminada' });

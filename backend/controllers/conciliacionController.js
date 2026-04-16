@@ -2,8 +2,28 @@ const XLSX = require('xlsx');
 const path = require('path');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
 
 const MONTO_TOLERANCIA_BS = 100;
+
+async function getTenantConciliacionModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  return {
+    connection,
+    Mensualidad: getTenantModel(connection, 'Mensualidad'),
+    PagoDetalle: getTenantModel(connection, 'PagoDetalle')
+  };
+}
+
+function resolveConciliacionModels(models = {}) {
+  return {
+    Mensualidad: models.Mensualidad || Mensualidad,
+    PagoDetalle: models.PagoDetalle || PagoDetalle
+  };
+}
 
 function normalizarTexto(value) {
   return String(value || '')
@@ -353,8 +373,34 @@ function rankByDateSimilarity(candidates, targetDate) {
   });
 }
 
+async function generarReporteConciliacionCore({ models = {} } = {}) {
+  const {
+    Mensualidad: MensualidadModel,
+    PagoDetalle: PagoDetalleModel
+  } = resolveConciliacionModels(models);
+
+  const mensualidadesEnRevision = await MensualidadModel.countDocuments({ estatus: 'En revision' });
+
+  const mensualidadesConPago = await MensualidadModel.find({ estatus: 'En revision' })
+    .select('_id')
+    .lean();
+
+  const mensualidadIds = mensualidadesConPago.map((item) => item._id);
+  const pagosAsociadosEnRevision = mensualidadIds.length > 0
+    ? await PagoDetalleModel.countDocuments({ id_mensualidad: { $in: mensualidadIds } })
+    : 0;
+
+  return {
+    mensualidadesEnRevision,
+    pagosAsociadosEnRevision
+  };
+}
+
 exports.previsualizarConciliacion = async (req, res) => {
   try {
+    const tenantModels = await getTenantConciliacionModels(req);
+    const { Mensualidad: TenantMensualidad, PagoDetalle: TenantPagoDetalle } = resolveConciliacionModels(tenantModels);
+
     if (!req.file?.buffer) {
       return res.status(400).json({ error: 'Debes subir un archivo de conciliacion' });
     }
@@ -365,7 +411,7 @@ exports.previsualizarConciliacion = async (req, res) => {
       ? parseTxtRows(req.file.buffer)
       : parseExcelRows(req.file.buffer);
 
-    const mensualidadesRevision = await Mensualidad.find({ estatus: 'En revision' })
+    const mensualidadesRevision = await TenantMensualidad.find({ estatus: 'En revision' })
       .populate('id_alumno', 'nombres apellidos')
       .select('_id monto_esperado estatus id_alumno');
 
@@ -373,7 +419,7 @@ exports.previsualizarConciliacion = async (req, res) => {
       mensualidadesRevision.map((m) => [String(m._id), m])
     );
 
-    const pagosSistema = await PagoDetalle.find({
+    const pagosSistema = await TenantPagoDetalle.find({
       id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) }
     }).select('_id id_mensualidad referencia monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
 
@@ -523,12 +569,15 @@ exports.previsualizarConciliacion = async (req, res) => {
 
 exports.confirmarMatchTotal = async (req, res) => {
   try {
+    const tenantModels = await getTenantConciliacionModels(req);
+    const { Mensualidad: TenantMensualidad, PagoDetalle: TenantPagoDetalle } = resolveConciliacionModels(tenantModels);
+
     const pagoIds = Array.isArray(req.body?.pago_ids) ? req.body.pago_ids : [];
     if (!pagoIds.length) {
       return res.status(400).json({ error: 'Debes enviar al menos un pago para confirmar' });
     }
 
-    const pagos = await PagoDetalle.find({ _id: { $in: pagoIds } }).select('_id id_mensualidad');
+    const pagos = await TenantPagoDetalle.find({ _id: { $in: pagoIds } }).select('_id id_mensualidad');
     if (!pagos.length) {
       return res.status(404).json({ error: 'No se encontraron pagos para confirmar' });
     }
@@ -537,10 +586,10 @@ exports.confirmarMatchTotal = async (req, res) => {
     let actualizadas = 0;
 
     for (const mensualidadId of mensualidadIds) {
-      const mensualidad = await Mensualidad.findById(mensualidadId);
+      const mensualidad = await TenantMensualidad.findById(mensualidadId);
       if (!mensualidad) continue;
 
-      const pagosMensualidad = await PagoDetalle.find({ id_mensualidad: mensualidad._id }).select('monto_pagado');
+      const pagosMensualidad = await TenantPagoDetalle.find({ id_mensualidad: mensualidad._id }).select('monto_pagado');
       const totalPagado = pagosMensualidad.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0);
       const montoEsperado = Number(mensualidad.monto_esperado) || 0;
 
@@ -565,3 +614,5 @@ exports.confirmarMatchTotal = async (req, res) => {
     return res.status(500).json({ error: err.message || 'Error al confirmar pagos' });
   }
 };
+
+exports.generarReporteConciliacionCore = generarReporteConciliacionCore;

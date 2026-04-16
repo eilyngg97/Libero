@@ -49,6 +49,17 @@ function Login({ onLogin }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.msg || 'Error de autenticación');
+
+      const tenantId = String(data.tenantId || '').trim().toLowerCase();
+      const tenantIdPrevio = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
+      if (tenantId && tenantIdPrevio && tenantId !== tenantIdPrevio) {
+        localStorage.removeItem('sedeSeleccionada');
+      }
+
+      if (tenantId) {
+        localStorage.setItem('tenantId', tenantId);
+      }
+
       localStorage.setItem('token', data.token);
       localStorage.setItem('usuario', JSON.stringify(data.user));
       localStorage.setItem('rol', data.user.rol);

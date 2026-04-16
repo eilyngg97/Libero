@@ -1,20 +1,21 @@
 // Obtener alumnos por representante
 exports.getAlumnosPorRepresentante = async (req, res) => {
   try {
+    const { Alumno: TenantAlumno, Representante: TenantRepresentante } = await getTenantAlumnoReadModels(req);
     const esUsuarioFinal = req.user?.rol === 'usuario';
     let alumnos = [];
     const incluirBajas = req.query.incluirBajas === '1';
     const filtroBajas = incluirBajas ? {} : { activo: { $ne: false } };
 
     if (esUsuarioFinal) {
-      const representantes = await Representante.find({ usuario: req.user.id }).select('_id');
+      const representantes = await TenantRepresentante.find({ usuario: req.user.id }).select('_id');
       const representanteIds = representantes.map((r) => r._id);
       const filtroPropio = [{ usuario: req.user.id }];
       if (representanteIds.length > 0) {
         filtroPropio.push({ representante: { $in: representanteIds } });
       }
 
-      let queryUsuario = Alumno.find({ ...filtroBajas, $or: filtroPropio });
+      let queryUsuario = TenantAlumno.find({ ...filtroBajas, $or: filtroPropio });
       if (req.query.populateSede === '1') {
         queryUsuario = queryUsuario.populate('sede');
       }
@@ -23,7 +24,7 @@ exports.getAlumnosPorRepresentante = async (req, res) => {
     }
 
     if (req.params.representanteId && req.params.representanteId !== 'null') {
-      let query = Alumno.find({ representante: req.params.representanteId, ...filtroBajas });
+      let query = TenantAlumno.find({ representante: req.params.representanteId, ...filtroBajas });
       if (req.query.populateSede === '1') {
         query = query.populate('sede');
       }
@@ -31,7 +32,7 @@ exports.getAlumnosPorRepresentante = async (req, res) => {
     }
     // Si no hay alumnos asociados a representante, buscar por usuario
     if ((!alumnos || alumnos.length === 0) && req.query.usuarioId) {
-      let query2 = Alumno.find({ usuario: req.query.usuarioId, ...filtroBajas });
+      let query2 = TenantAlumno.find({ usuario: req.query.usuarioId, ...filtroBajas });
       if (req.query.populateSede === '1') {
         query2 = query2.populate('sede');
       }
@@ -52,6 +53,41 @@ const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantAlumnoReadModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  // Registrar modelos referenciados para que populate funcione en la conexion tenant.
+  const TenantRepresentante = getTenantModel(connection, 'Representante');
+  const TenantSede = getTenantModel(connection, 'Sede');
+  const TenantAlumno = getTenantModel(connection, 'Alumno');
+  const TenantReposo = getTenantModel(connection, 'Reposo');
+
+  return {
+    Alumno: TenantAlumno,
+    Representante: TenantRepresentante,
+    Sede: TenantSede,
+    Reposo: TenantReposo
+  };
+}
+
+async function getTenantAlumnoWriteModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  return {
+    Alumno: getTenantModel(connection, 'Alumno'),
+    Representante: getTenantModel(connection, 'Representante'),
+    User: getTenantModel(connection, 'User'),
+    Sede: getTenantModel(connection, 'Sede'),
+    Reposo: getTenantModel(connection, 'Reposo'),
+    Mensualidad: getTenantModel(connection, 'Mensualidad'),
+    PagoDetalle: getTenantModel(connection, 'PagoDetalle')
+  };
+}
 
 function buildUploadUrl(req, file, folder) {
   if (!file || !file.filename) return null;
@@ -73,7 +109,7 @@ function normalizarNumeroFranela(valor) {
   return nro;
 }
 
-async function validarNumeroFranelaDisponible({ numeroFranela, categoria, excludeAlumnoId }) {
+async function validarNumeroFranelaDisponible({ numeroFranela, categoria, excludeAlumnoId, AlumnoModel = Alumno }) {
   if (numeroFranela === undefined || numeroFranela === null || numeroFranela === '') return;
 
   if (!Number.isInteger(numeroFranela) || numeroFranela < 1 || numeroFranela > 100) {
@@ -95,7 +131,7 @@ async function validarNumeroFranelaDisponible({ numeroFranela, categoria, exclud
     filtro._id = { $ne: excludeAlumnoId };
   }
 
-  const alumnoExistente = await Alumno.findOne(filtro).select('_id nombres apellidos sede categoria numero_franela');
+  const alumnoExistente = await AlumnoModel.findOne(filtro).select('_id nombres apellidos sede categoria numero_franela');
   if (alumnoExistente) {
     throw new Error(
       `El nro de franela ${numeroFranela} ya esta asignado en la categoria ${categoriaNormalizada} a ${alumnoExistente.nombres} ${alumnoExistente.apellidos}.`
@@ -165,7 +201,8 @@ function esTipoMensualidadBecaCompleta(tipoMensualidad) {
   return String(tipoMensualidad || '').toLowerCase() === 'beca_completa';
 }
 
-async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad) {
+async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models = {}) {
+  const AlumnoModel = models.Alumno || Alumno;
   const tipoDesdePopulate = mensualidad?.id_alumno?.tipo_mensualidad;
   if (tipoDesdePopulate !== undefined) {
     return tipoDesdePopulate;
@@ -174,7 +211,7 @@ async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad) {
   const alumnoId = mensualidad?.id_alumno?._id || mensualidad?.id_alumno;
   if (!alumnoId) return null;
 
-  const alumno = await Alumno.findById(alumnoId).select('tipo_mensualidad').lean();
+  const alumno = await AlumnoModel.findById(alumnoId).select('tipo_mensualidad').lean();
   return alumno?.tipo_mensualidad || null;
 }
 
@@ -199,10 +236,11 @@ function getPeriodoZonaCaracas() {
   };
 }
 
-async function resolverMontoBaseAlumno(alumno) {
+async function resolverMontoBaseAlumno(alumno, models = {}) {
+  const SedeModel = models.Sede || Sede;
   if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
     const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
-    const sede = await Sede.findById(sedeId).select('costo');
+    const sede = await SedeModel.findById(sedeId).select('costo');
     return redondearMonto(sede && sede.costo ? sede.costo : 0);
   }
 
@@ -213,8 +251,10 @@ async function resolverMontoBaseAlumno(alumno) {
   return 0;
 }
 
-async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null) {
-  const pagos = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
+async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null, models = {}) {
+  const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
+  const AlumnoModel = models.Alumno || Alumno;
+  const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const tienePagosRegistrados = pagos.length > 0;
   const totalPagado = redondearMonto(
     pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0)
@@ -225,7 +265,7 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
 
   if (deltaSaldo !== 0) {
-    const alumnoDoc = await Alumno.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
+    const alumnoDoc = await AlumnoModel.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
     if (alumnoDoc) {
       const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
       const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
@@ -244,7 +284,7 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
   const estatusActualNormalizado = String(mensualidad.estatus || '').toLowerCase();
-  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad);
+  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models);
   const esBecado = esTipoMensualidadBecaCompleta(tipoMensualidadAlumno);
 
   if (esBecado && estatusActualNormalizado !== 'exento por reposo') {
@@ -262,11 +302,12 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
   await mensualidad.save();
 }
 
-async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
+async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
+  const ReposoModel = models.Reposo || Reposo;
   const inicioMes = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
   const finMes = new Date(Date.UTC(anio, mes, 0, 23, 59, 59, 999));
 
-  const reposoIndefinido = await Reposo.findOne({
+  const reposoIndefinido = await ReposoModel.findOne({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Indefinido',
@@ -281,7 +322,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
     return 'EXENTO_POR_REPOSO';
   }
 
-  const reposoTotal = await Reposo.findOne({
+  const reposoTotal = await ReposoModel.findOne({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Total',
@@ -300,7 +341,8 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
   return reposoTotal ? 'EXENTO_POR_REPOSO' : 'NORMAL';
 }
 
-async function listarPeriodosAfectadosPorReposo(alumnoId, reposo) {
+async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}) {
+  const MensualidadModel = models.Mensualidad || Mensualidad;
   if (!reposo || !reposo.fecha_inicio) return [];
 
   const tipo = normalizarTipoReposo(reposo.tipo);
@@ -318,7 +360,7 @@ async function listarPeriodosAfectadosPorReposo(alumnoId, reposo) {
 
   const inicioMes = reposo.fecha_inicio.getUTCMonth() + 1;
   const inicioAnio = reposo.fecha_inicio.getUTCFullYear();
-  const mensualidades = await Mensualidad.find({
+  const mensualidades = await MensualidadModel.find({
     id_alumno: alumnoId,
     $or: [
       { anio: { $gt: inicioAnio } },
@@ -338,10 +380,12 @@ async function listarPeriodosAfectadosPorReposo(alumnoId, reposo) {
   return Array.from(periodosMap.values());
 }
 
-async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos) {
+async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, models = {}) {
+  const AlumnoModel = models.Alumno || Alumno;
+  const MensualidadModel = models.Mensualidad || Mensualidad;
   if (!Array.isArray(periodos) || periodos.length === 0) return;
 
-  const alumno = await Alumno.findById(alumnoId).select('sede tipo_mensualidad monto_personalizado_valor');
+  const alumno = await AlumnoModel.findById(alumnoId).select('sede tipo_mensualidad monto_personalizado_valor');
   if (!alumno) return;
 
   const periodosUnicos = Array.from(
@@ -349,11 +393,11 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos) {
   );
 
   for (const periodo of periodosUnicos) {
-    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumnoId, periodo.mes, periodo.anio);
-    let mensualidad = await Mensualidad.findOne({ id_alumno: alumnoId, mes: periodo.mes, anio: periodo.anio });
+    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumnoId, periodo.mes, periodo.anio, models);
+    let mensualidad = await MensualidadModel.findOne({ id_alumno: alumnoId, mes: periodo.mes, anio: periodo.anio });
 
     if (reglaReposo === 'EXENTO_POR_REPOSO') {
-      await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio);
+      await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio, models);
       continue;
     }
 
@@ -365,7 +409,7 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos) {
 
     const montoBase = mensualidad.monto_base !== undefined && mensualidad.monto_base !== null
       ? redondearMonto(mensualidad.monto_base)
-      : await resolverMontoBaseAlumno(alumno);
+      : await resolverMontoBaseAlumno(alumno, models);
 
     mensualidad.monto_base = montoBase;
     mensualidad.credito_aplicado = redondearMonto(mensualidad.credito_aplicado || 0);
@@ -374,7 +418,7 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos) {
       Math.max(0, montoBase - mensualidad.credito_aplicado - mensualidad.ajuste_extraordinario)
     );
 
-    await recalcularMensualidadPorPagos(mensualidad, estatusActual || 'Exento por reposo');
+    await recalcularMensualidadPorPagos(mensualidad, estatusActual || 'Exento por reposo', models);
   }
 }
 
@@ -395,7 +439,7 @@ function listarPeriodosEntreFechas(inicioDate, finDate) {
   return periodos;
 }
 
-async function aplicarReposoTotalPorPeriodo(alumnoId, fechaInicio, fechaFin = null) {
+async function aplicarReposoTotalPorPeriodo(alumnoId, fechaInicio, fechaFin = null, models = {}) {
   if (!(fechaInicio instanceof Date) || Number.isNaN(fechaInicio.getTime())) return;
 
   const fechaFinal = fechaFin instanceof Date && !Number.isNaN(fechaFin.getTime())
@@ -404,13 +448,14 @@ async function aplicarReposoTotalPorPeriodo(alumnoId, fechaInicio, fechaFin = nu
 
   const periodos = listarPeriodosEntreFechas(fechaInicio, fechaFinal);
   for (const periodo of periodos) {
-    await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio);
+    await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio, models);
   }
 }
 
-async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio) {
+async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio, models = {}) {
+  const MensualidadModel = models.Mensualidad || Mensualidad;
   const fechaVencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
-  await Mensualidad.findOneAndUpdate(
+  await MensualidadModel.findOneAndUpdate(
     { id_alumno: alumnoId, mes, anio, estatus: { $ne: 'Pagado' } },
     {
       $set: {
@@ -427,34 +472,38 @@ async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio) {
   );
 }
 
-async function eliminarUsuarioSiQuedaHuerfano(userId) {
+async function eliminarUsuarioSiQuedaHuerfano(userId, models = {}) {
   if (!userId) return;
 
+  const AlumnoModel = models.Alumno || Alumno;
+  const RepresentanteModel = models.Representante || Representante;
+  const UserModel = models.User || User;
+
   const [alumnoRelacionado, representanteRelacionado] = await Promise.all([
-    Alumno.findOne({ usuario: userId }).select('_id'),
-    Representante.findOne({ usuario: userId }).select('_id')
+    AlumnoModel.findOne({ usuario: userId }).select('_id'),
+    RepresentanteModel.findOne({ usuario: userId }).select('_id')
   ]);
 
   if (!alumnoRelacionado && !representanteRelacionado) {
-    await User.findByIdAndDelete(userId);
+    await UserModel.findByIdAndDelete(userId);
   }
 }
 
-async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnterior, cedulaNueva, nombres, apellidos }) {
+async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnterior, cedulaNueva, nombres, apellidos, UserModel = User }) {
   if (!representante || !cedulaNueva) return;
 
   const nombreCompleto = `${String(nombres || '').trim()} ${String(apellidos || '').trim()}`.trim();
   let user = null;
 
   if (representante.usuario) {
-    user = await User.findById(representante.usuario);
+    user = await UserModel.findById(representante.usuario);
   }
 
   if (!user) {
-    user = await User.findOne({ email: cedulaNueva });
+    user = await UserModel.findOne({ email: cedulaNueva });
     if (!user) {
       const password = await bcrypt.hash(cedulaNueva, 10);
-      user = new User({
+      user = new UserModel({
         nombre: nombreCompleto,
         email: cedulaNueva,
         password,
@@ -468,7 +517,7 @@ async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnte
   }
 
   if (String(user.email || '').trim() !== cedulaNueva) {
-    const userConCedulaNueva = await User.findOne({ email: cedulaNueva }).select('_id');
+    const userConCedulaNueva = await UserModel.findOne({ email: cedulaNueva }).select('_id');
     if (userConCedulaNueva && String(userConCedulaNueva._id) !== String(user._id)) {
       throw new Error('Ya existe un usuario de portal con esa cedula de representante.');
     }
@@ -493,11 +542,17 @@ async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnte
 // Obtener todos los alumnos
 exports.getAlumnos = async (req, res) => {
   try {
+    const {
+      Alumno: TenantAlumno,
+      Representante: TenantRepresentante,
+      Reposo: TenantReposo
+    } = await getTenantAlumnoReadModels(req);
+
     const incluirBajas = req.query.incluirBajas === '1';
     const filtro = incluirBajas ? {} : { activo: { $ne: false } };
 
     if (req.user?.rol === 'usuario') {
-      const representantes = await Representante.find({ usuario: req.user.id }).select('_id');
+      const representantes = await TenantRepresentante.find({ usuario: req.user.id }).select('_id');
       const representanteIds = representantes.map((r) => r._id);
       const filtroPropio = [{ usuario: req.user.id }];
       if (representanteIds.length > 0) {
@@ -512,12 +567,12 @@ exports.getAlumnos = async (req, res) => {
     if (req.query.sede) {
       filtro.sede = req.query.sede;
     }
-    const alumnos = await Alumno.find(filtro).populate('representante').populate('sede').lean();
+    const alumnos = await TenantAlumno.find(filtro).populate('representante').populate('sede').lean();
 
     const alumnoIds = alumnos.map((alumno) => alumno._id);
     const ahora = new Date();
     const repososActivos = alumnoIds.length > 0
-      ? await Reposo.find({
+      ? await TenantReposo.find({
           id_alumno: { $in: alumnoIds },
           estado: 'Activo',
           fecha_inicio: { $lte: ahora },
@@ -543,6 +598,7 @@ exports.getAlumnos = async (req, res) => {
 
 exports.getDisponibilidadNumeroFranela = async (req, res) => {
   try {
+    const { Alumno: TenantAlumno } = await getTenantAlumnoReadModels(req);
     const categoria = normalizarCategoria(req.query.categoria);
     if (!categoria) {
       return res.status(400).json({ error: 'La categoria es obligatoria.' });
@@ -559,7 +615,7 @@ exports.getDisponibilidadNumeroFranela = async (req, res) => {
       filtro._id = { $ne: excludeAlumnoId };
     }
 
-    const alumnos = await Alumno.find(filtro).select('numero_franela').lean();
+    const alumnos = await TenantAlumno.find(filtro).select('numero_franela').lean();
     const ocupadosSet = new Set();
 
     alumnos.forEach((alumno) => {
@@ -593,6 +649,7 @@ exports.createAlumno = async (req, res) => {
     console.log('BODY recibido:', req.body);
     console.log('FILE recibido:', req.file);
   try {
+    const { Alumno: TenantAlumno, Representante: TenantRepresentante, User: TenantUser } = await getTenantAlumnoWriteModels(req);
     let sedeId = req.body.sede;
     if (typeof sedeId === 'string') {
       try {
@@ -604,7 +661,7 @@ exports.createAlumno = async (req, res) => {
     }
     const cedula = (req.body.cedula || '').trim();
     if (cedula && sedeId) {
-      const existente = await Alumno.findOne({ cedula, sede: sedeId });
+      const existente = await TenantAlumno.findOne({ cedula, sede: sedeId });
       if (existente) {
         return res.status(409).json({ error: 'Ya existe un alumno con esa cedula en esta sede.' });
       }
@@ -629,12 +686,12 @@ exports.createAlumno = async (req, res) => {
         telefono: req.body.rep_telefono,
         domicilio: req.body.rep_domicilio || ''
       };
-      representante = await Representante.findOne({ cedula: repData.cedula });
-      user = await User.findOne({ email: repData.cedula });
+      representante = await TenantRepresentante.findOne({ cedula: repData.cedula });
+      user = await TenantUser.findOne({ email: repData.cedula });
       // Si no existe el usuario, crearlo
       if (!user) {
         const password = await bcrypt.hash(repData.cedula, 10);
-        user = new User({
+        user = new TenantUser({
           nombre: repData.nombres + ' ' + repData.apellidos,
           email: repData.cedula, // ahora el email es la cédula
           password,
@@ -644,7 +701,7 @@ exports.createAlumno = async (req, res) => {
       }
       // Si no existe el representante, crearlo y asociar el usuario
       if (!representante) {
-        representante = new Representante({ ...repData, usuario: user._id });
+        representante = new TenantRepresentante({ ...repData, usuario: user._id });
         await representante.save();
       } else if (!representante.usuario) {
         // Si el representante existe pero no tiene usuario asociado, actualizarlo
@@ -654,10 +711,10 @@ exports.createAlumno = async (req, res) => {
     } else {
       // Si no hay datos de representante, crear usuario con la cédula del alumno y asociar al alumno
       if (req.body.cedula && req.body.nombres && req.body.apellidos) {
-        user = await User.findOne({ email: req.body.cedula });
+        user = await TenantUser.findOne({ email: req.body.cedula });
         if (!user) {
           const password = await bcrypt.hash(req.body.cedula, 10);
-          user = new User({
+          user = new TenantUser({
             nombre: req.body.nombres + ' ' + req.body.apellidos,
             email: req.body.cedula,
             password,
@@ -693,7 +750,8 @@ exports.createAlumno = async (req, res) => {
     }
     await validarNumeroFranelaDisponible({
       numeroFranela: alumnoData.numero_franela,
-      categoria: alumnoData.categoria
+      categoria: alumnoData.categoria,
+      AlumnoModel: TenantAlumno
     });
     if (alumnoData.habilitar_pago_cuotas !== undefined) {
       alumnoData.habilitar_pago_cuotas = alumnoData.habilitar_pago_cuotas === true || alumnoData.habilitar_pago_cuotas === 'true';
@@ -729,7 +787,7 @@ exports.createAlumno = async (req, res) => {
       alumnoData.foto_cedula = buildUploadUrl(req, cedulaFile, 'alumnos');
     }
 
-    const alumno = new Alumno(alumnoData);
+    const alumno = new TenantAlumno(alumnoData);
     await alumno.save();
     res.status(201).json(alumno);
   } catch (err) {
@@ -741,7 +799,8 @@ exports.createAlumno = async (req, res) => {
 // Obtener un alumno por ID
 exports.getAlumnoById = async (req, res) => {
   try {
-    const alumno = await Alumno.findById(req.params.id).populate('representante').populate('sede');
+    const { Alumno: TenantAlumno } = await getTenantAlumnoReadModels(req);
+    const alumno = await TenantAlumno.findById(req.params.id).populate('representante').populate('sede');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
     res.json(alumno);
   } catch (err) {
@@ -752,7 +811,18 @@ exports.getAlumnoById = async (req, res) => {
 // Actualizar un alumno
 exports.updateAlumno = async (req, res) => {
   try {
-    const alumnoActual = await Alumno.findById(req.params.id).select('_id categoria numero_franela nombres apellidos cedula usuario representante');
+    const tenantModels = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      Representante: TenantRepresentante,
+      User: TenantUser,
+      Sede: TenantSede,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      Reposo: TenantReposo
+    } = tenantModels;
+
+    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria numero_franela nombres apellidos cedula usuario representante');
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
@@ -794,7 +864,7 @@ exports.updateAlumno = async (req, res) => {
         return res.status(400).json({ error: 'No se puede actualizar datos de representante porque el alumno no tiene representante asociado.' });
       }
 
-      const representanteActual = await Representante.findById(representanteObjetivoId);
+      const representanteActual = await TenantRepresentante.findById(representanteObjetivoId);
       if (!representanteActual) {
         return res.status(404).json({ error: 'Representante no encontrado para actualizar sus datos.' });
       }
@@ -809,7 +879,7 @@ exports.updateAlumno = async (req, res) => {
       }
 
       if (cedulaNuevaRepresentante !== cedulaAnteriorRepresentante) {
-        const representanteDuplicado = await Representante.findOne({
+        const representanteDuplicado = await TenantRepresentante.findOne({
           cedula: cedulaNuevaRepresentante,
           _id: { $ne: representanteActual._id }
         }).select('_id');
@@ -833,7 +903,8 @@ exports.updateAlumno = async (req, res) => {
         cedulaAnterior: cedulaAnteriorRepresentante,
         cedulaNueva: cedulaNuevaRepresentante,
         nombres: nombresNuevosRepresentante,
-        apellidos: apellidosNuevosRepresentante
+        apellidos: apellidosNuevosRepresentante,
+        UserModel: TenantUser
       });
       await representanteActual.save();
     }
@@ -860,7 +931,8 @@ exports.updateAlumno = async (req, res) => {
       await validarNumeroFranelaDisponible({
         numeroFranela: numeroObjetivo,
         categoria: categoriaObjetivo,
-        excludeAlumnoId: alumnoActual._id
+        excludeAlumnoId: alumnoActual._id,
+        AlumnoModel: TenantAlumno
       });
     }
     if (updateData.habilitar_pago_cuotas !== undefined) {
@@ -906,10 +978,10 @@ exports.updateAlumno = async (req, res) => {
 
     // Si el alumno no tiene representante, al completar cédula en edición se crea su usuario de portal.
     if (sinRepresentante && sinUsuario && cedulaObjetivo && nombresObjetivo && apellidosObjetivo) {
-      let user = await User.findOne({ email: cedulaObjetivo });
+      let user = await TenantUser.findOne({ email: cedulaObjetivo });
       if (!user) {
         const password = await bcrypt.hash(cedulaObjetivo, 10);
-        user = new User({
+        user = new TenantUser({
           nombre: `${nombresObjetivo} ${apellidosObjetivo}`.trim(),
           email: cedulaObjetivo,
           password,
@@ -920,7 +992,7 @@ exports.updateAlumno = async (req, res) => {
       updateData.usuario = user._id;
     }
 
-    const alumno = await Alumno.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    const alumno = await TenantAlumno.findByIdAndUpdate(req.params.id, updateData, { new: true });
     const debeRecalcularMonto =
       updateData.tipo_mensualidad !== undefined ||
       updateData.monto_personalizado_valor !== undefined ||
@@ -929,14 +1001,14 @@ exports.updateAlumno = async (req, res) => {
       const { mes, anio } = getPeriodoZonaCaracas();
       let monto = 0;
       if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
-        const sede = await Sede.findById(alumno.sede);
+        const sede = await TenantSede.findById(alumno.sede);
         monto = sede && sede.costo ? sede.costo : 0;
       } else if (alumno.tipo_mensualidad === 'monto_personalizado') {
         monto = alumno.monto_personalizado_valor || 0;
       } else if (alumno.tipo_mensualidad === 'beca_completa') {
         monto = 0;
       }
-      const mensualidadesPeriodo = await Mensualidad.find({
+      const mensualidadesPeriodo = await TenantMensualidad.find({
         id_alumno: alumno._id,
         mes,
         anio,
@@ -946,7 +1018,15 @@ exports.updateAlumno = async (req, res) => {
       for (const mensualidad of mensualidadesPeriodo) {
         mensualidad.monto_esperado = redondearMonto(monto);
         const estatusAnteriorMensualidad = mensualidad.estatus;
-        await recalcularMensualidadPorPagos(mensualidad, estatusAnteriorMensualidad);
+        await recalcularMensualidadPorPagos(mensualidad, estatusAnteriorMensualidad, {
+          Alumno: TenantAlumno,
+          Representante: TenantRepresentante,
+          User: TenantUser,
+          Sede: TenantSede,
+          Mensualidad: TenantMensualidad,
+          PagoDetalle: TenantPagoDetalle,
+          Reposo: TenantReposo
+        });
       }
     }
     res.json(alumno);
@@ -968,22 +1048,31 @@ exports.updateAlumno = async (req, res) => {
 // Eliminar un alumno
 exports.deleteAlumno = async (req, res) => {
   try {
-    const alumno = await Alumno.findByIdAndDelete(req.params.id);
+    const { Alumno: TenantAlumno, Representante: TenantRepresentante, User: TenantUser } = await getTenantAlumnoWriteModels(req);
+    const alumno = await TenantAlumno.findByIdAndDelete(req.params.id);
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     if (alumno.representante) {
-      const otroAlumnoConRepresentante = await Alumno.findOne({ representante: alumno.representante }).select('_id');
+      const otroAlumnoConRepresentante = await TenantAlumno.findOne({ representante: alumno.representante }).select('_id');
 
       if (!otroAlumnoConRepresentante) {
-        const representante = await Representante.findByIdAndDelete(alumno.representante);
+        const representante = await TenantRepresentante.findByIdAndDelete(alumno.representante);
         if (representante?.usuario) {
-          await eliminarUsuarioSiQuedaHuerfano(representante.usuario);
+          await eliminarUsuarioSiQuedaHuerfano(representante.usuario, {
+            Alumno: TenantAlumno,
+            Representante: TenantRepresentante,
+            User: TenantUser
+          });
         }
       }
     }
 
     if (alumno.usuario) {
-      await eliminarUsuarioSiQuedaHuerfano(alumno.usuario);
+      await eliminarUsuarioSiQuedaHuerfano(alumno.usuario, {
+        Alumno: TenantAlumno,
+        Representante: TenantRepresentante,
+        User: TenantUser
+      });
     }
 
     res.json({ message: 'Alumno eliminado' });
@@ -995,8 +1084,9 @@ exports.deleteAlumno = async (req, res) => {
 // Dar de baja un alumno (baja lógica)
 exports.darDeBajaAlumno = async (req, res) => {
   try {
+    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
     const { motivo_baja } = req.body || {};
-    const alumno = await Alumno.findByIdAndUpdate(
+    const alumno = await TenantAlumno.findByIdAndUpdate(
       req.params.id,
       {
         activo: false,
@@ -1017,7 +1107,8 @@ exports.darDeBajaAlumno = async (req, res) => {
 // Reactivar un alumno (revertir baja)
 exports.reactivarAlumno = async (req, res) => {
   try {
-    const alumno = await Alumno.findByIdAndUpdate(
+    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
+    const alumno = await TenantAlumno.findByIdAndUpdate(
       req.params.id,
       {
         activo: true,
@@ -1038,10 +1129,11 @@ exports.reactivarAlumno = async (req, res) => {
 // Listar historial de reposos de un alumno
 exports.getRepososAlumno = async (req, res) => {
   try {
-    const alumno = await Alumno.findById(req.params.id);
+    const { Alumno: TenantAlumno, Reposo: TenantReposo } = await getTenantAlumnoWriteModels(req);
+    const alumno = await TenantAlumno.findById(req.params.id);
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
-    const reposos = await Reposo.find({ id_alumno: alumno._id }).sort({ fecha_inicio: -1, createdAt: -1 });
+    const reposos = await TenantReposo.find({ id_alumno: alumno._id }).sort({ fecha_inicio: -1, createdAt: -1 });
     res.json(reposos);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener reposos del alumno' });
@@ -1051,7 +1143,15 @@ exports.getRepososAlumno = async (req, res) => {
 // Registrar reposo y aplicar lógica de mensualidad según tipo
 exports.registrarReposoAlumno = async (req, res) => {
   try {
-    const alumno = await Alumno.findById(req.params.id);
+    const tenantModels = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      Reposo: TenantReposo,
+      Mensualidad: TenantMensualidad,
+      Sede: TenantSede,
+      PagoDetalle: TenantPagoDetalle
+    } = tenantModels;
+    const alumno = await TenantAlumno.findById(req.params.id);
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     const fecha_inicio_raw = req.body.fecha_inicio || req.body.fechaInicio;
@@ -1087,7 +1187,7 @@ exports.registrarReposoAlumno = async (req, res) => {
       certificado = buildUploadUrl(req, req.file, 'reposos');
     }
 
-    const reposo = await Reposo.create({
+    const reposo = await TenantReposo.create({
       id_alumno: alumno._id,
       fecha_inicio,
       fecha_fin,
@@ -1100,14 +1200,14 @@ exports.registrarReposoAlumno = async (req, res) => {
     const { mes: mesInicio, anio: anioInicio } = getPeriodoFromInput(fecha_inicio_raw, fecha_inicio);
 
     if (tipo === 'Total') {
-      await aplicarReposoTotalPorPeriodo(alumno._id, fecha_inicio, fecha_fin);
+      await aplicarReposoTotalPorPeriodo(alumno._id, fecha_inicio, fecha_fin, tenantModels);
     }
 
     if (tipo === 'Indefinido') {
       if (fecha_fin) {
-        await aplicarReposoTotalPorPeriodo(alumno._id, fecha_inicio, fecha_fin);
+        await aplicarReposoTotalPorPeriodo(alumno._id, fecha_inicio, fecha_fin, tenantModels);
       } else {
-        await Mensualidad.updateMany(
+        await TenantMensualidad.updateMany(
           {
             id_alumno: alumno._id,
             estatus: { $ne: 'Pagado' },
@@ -1124,7 +1224,7 @@ exports.registrarReposoAlumno = async (req, res) => {
           }
         );
 
-        await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio);
+        await upsertMensualidadExentaPorReposo(alumno._id, mesInicio, anioInicio, tenantModels);
       }
     }
 
@@ -1137,10 +1237,15 @@ exports.registrarReposoAlumno = async (req, res) => {
 // Editar reposo de un alumno
 exports.editarReposoAlumno = async (req, res) => {
   try {
-    const alumno = await Alumno.findById(req.params.id).select('_id');
+    const tenantModels = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      Reposo: TenantReposo
+    } = tenantModels;
+    const alumno = await TenantAlumno.findById(req.params.id).select('_id');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
-    const reposo = await Reposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
+    const reposo = await TenantReposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
     if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
 
     const reposoAnterior = {
@@ -1201,9 +1306,9 @@ exports.editarReposoAlumno = async (req, res) => {
 
     await reposo.save();
 
-    const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior);
-    const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, reposo);
-    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos]);
+    const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior, tenantModels);
+    const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, reposo, tenantModels);
+    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos], tenantModels);
 
     return res.json({ message: 'Reposo actualizado', reposo });
   } catch (err) {
@@ -1213,10 +1318,15 @@ exports.editarReposoAlumno = async (req, res) => {
 
 exports.finalizarReposoIndefinido = async (req, res) => {
   try {
-    const alumno = await Alumno.findById(req.params.id).select('_id');
+    const tenantModels = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      Reposo: TenantReposo
+    } = tenantModels;
+    const alumno = await TenantAlumno.findById(req.params.id).select('_id');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
-    const reposo = await Reposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
+    const reposo = await TenantReposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
     if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
     if (reposo.tipo !== 'Indefinido') {
       return res.status(400).json({ error: 'Solo los reposos indefinidos se pueden finalizar con esta acción.' });
@@ -1245,9 +1355,9 @@ exports.finalizarReposoIndefinido = async (req, res) => {
     reposo.estado = 'Finalizado';
     await reposo.save();
 
-    const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior);
-    const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, reposo);
-    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos]);
+    const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior, tenantModels);
+    const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, reposo, tenantModels);
+    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos], tenantModels);
 
     return res.json({ message: 'Reposo finalizado', reposo });
   } catch (err) {
@@ -1258,14 +1368,19 @@ exports.finalizarReposoIndefinido = async (req, res) => {
 // Eliminar reposo de un alumno
 exports.eliminarReposoAlumno = async (req, res) => {
   try {
-    const alumno = await Alumno.findById(req.params.id).select('_id');
+    const tenantModels = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      Reposo: TenantReposo
+    } = tenantModels;
+    const alumno = await TenantAlumno.findById(req.params.id).select('_id');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
-    const reposo = await Reposo.findOneAndDelete({ _id: req.params.reposoId, id_alumno: alumno._id });
+    const reposo = await TenantReposo.findOneAndDelete({ _id: req.params.reposoId, id_alumno: alumno._id });
     if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
 
-    const periodosAfectados = await listarPeriodosAfectadosPorReposo(alumno._id, reposo);
-    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, periodosAfectados);
+    const periodosAfectados = await listarPeriodosAfectadosPorReposo(alumno._id, reposo, tenantModels);
+    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, periodosAfectados, tenantModels);
 
     return res.json({ message: 'Reposo eliminado' });
   } catch (err) {

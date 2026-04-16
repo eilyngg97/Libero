@@ -133,6 +133,24 @@ function SedeBreadcrumb() {
   );
 }
 
+function RequireSedeSelection({ children }) {
+  const { sedeSeleccionada } = useSede();
+  const location = useLocation();
+  const hasValidSede = Boolean(sedeSeleccionada && sedeSeleccionada._id);
+
+  if (!hasValidSede) {
+    return (
+      <Navigate
+        to="/dashboard"
+        replace
+        state={{ sedeRequired: true, redirect: location.pathname }}
+      />
+    );
+  }
+
+  return children;
+}
+
 
 function App() {
   const [sedeSeleccionada, setSedeSeleccionada] = React.useState(null);
@@ -180,7 +198,7 @@ function App() {
                       <SedeBreadcrumb />
                       <Routes>
                         <Route path="dashboard" element={<ProtectedRoute allowedRoles={adminOnly}><Dashboard /></ProtectedRoute>} />
-                        <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><Alumnos /></ProtectedRoute>} />
+                        <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><Alumnos /></RequireSedeSelection></ProtectedRoute>} />
                         <Route path="entrenadores" element={<ProtectedRoute allowedRoles={adminOnly}><Entrenadores /></ProtectedRoute>} />
                         <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly}><Horarios /></ProtectedRoute>} />
                         <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
@@ -188,7 +206,7 @@ function App() {
                         <Route path="mensualidades" element={<ProtectedRoute allowedRoles={adminOnly}><Mensualidades /></ProtectedRoute>} />
                         <Route path="sedes" element={<ProtectedRoute allowedRoles={adminOnly}><Sedes /></ProtectedRoute>} />
                         <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly}><PanelOpciones /></ProtectedRoute>} />
-                        <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><TablaAlumnos /></ProtectedRoute>} />
+                        <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><TablaAlumnos /></RequireSedeSelection></ProtectedRoute>} />
                         <Route path="alumno/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoDetalle').default)}</ProtectedRoute>} />
                         <Route path="alumno/editar/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoEditar').default)}</ProtectedRoute>} />
                         <Route path="alumno-editar/:id" element={<ProtectedRoute allowedRoles={adminAndUser}><EntrypointAlumnoEditar /></ProtectedRoute>} />

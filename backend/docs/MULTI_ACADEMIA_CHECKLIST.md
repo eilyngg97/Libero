@@ -1,5 +1,9 @@
 # Checklist Multi-Academia (Academia != Sede)
 
+## Nota de enfoque
+- Este checklist esta orientado al enfoque de una sola DB compartida con campo academia en modelos.
+- Si se adopta enfoque de DB separada por academia, usar como guia principal: `backend/docs/MULTI_TENANT_DB_POR_ACADEMIA_RUNBOOK.md`.
+
 ## Contexto clave
 - Academia = tenant (aislamiento de datos y permisos).
 - Sede = sucursal interna de una academia.

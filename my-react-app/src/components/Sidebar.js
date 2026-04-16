@@ -61,6 +61,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
     localStorage.removeItem('token');
     localStorage.removeItem('rol');
     localStorage.removeItem('usuario');
+    localStorage.removeItem('tenantId');
     localStorage.removeItem('sedeSeleccionada');
     navigate('/login');
   };

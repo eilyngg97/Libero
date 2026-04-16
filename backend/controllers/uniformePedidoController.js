@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const UniformePedido = require('../models/UniformePedido');
 const Uniforme = require('../models/Uniforme');
 const Alumno = require('../models/Alumno');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
 
 const ESTADOS_PEDIDO = {
   PENDIENTE: 'pendiente',
@@ -12,13 +14,37 @@ const ESTADOS_PEDIDO = {
   CANCELADO: 'cancelado'
 };
 
-function buildComprobanteUrl(file) {
+function buildComprobanteUrl(file, tenantIdInput) {
   if (!file?.filename) return null;
-  return `/uploads/comprobantes/${file.filename}`;
+  const tenantId = String(tenantIdInput || process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
+  return `/uploads/${tenantId}/comprobantes/${file.filename}`;
+}
+
+async function getTenantUniformePedidoModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  const models = {
+    UniformePedido: getTenantModel(connection, 'UniformePedido'),
+    Uniforme: getTenantModel(connection, 'Uniforme'),
+    Alumno: getTenantModel(connection, 'Alumno')
+  };
+
+  // Registrar modelos referenciados para populate en la misma conexion.
+  getTenantModel(connection, 'User');
+  getTenantModel(connection, 'Sede');
+
+  return models;
 }
 
 exports.createPedidoUniforme = async (req, res) => {
   try {
+    const {
+      UniformePedido: TenantUniformePedido,
+      Uniforme: TenantUniforme,
+      Alumno: TenantAlumno
+    } = await getTenantUniformePedidoModels(req);
+
     const {
       alumnoId,
       sedeId,
@@ -38,9 +64,9 @@ exports.createPedidoUniforme = async (req, res) => {
       return res.status(400).json({ error: 'sedeId inválido' });
     }
 
-    const uniforme = await Uniforme.findOne({ prenda });
+    const uniforme = await TenantUniforme.findOne({ prenda });
     const precio = uniforme?.precio || 0;
-    const alumno = await Alumno.findById(alumnoId).select('numero_franela categoria activo');
+    const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo');
 
     if (!alumno) {
       return res.status(404).json({ error: 'Alumno no encontrado' });
@@ -59,7 +85,7 @@ exports.createPedidoUniforme = async (req, res) => {
         return res.status(400).json({ error: 'El alumno no tiene categoria asignada para validar numero de franela.' });
       }
 
-      const numeroOcupado = await Alumno.findOne({
+      const numeroOcupado = await TenantAlumno.findOne({
         _id: { $ne: alumno._id },
         activo: { $ne: false },
         categoria: { $regex: new RegExp(`^${String(categoria).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
@@ -75,7 +101,7 @@ exports.createPedidoUniforme = async (req, res) => {
       numeroFranelaPedido = numeroSolicitado;
     }
 
-    const pedido = await UniformePedido.create({
+    const pedido = await TenantUniformePedido.create({
       alumno: alumnoId,
       sede: sedeId || undefined,
       prenda,
@@ -95,6 +121,7 @@ exports.createPedidoUniforme = async (req, res) => {
 
 exports.getMisPedidosUniforme = async (req, res) => {
   try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
     const filtro = {
       solicitado_por: req.user?.id,
       estado: {
@@ -116,7 +143,7 @@ exports.getMisPedidosUniforme = async (req, res) => {
       filtro.alumno = req.query.alumnoId;
     }
 
-    const pedidos = await UniformePedido.find(filtro)
+    const pedidos = await TenantUniformePedido.find(filtro)
       .populate('alumno')
       .populate('sede')
       .sort({ createdAt: -1 });
@@ -129,6 +156,7 @@ exports.getMisPedidosUniforme = async (req, res) => {
 
 exports.getPedidosUniforme = async (req, res) => {
   try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
     const filtro = {};
 
     if (req.query.sedeId) {
@@ -138,7 +166,7 @@ exports.getPedidosUniforme = async (req, res) => {
       filtro.sede = req.query.sedeId;
     }
 
-    const pedidos = await UniformePedido.find(filtro)
+    const pedidos = await TenantUniformePedido.find(filtro)
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por')
@@ -151,12 +179,13 @@ exports.getPedidosUniforme = async (req, res) => {
 
 exports.solicitarPagoPedido = async (req, res) => {
   try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
     const precio = Number(req.body?.precio);
     if (!precio || Number.isNaN(precio) || precio <= 0) {
       return res.status(400).json({ error: 'Precio inválido' });
     }
 
-    const pedido = await UniformePedido.findById(req.params.id);
+    const pedido = await TenantUniformePedido.findById(req.params.id);
     if (!pedido) {
       return res.status(404).json({ error: 'Pedido no encontrado' });
     }
@@ -169,7 +198,7 @@ exports.solicitarPagoPedido = async (req, res) => {
     pedido.estado = ESTADOS_PEDIDO.ESPERANDO_PAGO;
     await pedido.save();
 
-    const pedidoActualizado = await UniformePedido.findById(pedido._id)
+    const pedidoActualizado = await TenantUniformePedido.findById(pedido._id)
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por');
@@ -182,7 +211,8 @@ exports.solicitarPagoPedido = async (req, res) => {
 
 exports.cancelarPedido = async (req, res) => {
   try {
-    const pedido = await UniformePedido.findOne({
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findOne({
       _id: req.params.id,
       solicitado_por: req.user?.id,
       estado: { $in: [ESTADOS_PEDIDO.PENDIENTE, ESTADOS_PEDIDO.ESPERANDO_PAGO] }
@@ -202,8 +232,9 @@ exports.cancelarPedido = async (req, res) => {
 
 exports.registrarPagoPedido = async (req, res) => {
   try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
     const { metodo_pago, referencia, fecha_pago } = req.body;
-    const pedido = await UniformePedido.findOne({
+    const pedido = await TenantUniformePedido.findOne({
       _id: req.params.id,
       solicitado_por: req.user?.id,
       estado: ESTADOS_PEDIDO.ESPERANDO_PAGO
@@ -220,7 +251,7 @@ exports.registrarPagoPedido = async (req, res) => {
     pedido.metodo_pago = metodo_pago;
     pedido.referencia = referencia || undefined;
     pedido.fecha_pago = fecha_pago ? new Date(fecha_pago) : new Date();
-    pedido.comprobante_url = buildComprobanteUrl(req.file) || pedido.comprobante_url;
+    pedido.comprobante_url = buildComprobanteUrl(req.file, req.tenantId) || pedido.comprobante_url;
     pedido.estado = ESTADOS_PEDIDO.PAGO_EN_REVISION;
 
     await pedido.save();
@@ -232,7 +263,8 @@ exports.registrarPagoPedido = async (req, res) => {
 
 exports.verificarPagoPedido = async (req, res) => {
   try {
-    const pedido = await UniformePedido.findById(req.params.id)
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findById(req.params.id)
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por');
@@ -256,7 +288,8 @@ exports.verificarPagoPedido = async (req, res) => {
 
 exports.marcarEntregado = async (req, res) => {
   try {
-    const pedido = await UniformePedido.findById(req.params.id)
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findById(req.params.id)
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por');

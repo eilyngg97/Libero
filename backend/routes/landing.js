@@ -7,11 +7,19 @@ const { authMiddleware, rolMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
-const landingUploadDir = path.join(__dirname, '..', 'uploads', 'landing-atletas');
-fs.mkdirSync(landingUploadDir, { recursive: true });
+function resolveTenantId(req) {
+  return String(req.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
+    .trim()
+    .toLowerCase();
+}
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, landingUploadDir),
+  destination: (req, file, cb) => {
+    const tenantId = resolveTenantId(req);
+    const landingUploadDir = path.join(__dirname, '..', 'uploads', tenantId, 'landing-atletas');
+    fs.mkdirSync(landingUploadDir, { recursive: true });
+    cb(null, landingUploadDir);
+  },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;

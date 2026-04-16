@@ -2,24 +2,45 @@
 // Uso:
 //   node scripts/migrar_media_base64_a_archivos.js --dry-run
 //   node scripts/migrar_media_base64_a_archivos.js --apply
+//   node scripts/migrar_media_base64_a_archivos.js --dry-run --tenant-id villasport
+//   node scripts/migrar_media_base64_a_archivos.js --apply --all-tenants
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const mongoose = require('mongoose');
-const Alumno = require('../models/Alumno');
-const Reposo = require('../models/Reposo');
+const { getTenantBusinessConnection, getBusinessDbUriFromTenant } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+const { listActiveTenants } = require('../services/tenantResolverService');
 const { getMongoUri } = require('../config/secrets');
 require('dotenv').config();
 
 const args = process.argv.slice(2);
 const applyChanges = args.includes('--apply');
 const dryRun = !applyChanges;
+const allTenants = args.includes('--all-tenants');
 
-const alumnosUploadDir = path.join(__dirname, '..', 'uploads', 'alumnos');
-const repososUploadDir = path.join(__dirname, '..', 'uploads', 'reposos');
+function getArgValue(flag) {
+  const index = args.indexOf(flag);
+  if (index < 0) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) return null;
+  return String(value).trim();
+}
 
-function ensureDirs() {
+const tenantIdArg = getArgValue('--tenant-id');
+const targetTenantId = tenantIdArg
+  ? tenantIdArg.toLowerCase()
+  : String(process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
+
+function resolveTenantUploadDirs(tenantId) {
+  return {
+    alumnosUploadDir: path.join(__dirname, '..', 'uploads', tenantId, 'alumnos'),
+    repososUploadDir: path.join(__dirname, '..', 'uploads', tenantId, 'reposos')
+  };
+}
+
+function ensureDirs(tenantId) {
+  const { alumnosUploadDir, repososUploadDir } = resolveTenantUploadDirs(tenantId);
   fs.mkdirSync(alumnosUploadDir, { recursive: true });
   fs.mkdirSync(repososUploadDir, { recursive: true });
 }
@@ -69,7 +90,8 @@ function writeBase64ToFile(dataUri, outDir, prefix, docId) {
   return filename;
 }
 
-async function migrarAlumnos() {
+async function migrarAlumnos({ AlumnoModel, tenantId }) {
+  const { alumnosUploadDir } = resolveTenantUploadDirs(tenantId);
   const stats = {
     total: 0,
     conBase64Foto: 0,
@@ -79,7 +101,7 @@ async function migrarAlumnos() {
     errores: 0
   };
 
-  const alumnos = await Alumno.find({
+  const alumnos = await AlumnoModel.find({
     $or: [
       { foto: /^data:/ },
       { foto_cedula: /^data:/ }
@@ -96,7 +118,7 @@ async function migrarAlumnos() {
         stats.conBase64Foto += 1;
         if (applyChanges) {
           const filename = writeBase64ToFile(alumno.foto, alumnosUploadDir, 'foto', alumno._id);
-          update.foto = `/uploads/alumnos/${filename}`;
+          update.foto = `/uploads/${tenantId}/alumnos/${filename}`;
         }
       }
 
@@ -104,7 +126,7 @@ async function migrarAlumnos() {
         stats.conBase64Cedula += 1;
         if (applyChanges) {
           const filename = writeBase64ToFile(alumno.foto_cedula, alumnosUploadDir, 'cedula', alumno._id);
-          update.foto_cedula = `/uploads/alumnos/${filename}`;
+          update.foto_cedula = `/uploads/${tenantId}/alumnos/${filename}`;
         }
       }
 
@@ -115,7 +137,7 @@ async function migrarAlumnos() {
 
       if (Object.keys(update).length > 0) {
         if (applyChanges) {
-          await Alumno.updateOne({ _id: alumno._id }, { $set: update });
+          await AlumnoModel.updateOne({ _id: alumno._id }, { $set: update });
           stats.actualizados += 1;
         }
       }
@@ -128,7 +150,8 @@ async function migrarAlumnos() {
   return stats;
 }
 
-async function migrarReposos() {
+async function migrarReposos({ ReposoModel, tenantId }) {
+  const { repososUploadDir } = resolveTenantUploadDirs(tenantId);
   const stats = {
     total: 0,
     conBase64Certificado: 0,
@@ -137,7 +160,7 @@ async function migrarReposos() {
     errores: 0
   };
 
-  const reposos = await Reposo.find({ certificado: /^data:/ }).select('_id certificado');
+  const reposos = await ReposoModel.find({ certificado: /^data:/ }).select('_id certificado');
   stats.total = reposos.length;
 
   for (const reposo of reposos) {
@@ -149,9 +172,9 @@ async function migrarReposos() {
 
       if (applyChanges) {
         const filename = writeBase64ToFile(reposo.certificado, repososUploadDir, 'certificado', reposo._id);
-        await Reposo.updateOne(
+        await ReposoModel.updateOne(
           { _id: reposo._id },
-          { $set: { certificado: `/uploads/reposos/${filename}` } }
+          { $set: { certificado: `/uploads/${tenantId}/reposos/${filename}` } }
         );
         stats.actualizados += 1;
       }
@@ -164,51 +187,90 @@ async function migrarReposos() {
   return stats;
 }
 
-async function main() {
-  const mode = dryRun ? 'DRY-RUN' : 'APPLY';
-  console.log(`\n[${mode}] Migracion de media base64 -> archivos locales\n`);
-
-  if (!dryRun) {
-    ensureDirs();
+async function resolveTargetTenants() {
+  if (allTenants) {
+    const tenants = await listActiveTenants();
+    if (tenants.length === 0) {
+      throw new Error('No hay tenants activos para procesar.');
+    }
+    return tenants;
   }
 
-  const mongoUri = getMongoUri();
-  await mongoose.connect(mongoUri);
+  if (tenantIdArg) {
+    const tenants = await listActiveTenants();
+    const byId = tenants.find((tenant) => String(tenant.tenantId).toLowerCase() === targetTenantId);
+    if (byId) return [byId];
+  }
 
-  try {
-    const alumnosStats = await migrarAlumnos();
-    const repososStats = await migrarReposos();
+  return [
+    {
+      tenantId: targetTenantId,
+      dbUri: process.env.DEFAULT_TENANT_DB_URI || getMongoUri()
+    }
+  ];
+}
+
+async function procesarTenant(tenant) {
+  const tenantConfig = {
+    tenantId: String(tenant.tenantId || targetTenantId).trim().toLowerCase(),
+    dbUri: tenant.dbUri || getBusinessDbUriFromTenant(tenant)
+  };
+
+  if (!dryRun) {
+    ensureDirs(tenantConfig.tenantId);
+  }
+
+  const connection = await getTenantBusinessConnection(tenantConfig);
+  const AlumnoModel = getTenantModel(connection, 'Alumno');
+  const ReposoModel = getTenantModel(connection, 'Reposo');
+
+  const alumnosStats = await migrarAlumnos({ AlumnoModel, tenantId: tenantConfig.tenantId });
+  const repososStats = await migrarReposos({ ReposoModel, tenantId: tenantConfig.tenantId });
+
+  return {
+    tenantId: tenantConfig.tenantId,
+    alumnosStats,
+    repososStats
+  };
+}
+
+async function main() {
+  const mode = dryRun ? 'DRY-RUN' : 'APPLY';
+  console.log(`\n[${mode}] Migracion de media base64 -> archivos locales por tenant\n`);
+
+  const targetTenants = await resolveTargetTenants();
+  const resultados = [];
+
+  for (const tenant of targetTenants) {
+    console.log(`\nProcesando tenant: ${tenant.tenantId}`);
+    const resultado = await procesarTenant(tenant);
+    resultados.push(resultado);
 
     console.log('\nResumen alumnos:');
-    console.log(`- Registros candidatos: ${alumnosStats.total}`);
-    console.log(`- Con foto base64: ${alumnosStats.conBase64Foto}`);
-    console.log(`- Con foto_cedula base64: ${alumnosStats.conBase64Cedula}`);
-    console.log(`- Registros migrables: ${alumnosStats.migrables}`);
-    console.log(`- Registros actualizados: ${alumnosStats.actualizados}`);
-    console.log(`- Errores: ${alumnosStats.errores}`);
+    console.log(`- Registros candidatos: ${resultado.alumnosStats.total}`);
+    console.log(`- Con foto base64: ${resultado.alumnosStats.conBase64Foto}`);
+    console.log(`- Con foto_cedula base64: ${resultado.alumnosStats.conBase64Cedula}`);
+    console.log(`- Registros migrables: ${resultado.alumnosStats.migrables}`);
+    console.log(`- Registros actualizados: ${resultado.alumnosStats.actualizados}`);
+    console.log(`- Errores: ${resultado.alumnosStats.errores}`);
 
     console.log('\nResumen reposos:');
-    console.log(`- Registros candidatos: ${repososStats.total}`);
-    console.log(`- Con certificado base64: ${repososStats.conBase64Certificado}`);
-    console.log(`- Registros migrables: ${repososStats.migrables}`);
-    console.log(`- Registros actualizados: ${repososStats.actualizados}`);
-    console.log(`- Errores: ${repososStats.errores}`);
+    console.log(`- Registros candidatos: ${resultado.repososStats.total}`);
+    console.log(`- Con certificado base64: ${resultado.repososStats.conBase64Certificado}`);
+    console.log(`- Registros migrables: ${resultado.repososStats.migrables}`);
+    console.log(`- Registros actualizados: ${resultado.repososStats.actualizados}`);
+    console.log(`- Errores: ${resultado.repososStats.errores}`);
+  }
 
-    if (dryRun) {
-      console.log('\nNo se escribieron archivos ni cambios en BD (modo simulacion).');
-      console.log('Para aplicar cambios: node scripts/migrar_media_base64_a_archivos.js --apply');
-    } else {
-      console.log('\nMigracion aplicada. Se recomienda ejecutar backup y verificacion visual.');
-    }
-  } finally {
-    await mongoose.disconnect();
+  if (dryRun) {
+    console.log('\nNo se escribieron archivos ni cambios en BD (modo simulacion).');
+    console.log('Para aplicar cambios: node scripts/migrar_media_base64_a_archivos.js --apply [--tenant-id villasport|--all-tenants]');
+  } else {
+    console.log('\nMigracion aplicada. Se recomienda ejecutar backup y verificacion visual.');
   }
 }
 
-main().catch(async (err) => {
+main().catch((err) => {
   console.error('Error en migracion:', err.message);
-  try {
-    await mongoose.disconnect();
-  } catch {}
   process.exit(1);
 });

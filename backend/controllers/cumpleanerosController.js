@@ -1,12 +1,21 @@
 // Obtener alumnos que cumplen años en el mes actual
 const Alumno = require('../models/Alumno');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantAlumnoModel(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+  return getTenantModel(connection, 'Alumno');
+}
 
 exports.getCumpleanerosMes = async (req, res) => {
   try {
+    const TenantAlumno = await getTenantAlumnoModel(req);
     const now = new Date();
     const mesActual = now.getMonth() + 1; // Enero = 1
     // Buscar alumnos con fecha_nacimiento en el mes actual
-    const alumnos = await Alumno.find({
+    const alumnos = await TenantAlumno.find({
       activo: { $ne: false },
       dado_de_baja: { $ne: true }
     }).populate('sede');

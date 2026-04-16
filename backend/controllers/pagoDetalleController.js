@@ -3,6 +3,8 @@ const Mensualidad = require('../models/Mensualidad');
 const Alumno = require('../models/Alumno');
 const fs = require('fs');
 const path = require('path');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
 
 const MONTO_TOLERANCIA_BS = 100;
 
@@ -76,8 +78,21 @@ function eliminarArchivoComprobante(comprobanteUrl) {
   }
 }
 
-async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior) {
-  const pagos = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
+async function getTenantFinanceModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  return {
+    PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
+    Mensualidad: getTenantModel(connection, 'Mensualidad'),
+    Alumno: getTenantModel(connection, 'Alumno')
+  };
+}
+
+async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, models = {}) {
+  const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
+  const AlumnoModel = models.Alumno || Alumno;
+  const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const totalPagado = redondearMonto(pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0));
   const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
   const restante = redondearMonto(Math.max(0, montoEsperado - totalPagado));
@@ -91,7 +106,7 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior) {
   if (deltaSaldo !== 0) {
     const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
     if (alumnoId) {
-      const alumno = await Alumno.findById(alumnoId);
+      const alumno = await AlumnoModel.findById(alumnoId);
       if (alumno) {
         const saldoResultante = redondearMonto((alumno.saldo_a_favor_mensualidades || 0) + deltaSaldo);
         if (saldoResultante < 0) {
@@ -128,6 +143,11 @@ async function obtenerMensualidadConAlumno(idMensualidad) {
   return Mensualidad.findById(idMensualidad).populate('id_alumno');
 }
 
+async function obtenerMensualidadConAlumnoTenant(idMensualidad, models = {}) {
+  const MensualidadModel = models.Mensualidad || Mensualidad;
+  return MensualidadModel.findById(idMensualidad).populate('id_alumno');
+}
+
 function validarMontoBs(montoBs) {
   return montoBs === null || (!Number.isNaN(montoBs) && montoBs > 0);
 }
@@ -144,13 +164,14 @@ function calcularToleranciaUsdDesdeBs(monto, montoBs) {
   return redondearMonto(MONTO_TOLERANCIA_BS / tasaAplicada);
 }
 
-async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, actorRol = null }) {
+async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, actorRol = null, models = {} }) {
+  const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
   if (!mensualidad) return { error: { status: 404, payload: { error: 'Mensualidad no encontrada' } } };
 
   const habilitarCuotasAlumno = mensualidad.id_alumno?.habilitar_pago_cuotas === true;
   const puedePagarCuotas = actorRol === 'admin' || habilitarCuotasAlumno;
   const permiteSobrepagoAdelantado = actorRol === 'admin';
-  const pagosPrevios = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
+  const pagosPrevios = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const totalPrevio = pagosPrevios
     .filter((pago) => String(pago._id) !== String(pagoIdExcluir))
     .reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0);
@@ -191,6 +212,8 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
 // Registrar un pago y actualizar mensualidad
 exports.registrarPago = async (req, res) => {
   try {
+    const tenantModels = await getTenantFinanceModels(req);
+    const { PagoDetalle: TenantPagoDetalle } = tenantModels;
     const {
       id_mensualidad,
       monto_pagado,
@@ -207,13 +230,13 @@ exports.registrarPago = async (req, res) => {
     const montoBs = normalizarMontoBs(monto_pagado_bs);
     const montoEsperadoUsd = normalizarMonto(monto_esperado_usd);
     const montoEsperadoBs = normalizarMontoBs(monto_esperado_bs);
-    const mensualidad = await obtenerMensualidadConAlumno(id_mensualidad);
-    const validacion = await validarPago({ mensualidad, monto, montoBs, actorRol: req.user?.rol });
+    const mensualidad = await obtenerMensualidadConAlumnoTenant(id_mensualidad, tenantModels);
+    const validacion = await validarPago({ mensualidad, monto, montoBs, actorRol: req.user?.rol, models: tenantModels });
     if (validacion.error) {
       return res.status(validacion.error.status).json(validacion.error.payload);
     }
 
-    await PagoDetalle.create({
+    await TenantPagoDetalle.create({
       id_mensualidad,
       monto_pagado: validacion.montoARegistrar,
       monto_pagado_bs: montoBs,
@@ -225,7 +248,7 @@ exports.registrarPago = async (req, res) => {
       comprobante_url
     });
 
-    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus);
+    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, tenantModels);
     res.json({
       message: 'Pago registrado y mensualidad actualizada',
       total_pagado: resultado.totalPagado,
@@ -239,6 +262,8 @@ exports.registrarPago = async (req, res) => {
 
 exports.editarPago = async (req, res) => {
   try {
+    const tenantModels = await getTenantFinanceModels(req);
+    const { PagoDetalle: TenantPagoDetalle } = tenantModels;
     const {
       monto_pagado,
       monto_pagado_bs,
@@ -249,10 +274,10 @@ exports.editarPago = async (req, res) => {
       referencia,
       eliminar_comprobante
     } = req.body;
-    const pago = await PagoDetalle.findById(req.params.id_pago);
+    const pago = await TenantPagoDetalle.findById(req.params.id_pago);
     if (!pago) return res.status(404).json({ error: 'Pago no encontrado' });
 
-    const mensualidad = await obtenerMensualidadConAlumno(pago.id_mensualidad);
+    const mensualidad = await obtenerMensualidadConAlumnoTenant(pago.id_mensualidad, tenantModels);
     const monto = normalizarMonto(monto_pagado);
     const montoBs = normalizarMontoBs(monto_pagado_bs);
     const montoEsperadoUsd = normalizarMonto(monto_esperado_usd);
@@ -262,7 +287,8 @@ exports.editarPago = async (req, res) => {
       monto,
       montoBs,
       pagoIdExcluir: pago._id,
-      actorRol: req.user?.rol
+      actorRol: req.user?.rol,
+      models: tenantModels
     });
 
     if (validacion.error) {
@@ -294,7 +320,7 @@ exports.editarPago = async (req, res) => {
       eliminarArchivoComprobante(comprobanteAnterior);
     }
 
-    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus);
+    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, tenantModels);
 
     res.json({
       message: 'Pago actualizado correctamente',
@@ -310,22 +336,24 @@ exports.editarPago = async (req, res) => {
 
 exports.eliminarPago = async (req, res) => {
   try {
-    const pago = await PagoDetalle.findById(req.params.id_pago);
+    const tenantModels = await getTenantFinanceModels(req);
+    const { PagoDetalle: TenantPagoDetalle } = tenantModels;
+    const pago = await TenantPagoDetalle.findById(req.params.id_pago);
     if (!pago) return res.status(404).json({ error: 'Pago no encontrado' });
 
-    const mensualidad = await obtenerMensualidadConAlumno(pago.id_mensualidad);
+    const mensualidad = await obtenerMensualidadConAlumnoTenant(pago.id_mensualidad, tenantModels);
     const comprobanteAnterior = pago.comprobante_url;
     const estatusAnterior = mensualidad?.estatus;
 
     if (typeof pago.deleteOne === 'function') {
       await pago.deleteOne();
     } else {
-      await PagoDetalle.findByIdAndDelete(req.params.id_pago);
+      await TenantPagoDetalle.findByIdAndDelete(req.params.id_pago);
     }
 
     eliminarArchivoComprobante(comprobanteAnterior);
 
-    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, estatusAnterior);
+    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, estatusAnterior, tenantModels);
 
     res.json({
       message: 'Pago eliminado correctamente',
@@ -341,9 +369,11 @@ exports.eliminarPago = async (req, res) => {
 // Consultar pagos por mensualidad
 exports.getPagosPorMensualidad = async (req, res) => {
   try {
+    const tenantModels = await getTenantFinanceModels(req);
+    const { PagoDetalle: TenantPagoDetalle, Mensualidad: TenantMensualidad } = tenantModels;
     const [pagos, mensualidad] = await Promise.all([
-      PagoDetalle.find({ id_mensualidad: req.params.id_mensualidad }),
-      Mensualidad.findById(req.params.id_mensualidad).select('monto_esperado')
+      TenantPagoDetalle.find({ id_mensualidad: req.params.id_mensualidad }),
+      TenantMensualidad.findById(req.params.id_mensualidad).select('monto_esperado')
     ]);
 
     res.json(

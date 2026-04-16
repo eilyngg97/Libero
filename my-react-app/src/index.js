@@ -112,6 +112,8 @@ function clearAuthStorage() {
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
   localStorage.removeItem('rol');
+  localStorage.removeItem('tenantId');
+  localStorage.removeItem('sedeSeleccionada');
 }
 
 function redirectToLogin(reason = 'expired') {
@@ -176,13 +178,14 @@ window.fetch = async (input, init = {}) => {
     return originalFetch(input, init);
   }
 
-  const token = localStorage.getItem('token');
-  if (!token) {
-    return originalFetch(input, init);
+  const headers = new Headers(init.headers || (input && input.headers) || undefined);
+  const tenantHost = window.location.host || window.location.hostname || '';
+  if (tenantHost && !headers.has('X-Tenant-Host')) {
+    headers.set('X-Tenant-Host', tenantHost);
   }
 
-  const headers = new Headers(init.headers || (input && input.headers) || undefined);
-  if (!headers.has('Authorization')) {
+  const token = localStorage.getItem('token');
+  if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 

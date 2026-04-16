@@ -1,9 +1,18 @@
 // Endpoint para obtener la cantidad de alumnos por sede
 const Alumno = require('../models/Alumno');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantAlumnoModel(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+  return getTenantModel(connection, 'Alumno');
+}
 
 async function getAlumnosCountBySede(req, res) {
   try {
-    const counts = await Alumno.aggregate([
+    const TenantAlumno = await getTenantAlumnoModel(req);
+    const counts = await TenantAlumno.aggregate([
       {
         $match: {
           activo: { $ne: false },

@@ -22,6 +22,18 @@ exports.authMiddleware = (req, res, next) => {
       return res.status(401).json({ msg: 'Token inválido' });
     }
 
+    if (req.tenantId && decoded.tenantId && String(req.tenantId) !== String(decoded.tenantId)) {
+      return res.status(403).json({ msg: 'El token no pertenece al tenant solicitado' });
+    }
+
+    if (req.tenantId && !decoded.tenantId && process.env.REQUIRE_TENANT_IN_TOKEN === 'true') {
+      return res.status(401).json({ msg: 'Token sin tenantId' });
+    }
+
+    if (!decoded.tenantId && req.tenantId) {
+      decoded.tenantId = req.tenantId;
+    }
+
     req.user = decoded;
     return next();
   } catch (err) {

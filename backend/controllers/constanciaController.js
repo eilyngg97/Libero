@@ -3,20 +3,37 @@ const PDFDocument = require('pdfkit');
 const Alumno = require('../models/Alumno');
 const Mensualidad = require('../models/Mensualidad');
 const path = require('path');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantConstanciaModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  return {
+    Alumno: getTenantModel(connection, 'Alumno'),
+    Mensualidad: getTenantModel(connection, 'Mensualidad')
+  };
+}
 
 // tipo: retiro | simple | horario
 exports.generarConstancia = async (req, res) => {
   const { alumnoId, tipo, fechaEmision } = req.body;
   try {
+    const {
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad
+    } = await getTenantConstanciaModels(req);
+
     if (tipo === 'retiro' && req.user?.rol !== 'admin') {
       return res.status(403).json({ error: 'Solo un administrador puede generar constancia de retiro' });
     }
 
-    const alumno = await Alumno.findById(alumnoId).populate('representante').populate('sede');
+    const alumno = await TenantAlumno.findById(alumnoId).populate('representante').populate('sede');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     if (tipo === 'simple') {
-      const mensualidades = await Mensualidad.find({ id_alumno: alumnoId }).select('estatus');
+      const mensualidades = await TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus');
       const estatusConDeuda = new Set(['pendiente', 'abono', 'en revision', 'retrasado', 'insolvente']);
       const tieneDeuda = mensualidades.some((m) => estatusConDeuda.has(String(m.estatus || '').toLowerCase()));
       if (tieneDeuda) {

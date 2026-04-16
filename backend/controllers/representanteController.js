@@ -1,17 +1,26 @@
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+const mongoose = require('mongoose');
+
+async function getTenantRepresentanteModel(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+  return getTenantModel(connection, 'Representante');
+}
+
 exports.getAllRepresentantes = async (req, res) => {
   try {
-    const representantes = await require('../models/Representante').find();
+    const Representante = await getTenantRepresentanteModel(req);
+    const representantes = await Representante.find();
     res.json(representantes);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener representantes', detalle: err.message });
   }
 };
-const Representante = require('../models/Representante');
-const mongoose = require('mongoose');
 
 exports.getRepresentanteById = async (req, res) => {
-    console.log('Buscando con ID:', req);
   try {
+    const Representante = await getTenantRepresentanteModel(req);
     let representante = null;
     // Intentar buscar por ObjectId y por string
     if (mongoose.Types.ObjectId.isValid(req.params.id)) {

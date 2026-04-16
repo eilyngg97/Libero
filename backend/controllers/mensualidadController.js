@@ -4,6 +4,41 @@ const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
 const Representante = require('../models/Representante');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantMensualidadModels(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+
+  const TenantRepresentante = getTenantModel(connection, 'Representante');
+  const TenantAlumno = getTenantModel(connection, 'Alumno');
+  const TenantMensualidad = getTenantModel(connection, 'Mensualidad');
+  const TenantPagoDetalle = getTenantModel(connection, 'PagoDetalle');
+  const TenantSede = getTenantModel(connection, 'Sede');
+  const TenantReposo = getTenantModel(connection, 'Reposo');
+
+  return {
+    Representante: TenantRepresentante,
+    Alumno: TenantAlumno,
+    Mensualidad: TenantMensualidad,
+    PagoDetalle: TenantPagoDetalle,
+    Sede: TenantSede,
+    Reposo: TenantReposo,
+    connection
+  };
+}
+
+function resolveMensualidadModels(models = {}) {
+  return {
+    Representante: models.Representante || Representante,
+    Alumno: models.Alumno || Alumno,
+    Mensualidad: models.Mensualidad || Mensualidad,
+    PagoDetalle: models.PagoDetalle || PagoDetalle,
+    Sede: models.Sede || Sede,
+    Reposo: models.Reposo || Reposo
+  };
+}
 
 function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
@@ -109,7 +144,8 @@ function esTipoMensualidadBecaCompleta(tipoMensualidad) {
   return String(tipoMensualidad || '').toLowerCase() === 'beca_completa';
 }
 
-async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad) {
+async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models = {}) {
+  const { Alumno: AlumnoModel } = resolveMensualidadModels(models);
   const tipoDesdePopulate = mensualidad?.id_alumno?.tipo_mensualidad;
   if (tipoDesdePopulate !== undefined) {
     return tipoDesdePopulate;
@@ -118,7 +154,7 @@ async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad) {
   const alumnoId = mensualidad?.id_alumno?._id || mensualidad?.id_alumno;
   if (!alumnoId) return null;
 
-  const alumno = await Alumno.findById(alumnoId).select('tipo_mensualidad').lean();
+  const alumno = await AlumnoModel.findById(alumnoId).select('tipo_mensualidad').lean();
   return alumno?.tipo_mensualidad || null;
 }
 
@@ -134,10 +170,11 @@ function obtenerMontoBaseMensualidad(mensualidad) {
   );
 }
 
-async function resolverMontoBaseAlumno(alumno) {
+async function resolverMontoBaseAlumno(alumno, models = {}) {
+  const { Sede: SedeModel } = resolveMensualidadModels(models);
   if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
     const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
-    const sede = await Sede.findById(sedeId);
+    const sede = await SedeModel.findById(sedeId);
     return redondearMonto(sede && sede.costo ? sede.costo : 0);
   }
 
@@ -168,6 +205,7 @@ async function crearMensualidadParaPeriodo(
   alumno,
   periodo,
   {
+    models = {},
     montoBaseManual,
     estatusManual,
     fechaVencimientoManual,
@@ -175,7 +213,12 @@ async function crearMensualidadParaPeriodo(
     referenciaPago = 'primera-mensualidad'
   } = {}
 ) {
-  const existente = await Mensualidad.findOne({
+  const {
+    Mensualidad: MensualidadModel,
+    PagoDetalle: PagoDetalleModel
+  } = resolveMensualidadModels(models);
+
+  const existente = await MensualidadModel.findOne({
     id_alumno: alumno._id,
     mes: periodo.mes,
     anio: periodo.anio
@@ -189,13 +232,13 @@ async function crearMensualidadParaPeriodo(
   const tieneMontoManual = montoBaseManual !== undefined && montoBaseManual !== null;
   const montoBase = tieneMontoManual
     ? redondearMonto(montoBaseManual)
-    : await resolverMontoBaseAlumno(alumno);
+    : await resolverMontoBaseAlumno(alumno, models);
 
   let monto = montoBase;
   let creditoAplicado = 0;
   let estatus = estatusManual || obtenerEstatusPendientePorVencimiento(fechaVencimiento);
 
-  const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, periodo.mes, periodo.anio);
+  const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, periodo.mes, periodo.anio, models);
   if (reglaReposo === 'EXENTO_POR_REPOSO') {
     monto = 0;
     estatus = 'Exento por reposo';
@@ -208,7 +251,7 @@ async function crearMensualidadParaPeriodo(
     monto = credito.montoEsperado;
   }
 
-  const mensualidad = await Mensualidad.create({
+  const mensualidad = await MensualidadModel.create({
     id_alumno: alumno._id,
     mes: periodo.mes,
     anio: periodo.anio,
@@ -227,7 +270,7 @@ async function crearMensualidadParaPeriodo(
     String(estatus || '').toLowerCase() === 'pagado' &&
     monto > 0
   ) {
-    await PagoDetalle.create({
+    await PagoDetalleModel.create({
       id_mensualidad: mensualidad._id,
       monto_pagado: monto,
       fecha_pago: new Date(),
@@ -237,13 +280,14 @@ async function crearMensualidadParaPeriodo(
     pagoRegistrado = true;
   }
 
-  const mensualidadPopulada = await Mensualidad.findById(mensualidad._id).populate('id_alumno');
+  const mensualidadPopulada = await MensualidadModel.findById(mensualidad._id).populate('id_alumno');
   return { mensualidad: mensualidadPopulada, creada: true, pagoRegistrado };
 }
 
 async function generarMensualidadesPendientesAlumno(
   alumno,
   {
+    models = {},
     periodoInicio,
     periodoFin,
     overridePeriodoActual,
@@ -264,6 +308,7 @@ async function generarMensualidadesPendientesAlumno(
 
     resultados.push(
       await crearMensualidadParaPeriodo(alumno, periodo, {
+        models,
         montoBaseManual: esPeriodoOverride ? overridePeriodoActual.montoBaseManual : undefined,
         estatusManual: esPeriodoOverride ? overridePeriodoActual.estatusManual : undefined,
         fechaVencimientoManual: esPeriodoOverride ? overridePeriodoActual.fechaVencimientoManual : undefined,
@@ -279,13 +324,19 @@ async function generarMensualidadesPendientesAlumno(
 async function recalcularMensualidadPorPagos(
   mensualidad,
   {
+    models = {},
     actorRol = 'admin',
     estatusAnterior = null,
     preservarPagadoSinPagos = false,
     preservarInsolventeSinPagosCuandoMontoCero = false
   } = {}
 ) {
-  const pagos = await PagoDetalle.find({ id_mensualidad: mensualidad._id });
+  const {
+    PagoDetalle: PagoDetalleModel,
+    Alumno: AlumnoModel
+  } = resolveMensualidadModels(models);
+
+  const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const tienePagosRegistrados = pagos.length > 0;
   const totalPagado = redondearMonto(
     pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0)
@@ -296,7 +347,7 @@ async function recalcularMensualidadPorPagos(
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
 
   if (deltaSaldo !== 0) {
-    const alumnoDoc = await Alumno.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
+    const alumnoDoc = await AlumnoModel.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
     if (alumnoDoc) {
       const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
       const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
@@ -329,7 +380,7 @@ async function recalcularMensualidadPorPagos(
     esEstatusInsolvente(estatusAnteriorNormalizado);
 
   const estatusActualNormalizado = String(mensualidad.estatus || '').toLowerCase();
-  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad);
+  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models);
   const esBecado = esTipoMensualidadBecaCompleta(tipoMensualidadAlumno);
 
   if (debePreservarPagadoManual) {
@@ -359,11 +410,12 @@ async function recalcularMensualidadPorPagos(
   };
 }
 
-async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
+async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
+  const { Reposo: ReposoModel } = resolveMensualidadModels(models);
   const inicioMes = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
   const finMes = new Date(Date.UTC(anio, mes, 0, 23, 59, 59, 999));
 
-  const reposoIndefinido = await Reposo.findOne({
+  const reposoIndefinido = await ReposoModel.findOne({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Indefinido',
@@ -378,7 +430,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
     return 'EXENTO_POR_REPOSO';
   }
 
-  const reposoTotal = await Reposo.findOne({
+  const reposoTotal = await ReposoModel.findOne({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Total',
@@ -401,8 +453,13 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio) {
   return 'NORMAL';
 }
 
-async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }) {
-  const alumnos = await Alumno.find({
+async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, models = {}) {
+  const {
+    Alumno: AlumnoModel,
+    Mensualidad: MensualidadModel
+  } = resolveMensualidadModels(models);
+
+  const alumnos = await AlumnoModel.find({
     sede: id_sede,
     activo: { $ne: false },
     dado_de_baja: { $ne: true },
@@ -416,7 +473,7 @@ async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }) 
     return { alumnos: [], mensualidades: [] };
   }
 
-  const mensualidades = await Mensualidad.find({
+  const mensualidades = await MensualidadModel.find({
     id_alumno: { $in: alumnos.map((alumno) => alumno._id) },
     mes: mesNumero,
     anio: anioNumero
@@ -467,16 +524,20 @@ function generarVistaPreviaAjusteSede(mensualidades, nuevoMonto) {
   };
 }
 
-async function generarMensualidadesMesCore() {
+async function generarMensualidadesMesCore(options = {}) {
+  const { Alumno: AlumnoModel } = resolveMensualidadModels(options.models);
   const periodoActual = getPeriodoZonaCaracas();
-  const alumnos = await Alumno.find({
+  const alumnos = await AlumnoModel.find({
     activo: { $ne: false },
     dado_de_baja: { $ne: true }
   });
   let creadas = 0;
 
   for (const alumno of alumnos) {
-    const resultados = await generarMensualidadesPendientesAlumno(alumno, { periodoFin: periodoActual });
+    const resultados = await generarMensualidadesPendientesAlumno(alumno, {
+      models: options.models,
+      periodoFin: periodoActual
+    });
     creadas += resultados.filter((resultado) => resultado.creada).length;
   }
 
@@ -492,12 +553,13 @@ function obtenerMesSiguiente(fechaBase = new Date()) {
   };
 }
 
-async function actualizarRetrasadosCore({ force = false } = {}) {
+async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
+  const { Mensualidad: MensualidadModel } = resolveMensualidadModels(models);
   const hoy = new Date();
   if (!force && hoy.getDate() !== 6) return 0;
   const mes = hoy.getMonth() + 1;
   const anio = hoy.getFullYear();
-  const result = await Mensualidad.updateMany(
+  const result = await MensualidadModel.updateMany(
     { mes, anio, estatus: 'Pendiente', fecha_vencimiento: { $lt: hoy } },
     { $set: { estatus: 'Insolvente' } }
   );
@@ -507,11 +569,18 @@ async function actualizarRetrasadosCore({ force = false } = {}) {
 // Registrar la primera mensualidad manualmente
 exports.registrarPrimeraMensualidad = async (req, res) => {
   try {
+    const {
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      Sede: TenantSede,
+      Reposo: TenantReposo
+    } = await getTenantMensualidadModels(req);
     const { id_alumno, monto_esperado, fecha_vencimiento, estatus } = req.body;
     if (!id_alumno || !monto_esperado) {
       return res.status(400).json({ error: 'Faltan datos requeridos' });
     }
-    const alumno = await Alumno.findById(id_alumno);
+    const alumno = await TenantAlumno.findById(id_alumno);
     if (!alumno) {
       return res.status(404).json({ error: 'Alumno no encontrado' });
     }
@@ -521,6 +590,13 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
 
     const periodoActual = getPeriodoZonaCaracas();
     const resultados = await generarMensualidadesPendientesAlumno(alumno, {
+      models: {
+        Alumno: TenantAlumno,
+        Mensualidad: TenantMensualidad,
+        PagoDetalle: TenantPagoDetalle,
+        Sede: TenantSede,
+        Reposo: TenantReposo
+      },
       periodoFin: periodoActual,
       overridePeriodoActual: {
         mes: periodoActual.mes,
@@ -555,7 +631,8 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
 // Generar mensualidades automáticamente para todos los alumnos activos
 exports.generarMensualidadesMes = async (req, res) => {
   try {
-    const creadas = await generarMensualidadesMesCore();
+    const tenantModels = await getTenantMensualidadModels(req);
+    const creadas = await generarMensualidadesMesCore({ models: tenantModels });
     res.json({ message: `Mensualidades generadas: ${creadas}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -564,12 +641,18 @@ exports.generarMensualidadesMes = async (req, res) => {
 
 exports.adelantarMensualidadSiguiente = async (req, res) => {
   try {
+    const {
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      Sede: TenantSede,
+      Reposo: TenantReposo
+    } = await getTenantMensualidadModels(req);
     const { id_alumno } = req.body;
     if (!id_alumno) {
       return res.status(400).json({ error: 'id_alumno es requerido' });
     }
 
-    const alumno = await Alumno.findById(id_alumno);
+    const alumno = await TenantAlumno.findById(id_alumno);
     if (!alumno) {
       return res.status(404).json({ error: 'Alumno no encontrado' });
     }
@@ -583,7 +666,7 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
     }
 
     const { mes, anio } = obtenerMesSiguiente(new Date());
-    const existente = await Mensualidad.findOne({ id_alumno, mes, anio }).populate('id_alumno');
+    const existente = await TenantMensualidad.findOne({ id_alumno, mes, anio }).populate('id_alumno');
     if (existente) {
       return res.json({
         message: 'La mensualidad del mes siguiente ya existe',
@@ -592,12 +675,12 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       });
     }
 
-    const montoBase = await resolverMontoBaseAlumno(alumno);
+    const montoBase = await resolverMontoBaseAlumno(alumno, { Sede: TenantSede });
     let monto = montoBase;
     let creditoAplicado = 0;
     let estatus = 'Pendiente';
 
-    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, mes, anio);
+    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, mes, anio, { Reposo: TenantReposo });
     if (reglaReposo === 'EXENTO_POR_REPOSO') {
       monto = 0;
       estatus = 'Exento por reposo';
@@ -610,7 +693,7 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       monto = credito.montoEsperado;
     }
 
-    const mensualidad = await Mensualidad.create({
+    const mensualidad = await TenantMensualidad.create({
       id_alumno,
       mes,
       anio,
@@ -623,7 +706,7 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       estatus
     });
 
-    const mensualidadPopulada = await Mensualidad.findById(mensualidad._id).populate('id_alumno');
+    const mensualidadPopulada = await TenantMensualidad.findById(mensualidad._id).populate('id_alumno');
     return res.status(201).json({
       message: 'Mensualidad del mes siguiente creada correctamente',
       mensualidad: mensualidadPopulada,
@@ -637,7 +720,8 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
 // Actualizar mensualidades a 'Retrasado' el día 6 si siguen en 'Pendiente'
 exports.actualizarRetrasados = async (req, res) => {
   try {
-    const actualizadas = await actualizarRetrasadosCore();
+    const tenantModels = await getTenantMensualidadModels(req);
+    const actualizadas = await actualizarRetrasadosCore({ models: tenantModels });
     if (!actualizadas) return res.json({ message: 'Solo se ejecuta el día 6' });
     res.json({ message: `Mensualidades actualizadas a Insolvente: ${actualizadas}` });
   } catch (err) {
@@ -650,6 +734,7 @@ exports.actualizarRetrasadosCore = actualizarRetrasadosCore;
 
 exports.previewAjusteExtraordinarioSede = async (req, res) => {
   try {
+    const tenantModels = await getTenantMensualidadModels(req);
     const { id_sede, mes, anio, nuevo_monto } = req.body;
 
     if (!id_sede || !mes || !anio || nuevo_monto === undefined || nuevo_monto === null || nuevo_monto === '') {
@@ -672,7 +757,7 @@ exports.previewAjusteExtraordinarioSede = async (req, res) => {
       return res.status(400).json({ error: 'El nuevo monto no puede ser negativo' });
     }
 
-    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero });
+    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, tenantModels);
 
     if (alumnos.length === 0) {
       return res.status(404).json({ error: 'No hay alumnos activos con monto por sede en esta sede' });
@@ -699,6 +784,7 @@ exports.previewAjusteExtraordinarioSede = async (req, res) => {
 
 exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
   try {
+    const tenantModels = await getTenantMensualidadModels(req);
     const { id_sede, mes, anio, nuevo_monto, descripcion } = req.body;
 
     if (!id_sede || !mes || !anio || nuevo_monto === undefined || nuevo_monto === null || nuevo_monto === '') {
@@ -721,7 +807,7 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       return res.status(400).json({ error: 'El nuevo monto no puede ser negativo' });
     }
 
-    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero });
+    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, tenantModels);
 
     if (alumnos.length === 0) {
       return res.status(404).json({ error: 'No hay alumnos activos con monto por sede en esta sede' });
@@ -764,6 +850,7 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       );
 
       const resultado = await recalcularMensualidadPorPagos(mensualidad, {
+        models: tenantModels,
         actorRol: 'admin',
         estatusAnterior: mensualidad.estatus,
         preservarPagadoSinPagos: true,
@@ -800,18 +887,25 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
 // Consultar mensualidades (por sede, alumno, mes, año)
 exports.getMensualidades = async (req, res) => {
   try {
+    const {
+      Representante: TenantRepresentante,
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle
+    } = await getTenantMensualidadModels(req);
+
     const filtro = {};
     let ownedAlumnoIds = null;
 
     if (req.user?.rol === 'usuario') {
-      const representantes = await Representante.find({ usuario: req.user.id }).select('_id');
+      const representantes = await TenantRepresentante.find({ usuario: req.user.id }).select('_id');
       const representanteIds = representantes.map((r) => r._id);
       const filtroPropio = [{ usuario: req.user.id }];
       if (representanteIds.length > 0) {
         filtroPropio.push({ representante: { $in: representanteIds } });
       }
 
-      const alumnosPropios = await Alumno.find({ $or: filtroPropio }).select('_id');
+      const alumnosPropios = await TenantAlumno.find({ $or: filtroPropio }).select('_id');
       ownedAlumnoIds = alumnosPropios.map((a) => String(a._id));
       if (ownedAlumnoIds.length === 0) {
         return res.json([]);
@@ -832,7 +926,7 @@ exports.getMensualidades = async (req, res) => {
           console.log('Error al convertir id_sede:', e);
           return res.status(400).json({ error: 'id_sede inválido' });
         }
-        const alumnos = await Alumno.find({ sede: idSede });
+        const alumnos = await TenantAlumno.find({ sede: idSede });
         filtro.id_alumno = { $in: alumnos.map(a => a._id) };
       }
 
@@ -855,7 +949,7 @@ exports.getMensualidades = async (req, res) => {
       }
     }
 
-    const mensualidades = await Mensualidad.find(filtro).populate({
+    const mensualidades = await TenantMensualidad.find(filtro).populate({
       path: 'id_alumno',
       populate: {
         path: 'representante',
@@ -865,7 +959,7 @@ exports.getMensualidades = async (req, res) => {
 
     const mensualidadIds = mensualidades.map((m) => m._id);
     const pagosPorMensualidad = mensualidadIds.length > 0
-      ? await PagoDetalle.aggregate([
+      ? await TenantPagoDetalle.aggregate([
           { $match: { id_mensualidad: { $in: mensualidadIds } } },
           {
             $group: {
@@ -905,7 +999,8 @@ exports.getMensualidades = async (req, res) => {
 // Confirmar mensualidad en revisión
 exports.confirmarMensualidad = async (req, res) => {
   try {
-    const mensualidad = await Mensualidad.findById(req.params.id);
+    const { Mensualidad: TenantMensualidad } = await getTenantMensualidadModels(req);
+    const mensualidad = await TenantMensualidad.findById(req.params.id);
     if (!mensualidad) return res.status(404).json({ error: 'Mensualidad no encontrada' });
     mensualidad.estatus = 'Pagado';
     await mensualidad.save();
@@ -918,6 +1013,7 @@ exports.confirmarMensualidad = async (req, res) => {
 // Resumen de mensualidades por sede (mes en curso por defecto)
 exports.getResumenMensualidadesPorSede = async (req, res) => {
   try {
+    const { Mensualidad: TenantMensualidad } = await getTenantMensualidadModels(req);
     const hoy = new Date();
     const mes = req.query.mes ? Number(req.query.mes) : hoy.getMonth() + 1;
     const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
@@ -976,7 +1072,7 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
       }
     ];
 
-    const data = await Mensualidad.aggregate(pipeline);
+    const data = await TenantMensualidad.aggregate(pipeline);
     const estados = ['pagado', 'pendiente', 'insolvente', 'retrasado', 'en revision', 'exonerado', 'abono', 'exento por reposo', 'becado'];
     const resultado = data.map(item => {
       const conteos = {};
@@ -1006,6 +1102,7 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
 // Dolares pagados por sede para el mes/anio seleccionado
 exports.getDolaresPagadosPorSede = async (req, res) => {
   try {
+    const { Mensualidad: TenantMensualidad } = await getTenantMensualidadModels(req);
     const hoy = new Date();
     const mes = req.query.mes ? Number(req.query.mes) : hoy.getMonth() + 1;
     const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
@@ -1090,7 +1187,7 @@ exports.getDolaresPagadosPorSede = async (req, res) => {
       { $sort: { sedeNombre: 1 } }
     ];
 
-    const data = await Mensualidad.aggregate(pipeline);
+    const data = await TenantMensualidad.aggregate(pipeline);
     const sedes = data.map((item) => ({
       sedeId: item.sedeId,
       sedeNombre: item.sedeNombre,
