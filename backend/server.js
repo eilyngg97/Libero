@@ -17,6 +17,10 @@ function isMultiTenantModeEnabled() {
   return process.env.MULTI_TENANT_MODE === 'true';
 }
 
+function areScheduledJobsEnabled() {
+  return process.env.ENABLE_SCHEDULED_JOBS !== 'false';
+}
+
 function getDefaultTenantConfig() {
   return {
     tenantId: String(process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase(),
@@ -108,82 +112,86 @@ async function bootstrap() {
     await mongoose.connect(mongoUri);
     logWithTime('Conectado a MongoDB');
 
-    try {
-      const creadas = isMultiTenantModeEnabled()
-        ? await runJobForTenants('Catch-up mensualidades generadas', ({ models }) =>
-            generarMensualidadesMesCore({ models })
-          )
-        : await generarMensualidadesMesCore();
-      logWithTime(`Catch-up mensualidades generadas: ${creadas}`);
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] Error en catch-up de mensualidades:`, err);
-    }
-
-    try {
-      const hoy = new Date();
-      if (hoy.getDate() >= 6) {
-        const actualizadas = isMultiTenantModeEnabled()
-          ? await runJobForTenants('Catch-up retrasados actualizados', ({ models }) =>
-              actualizarRetrasadosCore({ force: true, models })
-            )
-          : await actualizarRetrasadosCore({ force: true });
-        logWithTime(`Catch-up retrasados actualizados: ${actualizadas}`);
-      }
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] Error en catch-up de retrasados:`, err);
-    }
-
-    try {
-      const reportes = isMultiTenantModeEnabled()
-        ? await runJobForTenants('Catch-up conciliacion/reportes', async ({ models }) => {
-            const reporte = await generarReporteConciliacionCore({ models });
-            return Number(reporte.mensualidadesEnRevision) || 0;
-          })
-        : Number((await generarReporteConciliacionCore()).mensualidadesEnRevision) || 0;
-      logWithTime(`Catch-up conciliacion/reportes procesado: ${reportes}`);
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] Error en catch-up de conciliacion/reportes:`, err);
-    }
-
-    cron.schedule('5 0 1 * *', async () => {
+    if (areScheduledJobsEnabled()) {
       try {
         const creadas = isMultiTenantModeEnabled()
-          ? await runJobForTenants('Mensualidades generadas automáticamente', ({ models }) =>
+          ? await runJobForTenants('Catch-up mensualidades generadas', ({ models }) =>
               generarMensualidadesMesCore({ models })
             )
           : await generarMensualidadesMesCore();
-        logWithTime(`Mensualidades generadas automáticamente: ${creadas}`);
+        logWithTime(`Catch-up mensualidades generadas: ${creadas}`);
       } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error al generar mensualidades automáticamente:`, err);
+        console.error(`[${new Date().toISOString()}] Error en catch-up de mensualidades:`, err);
       }
-    });
 
-    cron.schedule('10 0 6 * *', async () => {
       try {
-        const actualizadas = isMultiTenantModeEnabled()
-          ? await runJobForTenants('Mensualidades actualizadas a Insolvente', ({ models }) =>
-              actualizarRetrasadosCore({ models })
-            )
-          : await actualizarRetrasadosCore();
-        logWithTime(`Mensualidades actualizadas a Retrasado: ${actualizadas}`);
+        const hoy = new Date();
+        if (hoy.getDate() >= 6) {
+          const actualizadas = isMultiTenantModeEnabled()
+            ? await runJobForTenants('Catch-up retrasados actualizados', ({ models }) =>
+                actualizarRetrasadosCore({ force: true, models })
+              )
+            : await actualizarRetrasadosCore({ force: true });
+          logWithTime(`Catch-up retrasados actualizados: ${actualizadas}`);
+        }
       } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error al actualizar mensualidades a Retrasado:`, err);
+        console.error(`[${new Date().toISOString()}] Error en catch-up de retrasados:`, err);
       }
-    });
 
-    cron.schedule('20 0 * * *', async () => {
       try {
-        const totalEnRevision = isMultiTenantModeEnabled()
-          ? await runJobForTenants('Conciliacion/reportes diarios', async ({ models }) => {
+        const reportes = isMultiTenantModeEnabled()
+          ? await runJobForTenants('Catch-up conciliacion/reportes', async ({ models }) => {
               const reporte = await generarReporteConciliacionCore({ models });
               return Number(reporte.mensualidadesEnRevision) || 0;
             })
           : Number((await generarReporteConciliacionCore()).mensualidadesEnRevision) || 0;
-        logWithTime(`Conciliacion/reportes diarios procesado (mensualidades en revision): ${totalEnRevision}`);
+        logWithTime(`Catch-up conciliacion/reportes procesado: ${reportes}`);
       } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error al ejecutar conciliacion/reportes diarios:`, err);
+        console.error(`[${new Date().toISOString()}] Error en catch-up de conciliacion/reportes:`, err);
       }
-    });
+
+      cron.schedule('5 0 1 * *', async () => {
+        try {
+          const creadas = isMultiTenantModeEnabled()
+            ? await runJobForTenants('Mensualidades generadas automáticamente', ({ models }) =>
+                generarMensualidadesMesCore({ models })
+              )
+            : await generarMensualidadesMesCore();
+          logWithTime(`Mensualidades generadas automáticamente: ${creadas}`);
+        } catch (err) {
+          console.error(`[${new Date().toISOString()}] Error al generar mensualidades automáticamente:`, err);
+        }
+      });
+
+      cron.schedule('10 0 6 * *', async () => {
+        try {
+          const actualizadas = isMultiTenantModeEnabled()
+            ? await runJobForTenants('Mensualidades actualizadas a Insolvente', ({ models }) =>
+                actualizarRetrasadosCore({ models })
+              )
+            : await actualizarRetrasadosCore();
+          logWithTime(`Mensualidades actualizadas a Retrasado: ${actualizadas}`);
+        } catch (err) {
+          console.error(`[${new Date().toISOString()}] Error al actualizar mensualidades a Retrasado:`, err);
+        }
+      });
+
+      cron.schedule('20 0 * * *', async () => {
+        try {
+          const totalEnRevision = isMultiTenantModeEnabled()
+            ? await runJobForTenants('Conciliacion/reportes diarios', async ({ models }) => {
+                const reporte = await generarReporteConciliacionCore({ models });
+                return Number(reporte.mensualidadesEnRevision) || 0;
+              })
+            : Number((await generarReporteConciliacionCore()).mensualidadesEnRevision) || 0;
+          logWithTime(`Conciliacion/reportes diarios procesado (mensualidades en revision): ${totalEnRevision}`);
+        } catch (err) {
+          console.error(`[${new Date().toISOString()}] Error al ejecutar conciliacion/reportes diarios:`, err);
+        }
+      });
+    } else {
+      logWithTime('ENABLE_SCHEDULED_JOBS=false: catch-up y jobs cron deshabilitados para esta instancia');
+    }
 
     const PORT = process.env.PORT || 4000;
     app.listen(PORT, () => {

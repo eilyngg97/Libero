@@ -3,6 +3,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const path = require('path');
 const { tenantResolver } = require('./middleware/tenantResolver');
 const { normalizeHost, resolveTenantByHost } = require('./services/tenantResolverService');
@@ -23,8 +24,8 @@ const logWithTime = (message) => {
 
 function tenantRateLimitKey(req) {
   const tenantId = req.tenantId || 'unknown';
-  const ip = req.ip || req.connection?.remoteAddress || 'unknown-ip';
-  return `${tenantId}:${ip}`;
+  const rawIp = req.ip || req.connection?.remoteAddress || 'unknown-ip';
+  return `${tenantId}:${ipKeyGenerator(rawIp)}`;
 }
 
 function getRequestHost(req) {
