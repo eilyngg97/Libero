@@ -3,7 +3,7 @@ function unique(list) {
 }
 
 function getJwtSigningSecret() {
-  const secret = process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET;
+  const secret = String(process.env.JWT_SECRET_CURRENT || process.env.JWT_SECRET || '').trim();
   if (!secret) {
     throw new Error('JWT secret no configurado. Define JWT_SECRET_CURRENT o JWT_SECRET');
   }
