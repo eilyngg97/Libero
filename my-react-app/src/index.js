@@ -185,7 +185,8 @@ window.fetch = async (input, init = {}) => {
   }
 
   const token = localStorage.getItem('token');
-  if (token && !headers.has('Authorization')) {
+  const hadTokenAtRequestStart = Boolean(token);
+  if (hadTokenAtRequestStart && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
@@ -195,7 +196,7 @@ window.fetch = async (input, init = {}) => {
 
   // Si el token expiro, forzamos cierre de sesion para evitar que el usuario
   // quede en estado inconsistente con errores en todas las llamadas.
-  if (response.status === 401 && !isAuthLoginRequest) {
+  if (response.status === 401 && !isAuthLoginRequest && hadTokenAtRequestStart) {
     forceLogout('expired');
   }
 

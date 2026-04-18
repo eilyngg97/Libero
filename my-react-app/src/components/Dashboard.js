@@ -15,6 +15,7 @@ import { mediaUrl } from '../utils/mediaUrl';
 
 function Dashboard() {
   const mesActual = new Date().getMonth() + 1;
+  const apiBase = process.env.REACT_APP_API_URL || '';
   const { setSedeSeleccionada } = useSede();
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
   const navigate = useNavigate();
@@ -77,7 +78,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   useEffect(() => {
     const fetchCumpleaneros = async () => {
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/cumpleaneros/mes`);
+        const res = await fetchConSesion(`${apiBase}/api/cumpleaneros/mes`);
         let data = await res.json();
         if (res.ok && Array.isArray(data)) {
           // Ordenar de mayor a menor día del mes (descendente)
@@ -111,7 +112,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   useEffect(() => {
     const fetchSedes = async () => {
       try {
-        const res = await fetchConSesion(`${process.env.REACT_APP_API_URL}/api/sedes`);
+        const res = await fetchConSesion(`${apiBase}/api/sedes`);
         const data = await res.json();
         if (res.ok) setSedes(data);
         else setSedes([]);
@@ -125,7 +126,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   useEffect(() => {
     const fetchAlumnosCount = async () => {
       try {
-        const res = await fetchConSesion(`${process.env.REACT_APP_API_URL}/api/alumnos/count-by-sede`);
+        const res = await fetchConSesion(`${apiBase}/api/alumnos/count-by-sede`);
         const data = await res.json();
         if (res.ok && Array.isArray(data)) {
           // data: [{ _id: 'Sede Principal', count: 10 }, ...]
@@ -149,7 +150,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       try {
         const anioActual = new Date().getFullYear();
         const res = await fetchConSesion(
-          `${process.env.REACT_APP_API_URL}/api/mensualidades/resumen-por-sede?mes=${mesSeleccionado}&anio=${anioActual}`
+          `${apiBase}/api/mensualidades/resumen-por-sede?mes=${mesSeleccionado}&anio=${anioActual}`
         );
         const data = await res.json();
         if (res.ok && data && Array.isArray(data.sedes)) {
@@ -172,7 +173,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       try {
         const anioActual = new Date().getFullYear();
         const res = await fetchConSesion(
-          `${process.env.REACT_APP_API_URL}/api/mensualidades/dolares-pagados-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}`
+          `${apiBase}/api/mensualidades/dolares-pagados-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}`
         );
         const data = await res.json();
         if (res.ok && data && Array.isArray(data.sedes)) {
