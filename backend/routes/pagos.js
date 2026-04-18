@@ -11,11 +11,20 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-const uploadDir = path.join(__dirname, '..', 'uploads', 'comprobantes');
-fs.mkdirSync(uploadDir, { recursive: true });
+function resolveTenantId(req) {
+	return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
+		.trim()
+		.toLowerCase();
+}
+
+function resolveComprobanteUploadDir(req) {
+	const uploadDir = path.join(__dirname, '..', 'uploads', resolveTenantId(req), 'comprobantes');
+	fs.mkdirSync(uploadDir, { recursive: true });
+	return uploadDir;
+}
 
 const storage = multer.diskStorage({
-	destination: (req, file, cb) => cb(null, uploadDir),
+	destination: (req, file, cb) => cb(null, resolveComprobanteUploadDir(req)),
 	filename: (req, file, cb) => {
 		const ext = path.extname(file.originalname || '').toLowerCase();
 		const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;

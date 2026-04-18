@@ -58,6 +58,12 @@ function normalizarFechaOpcional(valor) {
   return fecha;
 }
 
+function resolveTenantId(req) {
+  return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
+    .trim()
+    .toLowerCase();
+}
+
 function getPeriodoZonaCaracas(fechaBase = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Caracas',
@@ -662,7 +668,9 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     const estatusPrimeraMensualidad = alumno.habilitar_pago_cuotas === true
       ? 'Abono'
       : (estatusSolicitado || undefined);
-    const comprobanteUrl = req.file ? `/uploads/comprobantes/${req.file.filename}` : undefined;
+    const comprobanteUrl = req.file
+      ? `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`
+      : undefined;
     const montoPagadoUsd = normalizarMontoOpcional(monto_pagado);
     if (alumno.habilitar_pago_cuotas === true) {
       if (!Number.isFinite(montoPagadoUsd) || montoPagadoUsd <= 0) {

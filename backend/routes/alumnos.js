@@ -13,17 +13,23 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-const alumnosUploadDir = path.join(__dirname, '..', 'uploads', 'alumnos');
-const repososUploadDir = path.join(__dirname, '..', 'uploads', 'reposos');
-fs.mkdirSync(alumnosUploadDir, { recursive: true });
-fs.mkdirSync(repososUploadDir, { recursive: true });
+function resolveTenantId(req) {
+	return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
+		.trim()
+		.toLowerCase();
+}
+
+function resolveUploadDirByField(req, fieldName) {
+	const tenantId = resolveTenantId(req);
+	const folder = fieldName === 'certificado' ? 'reposos' : 'alumnos';
+	const uploadDir = path.join(__dirname, '..', 'uploads', tenantId, folder);
+	fs.mkdirSync(uploadDir, { recursive: true });
+	return uploadDir;
+}
 
 const storage = multer.diskStorage({
 	destination: (req, file, cb) => {
-		if (file.fieldname === 'certificado') {
-			return cb(null, repososUploadDir);
-		}
-		return cb(null, alumnosUploadDir);
+		return cb(null, resolveUploadDirByField(req, file.fieldname));
 	},
 	filename: (req, file, cb) => {
 		const ext = path.extname(file.originalname || '').toLowerCase();

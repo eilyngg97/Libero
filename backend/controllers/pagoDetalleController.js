@@ -78,6 +78,12 @@ function eliminarArchivoComprobante(comprobanteUrl) {
   }
 }
 
+function resolveTenantId(req) {
+  return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
+    .trim()
+    .toLowerCase();
+}
+
 async function getTenantFinanceModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
@@ -224,7 +230,9 @@ exports.registrarPago = async (req, res) => {
       metodo_pago,
       referencia
     } = req.body;
-    const comprobante_url = req.file ? `/uploads/comprobantes/${req.file.filename}` : null;
+    const comprobante_url = req.file
+      ? `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`
+      : null;
     if (!id_mensualidad) return res.status(400).json({ error: 'id_mensualidad requerido' });
     const monto = normalizarMonto(monto_pagado);
     const montoBs = normalizarMontoBs(monto_pagado_bs);
@@ -309,7 +317,7 @@ exports.editarPago = async (req, res) => {
     pago.referencia = referencia;
 
     if (req.file) {
-      pago.comprobante_url = `/uploads/comprobantes/${req.file.filename}`;
+      pago.comprobante_url = `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`;
     } else if (eliminar_comprobante === 'true') {
       pago.comprobante_url = null;
     }

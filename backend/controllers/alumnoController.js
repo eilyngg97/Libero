@@ -91,7 +91,10 @@ async function getTenantAlumnoWriteModels(req) {
 
 function buildUploadUrl(req, file, folder) {
   if (!file || !file.filename) return null;
-  return `/uploads/${folder}/${file.filename}`;
+  const tenantId = String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
+    .trim()
+    .toLowerCase();
+  return `/uploads/${tenantId}/${folder}/${file.filename}`;
 }
 
 function normalizarCategoria(valor) {

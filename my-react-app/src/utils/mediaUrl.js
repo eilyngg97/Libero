@@ -11,8 +11,8 @@ export const mediaUrl = (value) => {
   }
 
   if (value.startsWith('/uploads/')) {
-    const apiBase = (process.env.REACT_APP_API_URL || '').replace(/\/$/, '');
-    return apiBase ? `${apiBase}${value}` : value;
+    // Mantener URL relativa para que el browser use el host del tenant activo.
+    return value;
   }
 
   return value;
