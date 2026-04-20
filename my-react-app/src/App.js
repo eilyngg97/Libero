@@ -230,6 +230,17 @@ function TenantHostGate({ children }) {
   return children;
 }
 
+function LandingEntryRoute() {
+  const host = window.location.hostname.toLowerCase();
+  const allowedLandingHosts = ['villasport.com.ve', 'www.villasport.com.ve', 'localhost', '127.0.0.1'];
+
+  if (!allowedLandingHosts.includes(host)) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <LandingPage />;
+}
+
 
 function App() {
   const [sedeSeleccionada, setSedeSeleccionada] = React.useState(null);
@@ -260,7 +271,7 @@ function App() {
             <TenantHostGate>
               <Routes>
               <Route path="/login" element={<Login />} />
-              <Route path="/" element={<LandingPage />} />
+              <Route path="/" element={<LandingEntryRoute />} />
               <Route path="/*" element={
                 <ProtectedRoute>
                   <div style={{ display: 'flex', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>

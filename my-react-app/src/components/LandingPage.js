@@ -132,6 +132,7 @@ const nivelesExperiencia = [
 ];
 
 const heroImages = heroImagesDefault;
+const LANDING_LOGIN_URL = 'https://villasport.apex.com.ve/login';
 
 const LandingPage = () => {
   const apiBase = process.env.REACT_APP_API_URL || '';
@@ -404,7 +405,7 @@ const LandingPage = () => {
               <Button
                 variant="contained"
                 className="headerCta"
-                href="/login"
+                href={LANDING_LOGIN_URL}
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Iniciar sesión
@@ -448,7 +449,7 @@ const LandingPage = () => {
                   Villa Sport y desarrolla tu juego con un equipo que enseña y compite.
                 </Typography>
                 <div className="heroActions">
-                  <Button className="ctaButton" variant="contained" endIcon={<MdArrowForward />} href="/login">
+                  <Button className="ctaButton" variant="contained" endIcon={<MdArrowForward />} href={LANDING_LOGIN_URL}>
                     Iniciar Sesión
                   </Button>
                   <Button className="ctaButton ctaButtonSecondary" variant="outlined" href="#contacto">
@@ -923,7 +924,7 @@ const LandingPage = () => {
               <p>+58 414-5787845</p>
               <p>villasport2019@gmail.com</p>
               <p>Lara, Barquisimeto - Venezuela</p>
-              <a className="footerLoginLink" href="/login">Acceso al sistema</a>
+              <a className="footerLoginLink" href={LANDING_LOGIN_URL}>Acceso al sistema</a>
             </div>
           </div>
 
