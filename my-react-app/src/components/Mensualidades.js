@@ -605,6 +605,24 @@ function Mensualidades() {
 		return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
 	};
 
+	const obtenerMontoTablaMensualidad = (mensualidad) => {
+		const montoPrimeraMensualidad = mensualidad?.monto_primera_mensualidad;
+		if (
+			montoPrimeraMensualidad !== undefined &&
+			montoPrimeraMensualidad !== null &&
+			!Number.isNaN(Number(montoPrimeraMensualidad))
+		) {
+			return Number(montoPrimeraMensualidad);
+		}
+
+		const montoEsperado = mensualidad?.monto_esperado;
+		if (montoEsperado !== undefined && montoEsperado !== null && !Number.isNaN(Number(montoEsperado))) {
+			return Number(montoEsperado);
+		}
+
+		return 0;
+	};
+
 	const renderEstatusChip = (estatusRaw) => {
 		const estado = (estatusRaw || '').toLowerCase();
 		const esInsolvente = estado === 'retrasado' || estado === 'insolvente';
@@ -743,7 +761,7 @@ function Mensualidades() {
 			Representante: `${m.id_alumno?.representante?.nombres || ''} ${m.id_alumno?.representante?.apellidos || ''}`.trim() || 'Sin representante',
 			Categoria: m.id_alumno?.categoria || '-',
 			Mes: meses[(m.mes || 1) - 1],
-			Monto: m.monto_esperado,
+			Monto: obtenerMontoTablaMensualidad(m),
 			Estado: 'Insolvente'
 		}));
 
@@ -881,7 +899,7 @@ function Mensualidades() {
 									{renderEtiquetasAlumno(m.id_alumno)}
 								</Box>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
-								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${m.monto_esperado}</Typography>
+								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 							</Box>
@@ -979,7 +997,7 @@ function Mensualidades() {
 									</TableCell>
 									<TableCell>{renderEtiquetasAlumno(m.id_alumno)}</TableCell>
 									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
-									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${m.monto_esperado}</TableCell>
+									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
 									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
