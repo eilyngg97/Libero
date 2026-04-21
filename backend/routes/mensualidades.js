@@ -51,5 +51,7 @@ router.post('/ajuste-sede/preview', authMiddleware, rolMiddleware('admin'), mens
 router.post('/ajuste-sede', authMiddleware, rolMiddleware('admin'), mensualidadController.aplicarAjusteExtraordinarioSede);
 // Confirmar mensualidad
 router.patch('/:id/confirmar', authMiddleware, rolMiddleware('admin'), mensualidadController.confirmarMensualidad);
+// Eliminar mensualidad y sus pagos
+router.delete('/:id', authMiddleware, rolMiddleware('admin'), mensualidadController.eliminarMensualidad);
 
 module.exports = router;

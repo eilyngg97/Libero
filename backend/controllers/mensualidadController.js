@@ -1114,6 +1114,28 @@ exports.confirmarMensualidad = async (req, res) => {
   }
 };
 
+// Eliminar mensualidad y sus pagos asociados
+exports.eliminarMensualidad = async (req, res) => {
+  try {
+    const {
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle
+    } = await getTenantMensualidadModels(req);
+
+    const mensualidad = await TenantMensualidad.findById(req.params.id);
+    if (!mensualidad) {
+      return res.status(404).json({ error: 'Mensualidad no encontrada' });
+    }
+
+    await TenantPagoDetalle.deleteMany({ id_mensualidad: mensualidad._id });
+    await mensualidad.deleteOne();
+
+    res.json({ message: 'Mensualidad eliminada correctamente' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // Resumen de mensualidades por sede (mes en curso por defecto)
 exports.getResumenMensualidadesPorSede = async (req, res) => {
   try {

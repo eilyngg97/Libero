@@ -92,6 +92,9 @@ function Mensualidades() {
 	const [adelantandoAlumnoId, setAdelantandoAlumnoId] = useState('');
 	const [confirmarAdelantoOpen, setConfirmarAdelantoOpen] = useState(false);
 	const [mensualidadAAdelantar, setMensualidadAAdelantar] = useState(null);
+	const [confirmarEliminarMensualidadOpen, setConfirmarEliminarMensualidadOpen] = useState(false);
+	const [mensualidadAEliminar, setMensualidadAEliminar] = useState(null);
+	const [eliminandoMensualidadId, setEliminandoMensualidadId] = useState('');
 
 	const getAuthHeaders = () => {
 		const token = localStorage.getItem('token');
@@ -428,6 +431,42 @@ function Mensualidades() {
 		setConfirmarEliminarOpen(true);
 	};
 
+	const solicitarEliminarMensualidad = (mensualidad) => {
+		if (!mensualidad?._id) return;
+		setMensualidadAEliminar(mensualidad);
+		setConfirmarEliminarMensualidadOpen(true);
+	};
+
+	const eliminarMensualidad = async () => {
+		if (!mensualidadAEliminar?._id) return;
+
+		try {
+			setEliminandoMensualidadId(mensualidadAEliminar._id);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadAEliminar._id}`, {
+				method: 'DELETE',
+				headers: getAuthHeaders()
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'Error al eliminar mensualidad');
+
+			if (mensualidadDetalle?._id === mensualidadAEliminar._id) {
+				setModalDetalle(false);
+				setMensualidadDetalle(null);
+				setDetallePago(null);
+				setPagosDetalle([]);
+			}
+
+			setConfirmarEliminarMensualidadOpen(false);
+			setMensualidadAEliminar(null);
+			await cargarMensualidades();
+			setSuccessMessage('Mensualidad eliminada correctamente');
+		} catch (err) {
+			alert(err.message || 'Error al eliminar mensualidad');
+		} finally {
+			setEliminandoMensualidadId('');
+		}
+	};
+
 	const eliminarPago = async () => {
 		if (!pagoAEliminar?._id || !mensualidadDetalle?._id) return;
 
@@ -751,6 +790,12 @@ function Mensualidades() {
 		}
 	};
 
+	const actionIconButtonSx = {
+		color: '#6b7280',
+		bgcolor: '#f1f5f9',
+		'&:hover': { bgcolor: '#e2e8f0' }
+	};
+
 	const hayInsolventes = mensualidades.some(
 		(m) => ['retrasado', 'insolvente'].includes((m.estatus || '').toLowerCase())
 	);
@@ -910,12 +955,7 @@ function Mensualidades() {
 											<IconButton
 													onClick={() => solicitarAdelantoMensualidad(m)}
 												disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
-												sx={{
-													border: '1px solid #99f6e4',
-													bgcolor: '#ecfeff',
-													color: '#0f766e',
-													'&:hover': { bgcolor: '#cffafe' }
-												}}
+												sx={actionIconButtonSx}
 											>
 												<PaymentsIcon fontSize="small" />
 											</IconButton>
@@ -924,15 +964,26 @@ function Mensualidades() {
 								)}
 								{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 									<Tooltip title="Registrar pago">
-										<IconButton onClick={() => handlePago(m)} sx={{ bgcolor: '#14532d', color: '#fff', '&:hover': { bgcolor: '#166534' } }}>
+										<IconButton onClick={() => handlePago(m)} sx={actionIconButtonSx}>
 											<PaidIcon fontSize="small" />
 										</IconButton>
 									</Tooltip>
 								)}
 								{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 									<Tooltip title="Ver detalle">
-										<IconButton onClick={() => handleVerDetalle(m)} sx={{ border: '1px solid #bfdbfe', bgcolor: '#eff6ff', color: '#1d4ed8', '&:hover': { bgcolor: '#dbeafe' } }}>
+										<IconButton onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
 											<VisibilityIcon fontSize="small" />
+										</IconButton>
+									</Tooltip>
+								)}
+								{esAdmin && (
+									<Tooltip title="Eliminar mensualidad">
+										<IconButton
+											onClick={() => solicitarEliminarMensualidad(m)}
+											disabled={eliminandoMensualidadId === m._id}
+											sx={actionIconButtonSx}
+										>
+											<DeleteOutlineIcon fontSize="small" />
 										</IconButton>
 									</Tooltip>
 								)}
@@ -1010,11 +1061,7 @@ function Mensualidades() {
 															size="small"
 																		onClick={() => solicitarAdelantoMensualidad(m)}
 															disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
-															sx={{
-																color: '#0f766e',
-																bgcolor: '#ecfeff',
-																'&:hover': { bgcolor: '#cffafe' }
-															}}
+																sx={actionIconButtonSx}
 														>
 															<PaymentsIcon fontSize="small" />
 														</IconButton>
@@ -1023,15 +1070,27 @@ function Mensualidades() {
 											)}
 											{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 												<Tooltip title="Registrar pago">
-													<IconButton size="small" onClick={() => handlePago(m)} sx={{ color: '#166534', bgcolor: '#dcfce7', '&:hover': { bgcolor: '#bbf7d0' } }}>
+														<IconButton size="small" onClick={() => handlePago(m)} sx={actionIconButtonSx}>
 														<PaidIcon fontSize="small" />
 													</IconButton>
 												</Tooltip>
 											)}
 											{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 												<Tooltip title="Ver detalle">
-													<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={{ color: '#1d4ed8', bgcolor: '#eff6ff', '&:hover': { bgcolor: '#dbeafe' } }}>
+														<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
 														<VisibilityIcon fontSize="small" />
+													</IconButton>
+												</Tooltip>
+											)}
+											{esAdmin && (
+												<Tooltip title="Eliminar mensualidad">
+													<IconButton
+														size="small"
+														onClick={() => solicitarEliminarMensualidad(m)}
+														disabled={eliminandoMensualidadId === m._id}
+															sx={actionIconButtonSx}
+													>
+														<DeleteOutlineIcon fontSize="small" />
 													</IconButton>
 												</Tooltip>
 											)}
@@ -1390,6 +1449,50 @@ function Mensualidades() {
 						disabled={!!eliminandoPagoId}
 					>
 						{eliminandoPagoId ? 'Eliminando...' : 'Eliminar pago'}
+					</Button>
+				</DialogActions>
+			</Dialog>
+			<Dialog
+				open={confirmarEliminarMensualidadOpen}
+				onClose={() => {
+					if (eliminandoMensualidadId) return;
+					setConfirmarEliminarMensualidadOpen(false);
+					setMensualidadAEliminar(null);
+				}}
+				maxWidth="xs"
+				fullWidth
+			>
+				<DialogTitle sx={{ fontWeight: 800, color: '#b91c1c' }}>Eliminar mensualidad</DialogTitle>
+				<DialogContent>
+					<Typography sx={{ color: '#334155' }}>
+						¿Estás seguro de eliminar esta mensualidad? Esta acción también eliminará sus pagos asociados y no se puede deshacer.
+					</Typography>
+					{mensualidadAEliminar && (
+						<Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+							<Typography variant="body2"><b>Alumno:</b> {mensualidadAEliminar.id_alumno ? `${mensualidadAEliminar.id_alumno.nombres || ''} ${mensualidadAEliminar.id_alumno.apellidos || ''}`.trim() : '-'}</Typography>
+							<Typography variant="body2"><b>Mes:</b> {meses[(mensualidadAEliminar.mes || 1) - 1] || '-'}</Typography>
+							<Typography variant="body2"><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(mensualidadAEliminar))} USD</Typography>
+							<Typography variant="body2"><b>Estado:</b> {mensualidadAEliminar.estatus || '-'}</Typography>
+						</Box>
+					)}
+				</DialogContent>
+				<DialogActions>
+					<Button
+						onClick={() => {
+							setConfirmarEliminarMensualidadOpen(false);
+							setMensualidadAEliminar(null);
+						}}
+						disabled={!!eliminandoMensualidadId}
+					>
+						Cancelar
+					</Button>
+					<Button
+						variant="contained"
+						color="error"
+						onClick={eliminarMensualidad}
+						disabled={!!eliminandoMensualidadId}
+					>
+						{eliminandoMensualidadId ? 'Eliminando...' : 'Eliminar mensualidad'}
 					</Button>
 				</DialogActions>
 			</Dialog>
