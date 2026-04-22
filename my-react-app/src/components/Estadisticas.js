@@ -362,58 +362,6 @@ function Estadisticas() {
       <Paper className="estadisticas-card" elevation={0}>
         <Box className="estadisticas-header-inline">
           <Typography variant="h6" sx={{ fontWeight: 800, color: '#0b0f2a' }}>
-            Dinero entrante por mes
-          </Typography>
-          <Typography sx={{ color: '#334155', fontWeight: 700 }}>
-            Total anual: {formatMoney(resumenIngresos.total_anual)}
-          </Typography>
-        </Box>
-
-        {loadingIngresos ? (
-          <Typography sx={{ color: '#64748b', py: 4 }}>Cargando ingresos...</Typography>
-        ) : errorIngresos ? (
-          <Typography sx={{ color: '#dc2626', py: 4 }}>{errorIngresos}</Typography>
-        ) : (
-          <>
-            <Box sx={{ width: '100%', height: 320, mt: 1 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dataGraficaIngresos} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 12 }} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
-                  <Tooltip formatter={(value) => [formatMoney(value), 'Ingresos']} />
-                  <Bar dataKey="total_pagado" name="Ingresos" radius={[5, 5, 0, 0]}>
-                    {dataGraficaIngresos.map((_, index) => (
-                      <Cell key={`ingreso-mes-color-${index}`} fill={CHART_FILL_COLORS[index % CHART_FILL_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </Box>
-
-            <Table size="small" sx={{ mt: 1 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Mes</TableCell>
-                  <TableCell align="right">Ingresos</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {dataGraficaIngresos.map((mesData) => (
-                  <TableRow key={`ingresos-${mesData.mes}`}>
-                    <TableCell>{mesData.mes}</TableCell>
-                    <TableCell align="right">{formatMoney(mesData.total_pagado)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </>
-        )}
-      </Paper>
-
-      <Paper className="estadisticas-card" elevation={0}>
-        <Box className="estadisticas-header-inline">
-          <Typography variant="h6" sx={{ fontWeight: 800, color: '#0b0f2a' }}>
             Comparativa de dinero entrante por sede
           </Typography>
           <Typography sx={{ color: '#334155', fontWeight: 700 }}>
