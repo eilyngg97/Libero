@@ -56,9 +56,6 @@ function Header({ titulo, onMenuClick }) {
               <MenuIcon />
             </IconButton>
           )}
-          <Typography variant="h6" component="div" sx={{ fontWeight: 700, color: '#3a3a3a' }}>
-            {titulo || 'Dashboard Academia Voleibol'}
-          </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="subtitle1" sx={{ color: '#1e293b', fontWeight: 500, mr: 1 }}>
