@@ -18,7 +18,7 @@ import {
   TableRow,
   Typography
 } from '@mui/material';
-import { Bar, BarChart, Cell, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, Cell, CartesianGrid, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { mediaUrl } from '../utils/mediaUrl';
 import './Estadisticas.css';
 
@@ -213,6 +213,19 @@ function Estadisticas() {
       };
     });
   }, [resumenIngresos.meses]);
+
+  const dataComparativaSedes = useMemo(() => {
+    const totalAnual = Number(resumenIngresosSede.total_anual || 0);
+    return (resumenIngresosSede.sedes || []).map((sede, index) => {
+      const totalPagado = Number(sede.total_pagado || 0);
+      return {
+        ...sede,
+        total_pagado: totalPagado,
+        porcentaje: totalAnual > 0 ? (totalPagado / totalAnual) * 100 : 0,
+        color: CHART_FILL_COLORS[index % CHART_FILL_COLORS.length]
+      };
+    });
+  }, [resumenIngresosSede.sedes, resumenIngresosSede.total_anual]);
 
   const formatMoney = (monto) => {
     const value = Number(monto || 0);
@@ -418,40 +431,80 @@ function Estadisticas() {
           </Typography>
         ) : (
           <>
-            <Box sx={{ width: '100%', height: 320, mt: 1 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={resumenIngresosSede.sedes} margin={{ top: 10, right: 10, left: 0, bottom: 32 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="sedeNombre"
-                    tick={{ fill: '#64748b', fontSize: 12 }}
-                    angle={-15}
-                    textAnchor="end"
-                    interval={0}
-                    height={60}
-                  />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
-                  <Tooltip formatter={(value) => [formatMoney(value), 'Ingresos']} labelFormatter={(label) => `Sede: ${label}`} />
-                  <Bar dataKey="total_pagado" name="Ingresos" radius={[5, 5, 0, 0]}>
-                    {(resumenIngresosSede.sedes || []).map((_, index) => (
-                      <Cell key={`ingreso-sede-color-${index}`} fill={CHART_FILL_COLORS[index % CHART_FILL_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(280px, 360px) 1fr' }, gap: 2.5, mt: 1 }}>
+              <Box sx={{ width: '100%', height: 320 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={dataComparativaSedes}
+                      dataKey="total_pagado"
+                      nameKey="sedeNombre"
+                      innerRadius={62}
+                      outerRadius={110}
+                      paddingAngle={2}
+                      stroke="#ffffff"
+                      strokeWidth={2}
+                    >
+                      {dataComparativaSedes.map((item, index) => (
+                        <Cell key={`ingreso-sede-pie-${item.sedeId || index}`} fill={item.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value, _, payload) => [formatMoney(value), payload?.payload?.sedeNombre || 'Sede']}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Box>
+
+              <Box sx={{ display: 'grid', gap: 1.1, alignContent: 'start' }}>
+                {dataComparativaSedes.map((sede, index) => (
+                  <Box
+                    key={`ingresos-sede-rank-${sede.sedeId || index}`}
+                    sx={{
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 1.5,
+                      p: 1.1,
+                      bgcolor: '#f8fafc'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                        {sede.sedeNombre || 'Sin sede'}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, color: '#334155', fontWeight: 700 }}>
+                        {sede.porcentaje.toFixed(1)}%
+                      </Typography>
+                    </Box>
+                    <Box sx={{ mt: 0.7, height: 8, borderRadius: 999, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
+                      <Box
+                        sx={{
+                          width: `${Math.min(100, sede.porcentaje)}%`,
+                          height: '100%',
+                          bgcolor: sede.color
+                        }}
+                      />
+                    </Box>
+                    <Typography sx={{ mt: 0.7, fontSize: 12, color: '#475569' }}>
+                      {formatMoney(sede.total_pagado)}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
             </Box>
 
             <Table size="small" sx={{ mt: 1 }}>
               <TableHead>
                 <TableRow>
                   <TableCell>Sede</TableCell>
+                  <TableCell align="right">Participacion</TableCell>
                   <TableCell align="right">Ingresos</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {(resumenIngresosSede.sedes || []).map((sede) => (
+                {dataComparativaSedes.map((sede) => (
                   <TableRow key={`ingresos-sede-${sede.sedeId || sede.sedeNombre}`}>
                     <TableCell>{sede.sedeNombre || 'Sin sede'}</TableCell>
+                    <TableCell align="right">{sede.porcentaje.toFixed(1)}%</TableCell>
                     <TableCell align="right">{formatMoney(sede.total_pagado)}</TableCell>
                   </TableRow>
                 ))}
