@@ -740,6 +740,99 @@ exports.getAlumnos = async (req, res) => {
   }
 };
 
+exports.getEstadisticasInscritosRetirados = async (req, res) => {
+  try {
+    const { Alumno: TenantAlumno } = await getTenantAlumnoReadModels(req);
+
+    const anioInput = Number(req.query.anio);
+    const anioActual = new Date().getUTCFullYear();
+    const anio = Number.isInteger(anioInput) ? anioInput : anioActual;
+
+    if (anio < 2000 || anio > 3000) {
+      return res.status(400).json({ error: 'El anio es invalido.' });
+    }
+
+    const idSede = String(req.query.id_sede || '').trim();
+    if (idSede && idSede !== 'all' && !mongoose.Types.ObjectId.isValid(idSede)) {
+      return res.status(400).json({ error: 'La sede es invalida.' });
+    }
+
+    const filtroSede = idSede && idSede !== 'all'
+      ? { sede: new mongoose.Types.ObjectId(idSede) }
+      : {};
+
+    const inicioAnio = new Date(Date.UTC(anio, 0, 1, 0, 0, 0, 0));
+    const finAnio = new Date(Date.UTC(anio + 1, 0, 1, 0, 0, 0, 0));
+
+    const [inscritos, retirados] = await Promise.all([
+      TenantAlumno.find({
+        ...filtroSede,
+        fecha_inscripcion: { $gte: inicioAnio, $lt: finAnio }
+      })
+        .select('nombres apellidos foto sede categoria fecha_inscripcion')
+        .populate('sede', 'nombre')
+        .lean(),
+      TenantAlumno.find({
+        ...filtroSede,
+        fecha_baja: { $gte: inicioAnio, $lt: finAnio }
+      })
+        .select('nombres apellidos foto sede categoria fecha_baja')
+        .populate('sede', 'nombre')
+        .lean()
+    ]);
+
+    const meses = Array.from({ length: 12 }, (_, index) => ({
+      mes: index + 1,
+      inscritos: 0,
+      retirados: 0,
+      detalle: {
+        inscritos: [],
+        retirados: []
+      }
+    }));
+
+    const normalizarAlumno = (alumno) => ({
+      _id: alumno._id,
+      nombres: alumno.nombres || '',
+      apellidos: alumno.apellidos || '',
+      foto: alumno.foto || '',
+      categoria: alumno.categoria || '-',
+      sede: alumno?.sede?.nombre || 'Sin sede'
+    });
+
+    inscritos.forEach((alumno) => {
+      const fecha = new Date(alumno.fecha_inscripcion);
+      if (Number.isNaN(fecha.getTime())) return;
+      const mesIndex = fecha.getUTCMonth();
+      if (mesIndex < 0 || mesIndex > 11) return;
+
+      meses[mesIndex].inscritos += 1;
+      meses[mesIndex].detalle.inscritos.push(normalizarAlumno(alumno));
+    });
+
+    retirados.forEach((alumno) => {
+      const fecha = new Date(alumno.fecha_baja);
+      if (Number.isNaN(fecha.getTime())) return;
+      const mesIndex = fecha.getUTCMonth();
+      if (mesIndex < 0 || mesIndex > 11) return;
+
+      meses[mesIndex].retirados += 1;
+      meses[mesIndex].detalle.retirados.push(normalizarAlumno(alumno));
+    });
+
+    return res.json({
+      anio,
+      meses,
+      totales: {
+        inscritos: inscritos.length,
+        retirados: retirados.length
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al obtener estadisticas de alumnos.' });
+  }
+};
+
 exports.getDisponibilidadNumeroFranela = async (req, res) => {
   try {
     const { Alumno: TenantAlumno } = await getTenantAlumnoReadModels(req);

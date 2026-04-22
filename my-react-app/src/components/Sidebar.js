@@ -20,6 +20,7 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import QueryStatsIcon from '@mui/icons-material/QueryStats';
 
 
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
@@ -40,6 +41,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
       { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
+      { text: 'Estadisticas', icon: <QueryStatsIcon />, path: '/estadisticas' },
       { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' },
       { text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' },
     );

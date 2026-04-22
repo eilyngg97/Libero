@@ -4,6 +4,7 @@ const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
 const Representante = require('../models/Representante');
+const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 
@@ -1368,6 +1369,269 @@ exports.getDolaresPagadosPorSede = async (req, res) => {
     }));
 
     return res.json({ mes, anio, sedes });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Ingresos totales por mes para el anio seleccionado
+exports.getIngresosPorMes = async (req, res) => {
+  try {
+    const {
+      PagoDetalle: TenantPagoDetalle,
+      Mensualidad: TenantMensualidad
+    } = await getTenantMensualidadModels(req);
+    const hoy = new Date();
+    const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
+
+    if (!Number.isInteger(anio) || anio < 2000) {
+      return res.status(400).json({ error: 'Año inválido' });
+    }
+
+    const idSede = String(req.query.id_sede || '').trim();
+    if (idSede && idSede !== 'all' && !mongoose.Types.ObjectId.isValid(idSede)) {
+      return res.status(400).json({ error: 'Sede inválida' });
+    }
+
+    const inicioAnio = new Date(Date.UTC(anio, 0, 1, 0, 0, 0, 0));
+    const finAnio = new Date(Date.UTC(anio + 1, 0, 1, 0, 0, 0, 0));
+
+    const pipeline = [
+      {
+        $addFields: {
+          fecha_referencia: { $ifNull: ['$fecha_pago', '$createdAt'] }
+        }
+      },
+      {
+        $match: {
+          fecha_referencia: { $gte: inicioAnio, $lt: finAnio }
+        }
+      }
+    ];
+
+    if (idSede && idSede !== 'all') {
+      pipeline.push(
+        {
+          $lookup: {
+            from: 'mensualidades',
+            localField: 'id_mensualidad',
+            foreignField: '_id',
+            as: 'mensualidad'
+          }
+        },
+        { $unwind: { path: '$mensualidad', preserveNullAndEmptyArrays: false } },
+        {
+          $lookup: {
+            from: 'alumnos',
+            localField: 'mensualidad.id_alumno',
+            foreignField: '_id',
+            as: 'alumno'
+          }
+        },
+        { $unwind: { path: '$alumno', preserveNullAndEmptyArrays: false } },
+        { $match: { 'alumno.sede': new mongoose.Types.ObjectId(idSede) } }
+      );
+    }
+
+    pipeline.push({
+      $group: {
+        _id: { $month: '$fecha_referencia' },
+        total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } }
+      }
+    });
+    pipeline.push({ $sort: { _id: 1 } });
+
+    const data = await TenantPagoDetalle.aggregate(pipeline);
+    const dataPagosMap = new Map(
+      data.map((item) => [Number(item._id), redondearMonto(item.total_pagado)])
+    );
+
+    const pipelineLegacy = [
+      {
+        $match: {
+          fecha_pago: { $gte: inicioAnio, $lt: finAnio }
+        }
+      }
+    ];
+
+    if (idSede && idSede !== 'all') {
+      pipelineLegacy.push(
+        {
+          $lookup: {
+            from: 'alumnos',
+            localField: 'id_alumno',
+            foreignField: '_id',
+            as: 'alumno'
+          }
+        },
+        { $unwind: { path: '$alumno', preserveNullAndEmptyArrays: false } },
+        { $match: { 'alumno.sede': new mongoose.Types.ObjectId(idSede) } }
+      );
+    }
+
+    pipelineLegacy.push(
+      {
+        $lookup: {
+          from: 'pagodetalles',
+          let: { mensualidadId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$id_mensualidad', '$$mensualidadId'] }
+              }
+            },
+            { $limit: 1 }
+          ],
+          as: 'pagos'
+        }
+      },
+      {
+        $match: {
+          'pagos.0': { $exists: false }
+        }
+      },
+      {
+        $addFields: {
+          monto_legacy: {
+            $let: {
+              vars: {
+                montoRegistroInicial: {
+                  $add: [
+                    { $ifNull: ['$monto_inscripcion', 0] },
+                    { $ifNull: ['$monto_primera_mensualidad', 0] }
+                  ]
+                }
+              },
+              in: {
+                $cond: [
+                  { $gt: ['$$montoRegistroInicial', 0] },
+                  '$$montoRegistroInicial',
+                  { $ifNull: ['$monto_esperado', 0] }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: { $month: '$fecha_pago' },
+          total_pagado: { $sum: '$monto_legacy' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    );
+
+    const dataLegacy = await TenantMensualidad.aggregate(pipelineLegacy);
+    const dataLegacyMap = new Map(
+      dataLegacy.map((item) => [Number(item._id), redondearMonto(item.total_pagado)])
+    );
+
+    const meses = Array.from({ length: 12 }, (_, index) => {
+      const mes = index + 1;
+      return {
+        mes,
+        total_pagado: redondearMonto((dataPagosMap.get(mes) || 0) + (dataLegacyMap.get(mes) || 0))
+      };
+    });
+
+    const totalAnual = redondearMonto(
+      meses.reduce((acc, item) => acc + (Number(item.total_pagado) || 0), 0)
+    );
+
+    return res.json({ anio, meses, total_anual: totalAnual });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Ingresos totales por sede para el anio seleccionado
+exports.getIngresosPorSede = async (req, res) => {
+  try {
+    const {
+      PagoDetalle: TenantPagoDetalle,
+      Mensualidad: TenantMensualidad,
+      Alumno: TenantAlumno,
+      Sede: TenantSede
+    } = await getTenantMensualidadModels(req);
+    const hoy = new Date();
+    const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
+
+    if (!Number.isInteger(anio) || anio < 2000) {
+      return res.status(400).json({ error: 'Año inválido' });
+    }
+
+    const inicioAnio = new Date(Date.UTC(anio, 0, 1, 0, 0, 0, 0));
+    const finAnio = new Date(Date.UTC(anio + 1, 0, 1, 0, 0, 0, 0));
+
+    const pagos = await TenantPagoDetalle.find({
+      $or: [
+        { fecha_pago: { $gte: inicioAnio, $lt: finAnio } },
+        {
+          fecha_pago: { $in: [null, undefined] },
+          createdAt: { $gte: inicioAnio, $lt: finAnio }
+        }
+      ]
+    }).select('id_mensualidad monto_pagado').lean();
+
+    if (pagos.length === 0) {
+      return res.json({ anio, sedes: [], total_anual: 0 });
+    }
+
+    const mensualidadIds = Array.from(
+      new Set(pagos.map((pago) => String(pago.id_mensualidad)).filter(Boolean))
+    );
+
+    const mensualidades = await TenantMensualidad.find({
+      _id: { $in: mensualidadIds }
+    }).select('_id id_alumno').lean();
+
+    const mensualidadToAlumno = new Map(
+      mensualidades.map((item) => [String(item._id), String(item.id_alumno || '')])
+    );
+
+    const alumnoIds = Array.from(
+      new Set(mensualidades.map((item) => String(item.id_alumno || '')).filter(Boolean))
+    );
+
+    const alumnos = await TenantAlumno.find({
+      _id: { $in: alumnoIds }
+    }).select('_id sede').lean();
+
+    const alumnoToSede = new Map(
+      alumnos.map((item) => [String(item._id), String(item.sede || '')])
+    );
+
+    const sedeIds = Array.from(
+      new Set(alumnos.map((item) => String(item.sede || '')).filter(Boolean))
+    );
+
+    const sedesDocs = await TenantSede.find({
+      _id: { $in: sedeIds }
+    }).select('_id nombre').lean();
+
+    const sedeNombreMap = new Map(
+      sedesDocs.map((item) => [String(item._id), item.nombre || 'Sin sede'])
+    );
+
+    const acumuladoPorSede = new Map();
+    for (const pago of pagos) {
+      const mensualidadId = String(pago.id_mensualidad || '');
+      const alumnoId = mensualidadToAlumno.get(mensualidadId);
+      const sedeId = alumnoToSede.get(String(alumnoId || ''));
+      const key = sedeId || 'sin-sede';
+      const nombre = sedeId ? (sedeNombreMap.get(sedeId) || 'Sin sede') : 'Sin sede';
+      const monto = redondearMonto(pago.monto_pagado || 0);
+
+      const previo = acumuladoPorSede.get(key) || { sedeId: sedeId || null, sedeNombre: nombre, total_pagado: 0 };
+      previo.total_pagado = redondearMonto(previo.total_pagado + monto);
+      acumuladoPorSede.set(key, previo);
+    }
+
+    const sedes = Array.from(acumuladoPorSede.values()).sort((a, b) => b.total_pagado - a.total_pagado);
+    const totalAnual = redondearMonto(sedes.reduce((acc, item) => acc + (Number(item.total_pagado) || 0), 0));
+
+    return res.json({ anio, sedes, total_anual: totalAnual });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

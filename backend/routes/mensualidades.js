@@ -45,6 +45,10 @@ router.get('/', authMiddleware, mensualidadController.getMensualidades);
 router.get('/resumen-por-sede', authMiddleware, rolMiddleware('admin'), mensualidadController.getResumenMensualidadesPorSede);
 // Dolares pagados por sede agrupados por mes del año
 router.get('/dolares-pagados-por-sede', authMiddleware, rolMiddleware('admin'), mensualidadController.getDolaresPagadosPorSede);
+// Ingresos totales por mes para el anio seleccionado
+router.get('/ingresos-por-mes', authMiddleware, rolMiddleware('admin'), mensualidadController.getIngresosPorMes);
+// Ingresos totales por sede para el anio seleccionado
+router.get('/ingresos-por-sede', authMiddleware, rolMiddleware('admin'), mensualidadController.getIngresosPorSede);
 // Vista previa del impacto de ajuste por sede y periodo
 router.post('/ajuste-sede/preview', authMiddleware, rolMiddleware('admin'), mensualidadController.previewAjusteExtraordinarioSede);
 // Aplicar ajuste extraordinario por sede y periodo

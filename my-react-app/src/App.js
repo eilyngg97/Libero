@@ -28,6 +28,7 @@ import GestionReposos from './components/GestionReposos';
 import Aspirantes from './components/Aspirantes';
 import LandingConfig from './components/LandingConfig';
 import ConciliacionBancaria from './components/ConciliacionBancaria';
+import Estadisticas from './components/Estadisticas';
 
 import { SedeProvider, useSede } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
@@ -71,17 +72,40 @@ function BackNavigationButton() {
   return (
     <Box sx={{ mb: 1.25 }}>
       <Button
-        variant="text"
+        variant="contained"
         startIcon={<ArrowBackIcon />}
         onClick={handleVolver}
         sx={{
-          color: '#1e3a8a',
-          fontWeight: 700,
+          color: '#ffffff',
+          fontWeight: 800,
+          letterSpacing: '0.01em',
           textTransform: 'none',
           borderRadius: 999,
-          px: 1.25,
+          px: 1.6,
+          py: 0.7,
           minWidth: 0,
-          '&:hover': { bgcolor: '#eff6ff' }
+          background: 'linear-gradient(90deg, #0B0F2A 0%, #1b2352 55%, #d92b73 100%)',
+          boxShadow: '0 8px 18px rgba(11, 15, 42, 0.22)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          transition: 'transform 0.16s ease, box-shadow 0.2s ease, filter 0.2s ease',
+          '& .MuiButton-startIcon': {
+            mr: 0.8,
+            ml: -0.2,
+            '& svg': { fontSize: 20 }
+          },
+          '&:hover': {
+            background: 'linear-gradient(90deg, #10163b 0%, #232c63 55%, #e13a80 100%)',
+            boxShadow: '0 12px 24px rgba(11, 15, 42, 0.3)',
+            transform: 'translateY(-1px)',
+            filter: 'saturate(1.05)'
+          },
+          '&:active': {
+            transform: 'translateY(0)'
+          },
+          '&:focus-visible': {
+            outline: '3px solid rgba(217, 43, 115, 0.35)',
+            outlineOffset: '2px'
+          }
         }}
       >
         Volver
@@ -309,6 +333,7 @@ function App() {
                           <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
                           <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />
                           <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><Aspirantes /></ProtectedRoute>} />
+                          <Route path="estadisticas" element={<ProtectedRoute allowedRoles={adminOnly}><Estadisticas /></ProtectedRoute>} />
                           <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><LandingConfig /></ProtectedRoute>} />
                           <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
                           <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
