@@ -251,18 +251,28 @@ async function crearMensualidadParaPeriodo(
 
   const fechaVencimiento = fechaVencimientoManual || obtenerFechaVencimientoPeriodo(periodo.mes, periodo.anio);
   const tieneMontoManual = montoBaseManual !== undefined && montoBaseManual !== null;
-  const montoBase = tieneMontoManual
+  const montoBaseOriginal = tieneMontoManual
     ? redondearMonto(montoBaseManual)
     : await resolverMontoBaseAlumno(alumno, models);
+  let montoBase = montoBaseOriginal;
 
   let monto = montoBase;
   let creditoAplicado = 0;
   let estatus = estatusManual || obtenerEstatusPendientePorVencimiento(fechaVencimiento);
 
   const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, periodo.mes, periodo.anio, models);
-  if (reglaReposo === 'EXENTO_POR_REPOSO') {
+  if (reglaReposo.tipo === 'EXENTO_POR_REPOSO') {
     monto = 0;
     estatus = 'Exento por reposo';
+  } else if (reglaReposo.tipo === 'PRORRATEO_PARCIAL') {
+    montoBase = redondearMonto(
+      Number.isFinite(Number(reglaReposo.montoPersonalizado))
+        ? reglaReposo.montoPersonalizado
+        : montoBaseOriginal
+    );
+    const credito = await consumirSaldoAFavor(alumno, montoBase);
+    creditoAplicado = credito.creditoAplicado;
+    monto = credito.montoEsperado;
   } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
     monto = 0;
     estatus = 'Becado';
@@ -469,7 +479,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
   }).sort({ fecha_inicio: -1 });
 
   if (reposoIndefinido) {
-    return 'EXENTO_POR_REPOSO';
+    return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
   }
 
   const reposoTotal = await ReposoModel.findOne({
@@ -489,10 +499,37 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
   }).sort({ fecha_inicio: -1 });
 
   if (reposoTotal) {
-    return 'EXENTO_POR_REPOSO';
+    return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
   }
 
-  return 'NORMAL';
+  const repososParcialesProrrateados = await ReposoModel.find({
+    id_alumno: alumnoId,
+    estado: { $ne: 'Inactivo' },
+    tipo: 'Parcial',
+    modalidad_cobro_parcial: 'Prorrateado',
+    fecha_inicio: { $lte: finMes },
+    $or: [
+      { fecha_fin: null },
+      { fecha_fin: { $gte: inicioMes } }
+    ]
+  }).select('fecha_inicio fecha_fin monto_parcial_personalizado').sort({ fecha_inicio: -1, createdAt: -1 });
+
+  if (!repososParcialesProrrateados.length) {
+    return { tipo: 'NORMAL', montoPersonalizado: null };
+  }
+
+  const reposoConMontoPersonalizado = repososParcialesProrrateados.find((reposo) =>
+    Number.isFinite(Number(reposo?.monto_parcial_personalizado))
+  );
+
+  if (!reposoConMontoPersonalizado) {
+    return { tipo: 'NORMAL', montoPersonalizado: null };
+  }
+
+  return {
+    tipo: 'PRORRATEO_PARCIAL',
+    montoPersonalizado: redondearMonto(reposoConMontoPersonalizado.monto_parcial_personalizado)
+  };
 }
 
 async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, models = {}) {
@@ -780,19 +817,29 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
     }
 
     const montoBase = await resolverMontoBaseAlumno(alumno, { Sede: TenantSede });
+    let montoBaseAplicable = montoBase;
     let monto = montoBase;
     let creditoAplicado = 0;
     let estatus = 'Pendiente';
 
     const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, mes, anio, { Reposo: TenantReposo });
-    if (reglaReposo === 'EXENTO_POR_REPOSO') {
+    if (reglaReposo.tipo === 'EXENTO_POR_REPOSO') {
       monto = 0;
       estatus = 'Exento por reposo';
+    } else if (reglaReposo.tipo === 'PRORRATEO_PARCIAL') {
+      montoBaseAplicable = redondearMonto(
+        Number.isFinite(Number(reglaReposo.montoPersonalizado))
+          ? reglaReposo.montoPersonalizado
+          : montoBase
+      );
+      const credito = await consumirSaldoAFavor(alumno, montoBaseAplicable);
+      creditoAplicado = credito.creditoAplicado;
+      monto = credito.montoEsperado;
     } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
       monto = 0;
       estatus = 'Becado';
     } else {
-      const credito = await consumirSaldoAFavor(alumno, montoBase);
+      const credito = await consumirSaldoAFavor(alumno, montoBaseAplicable);
       creditoAplicado = credito.creditoAplicado;
       monto = credito.montoEsperado;
     }
@@ -801,7 +848,7 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       id_alumno,
       mes,
       anio,
-      monto_base: montoBase,
+      monto_base: montoBaseAplicable,
       credito_aplicado: creditoAplicado,
       ajuste_extraordinario: 0,
       saldo_a_favor_generado: 0,

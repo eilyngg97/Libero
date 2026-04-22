@@ -21,7 +21,7 @@ function resolveTenantId(req) {
 
 function resolveUploadDirByField(req, fieldName) {
 	const tenantId = resolveTenantId(req);
-	const folder = fieldName === 'certificado' ? 'reposos' : 'alumnos';
+	const folder = (fieldName === 'certificado' || fieldName === 'certificados') ? 'reposos' : 'alumnos';
 	const uploadDir = path.join(__dirname, '..', 'uploads', tenantId, folder);
 	fs.mkdirSync(uploadDir, { recursive: true });
 	return uploadDir;
@@ -45,8 +45,8 @@ router.get('/numeros-franela/disponibilidad', authMiddleware, alumnoController.g
 router.post('/', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.createAlumno);
 router.get('/por-representante/:representanteId', authMiddleware, ensureRepresentanteOwnershipFromParam('representanteId'), alumnoController.getAlumnosPorRepresentante);
 router.get('/:id/reposos', authMiddleware, rolMiddleware('admin'), alumnoController.getRepososAlumno);
-router.post('/:id/reposos', authMiddleware, rolMiddleware('admin'), upload.single('certificado'), alumnoController.registrarReposoAlumno);
-router.patch('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), upload.single('certificado'), alumnoController.editarReposoAlumno);
+router.post('/:id/reposos', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'certificado', maxCount: 1 }, { name: 'certificados', maxCount: 10 }]), alumnoController.registrarReposoAlumno);
+router.patch('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'certificado', maxCount: 1 }, { name: 'certificados', maxCount: 10 }]), alumnoController.editarReposoAlumno);
 router.patch('/:id/reposos/:reposoId/finalizar', authMiddleware, rolMiddleware('admin'), alumnoController.finalizarReposoIndefinido);
 router.delete('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), alumnoController.eliminarReposoAlumno);
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);

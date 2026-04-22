@@ -5,8 +5,11 @@ const ReposoSchema = new mongoose.Schema({
   fecha_inicio: { type: Date, required: true },
   fecha_fin: { type: Date },
   tipo: { type: String, enum: ['Parcial', 'Total', 'Indefinido'], required: true },
+  modalidad_cobro_parcial: { type: String, enum: ['Normal', 'Prorrateado'], default: 'Normal' },
+  monto_parcial_personalizado: { type: Number, default: null },
   motivo: { type: String },
   certificado: { type: String }, // URL pública del certificado
+  certificados: [{ type: String }], // URLs publicas de certificados
   estado: { type: String, default: 'Activo' }
 }, { timestamps: true });
 

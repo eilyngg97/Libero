@@ -150,6 +150,13 @@ function normalizarTipoReposo(tipo) {
   return null;
 }
 
+function normalizarModalidadCobroParcial(modalidad) {
+  const valor = String(modalidad || '').trim().toLowerCase();
+  if (!valor || valor === 'normal') return 'Normal';
+  if (valor === 'prorrateado' || valor === 'prorrateo') return 'Prorrateado';
+  return null;
+}
+
 function parseDateInput(value) {
   const raw = String(value || '').trim();
   const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -195,9 +202,65 @@ function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
 }
 
+function normalizarMontoParcialPersonalizado(valor) {
+  if (valor === undefined || valor === null || String(valor).trim() === '') return null;
+  const numero = Number(valor);
+  if (!Number.isFinite(numero) || numero < 0) return null;
+  return redondearMonto(numero);
+}
+
+function normalizarListaCertificados(reposo = {}) {
+  const lista = [];
+  if (Array.isArray(reposo.certificados)) {
+    lista.push(...reposo.certificados);
+  }
+  if (reposo.certificado) {
+    lista.push(reposo.certificado);
+  }
+
+  const unicos = [];
+  const vistos = new Set();
+  lista.forEach((item) => {
+    const valor = String(item || '').trim();
+    if (!valor || vistos.has(valor)) return;
+    vistos.add(valor);
+    unicos.push(valor);
+  });
+  return unicos;
+}
+
+function extraerArchivosCertificados(req) {
+  const archivos = [];
+  if (Array.isArray(req?.files?.certificados)) {
+    archivos.push(...req.files.certificados);
+  }
+  if (Array.isArray(req?.files?.certificado)) {
+    archivos.push(...req.files.certificado);
+  }
+  if (req?.file) {
+    archivos.push(req.file);
+  }
+  return archivos;
+}
+
 function esEstatusInsolvente(estatus) {
   const normalizado = String(estatus || '').toLowerCase();
   return normalizado === 'retrasado' || normalizado === 'insolvente';
+}
+
+function normalizarEstatusTexto(estatus) {
+  return String(estatus || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function esEstatusPermitidoParaReposoConImpactoMonto(estatus, { permitirExentoPorReposo = false } = {}) {
+  const key = normalizarEstatusTexto(estatus);
+  if (key === 'pendiente' || key === 'insolvente' || key === 'retrasado') return true;
+  if (permitirExentoPorReposo && key === 'exento por reposo') return true;
+  return false;
 }
 
 function esTipoMensualidadBecaCompleta(tipoMensualidad) {
@@ -322,7 +385,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
   }).sort({ fecha_inicio: -1 });
 
   if (reposoIndefinido) {
-    return 'EXENTO_POR_REPOSO';
+    return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
   }
 
   const reposoTotal = await ReposoModel.findOne({
@@ -341,7 +404,38 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
     ]
   }).sort({ fecha_inicio: -1 });
 
-  return reposoTotal ? 'EXENTO_POR_REPOSO' : 'NORMAL';
+  if (reposoTotal) {
+    return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
+  }
+
+  const repososParcialesProrrateados = await ReposoModel.find({
+    id_alumno: alumnoId,
+    estado: { $ne: 'Inactivo' },
+    tipo: 'Parcial',
+    modalidad_cobro_parcial: 'Prorrateado',
+    fecha_inicio: { $lte: finMes },
+    $or: [
+      { fecha_fin: null },
+      { fecha_fin: { $gte: inicioMes } }
+    ]
+  }).select('fecha_inicio fecha_fin monto_parcial_personalizado').sort({ fecha_inicio: -1, createdAt: -1 });
+
+  if (!repososParcialesProrrateados.length) {
+    return { tipo: 'NORMAL', montoPersonalizado: null };
+  }
+
+  const reposoConMontoPersonalizado = repososParcialesProrrateados.find((reposo) =>
+    Number.isFinite(Number(reposo?.monto_parcial_personalizado))
+  );
+
+  if (!reposoConMontoPersonalizado) {
+    return { tipo: 'NORMAL', montoPersonalizado: null };
+  }
+
+  return {
+    tipo: 'PRORRATEO_PARCIAL',
+    montoPersonalizado: redondearMonto(reposoConMontoPersonalizado.monto_parcial_personalizado)
+  };
 }
 
 async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}) {
@@ -351,7 +445,11 @@ async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}) {
   const tipo = normalizarTipoReposo(reposo.tipo);
   if (!tipo) return [];
 
-  if (tipo === 'Parcial') return [];
+  if (tipo === 'Parcial') {
+    const modalidad = normalizarModalidadCobroParcial(reposo.modalidad_cobro_parcial);
+    if (modalidad !== 'Prorrateado') return [];
+    return listarPeriodosEntreFechas(reposo.fecha_inicio, reposo.fecha_fin || reposo.fecha_inicio);
+  }
 
   if (tipo === 'Total') {
     return listarPeriodosEntreFechas(reposo.fecha_inicio, reposo.fecha_fin || reposo.fecha_inicio);
@@ -383,6 +481,45 @@ async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}) {
   return Array.from(periodosMap.values());
 }
 
+async function validarMensualidadesParaReposoConImpactoMonto(alumnoId, reposo, models = {}, options = {}) {
+  const MensualidadModel = models.Mensualidad || Mensualidad;
+  if (!reposo || !alumnoId) return;
+
+  const estadoReposo = String(reposo.estado || 'Activo').trim().toLowerCase();
+  if (estadoReposo === 'inactivo') return;
+
+  const tipo = normalizarTipoReposo(reposo.tipo);
+  const modalidad = normalizarModalidadCobroParcial(reposo.modalidad_cobro_parcial);
+  const impactaMonto = tipo === 'Total' || (tipo === 'Parcial' && modalidad === 'Prorrateado');
+  if (!impactaMonto) return;
+
+  const periodos = await listarPeriodosAfectadosPorReposo(alumnoId, reposo, models);
+  if (!periodos.length) return;
+
+  const mensualidades = await MensualidadModel.find({
+    id_alumno: alumnoId,
+    $or: periodos.map((periodo) => ({ mes: periodo.mes, anio: periodo.anio }))
+  }).select('mes anio estatus').lean();
+
+  if (!mensualidades.length) return;
+
+  const invalidas = mensualidades.filter((mensualidad) =>
+    !esEstatusPermitidoParaReposoConImpactoMonto(mensualidad.estatus, {
+      permitirExentoPorReposo: options.permitirExentoPorReposo === true
+    })
+  );
+
+  if (!invalidas.length) return;
+
+  const detalle = invalidas
+    .map((m) => `${String(m.mes).padStart(2, '0')}/${m.anio} (${m.estatus || 'Sin estatus'})`)
+    .join(', ');
+
+  throw new Error(
+    `No se puede aplicar reposo ${tipo === 'Total' ? 'total' : 'parcial prorrateado'} porque hay mensualidades afectadas que no estan en Pendiente o Insolvente: ${detalle}.`
+  );
+}
+
 async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, models = {}) {
   const AlumnoModel = models.Alumno || Alumno;
   const MensualidadModel = models.Mensualidad || Mensualidad;
@@ -399,7 +536,7 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, m
     const reglaReposo = await obtenerReglaReposoParaPeriodo(alumnoId, periodo.mes, periodo.anio, models);
     let mensualidad = await MensualidadModel.findOne({ id_alumno: alumnoId, mes: periodo.mes, anio: periodo.anio });
 
-    if (reglaReposo === 'EXENTO_POR_REPOSO') {
+    if (reglaReposo.tipo === 'EXENTO_POR_REPOSO') {
       await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio, models);
       continue;
     }
@@ -407,12 +544,16 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, m
     if (!mensualidad) continue;
 
     const estatusActual = String(mensualidad.estatus || '').toLowerCase();
-    const estuvoExentaPorReposo = estatusActual === 'exento por reposo' || redondearMonto(mensualidad.monto_esperado || 0) <= 0;
-    if (!estuvoExentaPorReposo) continue;
+    if (['pagado', 'exonerado', 'becado'].includes(estatusActual)) continue;
 
-    const montoBase = mensualidad.monto_base !== undefined && mensualidad.monto_base !== null
-      ? redondearMonto(mensualidad.monto_base)
-      : await resolverMontoBaseAlumno(alumno, models);
+    const montoBaseNormal = await resolverMontoBaseAlumno(alumno, models);
+    const montoBase = reglaReposo.tipo === 'PRORRATEO_PARCIAL'
+      ? redondearMonto(
+          Number.isFinite(Number(reglaReposo.montoPersonalizado))
+            ? reglaReposo.montoPersonalizado
+            : montoBaseNormal
+        )
+      : redondearMonto(montoBaseNormal);
 
     mensualidad.monto_base = montoBase;
     mensualidad.credito_aplicado = redondearMonto(mensualidad.credito_aplicado || 0);
@@ -1137,7 +1278,27 @@ exports.getRepososAlumno = async (req, res) => {
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     const reposos = await TenantReposo.find({ id_alumno: alumno._id }).sort({ fecha_inicio: -1, createdAt: -1 });
-    res.json(reposos);
+    const repososNormalizados = reposos.map((reposoDoc) => {
+      const reposo = reposoDoc.toObject ? reposoDoc.toObject() : reposoDoc;
+      const tipo = normalizarTipoReposo(reposo.tipo) || reposo.tipo;
+      const montoProrrateo = normalizarMontoParcialPersonalizado(reposo.monto_parcial_personalizado);
+
+      let modalidad = normalizarModalidadCobroParcial(reposo.modalidad_cobro_parcial);
+      if (tipo === 'Parcial' && !modalidad && montoProrrateo !== null) {
+        modalidad = 'Prorrateado';
+      }
+
+      return {
+        ...reposo,
+        tipo,
+        modalidad_cobro_parcial: tipo === 'Parcial' ? (modalidad || 'Normal') : 'Normal',
+        monto_parcial_personalizado: tipo === 'Parcial' ? montoProrrateo : null,
+        certificados: normalizarListaCertificados(reposo),
+        certificado: reposo.certificado || null
+      };
+    });
+
+    res.json(repososNormalizados);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener reposos del alumno' });
   }
@@ -1169,6 +1330,38 @@ exports.registrarReposoAlumno = async (req, res) => {
       return res.status(400).json({ error: 'Tipo de reposo inválido. Valores permitidos: Indefinido, Total, Parcial' });
     }
 
+    const modalidadCobroParcial = tipo === 'Parcial'
+      ? normalizarModalidadCobroParcial(req.body.modalidad_cobro_parcial || req.body.modalidadCobroParcial)
+      : 'Normal';
+
+    if (!modalidadCobroParcial) {
+      return res.status(400).json({ error: 'modalidad_cobro_parcial inválida. Valores permitidos: Normal, Prorrateado' });
+    }
+
+    const montoParcialRaw = req.body.monto_parcial_personalizado ?? req.body.montoParcialPersonalizado;
+    const montoParcialPersonalizado = tipo === 'Parcial' && modalidadCobroParcial === 'Prorrateado'
+      ? normalizarMontoParcialPersonalizado(montoParcialRaw)
+      : null;
+
+    if (
+      tipo === 'Parcial' &&
+      modalidadCobroParcial === 'Prorrateado' &&
+      (montoParcialRaw === undefined || montoParcialRaw === null || String(montoParcialRaw).trim() === '')
+    ) {
+      return res.status(400).json({ error: 'monto_parcial_personalizado es obligatorio para reposo parcial prorrateado.' });
+    }
+
+    if (
+      tipo === 'Parcial' &&
+      modalidadCobroParcial === 'Prorrateado' &&
+      montoParcialRaw !== undefined &&
+      montoParcialRaw !== null &&
+      String(montoParcialRaw).trim() !== '' &&
+      montoParcialPersonalizado === null
+    ) {
+      return res.status(400).json({ error: 'monto_parcial_personalizado inválido. Debe ser un número mayor o igual a 0.' });
+    }
+
     const fecha_inicio = parseDateInput(fecha_inicio_raw);
     if (!fecha_inicio) {
       return res.status(400).json({ error: 'fecha_inicio inválida' });
@@ -1185,9 +1378,31 @@ exports.registrarReposoAlumno = async (req, res) => {
       }
     }
 
-    let certificado = req.body.certificado || null;
-    if (req.file) {
-      certificado = buildUploadUrl(req, req.file, 'reposos');
+    try {
+      await validarMensualidadesParaReposoConImpactoMonto(
+        alumno._id,
+        {
+          tipo,
+          modalidad_cobro_parcial: modalidadCobroParcial,
+          fecha_inicio,
+          fecha_fin,
+          estado: 'Activo'
+        },
+        tenantModels
+      );
+    } catch (validationError) {
+      return res.status(400).json({ error: validationError.message });
+    }
+
+    let certificados = normalizarListaCertificados({
+      certificados: Array.isArray(req.body?.certificados) ? req.body.certificados : [],
+      certificado: req.body?.certificado || null
+    });
+
+    const archivosCertificados = extraerArchivosCertificados(req);
+    if (archivosCertificados.length > 0) {
+      const nuevos = archivosCertificados.map((file) => buildUploadUrl(req, file, 'reposos'));
+      certificados = normalizarListaCertificados({ certificados: [...certificados, ...nuevos] });
     }
 
     const reposo = await TenantReposo.create({
@@ -1195,8 +1410,11 @@ exports.registrarReposoAlumno = async (req, res) => {
       fecha_inicio,
       fecha_fin,
       tipo,
+      modalidad_cobro_parcial: modalidadCobroParcial,
+      monto_parcial_personalizado: montoParcialPersonalizado,
       motivo: req.body.motivo || '',
-      certificado,
+      certificados,
+      certificado: certificados[0] || null,
       estado: 'Activo'
     });
 
@@ -1231,6 +1449,11 @@ exports.registrarReposoAlumno = async (req, res) => {
       }
     }
 
+    if (tipo === 'Parcial' && modalidadCobroParcial === 'Prorrateado') {
+      const periodosAfectados = await listarPeriodosAfectadosPorReposo(alumno._id, reposo, tenantModels);
+      await sincronizarMensualidadesAfectadasPorReposos(alumno._id, periodosAfectados, tenantModels);
+    }
+
     res.status(201).json({ message: 'Reposo registrado', reposo });
   } catch (err) {
     res.status(500).json({ error: 'Error al registrar reposo', detalle: err.message });
@@ -1254,7 +1477,10 @@ exports.editarReposoAlumno = async (req, res) => {
     const reposoAnterior = {
       tipo: reposo.tipo,
       fecha_inicio: reposo.fecha_inicio,
-      fecha_fin: reposo.fecha_fin
+      fecha_fin: reposo.fecha_fin,
+      modalidad_cobro_parcial: reposo.modalidad_cobro_parcial,
+      monto_parcial_personalizado: reposo.monto_parcial_personalizado,
+      certificados: normalizarListaCertificados(reposo)
     };
 
     const fecha_inicio_raw = req.body.fecha_inicio || req.body.fechaInicio;
@@ -1291,6 +1517,50 @@ exports.editarReposoAlumno = async (req, res) => {
       reposo.tipo = tipo;
     }
 
+    if (req.body.modalidad_cobro_parcial !== undefined || req.body.modalidadCobroParcial !== undefined || reposo.tipo === 'Parcial') {
+      const modalidad = normalizarModalidadCobroParcial(req.body.modalidad_cobro_parcial || req.body.modalidadCobroParcial || reposo.modalidad_cobro_parcial);
+      if (!modalidad) {
+        return res.status(400).json({ error: 'modalidad_cobro_parcial inválida. Valores permitidos: Normal, Prorrateado' });
+      }
+      reposo.modalidad_cobro_parcial = reposo.tipo === 'Parcial' ? modalidad : 'Normal';
+    } else if (reposo.tipo !== 'Parcial') {
+      reposo.modalidad_cobro_parcial = 'Normal';
+    }
+
+    if (reposo.tipo === 'Parcial' && reposo.modalidad_cobro_parcial === 'Prorrateado') {
+      const montoParcialRaw = req.body.monto_parcial_personalizado ?? req.body.montoParcialPersonalizado;
+      if (
+        montoParcialRaw !== undefined &&
+        montoParcialRaw !== null &&
+        String(montoParcialRaw).trim() === ''
+      ) {
+        return res.status(400).json({ error: 'monto_parcial_personalizado es obligatorio para reposo parcial prorrateado.' });
+      }
+
+      const montoParcialPersonalizado = normalizarMontoParcialPersonalizado(
+        montoParcialRaw !== undefined ? montoParcialRaw : reposo.monto_parcial_personalizado
+      );
+
+      if (montoParcialPersonalizado === null) {
+        return res.status(400).json({ error: 'monto_parcial_personalizado es obligatorio para reposo parcial prorrateado.' });
+      }
+
+      if (
+        montoParcialRaw !== undefined &&
+        montoParcialRaw !== null &&
+        String(montoParcialRaw).trim() !== '' &&
+        montoParcialPersonalizado === null
+      ) {
+        return res.status(400).json({ error: 'monto_parcial_personalizado inválido. Debe ser un número mayor o igual a 0.' });
+      }
+
+      reposo.monto_parcial_personalizado = normalizarMontoParcialPersonalizado(
+        montoParcialPersonalizado
+      );
+    } else {
+      reposo.monto_parcial_personalizado = null;
+    }
+
     if (req.body.motivo !== undefined) {
       reposo.motivo = req.body.motivo || '';
     }
@@ -1303,9 +1573,47 @@ exports.editarReposoAlumno = async (req, res) => {
       return res.status(400).json({ error: 'Debes indicar una fecha_fin para finalizar el reposo.' });
     }
 
-    if (req.file) {
-      reposo.certificado = buildUploadUrl(req, req.file, 'reposos');
+    try {
+      await validarMensualidadesParaReposoConImpactoMonto(
+        alumno._id,
+        reposo,
+        tenantModels,
+        { permitirExentoPorReposo: true }
+      );
+    } catch (validationError) {
+      return res.status(400).json({ error: validationError.message });
     }
+
+    let certificadosActuales = normalizarListaCertificados(reposo);
+    const eliminarRaw = req.body.eliminar_certificados || req.body.eliminarCertificados;
+    if (eliminarRaw !== undefined && eliminarRaw !== null && String(eliminarRaw).trim() !== '') {
+      let eliminarLista = [];
+      try {
+        const parsed = typeof eliminarRaw === 'string' ? JSON.parse(eliminarRaw) : eliminarRaw;
+        if (Array.isArray(parsed)) {
+          eliminarLista = parsed.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+      } catch {
+        eliminarLista = String(eliminarRaw)
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      if (eliminarLista.length > 0) {
+        const eliminarSet = new Set(eliminarLista);
+        certificadosActuales = certificadosActuales.filter((url) => !eliminarSet.has(url));
+      }
+    }
+
+    const archivosCertificados = extraerArchivosCertificados(req);
+    if (archivosCertificados.length > 0) {
+      const nuevos = archivosCertificados.map((file) => buildUploadUrl(req, file, 'reposos'));
+      certificadosActuales = normalizarListaCertificados({ certificados: [...certificadosActuales, ...nuevos] });
+    }
+
+    reposo.certificados = certificadosActuales;
+    reposo.certificado = certificadosActuales[0] || null;
 
     await reposo.save();
 
@@ -1351,7 +1659,9 @@ exports.finalizarReposoIndefinido = async (req, res) => {
     const reposoAnterior = {
       tipo: reposo.tipo,
       fecha_inicio: reposo.fecha_inicio,
-      fecha_fin: reposo.fecha_fin
+      fecha_fin: reposo.fecha_fin,
+      modalidad_cobro_parcial: reposo.modalidad_cobro_parcial,
+      monto_parcial_personalizado: reposo.monto_parcial_personalizado
     };
 
     reposo.fecha_fin = fecha_fin;

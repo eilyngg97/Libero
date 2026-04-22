@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import CakeIcon from '@mui/icons-material/Cake';
@@ -14,6 +14,7 @@ import { exportToCsv } from '../utils/exportCsv';
 import { mediaUrl } from '../utils/mediaUrl';
 
 function Dashboard() {
+  const chartFillColors = ['#0B0F2A', '#d92b73'];
   const mesActual = new Date().getMonth() + 1;
   const apiBase = process.env.REACT_APP_API_URL || '';
   const { setSedeSeleccionada } = useSede();
@@ -552,7 +553,11 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                         formatter={(value) => [`$${formatMoney(value)}`, 'Pagado']}
                         labelFormatter={(label) => `Sede: ${label}`}
                       />
-                      <Bar dataKey="monto_pagado" fill="#16a34a" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="monto_pagado" radius={[6, 6, 0, 0]}>
+                        {dolaresPagadosPorSede.sedes.map((_, index) => (
+                          <Cell key={`bar-fill-${index}`} fill={chartFillColors[index % chartFillColors.length]} />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
