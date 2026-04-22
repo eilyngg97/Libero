@@ -1204,12 +1204,6 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
       },
       { $unwind: '$alumno' },
       {
-        $match: {
-          'alumno.activo': { $ne: false },
-          'alumno.dado_de_baja': { $ne: true }
-        }
-      },
-      {
         $lookup: {
           from: 'sedes',
           localField: 'alumno.sede',
@@ -1299,12 +1293,6 @@ exports.getDolaresPagadosPorSede = async (req, res) => {
         }
       },
       { $unwind: '$alumno' },
-      {
-        $match: {
-          'alumno.activo': { $ne: false },
-          'alumno.dado_de_baja': { $ne: true }
-        }
-      },
       {
         $lookup: {
           from: 'sedes',
