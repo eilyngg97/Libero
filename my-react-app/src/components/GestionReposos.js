@@ -679,7 +679,18 @@ const GestionReposos = () => {
             className='save-reposo'
             onClick={handleGuardarReposo}
             disabled={guardando}
-           sx={{ width: '100%', mt: 2, py: 1.5, fontWeight: 700 }}
+            sx={{
+              width: '100%',
+              mt: 2,
+              py: 1.5,
+              fontWeight: 700,
+              color: '#fff',
+              bgcolor: '#1e293b',
+              '&:hover': {
+                color: '#fff',
+                bgcolor: '#334155'
+              }
+            }}
           >
             {guardando ? 'Guardando...' : 'Guardar Reposo'}
           </Button>
