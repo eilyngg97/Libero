@@ -897,7 +897,16 @@ function Mensualidades() {
 						variant="outlined"
 						onClick={() => setModalAjusteSede(true)}
 						disabled={!sedeSeleccionada?._id || !filtroMes}
-						sx={{ width: { xs: '100%', sm: 'auto' }, fontWeight: 700 }}
+						sx={{
+							width: { xs: '100%', sm: 'auto' },
+							fontWeight: 700,
+							color: '#475569',
+							borderColor: '#94a3b8',
+							'&:hover': {
+								borderColor: '#64748b',
+								backgroundColor: '#f1f5f9'
+							}
+						}}
 					>
 						Ajuste por sede
 					</Button>
@@ -1549,7 +1558,17 @@ function Mensualidades() {
 				</Alert>
 			</Snackbar>
 			<Dialog open={modalAjusteSede} onClose={() => !aplicandoAjuste && resetAjusteSedeForm()} maxWidth="sm" fullWidth>
-				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Ajuste extraordinario por sede</DialogTitle>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pr: 6 }}>
+					Ajuste extraordinario por sede
+					<IconButton
+						aria-label="Cerrar"
+						onClick={resetAjusteSedeForm}
+						disabled={aplicandoAjuste}
+						sx={{ position: 'absolute', right: 8, top: 8, color: '#64748b' }}
+					>
+						<CloseIcon fontSize="small" />
+					</IconButton>
+				</DialogTitle>
 				<DialogContent sx={{ pt: 1.5 }}>
 					<Alert severity="warning" sx={{ mb: 2 }}>
 						Se rebajará el monto del mes seleccionado para los alumnos de esta sede con mensualidad basada en sede. Si alguno ya pagó el monto completo, la diferencia quedará como saldo a favor para el próximo mes.
@@ -1608,7 +1627,6 @@ function Mensualidades() {
 					)}
 				</DialogContent>
 				<DialogActions>
-					<Button onClick={resetAjusteSedeForm} disabled={aplicandoAjuste}>Cancelar</Button>
 					<Button variant="outlined" onClick={obtenerPreviewAjusteSede} disabled={aplicandoAjuste || previewAjusteLoading}>
 						Recalcular impacto
 					</Button>
