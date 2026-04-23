@@ -212,6 +212,7 @@ app.use('/api/cumpleaneros', require('./routes/cumpleaneros'));
 app.use('/api/uniformes', require('./routes/uniformes'));
 app.use('/api/aspirantes', require('./routes/aspirantes'));
 app.use('/api/landing', require('./routes/landing'));
+app.use('/api/entrenadores', require('./routes/entrenadores'));
 
 app.use((err, req, res, next) => {
   const tenantTag = req?.tenantId || 'unknown';

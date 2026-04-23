@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"id_alumno":{"$numberInt":"1"},"mes":{"$numberInt":"1"},"anio":{"$numberInt":"1"}},"name":"id_alumno_1_mes_1_anio_1","unique":true}],"uuid":"bfb7f01751a54259820c7e2ab591976e","collectionName":"mensualidads","type":"collection"}

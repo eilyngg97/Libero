@@ -604,7 +604,7 @@ function Alumnos() {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f1f5f9', py: { xs: 2, md: 3 } }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', py: { xs: 2, md: 3 } }}>
       <Box
         sx={{
           mx: 'auto',
@@ -1075,7 +1075,7 @@ function Alumnos() {
               borderRadius: 2.5,
               border: '1px solid #dbe3ef',
               borderLeft: '4px solid #f97316',
-              background: 'linear-gradient(135deg, #f8fbff 0%, #f1f5f9 100%)',
+              background: 'linear-gradient(135deg, #f8fbff 0%, #fdfdfd 100%)',
               mb: 2
             }}
           >

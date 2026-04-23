@@ -766,7 +766,7 @@ const GestionReposos = () => {
               </TableBody>
             </Table>
           </TableContainer>
-          <Box sx={{ mt: 3, p: 2, backgroundColor: '#f1f5f9', borderRadius: 2, border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ mt: 3, p: 2, backgroundColor: '#fdfdfd', borderRadius: 2, border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', gap: 1 }}>
         <InfoOutlinedIcon sx={{ color: '#2563eb' }} />
         <Typography sx={{ fontSize: 14, color: '#1e293b', fontWeight: 500 }}>
           <strong>Información importante</strong>: Los reposos médicos deben ser validados por la coordinación deportiva antes de ser efectivos.

@@ -104,6 +104,8 @@ function Login({ onLogin }) {
         } catch {
           navigate('/dashboard-usuario');
         }
+      } else if (data.user.rol === 'entrenador') {
+        navigate('/sin-acceso');
       } else {
         navigate('/dashboard');
       }

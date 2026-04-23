@@ -1,167 +1,343 @@
-import React, { useState, useRef } from 'react';
-import './EntrenadorForm.css';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  MenuItem,
+  Paper,
+  Tab,
+  Tabs,
+  TextField,
+  Typography
+} from '@mui/material';
 
-function EntrenadorForm({ onSuccess }) {
-  const [preview, setPreview] = useState(null);
-  const inputRef = useRef(null);
-  const [loading, setLoading] = useState(false);
+const TAB_BASICO = 0;
+const TAB_CERTIFICACIONES = 1;
+const TAB_ADMINISTRATIVO = 2;
+
+const initialForm = {
+  nombre: '',
+  apellido: '',
+  direccion: '',
+  cedula: '',
+  correo: '',
+  fecha_nacimiento: '',
+  telefono: '',
+  especialidad: '',
+  nivel_instruccion: '',
+  experiencia_previa: '',
+  talla_franela: '',
+  talla_short: '',
+  talla_mono: '',
+  tipo_contrato: '',
+  datos_bancarios: '',
+  fecha_ingreso: ''
+};
+
+function EntrenadorForm({ onSuccess, onCancel }) {
+  const [tab, setTab] = useState(TAB_BASICO);
+  const [form, setForm] = useState(initialForm);
+  const [fotoFile, setFotoFile] = useState(null);
+  const [previewFoto, setPreviewFoto] = useState('');
+  const [dragActive, setDragActive] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState('');
+  const fotoInputRef = useRef(null);
 
-  const handleFotoChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setPreview(null);
-    }
+  const canSubmit = useMemo(() => {
+    return (
+      form.nombre.trim() &&
+      form.apellido.trim() &&
+      form.cedula.trim()
+    );
+  }, [form]);
+
+  const handleChange = (field) => (event) => {
+    setForm((prev) => ({ ...prev, [field]: event.target.value }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess(false);
-    const form = e.target;
-    const data = {
-      nombre: form.nombre.value,
-      apellido: form.apellido.value,
-      fecha_nacimiento: form.fecha_nacimiento.value,
-      genero: form.genero.value,
-      correo: form.correo.value,
-      telefono: form.telefono.value,
-      direccion: form.direccion.value,
-      documento: form.documento.value,
-      fecha_contratacion: form.fecha_contratacion.value,
-      salario: form.salario.value,
-      especialidad: form.especialidad.value,
-      certificacion: form.certificacion.value,
-      notas: form.notas.value,
-      usuario: form.usuario.value,
-      password: form.password.value,
-      foto: preview,
-      estado: 'activo',
+  const handleFotoChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setFotoFile(null);
+      setPreviewFoto('');
+      return;
+    }
+
+    setFotoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const img = String(reader.result || '');
+      setPreviewFoto(img);
     };
+    reader.readAsDataURL(file);
+  };
+
+  const openFotoPicker = () => {
+    fotoInputRef.current?.click();
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canSubmit) {
+      setError('Completa los campos obligatorios: nombre, apellido y cédula.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setSuccess('');
+
+    const formData = new FormData();
+    formData.append('nombre', form.nombre || '');
+    formData.append('apellido', form.apellido || '');
+    formData.append('direccion', form.direccion || '');
+    formData.append('cedula', form.cedula || '');
+    formData.append('correo', form.correo || '');
+    formData.append('fecha_nacimiento', form.fecha_nacimiento || '');
+    formData.append('telefono', form.telefono || '');
+    formData.append('especialidad', form.especialidad || '');
+    formData.append('nivel_instruccion', form.nivel_instruccion || '');
+    formData.append('experiencia_previa', form.experiencia_previa || '');
+    formData.append('tipo_contrato', form.tipo_contrato || '');
+    formData.append('datos_bancarios', form.datos_bancarios || '');
+    formData.append('fecha_ingreso', form.fecha_ingreso || '');
+    formData.append('talla_uniforme', JSON.stringify({
+      franela: form.talla_franela || '',
+      short: form.talla_short || '',
+      mono: form.talla_mono || ''
+    }));
+
+    if (fotoFile) {
+      formData.append('foto', fotoFile);
+    }
+
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/entrenadores`, {
+      const token = localStorage.getItem('token');
+      const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
+      const res = await fetch(`${apiBase}/api/entrenadores`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: formData
       });
-      if (!res.ok) throw new Error('Error al registrar entrenador');
-      setSuccess(true);
-      form.reset();
-      setPreview(null);
-      setTimeout(() => setSuccess(false), 2000);
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo crear el entrenador');
+
+      setSuccess('Entrenador creado. Usuario rol entrenador generado con contrasena inicial igual a la cedula.');
+      setForm(initialForm);
+      setFotoFile(null);
+      setPreviewFoto('');
+      setTab(TAB_BASICO);
       if (onSuccess) onSuccess();
     } catch (err) {
-      setError('No se pudo registrar el entrenador');
+      setError(err.message || 'No se pudo crear el entrenador');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
   return (
-    <div className="entrenador-form-container">
-      <h2>Nuevo Entrenador</h2>
-      <form className="entrenador-form" onSubmit={handleSubmit} autoComplete="off">
-        <div className="form-row">
-          <div className="form-group">
-            <label>Foto de perfil:</label>
-            <input type="file" accept="image/*" onChange={handleFotoChange} ref={inputRef} />
-            {preview && <img src={preview} alt="Foto" className="entrenador-foto-preview" />}
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Nombre:</label>
-            <input type="text" name="nombre" />
-          </div>
-          <div className="form-group">
-            <label>Apellido:</label>
-            <input type="text" name="apellido" />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Fecha de Nacimiento:</label>
-            <input type="date" name="fecha_nacimiento" />
-          </div>
-          <div className="form-group">
-            <label>Género:</label>
-            <select name="genero">
-              <option value="">Selecciona</option>
-              <option value="masculino">Masculino</option>
-              <option value="femenino">Femenino</option>
-              <option value="otro">Otro</option>
-            </select>
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Correo Electrónico:</label>
-            <input type="email" name="correo" />
-          </div>
-          <div className="form-group">
-            <label>Teléfono:</label>
-            <input type="tel" name="telefono" />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Dirección:</label>
-            <input type="text" name="direccion" />
-          </div>
-          <div className="form-group">
-            <label>Documento de Identidad:</label>
-            <input type="text" name="documento" />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Fecha de Contratación:</label>
-            <input type="date" name="fecha_contratacion" />
-          </div>
-          <div className="form-group">
-            <label>Salario (opcional):</label>
-            <input type="number" name="salario" />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Especialidad:</label>
-            <input type="text" name="especialidad" />
-          </div>
-          <div className="form-group">
-            <label>Nivel de Certificación:</label>
-            <input type="text" name="certificacion" />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Notas internas:</label>
-            <textarea name="notas" />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Usuario de acceso:</label>
-            <input type="text" name="usuario" />
-          </div>
-          <div className="form-group">
-            <label>Contraseña inicial:</label>
-            <input type="password" name="password" />
-          </div>
-        </div>
-        <button type="submit" disabled={loading}>{loading ? 'Registrando...' : 'Registrar Entrenador'}</button>
-        {error && <div style={{color: 'red', marginTop: 8}}>{error}</div>}
-        {success && <div style={{color: 'green', marginTop: 8}}>¡Entrenador registrado exitosamente!</div>}
-      </form>
-    </div>
+    <Box
+      component="form"
+      onSubmit={handleSubmit}
+      sx={{
+        display: 'grid',
+        gap: 2,
+        bgcolor: '#fdfdfd',
+        p: { xs: 1.5, md: 2 },
+        borderRadius: 3
+      }}
+    >
+      <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a' }}>
+        Nuevo Entrenador
+      </Typography>
+
+      <Tabs
+        value={tab}
+        onChange={(_, next) => setTab(next)}
+        variant="fullWidth"
+        sx={{
+          '& .MuiTabs-indicator': {
+            backgroundColor: '#94a3b8'
+          },
+          '& .MuiTab-root': {
+            color: '#94a3b8',
+            fontWeight: 700,
+            textTransform: 'none'
+          },
+          '& .MuiTab-root.Mui-selected': {
+            color: '#64748b'
+          }
+        }}
+      >
+        <Tab label="Basico" />
+        <Tab label="Certificaciones" />
+        <Tab label="Administrativo" />
+      </Tabs>
+
+      {tab === TAB_BASICO && (
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(12, minmax(0, 1fr))' },
+            gap: 2,
+            alignItems: 'start'
+          }}
+        >
+          <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)', gridColumn: { xs: '1 / -1', md: 'span 4' } }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+              <Box
+                onClick={openFotoPicker}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragActive(false);
+                  const file = event.dataTransfer.files?.[0];
+                  if (file) {
+                    handleFotoChange({ target: { files: [file] } });
+                  }
+                }}
+                sx={{
+                  width: 140,
+                  height: 140,
+                  borderRadius: '50%',
+                  border: '2px solid',
+                  borderColor: dragActive ? '#f97316' : '#e2e8f0',
+                  bgcolor: '#f8fafc',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  boxShadow: '0 6px 16px rgba(15, 23, 42, 0.08)'
+                }}
+              >
+                <input ref={fotoInputRef} hidden accept="image/*" type="file" onChange={handleFotoChange} />
+                {previewFoto ? (
+                  <img src={previewFoto} alt="Foto del entrenador" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <Typography sx={{ fontSize: 12, color: '#94a3b8', fontWeight: 700, textAlign: 'center', px: 2 }}>
+                    Subir foto
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>Foto de perfil</Typography>
+                <Typography sx={{ fontSize: 12, color: '#64748b' }}>Arrastra o haz clic para cambiar</Typography>
+              </Box>
+            </Box>
+          </Paper>
+
+          <Box sx={{ gridColumn: { xs: '1 / -1', md: 'span 8' } }}>
+            <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+              <legend>Datos Basicos</legend>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5 }}>
+                <TextField label="Nombre" value={form.nombre} onChange={handleChange('nombre')} required size="small" sx={{ my: 1 }} />
+                <TextField label="Apellido" value={form.apellido} onChange={handleChange('apellido')} required size="small" sx={{ my: 1 }} />
+                <TextField label="Direccion" value={form.direccion} onChange={handleChange('direccion')} size="small" sx={{ my: 1 }} />
+                <TextField label="Numero de cedula" value={form.cedula} onChange={handleChange('cedula')} required size="small" sx={{ my: 1 }} />
+                <TextField label="Correo" type="email" value={form.correo} onChange={handleChange('correo')} size="small" sx={{ my: 1 }} />
+                <TextField
+                  label="Fecha de nacimiento"
+                  type="date"
+                  value={form.fecha_nacimiento}
+                  onChange={handleChange('fecha_nacimiento')}
+                  InputLabelProps={{ shrink: true }}
+                  size="small"
+                  sx={{ my: 1 }}
+                />
+                <TextField label="Telefono" value={form.telefono} onChange={handleChange('telefono')} size="small" sx={{ my: 1 }} />
+              </Box>
+            </fieldset>
+          </Box>
+        </Box>
+      )}
+
+      {tab === TAB_CERTIFICACIONES && (
+        <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+          <legend>Certificaciones</legend>
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            <TextField label="Especialidad" value={form.especialidad} onChange={handleChange('especialidad')} size="small" sx={{ my: 1 }} />
+            <TextField label="Nivel de instruccion" value={form.nivel_instruccion} onChange={handleChange('nivel_instruccion')} size="small" sx={{ my: 1 }} />
+            <TextField
+              label="Experiencia previa (breve)"
+              value={form.experiencia_previa}
+              onChange={handleChange('experiencia_previa')}
+              multiline
+              minRows={3}
+              size="small"
+              sx={{ my: 1 }}
+            />
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 1.5 }}>
+              <TextField label="Talla franela" value={form.talla_franela} onChange={handleChange('talla_franela')} size="small" sx={{ my: 1 }} />
+              <TextField label="Talla short" value={form.talla_short} onChange={handleChange('talla_short')} size="small" sx={{ my: 1 }} />
+              <TextField label="Talla mono" value={form.talla_mono} onChange={handleChange('talla_mono')} size="small" sx={{ my: 1 }} />
+            </Box>
+          </Box>
+        </fieldset>
+      )}
+
+      {tab === TAB_ADMINISTRATIVO && (
+        <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+          <legend>Administrativo</legend>
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            <TextField
+              select
+              label="Tipo de contrato"
+              value={form.tipo_contrato}
+              onChange={handleChange('tipo_contrato')}
+              size="small"
+              sx={{ my: 1 }}
+            >
+              <MenuItem value="">Sin definir</MenuItem>
+              <MenuItem value="fijo">Fijo</MenuItem>
+              <MenuItem value="por_horas">Por horas</MenuItem>
+              <MenuItem value="honorarios_profesionales">Por honorarios profesionales</MenuItem>
+            </TextField>
+            <TextField
+              label="Datos bancarios"
+              value={form.datos_bancarios}
+              onChange={handleChange('datos_bancarios')}
+              multiline
+              minRows={3}
+              size="small"
+              sx={{ my: 1 }}
+            />
+            <TextField
+              label="Fecha de ingreso"
+              type="date"
+              value={form.fecha_ingreso}
+              onChange={handleChange('fecha_ingreso')}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              sx={{ my: 1 }}
+            />
+          </Box>
+        </fieldset>
+      )}
+
+      {!!error && <Alert severity="error">{error}</Alert>}
+      {!!success && <Alert severity="success">{success}</Alert>}
+
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 1 }}>
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={saving || !canSubmit}
+          sx={{ bgcolor: '#1e293b', '&:hover': { bgcolor: '#334155' }, fontWeight: 700 }}
+        >
+          {saving ? 'Guardando...' : 'Crear entrenador'}
+        </Button>
+      </Box>
+    </Box>
   );
 }
 

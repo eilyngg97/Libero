@@ -10,7 +10,9 @@ function ProtectedRoute({ children, allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(rol)) {
-    const fallback = rol === 'usuario' ? '/dashboard-usuario' : '/dashboard';
+    const fallback = rol === 'usuario'
+      ? '/dashboard-usuario'
+      : (rol === 'entrenador' ? '/sin-acceso' : '/dashboard');
     return <Navigate to={fallback} replace />;
   }
 

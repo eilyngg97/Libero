@@ -447,7 +447,7 @@ function ListadoSolicitudesUniformes() {
               sx={{
                 borderRadius: 3,
                 p: 2,
-                bgcolor: '#f1f5f9',
+                bgcolor: '#fdfdfd',
                 border: '1px solid #e2e8f0'
               }}
             >

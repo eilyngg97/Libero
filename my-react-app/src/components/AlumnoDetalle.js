@@ -140,7 +140,7 @@ function AlumnoDetalle() {
 
   return (
     <>
-      <Box sx={{ minHeight: '100vh', bgcolor: '#f1f5f9', p: { xs: 2, md: 3 } }}>
+      <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', p: { xs: 2, md: 3 } }}>
       <Box
         sx={{
           maxWidth: { xs: '100%', sm: 720, md: 1000, lg: 1200, xl: 1500 },

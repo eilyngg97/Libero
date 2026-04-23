@@ -770,7 +770,7 @@ function Mensualidades() {
 					<Chip
 						label={`+${restantes}`}
 						size="small"
-						sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700 }}
+						sx={{ bgcolor: '#fdfdfd', color: '#475569', fontWeight: 700 }}
 					/>
 				)}
 			</Box>
@@ -792,7 +792,7 @@ function Mensualidades() {
 
 	const actionIconButtonSx = {
 		color: '#6b7280',
-		bgcolor: '#f1f5f9',
+		bgcolor: '#fdfdfd',
 		'&:hover': { bgcolor: '#e2e8f0' }
 	};
 
@@ -904,7 +904,7 @@ function Mensualidades() {
 							borderColor: '#94a3b8',
 							'&:hover': {
 								borderColor: '#64748b',
-								backgroundColor: '#f1f5f9'
+								backgroundColor: '#fdfdfd'
 							}
 						}}
 					>
@@ -1053,7 +1053,7 @@ function Mensualidades() {
 									</TableCell>
 									<TableCell>{renderEstadoAlumnoChip(m.id_alumno)}</TableCell>
 									<TableCell>
-										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
+										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 									</TableCell>
 									<TableCell>{renderEtiquetasAlumno(m.id_alumno)}</TableCell>
 									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>

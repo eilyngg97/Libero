@@ -483,7 +483,7 @@ export default function ConciliacionBancaria() {
             <TableContainer component={Paper} className="conciliacionTableContainer" sx={{ borderRadius: 2 }}>
               <Table size="small" stickyHeader className="conciliacionTable">
                 <TableHead>
-                  <TableRow sx={{ bgcolor: '#f1f5f9' }}>
+                  <TableRow sx={{ bgcolor: '#fdfdfd' }}>
                     <TableCell>Estado</TableCell>
                     <TableCell>Alumno</TableCell>
                     <TableCell>Ref. Sistema</TableCell>

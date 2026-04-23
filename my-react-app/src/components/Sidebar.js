@@ -21,6 +21,7 @@ import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
+import SportsIcon from '@mui/icons-material/Sports';
 
 
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
@@ -29,7 +30,9 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   try {
     rol = localStorage.getItem('rol');
   } catch {}
-  const dashboardPath = rol === 'usuario' ? '/dashboard-usuario' : '/dashboard';
+  const dashboardPath = rol === 'usuario'
+    ? '/dashboard-usuario'
+    : (rol === 'entrenador' ? '/sin-acceso' : '/dashboard');
   const options = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: dashboardPath, onClick: handleDashboardNavigation },
     
@@ -41,6 +44,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
       { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
+      { text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' },
       { text: 'Estadisticas', icon: <QueryStatsIcon />, path: '/estadisticas' },
       { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' },
       { text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' },
@@ -70,6 +74,12 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
 
   const handleDashboardNavigation = async () => {
     const rol = localStorage.getItem('rol');
+    if (rol === 'entrenador') {
+      navigate('/sin-acceso');
+      if (variant === 'temporary' && onClose) onClose();
+      return;
+    }
+
     if (rol !== 'usuario') {
       navigate('/dashboard');
       if (variant === 'temporary' && onClose) onClose();

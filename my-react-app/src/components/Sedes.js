@@ -197,7 +197,7 @@ function Sedes() {
                         letterSpacing: 1,
                         px: 2.5,
                         '&:hover': {
-                          bgcolor: '#f1f5f9',
+                          bgcolor: '#fdfdfd',
                           borderColor: '#cbd5e1',
                           boxShadow: 'none'
                         }

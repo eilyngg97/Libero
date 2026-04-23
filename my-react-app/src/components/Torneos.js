@@ -756,7 +756,7 @@ function Torneos() {
                       width: 36,
                       height: 36,
                       borderRadius: 2,
-                      bgcolor: '#f1f5f9',
+                      bgcolor: '#fdfdfd',
                       color: '#475569',
                       display: 'flex',
                       alignItems: 'center',
@@ -778,7 +778,7 @@ function Torneos() {
                         borderColor: '#cbd5e1',
                         color: '#334155',
                         bgcolor: '#f8fafc',
-                        '&:hover': { bgcolor: '#f1f5f9', borderColor: '#cbd5e1' }
+                        '&:hover': { bgcolor: '#fdfdfd', borderColor: '#cbd5e1' }
                       }}
                     >
                       Crear juego
@@ -794,7 +794,7 @@ function Torneos() {
                         borderColor: '#cbd5e1',
                         color: '#334155',
                         bgcolor: '#f8fafc',
-                        '&:hover': { bgcolor: '#f1f5f9', borderColor: '#cbd5e1' }
+                        '&:hover': { bgcolor: '#fdfdfd', borderColor: '#cbd5e1' }
                       }}
                     >
                       Editar torneo
@@ -1283,7 +1283,7 @@ function Torneos() {
                         <Avatar
                           src={mediaUrl(c.alumno?.foto) || undefined}
                           alt={c.alumno ? `${c.alumno.nombres || ''} ${c.alumno.apellidos || ''}` : 'Alumno'}
-                          sx={{ width: 38, height: 38, bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontSize: 18 }}
+                          sx={{ width: 38, height: 38, bgcolor: '#fdfdfd', color: '#475569', fontWeight: 700, fontSize: 18 }}
                         >
                           {(!c.alumno?.foto && c.alumno?.nombres) ? c.alumno.nombres[0] : ''}
                         </Avatar>

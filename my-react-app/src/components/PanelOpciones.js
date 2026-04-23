@@ -134,7 +134,7 @@ function PanelOpciones() {
                             transition: 'transform 0.2s',
                             '& > *:not(.bg-icon)': { position: 'relative', zIndex: 1 },
                             '&:hover': { transform: 'scale(1.04)' }
-                        }} onClick={() => navigate('/entrenadores')}>
+                        }} onClick={() => navigate('/entrenadores-sede')}>
                             <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 1 }}>
                                 <SportsVolleyballIcon sx={{ fontSize: 32, color: 'white' }} />
                             </IconButton>

@@ -435,7 +435,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         WebkitTextFillColor: '#64748b'
                       },
                       '& .MuiOutlinedInput-root.Mui-disabled': {
-                        backgroundColor: '#f1f5f9'
+                        backgroundColor: '#fdfdfd'
                       }
                     }}
                     helperText="Se asigna automaticamente: primer apellido + inicial del primer nombre"
@@ -453,7 +453,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           WebkitTextFillColor: '#64748b'
                         },
                         '& .MuiOutlinedInput-root.Mui-disabled': {
-                          backgroundColor: '#f1f5f9'
+                          backgroundColor: '#fdfdfd'
                         }
                       }}
                       helperText="Se usa el numero asignado en la ficha del alumno"

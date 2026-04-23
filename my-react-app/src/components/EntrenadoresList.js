@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination } from '@mui/material';
+import { Avatar, Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, MenuItem } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import AddIcon from '@mui/icons-material/Add';
 import EntrenadorForm from './EntrenadorForm';
+import { mediaUrl } from '../utils/mediaUrl';
 import './EntrenadoresList.css';
 
 function EntrenadoresList() {
@@ -17,7 +19,7 @@ function EntrenadoresList() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/entrenadores`, {
+    fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/api/entrenadores`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -35,8 +37,9 @@ function EntrenadoresList() {
 
   const entrenadoresFiltrados = Array.isArray(entrenadores)
     ? entrenadores.filter(e => {
-        const nombreCompleto = `${e.nombre} ${e.apellido}`.toLowerCase();
-        const coincideBusqueda = nombreCompleto.includes(busqueda.toLowerCase());
+        const nombreCompleto = `${e.nombre || ''} ${e.apellido || ''}`.toLowerCase();
+        const cedula = String(e.cedula || '').toLowerCase();
+        const coincideBusqueda = nombreCompleto.includes(busqueda.toLowerCase()) || cedula.includes(busqueda.toLowerCase());
         const coincideEstado = estadoFiltro === 'todos' || e.estado === estadoFiltro;
         return coincideBusqueda && coincideEstado;
       })
@@ -55,15 +58,55 @@ function EntrenadoresList() {
 
   return (
     <div>
-      <Typography variant="h5" sx={{ mb: 2 }}>Lista de Entrenadores</Typography>
-      <Button variant="contained" color="primary" sx={{ mb: 2 }} onClick={() => setShowModal(true)}>
+      <Typography variant="h5" sx={{ mb: 2, fontWeight: 800 }}>Entrenadores</Typography>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+          gap: 1.25,
+          mb: 2,
+          width: '100%',
+          maxWidth: 640
+        }}
+      >
+        <TextField
+          label="Buscar por nombre o cédula"
+          size="small"
+          value={busqueda}
+          onChange={(event) => setBusqueda(event.target.value)}
+        />
+        <TextField
+          select
+          label="Estado"
+          size="small"
+          value={estadoFiltro}
+          onChange={(event) => setEstadoFiltro(event.target.value)}
+        >
+          <MenuItem value="todos">Todos</MenuItem>
+          <MenuItem value="activo">Activo</MenuItem>
+          <MenuItem value="inactivo">Inactivo</MenuItem>
+        </TextField>
+      </Box>
+      <Button
+        variant="contained"
+        color="secondary"
+        sx={{ mb: 2, borderRadius: 999 }}
+        startIcon={<AddIcon />}
+        onClick={() => setShowModal(true)}
+      >
         Nuevo Entrenador
       </Button>
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <span className="cerrar-modal-x" onClick={() => setShowModal(false)}>&times;</span>
-            <EntrenadorForm onSuccess={() => { setShowModal(false); setReload(r => !r); }} />
+            <EntrenadorForm
+              onCancel={() => setShowModal(false)}
+              onSuccess={() => {
+                setShowModal(false);
+                setReload(r => !r);
+              }}
+            />
           </div>
         </div>
       )}
@@ -71,22 +114,43 @@ function EntrenadoresList() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Foto</TableCell>
               <TableCell>Nombre</TableCell>
+              <TableCell>Cédula</TableCell>
               <TableCell>Estado</TableCell>
-              <TableCell>Correo</TableCell>
+              <TableCell>Especialidad</TableCell>
               <TableCell>Teléfono</TableCell>
+              <TableCell>Tipo contrato</TableCell>
               <TableCell>Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {entrenadoresPagina.map(e => (
               <TableRow key={e._id || e.id}>
-                <TableCell>{e.foto ? <img src={e.foto} alt="Foto" className="entrenador-foto" style={{ width: 40, height: 40, borderRadius: '50%' }} /> : <span className="foto-placeholder">Sin foto</span>}</TableCell>
-                <TableCell>{e.nombre} {e.apellido}</TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Avatar
+                      src={(() => {
+                        const normalizedFoto = mediaUrl(e.foto);
+                        if (normalizedFoto && normalizedFoto.startsWith('/uploads/') && process.env.REACT_APP_API_URL) {
+                          return `${process.env.REACT_APP_API_URL}${normalizedFoto}`;
+                        }
+                        return normalizedFoto || '';
+                      })()}
+                      alt={`${e.nombre || ''} ${e.apellido || ''}`.trim()}
+                      sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}
+                    >
+                      {`${e.nombre?.[0] || ''}${e.apellido?.[0] || ''}`.toUpperCase()}
+                    </Avatar>
+                    <Typography sx={{ fontWeight: 600, color: '#1f2937' }}>
+                      {e.nombre} {e.apellido}
+                    </Typography>
+                  </Box>
+                </TableCell>
+                <TableCell>{e.cedula || '-'}</TableCell>
                 <TableCell><span className={`estado-${e.estado}`}>{e.estado}</span></TableCell>
-                <TableCell>{e.correo}</TableCell>
+                <TableCell>{e.especialidad || '-'}</TableCell>
                 <TableCell>{e.telefono}</TableCell>
+                <TableCell>{e.tipo_contrato ? e.tipo_contrato.replaceAll('_', ' ') : '-'}</TableCell>
                 <TableCell>
                   <IconButton aria-label="ver" size="small" sx={{ color: '#757575', mr: 1 }}>
                     <VisibilityIcon />

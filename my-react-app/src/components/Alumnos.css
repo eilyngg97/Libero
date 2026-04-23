@@ -73,7 +73,7 @@ button[type="submit"]:hover {
 .foto-drop-area {
   flex: 1;
   min-height: 140px;
-  background: #f1f5f9;
+  background: #fdfdfd;
   border: 2px dashed #cbd5e1;
   border-radius: 10px;
   display: flex;

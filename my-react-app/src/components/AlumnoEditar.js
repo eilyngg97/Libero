@@ -365,7 +365,7 @@ function AlumnoEditar({ locationState }) {
   if (error) return <Typography color="error">{error}</Typography>;
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f1f5f9', py: { xs: 2, md: 3 } }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', py: { xs: 2, md: 3 } }}>
       <Snackbar
         open={successOpen}
         autoHideDuration={3500}

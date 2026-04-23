@@ -12,6 +12,7 @@ import PanelOpciones from './components/PanelOpciones';
 import PanelOpcionesUsuario from './components/PanelOpcionesUsuario';
 import Alumnos from './components/Alumnos';
 import Entrenadores from './components/Entrenadores';
+import EntrenadoresSedeStaff from './components/EntrenadoresSedeStaff';
 import Horarios from './components/Horarios';
 import ListadoSolicitudesUniformes from './components/ListadoSolicitudesUniformes';
 import PagosAlumno from './components/PagosAlumno';
@@ -72,39 +73,26 @@ function BackNavigationButton() {
   return (
     <Box sx={{ mb: 1.25 }}>
       <Button
-        variant="contained"
+        variant="text"
         startIcon={<ArrowBackIcon />}
         onClick={handleVolver}
         sx={{
-          color: '#ffffff',
-          fontWeight: 800,
-          letterSpacing: '0.01em',
+          color: '#64748b',
+          fontWeight: 700,
           textTransform: 'none',
-          borderRadius: 999,
-          px: 1.6,
-          py: 0.7,
+          borderRadius: 8,
+          px: 0,
+          py: 0,
           minWidth: 0,
-          background: 'linear-gradient(90deg, #0B0F2A 0%, #1b2352 55%, #d92b73 100%)',
-          boxShadow: '0 8px 18px rgba(11, 15, 42, 0.22)',
-          border: '1px solid rgba(255, 255, 255, 0.2)',
-          transition: 'transform 0.16s ease, box-shadow 0.2s ease, filter 0.2s ease',
+          fontSize: 16,
           '& .MuiButton-startIcon': {
-            mr: 0.8,
-            ml: -0.2,
-            '& svg': { fontSize: 20 }
+            mr: 0.6,
+            ml: 0,
+            '& svg': { fontSize: 18 }
           },
           '&:hover': {
-            background: 'linear-gradient(90deg, #10163b 0%, #232c63 55%, #e13a80 100%)',
-            boxShadow: '0 12px 24px rgba(11, 15, 42, 0.3)',
-            transform: 'translateY(-1px)',
-            filter: 'saturate(1.05)'
-          },
-          '&:active': {
-            transform: 'translateY(0)'
-          },
-          '&:focus-visible': {
-            outline: '3px solid rgba(217, 43, 115, 0.35)',
-            outlineOffset: '2px'
+            backgroundColor: 'transparent',
+            color: '#334155'
           }
         }}
       >
@@ -129,7 +117,6 @@ function SedeBreadcrumb() {
   const rutaLabels = [
     { startsWith: '/tabla-alumnos', label: 'Alumnos' },
     { startsWith: '/alumnos', label: 'Alumnos' },
-    { startsWith: '/entrenadores', label: 'Entrenadores' },
     { startsWith: '/mensualidades', label: 'Mensualidades' },
     { startsWith: '/solicitud-uniforme', label: 'Solicitud de uniformes' },
     { startsWith: '/listado-solicitudes-uniformes', label: 'Solicitud de uniformes' }
@@ -265,6 +252,19 @@ function LandingEntryRoute() {
   return <LandingPage />;
 }
 
+function SinAccesoEntrenador() {
+  return (
+    <Box sx={{ maxWidth: 720, p: 2, border: '1px solid #e2e8f0', borderRadius: 3, background: '#f8fafc' }}>
+      <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a', mb: 1 }}>
+        Perfil de entrenador creado
+      </Typography>
+      <Typography sx={{ color: '#334155' }}>
+        Tu usuario rol entrenador existe correctamente, pero todavia no tiene modulos habilitados en esta version.
+      </Typography>
+    </Box>
+  );
+}
+
 
 function App() {
   const [sedeSeleccionada, setSedeSeleccionada] = React.useState(null);
@@ -313,8 +313,10 @@ function App() {
                         <SedeBreadcrumb />
                         <Routes>
                           <Route path="dashboard" element={<ProtectedRoute allowedRoles={adminOnly}><Dashboard /></ProtectedRoute>} />
+                          <Route path="sin-acceso" element={<ProtectedRoute allowedRoles={['entrenador']}><SinAccesoEntrenador /></ProtectedRoute>} />
                           <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><Alumnos /></RequireSedeSelection></ProtectedRoute>} />
                           <Route path="entrenadores" element={<ProtectedRoute allowedRoles={adminOnly}><Entrenadores /></ProtectedRoute>} />
+                          <Route path="entrenadores-sede" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><EntrenadoresSedeStaff /></RequireSedeSelection></ProtectedRoute>} />
                           <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly}><Horarios /></ProtectedRoute>} />
                           <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
                           <Route path="pagos-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={adminAndUser}><PagosAlumno /></ProtectedRoute>} />
