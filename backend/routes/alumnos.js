@@ -12,11 +12,10 @@ const alumnoController = require('../controllers/alumnoController');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 function resolveTenantId(req) {
-	return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
-		.trim()
-		.toLowerCase();
+	return resolveRequestTenantId(req);
 }
 
 function resolveUploadDirByField(req, fieldName) {

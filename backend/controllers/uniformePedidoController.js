@@ -4,6 +4,7 @@ const Uniforme = require('../models/Uniforme');
 const Alumno = require('../models/Alumno');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const ESTADOS_PEDIDO = {
   PENDIENTE: 'pendiente',
@@ -16,7 +17,7 @@ const ESTADOS_PEDIDO = {
 
 function buildComprobanteUrl(file, tenantIdInput) {
   if (!file?.filename) return null;
-  const tenantId = String(tenantIdInput || process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
+  const tenantId = resolveRequestTenantId({ tenantId: tenantIdInput });
   return `/uploads/${tenantId}/comprobantes/${file.filename}`;
 }
 

@@ -4,13 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const landingConfigController = require('../controllers/landingConfigController');
 const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const router = express.Router();
 
 function resolveTenantId(req) {
-  return String(req.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
-    .trim()
-    .toLowerCase();
+  return resolveRequestTenantId(req);
 }
 
 const storage = multer.diskStorage({

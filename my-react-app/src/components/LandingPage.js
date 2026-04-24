@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AppBar, Toolbar, Typography, Button, Container, Grid, Box, TextField, MenuItem } from '@mui/material';
 import { motion } from 'framer-motion';
 import { MdArrowForward, MdPeople, MdPlace, MdEmojiEvents, MdSchool, MdGpsFixed, MdAssignment, MdPhoneIphone, MdFavoriteBorder, MdWorkspacePremium, MdMenu, MdClose, MdChevronLeft, MdChevronRight } from 'react-icons/md';
-import logoImage from '../assets/logo.png';
+import logoImage from '../assets/logos/logo-login.png';
 import directorImage from '../assets/director.jpeg';
 import entrenador1Image from '../assets/entrenador_1.jpeg';
 import entrenador2Image from '../assets/entrenador_2.jpeg';

@@ -12,20 +12,25 @@ const { generarReporteConciliacionCore } = require('./controllers/conciliacionCo
 const { app, logWithTime } = require('./app');
 const { getMongoUri } = require('./config/secrets');
 const { recordJobMetric } = require('./services/tenantHealthMetrics');
-
-function isMultiTenantModeEnabled() {
-  return process.env.MULTI_TENANT_MODE === 'true';
-}
+const {
+  getConfiguredDefaultTenantConfig,
+  getFailSafeTenantConfig,
+  isMultiTenantModeEnabled
+} = require('./services/tenantFallbackService');
 
 function areScheduledJobsEnabled() {
   return process.env.ENABLE_SCHEDULED_JOBS !== 'false';
 }
 
 function getDefaultTenantConfig() {
+  const tenant = isMultiTenantModeEnabled()
+    ? getFailSafeTenantConfig()
+    : getConfiguredDefaultTenantConfig();
+
   return {
-    tenantId: String(process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase(),
-    nombre: String(process.env.DEFAULT_TENANT_NAME || 'Tenant por defecto').trim(),
-    dbUri: process.env.DEFAULT_TENANT_DB_URI || getMongoUri(),
+    tenantId: tenant.tenantId,
+    nombre: tenant.nombre,
+    dbUri: tenant.dbUri || getMongoUri(),
     domains: []
   };
 }

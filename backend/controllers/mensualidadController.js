@@ -7,6 +7,7 @@ const Representante = require('../models/Representante');
 const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 async function getTenantMensualidadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -60,9 +61,7 @@ function normalizarFechaOpcional(valor) {
 }
 
 function resolveTenantId(req) {
-  return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
-    .trim()
-    .toLowerCase();
+  return resolveRequestTenantId(req);
 }
 
 function getPeriodoZonaCaracas(fechaBase = new Date()) {
@@ -633,6 +632,37 @@ function obtenerMesSiguiente(fechaBase = new Date()) {
   };
 }
 
+function obtenerPeriodoSiguiente(periodoBase) {
+  const mesBase = Number(periodoBase?.mes);
+  const anioBase = Number(periodoBase?.anio);
+
+  if (!Number.isInteger(mesBase) || !Number.isInteger(anioBase)) {
+    return obtenerMesSiguiente(new Date());
+  }
+
+  const siguiente = new Date(anioBase, mesBase, 1);
+  return {
+    mes: siguiente.getMonth() + 1,
+    anio: siguiente.getFullYear()
+  };
+}
+
+async function obtenerPeriodoAdelantoDesdeUltimaMensualidad(idAlumno, MensualidadModel = Mensualidad) {
+  const estadosLiquidados = ['Pagado', 'En revision', 'Exonerado', 'Exento por reposo', 'Becado'];
+  const ultimaMensualidadLiquidada = await MensualidadModel.findOne({
+    id_alumno: idAlumno,
+    estatus: { $in: estadosLiquidados }
+  })
+    .select('mes anio')
+    .sort({ anio: -1, mes: -1, createdAt: -1 });
+
+  if (!ultimaMensualidadLiquidada) {
+    return obtenerMesSiguiente(new Date());
+  }
+
+  return obtenerPeriodoSiguiente(ultimaMensualidadLiquidada);
+}
+
 async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
   const { Mensualidad: MensualidadModel } = resolveMensualidadModels(models);
   const hoy = new Date();
@@ -807,7 +837,7 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       return res.status(400).json({ error: 'No se puede adelantar mensualidad para alumnos con beca completa' });
     }
 
-    const { mes, anio } = obtenerMesSiguiente(new Date());
+    const { mes, anio } = await obtenerPeriodoAdelantoDesdeUltimaMensualidad(id_alumno, TenantMensualidad);
     const existente = await TenantMensualidad.findOne({ id_alumno, mes, anio }).populate('id_alumno');
     if (existente) {
       return res.json({

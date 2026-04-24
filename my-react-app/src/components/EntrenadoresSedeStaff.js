@@ -102,12 +102,12 @@ function EntrenadoresSedeStaff() {
     >
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1.4, gap: 1.5, flexWrap: 'wrap' }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 900, color: '#0f172a', fontSize: { xs: 30, md: 40 }, lineHeight: 1.08, letterSpacing: '-0.01em' }}>
+          <Typography variant="h4" sx={{ fontWeight: 900, color: '#0f172a', fontSize: { xs: 24, md: 30 }, lineHeight: 1.12, letterSpacing: '-0.01em' }}>
             Staff de Entrenadores por Sede
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mt: 0.7 }}>
             <LocationOnIcon sx={{ color: '#2563eb', fontSize: 18 }} />
-            <Typography sx={{ color: '#475569', fontSize: { xs: 16, md: 24 }, fontWeight: 600 }}>
+            <Typography sx={{ color: '#475569', fontSize: { xs: 14, md: 16 }, fontWeight: 600 }}>
               {sedeSeleccionada?.nombre || '-'}
             </Typography>
           </Box>
@@ -120,9 +120,9 @@ function EntrenadoresSedeStaff() {
             color: '#1e3a8a',
             fontWeight: 900,
             px: 1.4,
-            py: 2.3,
+            py: 1.9,
             borderRadius: 2,
-            fontSize: 13,
+            fontSize: 12,
             '& .MuiChip-icon': { color: '#0f172a', fontSize: 18 }
           }}
         />
@@ -200,7 +200,7 @@ function EntrenadoresSedeStaff() {
                     </Avatar>
                     <Box sx={{ minWidth: 0, flex: 1 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                        <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: { xs: 19, md: 31 }, lineHeight: 1.14 }} noWrap>
+                        <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: { xs: 16, md: 18 }, lineHeight: 1.2 }} noWrap>
                           {item.nombre} {item.apellido}
                         </Typography>
                         <Box
@@ -217,7 +217,7 @@ function EntrenadoresSedeStaff() {
                           {(item.estado || 'activo').toUpperCase()}
                         </Box>
                       </Box>
-                      <Typography sx={{ fontSize: { xs: 14.5, md: 22 }, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <Typography sx={{ fontSize: { xs: 13, md: 14 }, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         Especialidad: {item.especialidad || '-'}
                       </Typography>
                     </Box>
@@ -225,12 +225,12 @@ function EntrenadoresSedeStaff() {
 
                   <Box sx={{ borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', py: 1.4, mb: 1.6, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.7 }}>
                     <Box>
-                      <Typography sx={{ fontSize: { xs: 13, md: 15 }, color: '#9ca3af', fontWeight: 700 }}>C.I.</Typography>
-                      <Typography sx={{ fontSize: { xs: 16, md: 21 }, color: '#334155', fontWeight: 700, lineHeight: 1.2 }}>V-{item.cedula || '-'}</Typography>
+                      <Typography sx={{ fontSize: { xs: 11, md: 12 }, color: '#9ca3af', fontWeight: 700 }}>C.I.</Typography>
+                      <Typography sx={{ fontSize: { xs: 14, md: 15 }, color: '#334155', fontWeight: 700, lineHeight: 1.2 }}>V-{item.cedula || '-'}</Typography>
                     </Box>
                     <Box>
-                      <Typography sx={{ fontSize: { xs: 13, md: 15 }, color: '#9ca3af', fontWeight: 700 }}>Teléfono</Typography>
-                      <Typography sx={{ fontSize: { xs: 16, md: 21 }, color: '#334155', fontWeight: 700, lineHeight: 1.2 }}>{item.telefono || '-'}</Typography>
+                      <Typography sx={{ fontSize: { xs: 11, md: 12 }, color: '#9ca3af', fontWeight: 700 }}>Teléfono</Typography>
+                      <Typography sx={{ fontSize: { xs: 14, md: 15 }, color: '#334155', fontWeight: 700, lineHeight: 1.2 }}>{item.telefono || '-'}</Typography>
                     </Box>
                   </Box>
 
@@ -244,8 +244,8 @@ function EntrenadoresSedeStaff() {
                       textTransform: 'none',
                       fontWeight: 800,
                       borderRadius: 1,
-                      py: 1.05,
-                      fontSize: 14,
+                      py: 0.95,
+                      fontSize: 13,
                       borderColor: item.vinculado ? '#ef4444' : 'transparent',
                       color: item.vinculado ? '#ef4444' : '#ffffff',
                       bgcolor: item.vinculado ? '#ffffff' : '#0b1f49',

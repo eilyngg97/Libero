@@ -1,4 +1,8 @@
 const { resolveTenantByHost, normalizeHost } = require('../services/tenantResolverService');
+const {
+  getConfiguredDefaultTenantConfig,
+  getFailSafeTenantConfig
+} = require('../services/tenantFallbackService');
 
 function getRequestHost(req) {
   return (
@@ -11,14 +15,15 @@ function getRequestHost(req) {
 }
 
 function applySingleTenantFallback(req, res, next) {
-  const tenantId = (process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
-  req.tenantId = tenantId;
+  const tenant = getConfiguredDefaultTenantConfig();
+  req.tenantId = tenant.tenantId;
   req.tenant = {
-    tenantId,
-    nombre: process.env.DEFAULT_TENANT_NAME || 'Villasport',
+    tenantId: tenant.tenantId,
+    nombre: tenant.nombre,
+    dbUri: tenant.dbUri,
     modo: 'single-tenant-fallback'
   };
-  res.setHeader('X-Tenant-Id', tenantId);
+  res.setHeader('X-Tenant-Id', tenant.tenantId);
   return next();
 }
 
@@ -30,15 +35,30 @@ function getConfiguredDefaultTenantDomains() {
 }
 
 function applyConfiguredDefaultTenant(req, res, next, mode = 'default-tenant-domain') {
-  const tenantId = (process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
-  req.tenantId = tenantId;
+  const tenant = getConfiguredDefaultTenantConfig();
+  req.tenantId = tenant.tenantId;
   req.tenant = {
-    tenantId,
-    nombre: process.env.DEFAULT_TENANT_NAME || 'Villasport',
+    tenantId: tenant.tenantId,
+    nombre: tenant.nombre,
+    dbUri: tenant.dbUri,
     modo: mode,
     domains: getConfiguredDefaultTenantDomains()
   };
-  res.setHeader('X-Tenant-Id', tenantId);
+  res.setHeader('X-Tenant-Id', tenant.tenantId);
+  return next();
+}
+
+function applyFailSafeTenantFallback(req, res, next, mode = 'fail-safe-tenant-fallback') {
+  const tenant = getFailSafeTenantConfig();
+  req.tenantId = tenant.tenantId;
+  req.tenant = {
+    tenantId: tenant.tenantId,
+    nombre: tenant.nombre,
+    dbUri: tenant.dbUri,
+    modo: mode,
+    domains: []
+  };
+  res.setHeader('X-Tenant-Id', tenant.tenantId);
   return next();
 }
 
@@ -61,7 +81,7 @@ async function tenantResolver(req, res, next) {
       }
 
       if (process.env.ALLOW_DEFAULT_TENANT_FALLBACK === 'true') {
-        return applySingleTenantFallback(req, res, next);
+        return applyFailSafeTenantFallback(req, res, next);
       }
       return res.status(404).json({ error: 'Tenant no encontrado para el host solicitado' });
     }

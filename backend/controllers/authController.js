@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { getJwtSigningSecret } = require('../config/secrets');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
@@ -16,7 +17,7 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
     const jwtSecret = getJwtSigningSecret();
-    const tenantId = req.tenantId || (process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
+    const tenantId = resolveRequestTenantId(req);
     const token = jwt.sign(
       { id: user._id, rol: user.rol, nombre: user.nombre, tenantId },
       jwtSecret,

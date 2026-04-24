@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const MONTO_TOLERANCIA_BS = 100;
 
@@ -79,9 +80,7 @@ function eliminarArchivoComprobante(comprobanteUrl) {
 }
 
 function resolveTenantId(req) {
-  return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
-    .trim()
-    .toLowerCase();
+  return resolveRequestTenantId(req);
 }
 
 async function getTenantFinanceModels(req) {

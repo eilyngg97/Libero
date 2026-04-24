@@ -6,11 +6,10 @@ const { authMiddleware, rolMiddleware } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 function resolveTenantId(req) {
-  return String(req.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
-    .trim()
-    .toLowerCase();
+	return resolveRequestTenantId(req);
 }
 
 const storage = multer.diskStorage({

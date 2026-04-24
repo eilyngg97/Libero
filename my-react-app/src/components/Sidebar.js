@@ -27,8 +27,10 @@ import SportsIcon from '@mui/icons-material/Sports';
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
   // Detectar el rol del usuario
   let rol = null;
+  let tenantId = '';
   try {
     rol = localStorage.getItem('rol');
+    tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
   } catch {}
   const dashboardPath = rol === 'usuario'
     ? '/dashboard-usuario'
@@ -43,12 +45,17 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       { text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' },
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
-      { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
       { text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' },
       { text: 'Estadisticas', icon: <QueryStatsIcon />, path: '/estadisticas' },
-      { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' },
       { text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' },
     );
+
+    if (tenantId === 'villasport') {
+      options.push(
+        { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
+        { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' }
+      );
+    }
   }
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });
   return options;

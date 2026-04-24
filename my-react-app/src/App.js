@@ -162,6 +162,24 @@ function RequireSedeSelection({ children }) {
   return children;
 }
 
+function TenantOnlyRoute({ children, allowedTenantIds = [] }) {
+  let tenantId = '';
+  let rol = '';
+
+  try {
+    tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
+    rol = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+  } catch (_) {
+    tenantId = '';
+    rol = '';
+  }
+
+  const isAllowed = allowedTenantIds.map((id) => String(id || '').trim().toLowerCase()).includes(tenantId);
+  if (isAllowed) return children;
+
+  return <Navigate to={rol === 'usuario' ? '/dashboard-usuario' : '/dashboard'} replace />;
+}
+
 function TenantHostGate({ children }) {
   const [state, setState] = React.useState({ status: 'loading', message: '' });
 
@@ -334,9 +352,9 @@ function App() {
                           <Route path="panel-opciones-usuario/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><PanelOpcionesUsuario /></ProtectedRoute>} />
                           <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
                           <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />
-                          <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><Aspirantes /></ProtectedRoute>} />
+                          <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><Aspirantes /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="estadisticas" element={<ProtectedRoute allowedRoles={adminOnly}><Estadisticas /></ProtectedRoute>} />
-                          <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><LandingConfig /></ProtectedRoute>} />
+                          <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><LandingConfig /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
                           <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />

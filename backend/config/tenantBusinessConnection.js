@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
 const { getMongoUri } = require('./secrets');
+const {
+  getConfiguredDefaultTenantConfig,
+  getFailSafeTenantConfig,
+  isMultiTenantModeEnabled,
+  normalizeTenantId
+} = require('../services/tenantFallbackService');
 
 const connectionCache = new Map();
 const metrics = {
@@ -15,8 +21,10 @@ function getCacheKey(tenantId, dbUri) {
   return `${String(tenantId || '').trim().toLowerCase()}::${String(dbUri || '').trim()}`;
 }
 
-function getBusinessDbUriFromTenant(tenant) {
+function getBusinessDbUriFromTenant(tenant, fallbackTenant = null) {
   if (tenant?.dbUri) return String(tenant.dbUri).trim();
+  if (fallbackTenant?.dbUri) return String(fallbackTenant.dbUri).trim();
+  if (isMultiTenantModeEnabled()) return null;
   if (process.env.DEFAULT_TENANT_DB_URI) return String(process.env.DEFAULT_TENANT_DB_URI).trim();
   return getMongoUri();
 }
@@ -74,8 +82,16 @@ function getTenantConnectionMetrics() {
 }
 
 async function getTenantBusinessConnection(tenant = {}) {
-  const tenantId = tenant.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport';
-  const dbUri = getBusinessDbUriFromTenant(tenant);
+  const fallbackTenant = isMultiTenantModeEnabled()
+    ? getFailSafeTenantConfig()
+    : getConfiguredDefaultTenantConfig();
+  const tenantId = normalizeTenantId(tenant?.tenantId || fallbackTenant.tenantId);
+  const dbUri = getBusinessDbUriFromTenant(tenant, fallbackTenant);
+
+  if (!tenantId || !dbUri) {
+    throw new Error('No se pudo resolver un tenant seguro para la conexion de negocio');
+  }
+
   const cacheKey = getCacheKey(tenantId, dbUri);
   const maxEntries = normalizePoolSize(process.env.TENANT_CONNECTION_CACHE_SIZE, 20);
 

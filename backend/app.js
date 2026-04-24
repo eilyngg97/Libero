@@ -10,6 +10,7 @@ const { normalizeHost, resolveTenantByHost } = require('./services/tenantResolve
 const { getTenantConnectionMetrics } = require('./config/tenantBusinessConnection');
 const { authMiddleware, rolMiddleware } = require('./middleware/auth');
 const { recordRequestMetric, getTenantHealthDashboard } = require('./services/tenantHealthMetrics');
+const { getConfiguredDefaultTenantId, getFailSafeTenantId } = require('./services/tenantFallbackService');
 
 const app = express();
 
@@ -39,7 +40,18 @@ function getRequestHost(req) {
 }
 
 function getDefaultTenantId() {
-  return String(process.env.DEFAULT_TENANT_ID || 'villasport').trim().toLowerCase();
+  return getConfiguredDefaultTenantId();
+}
+
+function buildTenantBrandingPayload(req) {
+  const tenantName = String(req?.tenant?.nombre || process.env.DEFAULT_TENANT_NAME || 'PRUEBA').trim();
+  const branding = req?.tenant?.branding || {};
+
+  return {
+    displayName: String(branding.displayName || tenantName || 'PRUEBA').trim(),
+    tagline: String(branding.tagline || process.env.DEFAULT_TENANT_TAGLINE || 'Volleyball Club').trim(),
+    logoUrl: branding.logoUrl || process.env.DEFAULT_TENANT_LOGO_URL || null
+  };
 }
 
 async function resolveTenantForUploads(req) {
@@ -54,7 +66,7 @@ async function resolveTenantForUploads(req) {
   if (tenant?.tenantId) return String(tenant.tenantId).trim().toLowerCase();
 
   if (process.env.ALLOW_DEFAULT_TENANT_FALLBACK === 'true') {
-    return getDefaultTenantId();
+    return getFailSafeTenantId();
   }
 
   return null;
@@ -192,7 +204,8 @@ app.get('/api/tenant/context', (req, res) => {
   res.json({
     tenantId: req.tenantId || null,
     tenant: req.tenant || null,
-    multiTenantMode: process.env.MULTI_TENANT_MODE === 'true'
+    multiTenantMode: process.env.MULTI_TENANT_MODE === 'true',
+    branding: buildTenantBrandingPayload(req)
   });
 });
 app.get('/api/tenant/health', authMiddleware, rolMiddleware('admin'), (req, res) => {

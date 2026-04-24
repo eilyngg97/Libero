@@ -3,13 +3,12 @@ const path = require('path');
 const LandingAtletaFoto = require('../models/LandingAtletaFoto');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const LANDING_UPLOAD_PREFIX = '/uploads/landing-atletas/';
 
 function resolveTenantId(req) {
-  return String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
-    .trim()
-    .toLowerCase();
+  return resolveRequestTenantId(req);
 }
 
 function getLandingUploadPrefixByTenant(tenantId) {

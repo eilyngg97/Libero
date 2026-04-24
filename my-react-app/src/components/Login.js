@@ -1,23 +1,74 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './Login.css';
 import { motion } from 'framer-motion';
 
-import { Box, Paper, Typography, TextField, Button, FormControlLabel, Checkbox, Link, Snackbar, Alert, InputAdornment, IconButton } from '@mui/material';
+import { Box, Paper, Typography, TextField, Button, Snackbar, Alert, InputAdornment, IconButton, Link } from '@mui/material';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
-import logoImage from '../assets/logo.png';
+import logoImage from '../assets/logos/logo_apex.png';
+import { mediaUrl } from '../utils/mediaUrl';
+
+const DEFAULT_BRANDING = {
+  displayName: 'NOMBRE DE TU CLUB',
+  tagline: 'Volleyball Club',
+  logoUrl: logoImage
+};
+
+function normalizeBranding(payload) {
+  const branding = payload?.branding || {};
+  const displayName = String(branding.displayName || payload?.tenant?.nombre || '').trim();
+  const tagline = String(branding.tagline || '').trim();
+  const logoUrl = mediaUrl(branding.logoUrl) || DEFAULT_BRANDING.logoUrl;
+
+  return {
+    displayName: displayName || DEFAULT_BRANDING.displayName,
+    tagline: tagline || DEFAULT_BRANDING.tagline,
+    logoUrl
+  };
+}
 
 
 function Login({ onLogin }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const apiBase = useMemo(() => (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/$/, ''), []);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(false);
   const [error, setError] = useState('');
   const [openSnackbar, setOpenSnackbar] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [branding, setBranding] = useState(DEFAULT_BRANDING);
+
+  useEffect(() => {
+    let isActive = true;
+    const controller = new AbortController();
+
+    async function loadTenantBranding() {
+      try {
+        const response = await fetch(`${apiBase}/api/tenant/context`, {
+          signal: controller.signal,
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!isActive || !response.ok) return;
+
+        setBranding(normalizeBranding(payload));
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    loadTenantBranding();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [apiBase]);
 
   const sessionNotice = useMemo(() => {
     const params = new URLSearchParams(location.search || '');
@@ -41,7 +92,6 @@ function Login({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
       const res = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -201,14 +251,14 @@ function Login({ onLogin }) {
                   boxShadow: '0 8px 16px rgba(15, 23, 42, 0.09)'
                 }}
               >
-                <Box component="img" src={logoImage} alt="Villa Sport" sx={{ width: 34, height: 34, objectFit: 'contain' }} />
+                <Box component="img" src={branding.logoUrl} alt={branding.displayName} sx={{ width: 34, height: 34, objectFit: 'contain' }} />
               </Box>
               <Box sx={{ textAlign: 'left' }}>
                 <Typography sx={{ fontWeight: 900, color: '#0f172a', letterSpacing: '0.03em', lineHeight: 1 }}>
-                  VILLA SPORT
+                  {branding.displayName}
                 </Typography>
                 <Typography variant="caption" sx={{ color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                  Volleyball Club
+                  {branding.tagline}
                 </Typography>
               </Box>
             </Box>
@@ -303,12 +353,6 @@ function Login({ onLogin }) {
               Entrar
             </Button>
           </Box>
-
-          <Typography variant="caption" sx={{ textAlign: 'center', color: '#94a3b8' }}>
-            <Link href="/#inicio" sx={{ color: '#f97316', fontWeight: 800, textDecoration: 'none' }}>
-              Volver a nuestro sitio web
-            </Link>
-          </Typography>
         </Paper>
       </Box>
       <Snackbar open={openSnackbar} autoHideDuration={4000} onClose={() => setOpenSnackbar(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>

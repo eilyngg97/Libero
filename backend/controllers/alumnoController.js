@@ -55,6 +55,7 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 async function getTenantAlumnoReadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -91,9 +92,7 @@ async function getTenantAlumnoWriteModels(req) {
 
 function buildUploadUrl(req, file, folder) {
   if (!file || !file.filename) return null;
-  const tenantId = String(req?.tenantId || process.env.DEFAULT_TENANT_ID || 'villasport')
-    .trim()
-    .toLowerCase();
+  const tenantId = resolveRequestTenantId(req);
   return `/uploads/${tenantId}/${folder}/${file.filename}`;
 }
 

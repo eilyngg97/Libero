@@ -1,6 +1,8 @@
 export const mediaUrl = (value) => {
   if (!value || typeof value !== 'string') return value;
 
+  const apiBase = String(process.env.REACT_APP_API_URL || '').trim().replace(/\/$/, '');
+
   if (
     value.startsWith('data:') ||
     value.startsWith('blob:') ||
@@ -11,7 +13,10 @@ export const mediaUrl = (value) => {
   }
 
   if (value.startsWith('/uploads/')) {
-    // Mantener URL relativa para que el browser use el host del tenant activo.
+    // En dev CRA (3000) + API (4000), resolver contra API para evitar 404.
+    if (apiBase) {
+      return `${apiBase}${value}`;
+    }
     return value;
   }
 
