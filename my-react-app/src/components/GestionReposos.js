@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { Box, Typography, TextField, Button, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem } from '@mui/material';
 import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
@@ -161,7 +161,7 @@ const GestionReposos = () => {
     setCertificadoDialogOpen(true);
   };
 
-  const cargarReposos = async () => {
+  const cargarReposos = useCallback(async () => {
     try {
       const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/reposos`);
       if (!response.ok) throw new Error('Error al obtener reposos');
@@ -171,7 +171,7 @@ const GestionReposos = () => {
       console.error(error);
       setReposos([]);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     // Fetch student data based on the ID from the URL
@@ -202,7 +202,7 @@ const GestionReposos = () => {
 
     fetchStudentName();
     cargarReposos();
-  }, [id]);
+  }, [id, cargarReposos]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

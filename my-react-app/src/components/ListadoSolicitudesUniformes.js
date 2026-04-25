@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -90,7 +90,7 @@ function ListadoSolicitudesUniformes() {
     }
   };
 
-  const fetchPedidos = async () => {
+  const fetchPedidos = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -110,11 +110,11 @@ function ListadoSolicitudesUniformes() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sedeSeleccionada?._id, token]);
 
   useEffect(() => {
     fetchPedidos();
-  }, [sedeSeleccionada?._id]);
+  }, [fetchPedidos]);
 
   const openSolicitudPagoDialog = (pedido) => {
     setPedidoSeleccionado(pedido);

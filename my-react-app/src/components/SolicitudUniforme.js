@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -111,7 +111,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     return date.toLocaleDateString('es-VE');
   };
 
-  const fetchPrendas = async () => {
+  const fetchPrendas = useCallback(async () => {
     setPrendasLoading(true);
     setPrendasError('');
     try {
@@ -125,9 +125,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     } finally {
       setPrendasLoading(false);
     }
-  };
+  }, []);
 
-  const fetchPedidos = async () => {
+  const fetchPedidos = useCallback(async () => {
     if (!alumno?._id) return;
     setPedidosLoading(true);
     try {
@@ -143,15 +143,15 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     } finally {
       setPedidosLoading(false);
     }
-  };
+  }, [alumno?._id, token]);
 
   useEffect(() => {
     fetchPrendas();
-  }, []);
+  }, [fetchPrendas]);
 
   useEffect(() => {
     fetchPedidos();
-  }, [alumno?._id]);
+  }, [fetchPedidos]);
 
   useEffect(() => {
     setNumeroFranelaAsignado(String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());

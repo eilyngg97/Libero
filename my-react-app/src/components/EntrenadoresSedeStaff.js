@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Avatar, Box, Button, Chip, Paper, Typography } from '@mui/material';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import GroupsIcon from '@mui/icons-material/Groups';
@@ -20,7 +20,7 @@ function EntrenadoresSedeStaff() {
     return entrenadores.filter((item) => item.vinculado).length;
   }, [entrenadores]);
 
-  const fetchStaffSede = async () => {
+  const fetchStaffSede = useCallback(async () => {
     if (!sedeId) return;
 
     setLoading(true);
@@ -44,11 +44,11 @@ function EntrenadoresSedeStaff() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sedeId]);
 
   useEffect(() => {
     fetchStaffSede();
-  }, [sedeId]);
+  }, [fetchStaffSede]);
 
   const handleToggleVinculo = async (entrenador) => {
     if (!sedeId || !entrenador?._id) return;

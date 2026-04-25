@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -55,7 +55,7 @@ function Aspirantes() {
 
   const rows = useMemo(() => aspirantes, [aspirantes]);
 
-  const fetchAspirantes = async () => {
+  const fetchAspirantes = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -76,11 +76,11 @@ function Aspirantes() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiBase, token]);
 
   useEffect(() => {
     fetchAspirantes();
-  }, [apiBase, token]);
+  }, [fetchAspirantes]);
 
   const updateEstado = async (aspiranteId, estado) => {
     try {
