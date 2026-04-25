@@ -20,7 +20,9 @@ function resolveTenantId(req) {
 
 function resolveUploadDirByField(req, fieldName) {
 	const tenantId = resolveTenantId(req);
-	const folder = (fieldName === 'certificado' || fieldName === 'certificados') ? 'reposos' : 'alumnos';
+	const folder = (fieldName === 'certificado' || fieldName === 'certificados')
+		? 'reposos'
+		: (fieldName === 'comprobante' ? 'comprobantes' : 'alumnos');
 	const uploadDir = path.join(__dirname, '..', 'uploads', tenantId, folder);
 	fs.mkdirSync(uploadDir, { recursive: true });
 	return uploadDir;
@@ -44,6 +46,7 @@ router.get('/estadisticas/inscritos-retirados', authMiddleware, rolMiddleware('a
 router.get('/numeros-franela/disponibilidad', authMiddleware, alumnoController.getDisponibilidadNumeroFranela);
 router.post('/', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.createAlumno);
 router.get('/por-representante/:representanteId', authMiddleware, ensureRepresentanteOwnershipFromParam('representanteId'), alumnoController.getAlumnosPorRepresentante);
+router.get('/:id/historial-estados', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getHistorialEstadosAlumno);
 router.get('/:id/reposos', authMiddleware, rolMiddleware('admin'), alumnoController.getRepososAlumno);
 router.post('/:id/reposos', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'certificado', maxCount: 1 }, { name: 'certificados', maxCount: 10 }]), alumnoController.registrarReposoAlumno);
 router.patch('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'certificado', maxCount: 1 }, { name: 'certificados', maxCount: 10 }]), alumnoController.editarReposoAlumno);
@@ -52,7 +55,7 @@ router.delete('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), 
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
 router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.updateAlumno);
 router.patch('/:id/baja', authMiddleware, rolMiddleware('admin'), alumnoController.darDeBajaAlumno);
-router.patch('/:id/reactivar', authMiddleware, rolMiddleware('admin'), alumnoController.reactivarAlumno);
+router.patch('/:id/reactivar', authMiddleware, rolMiddleware('admin'), upload.single('comprobante'), alumnoController.reactivarAlumno);
 router.delete('/:id', authMiddleware, rolMiddleware('admin'), alumnoController.deleteAlumno);
 
 module.exports = router;

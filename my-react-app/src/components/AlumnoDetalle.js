@@ -52,6 +52,13 @@ function formatTipoMensualidad(tipo) {
   return tipo;
 }
 
+function formatTipoMovimiento(tipo) {
+  const key = String(tipo || '').toUpperCase();
+  if (key === 'BAJA') return 'Baja';
+  if (key === 'REINGRESO' || key === 'REACTIVACION') return 'Reingreso';
+  return tipo || '-';
+}
+
 // Calcula el IMC y su clasificación
 function calcularIMC(peso, talla) {
   const pesoNum = parseFloat(peso);
@@ -75,6 +82,35 @@ function AlumnoDetalle() {
   const [error, setError] = useState(null);
   const [openFotoAlumno, setOpenFotoAlumno] = useState(false);
   const [openFotoCedula, setOpenFotoCedula] = useState(false);
+  const [openHistorialEstados, setOpenHistorialEstados] = useState(false);
+  const [historialEstados, setHistorialEstados] = useState([]);
+  const [historialLoading, setHistorialLoading] = useState(false);
+  const [historialError, setHistorialError] = useState(null);
+
+  const fetchHistorialEstados = async () => {
+    setHistorialLoading(true);
+    setHistorialError(null);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(
+        `${process.env.REACT_APP_API_URL}/api/alumnos/${id}/historial-estados`,
+        { headers }
+      );
+      if (!res.ok) throw new Error('No se pudo cargar el historial de estados');
+      const data = await res.json();
+      setHistorialEstados(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setHistorialError(err.message);
+    } finally {
+      setHistorialLoading(false);
+    }
+  };
+
+  const handleOpenHistorialEstados = async () => {
+    setOpenHistorialEstados(true);
+    await fetchHistorialEstados();
+  };
 
   useEffect(() => {
     const fetchAlumno = async () => {
@@ -180,6 +216,23 @@ function AlumnoDetalle() {
                     fontWeight: 700
                   }}
                 />
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={handleOpenHistorialEstados}
+                  sx={{
+                    mt: -0.5,
+                    minHeight: 20,
+                    px: 0,
+                    fontSize: 11,
+                    color: '#64748b',
+                    textTransform: 'none',
+                    textDecoration: 'underline',
+                    '&:hover': { backgroundColor: 'transparent', color: '#334155' }
+                  }}
+                >
+                  Ver historial
+                </Button>
                 {estaRetirado && (
                   <Box
                     sx={{
@@ -453,6 +506,71 @@ function AlumnoDetalle() {
             </Box>
           ) : (
             <Typography variant="body2">Foto de cédula no disponible.</Typography>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={openHistorialEstados}
+        onClose={() => setOpenHistorialEstados(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          Historial de bajas y reingresos
+          <IconButton aria-label="cerrar" onClick={() => setOpenHistorialEstados(false)} size="small">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {historialLoading && <Typography variant="body2">Cargando historial...</Typography>}
+          {!historialLoading && historialError && (
+            <Typography color="error" variant="body2">{historialError}</Typography>
+          )}
+          {!historialLoading && !historialError && historialEstados.length === 0 && (
+            <Typography variant="body2" sx={{ color: '#64748b' }}>
+              No hay movimientos registrados.
+            </Typography>
+          )}
+          {!historialLoading && !historialError && historialEstados.length > 0 && (
+            <Box sx={{ display: 'grid', gap: 1.25 }}>
+              {historialEstados.map((evento) => {
+                const esBaja = String(evento?.tipo_movimiento || '').toUpperCase() === 'BAJA';
+                return (
+                  <Box
+                    key={`${evento._id || evento.createdAt}-${evento.tipo_movimiento}`}
+                    sx={{
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 2,
+                      p: 1.25,
+                      backgroundColor: '#f8fafc'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      <Chip
+                        size="small"
+                        label={formatTipoMovimiento(evento?.tipo_movimiento)}
+                        sx={{
+                          bgcolor: esBaja ? '#fee2e2' : '#dcfce7',
+                          color: esBaja ? '#b91c1c' : '#166534',
+                          fontWeight: 700
+                        }}
+                      />
+                      <Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                        {formatFecha(evento?.fecha_evento || evento?.createdAt)}
+                      </Typography>
+                    </Box>
+                    <Typography sx={{ mt: 0.75, fontSize: 12, color: '#334155' }}>
+                      Motivo: {String(evento?.motivo || '').trim() || 'No especificado'}
+                    </Typography>
+                    {String(evento?.comentario || '').trim() && (
+                      <Typography sx={{ mt: 0.5, fontSize: 12, color: '#64748b' }}>
+                        Comentario: {String(evento?.comentario || '').trim()}
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
           )}
         </DialogContent>
       </Dialog>

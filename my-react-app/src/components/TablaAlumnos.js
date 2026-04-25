@@ -9,7 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Chip, Box, MenuItem } from '@mui/material';
+import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Chip, Box, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -57,6 +57,21 @@ function obtenerTipoMensualidadKey(alumno) {
 function obtenerEstadoAlumno(alumno) {
   if (alumno?.dado_de_baja || alumno?.activo === false) return 'Baja';
   return alumno?.estado || 'Activo';
+}
+
+const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
+
+function normalizeMetodoPago(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'pago movil' || raw === 'pago móvil') return 'Pago movil';
+  if (raw === 'transferencia') return 'Transferencia';
+  if (raw === 'efectivo') return 'Efectivo';
+  return String(value || '').trim();
+}
+
+function metodoRequiereReferencia(metodo) {
+  const key = String(metodo || '').toLowerCase();
+  return key === 'pago movil' || key === 'transferencia';
 }
 
 function parseFechaLocal(fecha) {
@@ -109,6 +124,36 @@ function TablaAlumnos() {
   const [reactivarId, setReactivarId] = useState(null);
   const [reactivarLoading, setReactivarLoading] = useState(false);
   const [reactivarSuccess, setReactivarSuccess] = useState({ open: false, message: '' });
+  const [reactivarError, setReactivarError] = useState(null);
+  const [reactivarForm, setReactivarForm] = useState({
+    montoReingreso: '',
+    montoMensualidad: '',
+    montoPagado: '',
+    fechaPago: new Date().toISOString().slice(0, 10),
+    metodoPago: METODOS_PAGO[0],
+    referencia: '',
+    comentario: '',
+    comprobante: null
+  });
+  const modalInputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      backgroundColor: '#ffffff'
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: '#e2e8f0'
+    },
+    '& .MuiInputLabel-root': {
+      color: '#64748b'
+    }
+  };
+  const alumnoReactivar = alumnos.find((item) => item._id === reactivarId) || null;
+  const totalReingresoUsd = Number((
+    (Number(reactivarForm.montoReingreso) || 0) +
+    (Number(reactivarForm.montoMensualidad) || 0)
+  ).toFixed(2));
+  const montoPagadoReingresoUsd = Number(reactivarForm.montoPagado) || 0;
+  const saldoReingresoUsd = Number((Math.max(0, totalReingresoUsd - montoPagadoReingresoUsd)).toFixed(2));
   // Función para descargar CSV
   const handleDownloadExcel = () => {
     const alumnosActivos = alumnosFiltrados.filter(a => !(a.dado_de_baja || a.activo === false || a.estado === 'Baja'));
@@ -197,20 +242,95 @@ function TablaAlumnos() {
     setBajaId(null);
     setMotivoBaja('');
   };
+
+  const openReactivarDialog = (alumno) => {
+    const montoSugerido = Number(alumno?.sede?.costo);
+    const sugerido = Number.isFinite(montoSugerido) && montoSugerido > 0 ? String(montoSugerido) : '';
+    setReactivarForm({
+      montoReingreso: sugerido,
+      montoMensualidad: sugerido,
+      montoPagado: '',
+      fechaPago: new Date().toISOString().slice(0, 10),
+      metodoPago: METODOS_PAGO[0],
+      referencia: '',
+      comentario: '',
+      comprobante: null
+    });
+    setReactivarError(null);
+    setReactivarId(alumno?._id || null);
+  };
+
+  const closeReactivarDialog = () => {
+    if (reactivarLoading) return;
+    setReactivarId(null);
+    setReactivarError(null);
+    setReactivarForm((prev) => ({
+      ...prev,
+      referencia: '',
+      comentario: '',
+      comprobante: null
+    }));
+  };
+
   const handleReactivarAlumno = async () => {
     if (!reactivarId) return;
+    setReactivarError(null);
+
+    const montoReingreso = Number(reactivarForm.montoReingreso);
+    const montoMensualidad = Number(reactivarForm.montoMensualidad);
+    if (!Number.isFinite(montoReingreso) || montoReingreso <= 0) {
+      setReactivarError('Debes ingresar un monto de reingreso valido.');
+      return;
+    }
+    if (!Number.isFinite(montoMensualidad) || montoMensualidad <= 0) {
+      setReactivarError('Debes ingresar un monto de mensualidad valido.');
+      return;
+    }
+
+    const metodoPago = normalizeMetodoPago(reactivarForm.metodoPago);
+    if (!metodoPago) {
+      setReactivarError('Debes seleccionar un metodo de pago.');
+      return;
+    }
+
+    if (metodoRequiereReferencia(metodoPago) && !/^[0-9]{6,}$/.test(String(reactivarForm.referencia || '').trim())) {
+      setReactivarError('La referencia debe tener minimo 6 digitos para el metodo de pago seleccionado.');
+      return;
+    }
+
+    const totalEsperado = Number((montoReingreso + montoMensualidad).toFixed(2));
+    const montoPagado = Number(reactivarForm.montoPagado || 0);
+    const estatus = (!Number.isFinite(montoPagado) || montoPagado <= 0)
+      ? 'Pendiente'
+      : (montoPagado < totalEsperado ? 'Abono' : 'Pagado');
+
     setReactivarLoading(true);
     try {
+      const formData = new FormData();
+      formData.append('monto_reingreso', String(montoReingreso));
+      formData.append('monto_mensualidad', String(montoMensualidad));
+      formData.append('monto_esperado', String(totalEsperado));
+      formData.append('monto_pagado', Number.isFinite(montoPagado) && montoPagado > 0 ? String(montoPagado) : '');
+      formData.append('fecha_pago', reactivarForm.fechaPago || new Date().toISOString().slice(0, 10));
+      formData.append('metodo_pago', metodoPago);
+      formData.append('referencia', metodoRequiereReferencia(metodoPago) ? String(reactivarForm.referencia || '').trim() : '');
+      formData.append('estatus', estatus);
+      formData.append('comentario_reingreso', String(reactivarForm.comentario || '').trim());
+      if (reactivarForm.comprobante) {
+        formData.append('comprobante', reactivarForm.comprobante);
+      }
+
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${reactivarId}/reactivar`, {
-        method: 'PATCH'
+        method: 'PATCH',
+        body: formData
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al reactivar al alumno');
-      setAlumnos(prev => prev.map(a => a._id === reactivarId ? { ...a, estado: 'Activo', dado_de_baja: false, activo: true, fecha_baja: null, motivo_baja: null } : a));
+      setAlumnos(prev => prev.map(a => a._id === reactivarId ? { ...a, estado: 'Activo', dado_de_baja: false, activo: true } : a));
       setReactivarId(null);
-      setReactivarSuccess({ open: true, message: data.message || 'Alumno reactivado' });
+      setReactivarSuccess({ open: true, message: data.message || 'Alumno reactivado y reingreso registrado' });
     } catch (err) {
-      setError(err.message);
+      setReactivarError(err.message);
     } finally {
       setReactivarLoading(false);
     }
@@ -513,7 +633,7 @@ function TablaAlumnos() {
                 )}
                 {(alumno.dado_de_baja || alumno.activo === false) && (
                   <Tooltip title="Reactivar">
-                    <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', bgcolor: '#f0fdf4' }} onClick={() => setReactivarId(alumno._id)}>
+                    <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', bgcolor: '#f0fdf4' }} onClick={() => openReactivarDialog(alumno)}>
                       <ReplayIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
@@ -667,7 +787,7 @@ function TablaAlumnos() {
                     )}
                     {(alumno.dado_de_baja || alumno.activo === false) && (
                       <Tooltip title="Reactivar">
-                        <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', mr: 1 }} onClick={() => setReactivarId(alumno._id)}>
+                        <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', mr: 1 }} onClick={() => openReactivarDialog(alumno)}>
                           <ReplayIcon />
                         </IconButton>
                       </Tooltip>
@@ -763,13 +883,242 @@ function TablaAlumnos() {
           </Button>
         </DialogActions>
       </Dialog>
-      <Dialog open={!!reactivarId} onClose={() => setReactivarId(null)}>
-        <DialogTitle>¿Reactivar alumno?</DialogTitle>
-        <DialogContent>Confirma si deseas reactivar al alumno.</DialogContent>
-        <DialogActions>
-          <Button onClick={() => setReactivarId(null)} disabled={reactivarLoading}>Cancelar</Button>
-          <Button onClick={handleReactivarAlumno} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}} variant="contained" disabled={reactivarLoading}>
-            {reactivarLoading ? 'Procesando...' : 'Reactivar'}
+      <Dialog
+        open={!!reactivarId}
+        onClose={closeReactivarDialog}
+        fullWidth
+        maxWidth="sm"
+        BackdropProps={{ sx: { backgroundColor: 'rgba(255, 255, 255, 0.08)', backdropFilter: 'blur(4px)' } }}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)',
+            px: { xs: 0.5, sm: 1.5 },
+            py: 0.5
+          }
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pb: 0.5 }}>
+          Reingreso y reactivacion
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1.25, pb: 1.5 }}>
+          <Typography sx={{ color: '#64748b', mb: 1.25 }}>
+            Registra el cobro de reingreso con montos separados por concepto para mantener trazabilidad.
+          </Typography>
+
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2.5,
+              border: '1px solid #dbe3ef',
+              borderLeft: '4px solid #f97316',
+              background: 'linear-gradient(135deg, #f8fbff 0%, #fdfdfd 100%)',
+              mb: 2
+            }}
+          >
+            <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', mb: 0.5 }}>
+              Datos base
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.75, alignItems: 'center' }}>
+              <Typography variant="body2" sx={{ color: '#334155' }}>Alumno</Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {alumnoReactivar ? `${alumnoReactivar.nombres || ''} ${alumnoReactivar.apellidos || ''}`.trim() : '-'}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#334155' }}>Sede</Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {alumnoReactivar?.sede?.nombre || '-'}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#334155' }}>Monto base sede</Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {alumnoReactivar?.sede?.costo !== undefined && alumnoReactivar?.sede?.costo !== null
+                  ? `$${Number(alumnoReactivar.sede.costo).toFixed(2)}`
+                  : 'No disponible'}
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, my: 1.5 }}>
+            <TextField
+              label="Monto de reingreso (USD)"
+              type="number"
+              value={reactivarForm.montoReingreso}
+              onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoReingreso: e.target.value }))}
+              inputProps={{ min: 0, step: '0.01' }}
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              fullWidth
+              size="small"
+              sx={modalInputSx}
+            />
+            <TextField
+              label="Monto mensualidad (USD)"
+              type="number"
+              value={reactivarForm.montoMensualidad}
+              onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoMensualidad: e.target.value }))}
+              inputProps={{ min: 0, step: '0.01' }}
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              fullWidth
+              size="small"
+              sx={modalInputSx}
+            />
+          </Box>
+
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 2.5,
+              border: '1px solid #1e2a57',
+              background: '#0B0F2A',
+              mb: 2
+            }}
+          >
+            <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#cbd5e1', mb: 0.75 }}>
+              Resumen de reingreso
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.75, alignItems: 'center' }}>
+              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Total USD</Typography>
+              <Typography sx={{ color: '#ffffff', fontWeight: 900, fontSize: 20, lineHeight: 1.1 }}>
+                ${totalReingresoUsd.toFixed(2)}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Pagado USD</Typography>
+              <Typography variant="body2" sx={{ color: '#ffffff', fontWeight: 800 }}>
+                ${montoPagadoReingresoUsd.toFixed(2)}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Saldo USD</Typography>
+              <Typography variant="body2" sx={{ color: '#ffffff', fontWeight: 800 }}>
+                ${saldoReingresoUsd.toFixed(2)}
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+            <TextField
+              label="Monto pagado (USD)"
+              type="number"
+              value={reactivarForm.montoPagado}
+              onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoPagado: e.target.value }))}
+              inputProps={{ min: 0, step: '0.01' }}
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              helperText="Opcional. Si queda en blanco se registra como pendiente."
+              fullWidth
+              size="small"
+              sx={modalInputSx}
+            />
+            <TextField
+              label="Fecha de pago"
+              type="date"
+              value={reactivarForm.fechaPago}
+              onChange={(e) => setReactivarForm((prev) => ({ ...prev, fechaPago: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+              fullWidth
+              size="small"
+              sx={modalInputSx}
+            />
+            <FormControl fullWidth size="small" sx={modalInputSx}>
+              <InputLabel id="metodo-pago-reingreso-label">Metodo de pago</InputLabel>
+              <Select
+                labelId="metodo-pago-reingreso-label"
+                value={reactivarForm.metodoPago}
+                label="Metodo de pago"
+                onChange={(e) => setReactivarForm((prev) => ({ ...prev, metodoPago: normalizeMetodoPago(e.target.value) }))}
+              >
+                {METODOS_PAGO.map((metodo) => (
+                  <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {metodoRequiereReferencia(reactivarForm.metodoPago) && (
+              <TextField
+                label="Referencia (minimo 6 digitos)"
+                value={reactivarForm.referencia}
+                onChange={(e) => setReactivarForm((prev) => ({ ...prev, referencia: e.target.value.replace(/\D/g, '') }))}
+                inputProps={{ minLength: 6 }}
+                fullWidth
+                size="small"
+                sx={modalInputSx}
+              />
+            )}
+            <TextField
+              label="Comentario"
+              value={reactivarForm.comentario}
+              onChange={(e) => setReactivarForm((prev) => ({ ...prev, comentario: e.target.value }))}
+              multiline
+              minRows={2}
+              fullWidth
+              size="small"
+              sx={{ ...modalInputSx, gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}
+            />
+          </Box>
+
+          <Box
+            component="label"
+            sx={{
+              mt: 2,
+              border: '1px dashed #cbd5f0',
+              borderRadius: 2,
+              p: 2,
+              textAlign: 'center',
+              backgroundColor: '#f8fafc',
+              display: 'block',
+              cursor: 'pointer'
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
+              Haz clic para adjuntar comprobante
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG hasta 5MB</Typography>
+            <input
+              type="file"
+              hidden
+              accept="image/*"
+              onChange={(e) => setReactivarForm((prev) => ({ ...prev, comprobante: e.target.files?.[0] || null }))}
+            />
+          </Box>
+
+          {reactivarForm.comprobante && (
+            <Box
+              sx={{
+                mt: 1.5,
+                px: 1.5,
+                py: 1,
+                border: '1px solid #e2e8f0',
+                borderRadius: 2,
+                bgcolor: '#ffffff'
+              }}
+            >
+              <Typography sx={{ fontSize: 12, color: '#475569' }}>
+                Archivo: {reactivarForm.comprobante.name}
+              </Typography>
+            </Box>
+          )}
+
+          {reactivarError && (
+            <MuiAlert
+              severity="error"
+              sx={{
+                mt: 1.5,
+                borderRadius: 2,
+                border: '1px solid #fecaca',
+                backgroundColor: '#fef2f2',
+                color: '#991b1b',
+                '& .MuiAlert-icon': { color: '#dc2626' }
+              }}
+            >
+              {reactivarError}
+            </MuiAlert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.25 }}>
+          <Button onClick={closeReactivarDialog} disabled={reactivarLoading} sx={{ color: '#64748b', fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleReactivarAlumno}
+            style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}}
+            variant="contained"
+            disabled={reactivarLoading}
+            sx={{ bgcolor: '#ff7a00', '&:hover': { bgcolor: '#f97316' }, fontWeight: 800, borderRadius: 2, px: 3 }}
+          >
+            {reactivarLoading ? 'Procesando...' : 'Registrar reingreso'}
           </Button>
         </DialogActions>
       </Dialog>

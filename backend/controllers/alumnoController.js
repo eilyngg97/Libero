@@ -51,6 +51,7 @@ const Mensualidad = require('../models/Mensualidad');
 const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
+const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
@@ -66,12 +67,14 @@ async function getTenantAlumnoReadModels(req) {
   const TenantSede = getTenantModel(connection, 'Sede');
   const TenantAlumno = getTenantModel(connection, 'Alumno');
   const TenantReposo = getTenantModel(connection, 'Reposo');
+  const TenantHistorialEstadoAlumno = getTenantModel(connection, 'HistorialEstadoAlumno');
 
   return {
     Alumno: TenantAlumno,
     Representante: TenantRepresentante,
     Sede: TenantSede,
-    Reposo: TenantReposo
+    Reposo: TenantReposo,
+    HistorialEstadoAlumno: TenantHistorialEstadoAlumno
   };
 }
 
@@ -86,7 +89,8 @@ async function getTenantAlumnoWriteModels(req) {
     Sede: getTenantModel(connection, 'Sede'),
     Reposo: getTenantModel(connection, 'Reposo'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
-    PagoDetalle: getTenantModel(connection, 'PagoDetalle')
+    PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
+    HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno')
   };
 }
 
@@ -199,6 +203,73 @@ function getPeriodoFromInput(rawValue, parsedDate) {
 
 function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
+}
+
+function normalizarMontoOpcional(valor) {
+  if (valor === undefined || valor === null || String(valor).trim() === '') return undefined;
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return undefined;
+  return redondearMonto(numero);
+}
+
+function normalizarMontoBsOpcional(valor) {
+  if (valor === undefined || valor === null || String(valor).trim() === '') return undefined;
+  const numero = Number(valor);
+  if (!Number.isFinite(numero) || numero < 0) return undefined;
+  return redondearMonto(numero);
+}
+
+function metodoRequiereReferencia(metodoPago) {
+  const normalizado = String(metodoPago || '').trim().toLowerCase();
+  return normalizado === 'pago movil' || normalizado === 'transferencia';
+}
+
+function distribuirPagoPorConceptos({
+  montoPagadoUsd = 0,
+  montoPagadoBs,
+  montoReingreso = 0,
+  montoMensualidad = 0
+}) {
+  const pagoUsd = redondearMonto(Math.max(0, montoPagadoUsd || 0));
+  const totalEsperadoUsd = redondearMonto((montoReingreso || 0) + (montoMensualidad || 0));
+  const pagoBs = Number.isFinite(Number(montoPagadoBs)) ? redondearMonto(montoPagadoBs) : undefined;
+
+  const pagoReingresoUsd = redondearMonto(Math.min(montoReingreso || 0, pagoUsd));
+  const pagoMensualidadUsd = redondearMonto(Math.max(0, pagoUsd - pagoReingresoUsd));
+
+  const asignarBs = (montoPagadoConceptoUsd) => {
+    if (!Number.isFinite(pagoBs) || pagoUsd <= 0) return undefined;
+    return redondearMonto((montoPagadoConceptoUsd / pagoUsd) * pagoBs);
+  };
+
+  const reingresoBs = asignarBs(pagoReingresoUsd);
+  const mensualidadBs = Number.isFinite(pagoBs)
+    ? redondearMonto((pagoBs || 0) - (reingresoBs || 0))
+    : undefined;
+
+  return {
+    totalEsperadoUsd,
+    conceptosDetalle: [
+      {
+        tipo: 'REINGRESO',
+        monto_esperado_usd: redondearMonto(montoReingreso || 0),
+        monto_pagado_usd: pagoReingresoUsd,
+        monto_esperado_bs: Number.isFinite(pagoBs) && totalEsperadoUsd > 0
+          ? redondearMonto(((montoReingreso || 0) / totalEsperadoUsd) * pagoBs)
+          : undefined,
+        monto_pagado_bs: reingresoBs
+      },
+      {
+        tipo: 'MENSUALIDAD_REINGRESO',
+        monto_esperado_usd: redondearMonto(montoMensualidad || 0),
+        monto_pagado_usd: pagoMensualidadUsd,
+        monto_esperado_bs: Number.isFinite(pagoBs) && totalEsperadoUsd > 0
+          ? redondearMonto(((montoMensualidad || 0) / totalEsperadoUsd) * pagoBs)
+          : undefined,
+        monto_pagado_bs: mensualidadBs
+      }
+    ]
+  };
 }
 
 function normalizarMontoParcialPersonalizado(valor) {
@@ -1320,20 +1391,36 @@ exports.deleteAlumno = async (req, res) => {
 // Dar de baja un alumno (baja lógica)
 exports.darDeBajaAlumno = async (req, res) => {
   try {
-    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+    } = await getTenantAlumnoWriteModels(req);
     const { motivo_baja } = req.body || {};
+    const fechaBaja = new Date();
     const alumno = await TenantAlumno.findByIdAndUpdate(
       req.params.id,
       {
         activo: false,
         dado_de_baja: true,
         estado: 'Baja',
-        fecha_baja: new Date(),
+        fecha_baja: fechaBaja,
         ...(motivo_baja ? { motivo_baja } : {})
       },
       { new: true }
     );
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    await TenantHistorialEstadoAlumno.create({
+      id_alumno: alumno._id,
+      tipo_movimiento: 'BAJA',
+      fecha_evento: fechaBaja,
+      motivo: motivo_baja ? String(motivo_baja).trim() : undefined,
+      actor_id: req.user?.id || undefined,
+      metadata: {
+        estado_resultante: 'Baja'
+      }
+    });
+
     res.json({ message: 'Alumno dado de baja', alumno });
   } catch (err) {
     res.status(400).json({ error: 'Error al dar de baja al alumno' });
@@ -1343,22 +1430,186 @@ exports.darDeBajaAlumno = async (req, res) => {
 // Reactivar un alumno (revertir baja)
 exports.reactivarAlumno = async (req, res) => {
   try {
-    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+    } = await getTenantAlumnoWriteModels(req);
+
+    const alumnoActual = await TenantAlumno.findById(req.params.id).populate('sede');
+    if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
+    if (alumnoActual.activo !== false && alumnoActual.dado_de_baja !== true) {
+      return res.status(400).json({ error: 'El alumno ya se encuentra activo.' });
+    }
+
+    const montoReingreso = normalizarMontoOpcional(req.body?.monto_reingreso);
+    const montoMensualidad = normalizarMontoOpcional(req.body?.monto_mensualidad);
+    const montoPagadoUsd = normalizarMontoOpcional(req.body?.monto_pagado);
+    const montoPagadoBs = normalizarMontoBsOpcional(req.body?.monto_pagado_bs);
+    const montoEsperadoBs = normalizarMontoBsOpcional(req.body?.monto_esperado_bs);
+    const metodoPago = String(req.body?.metodo_pago || '').trim();
+    const referencia = String(req.body?.referencia || '').trim();
+    const comentarioReingreso = String(req.body?.comentario_reingreso || '').trim();
+    const fechaPago = parseDateInput(req.body?.fecha_pago) || new Date();
+
+    if (!Number.isFinite(montoReingreso) || montoReingreso <= 0) {
+      return res.status(400).json({ error: 'monto_reingreso invalido' });
+    }
+    if (!Number.isFinite(montoMensualidad) || montoMensualidad <= 0) {
+      return res.status(400).json({ error: 'monto_mensualidad invalido' });
+    }
+    if (!metodoPago) {
+      return res.status(400).json({ error: 'metodo_pago es requerido' });
+    }
+    if (metodoRequiereReferencia(metodoPago) && !/^[0-9]{6,}$/.test(referencia)) {
+      return res.status(400).json({ error: 'La referencia de pago debe tener minimo 6 digitos.' });
+    }
+
+    const totalEsperado = redondearMonto(montoReingreso + montoMensualidad);
+    const totalPagado = redondearMonto(Math.max(0, montoPagadoUsd || 0));
+    const { mes, anio } = getPeriodoZonaCaracas();
+
+    const mensualidadExistente = await TenantMensualidad.findOne({
+      id_alumno: alumnoActual._id,
+      mes,
+      anio
+    });
+
+    if (mensualidadExistente) {
+      return res.status(409).json({
+        error: 'Ya existe una mensualidad para el periodo actual. No se puede registrar reingreso duplicado.'
+      });
+    }
+
+    const fechaVencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
+    const estatusSolicitado = String(req.body?.estatus || '').trim();
+    let estatusInicial = estatusSolicitado || 'Pendiente';
+    if (totalPagado > 0 && totalPagado < totalEsperado) {
+      estatusInicial = 'Abono';
+    } else if (totalPagado >= totalEsperado) {
+      estatusInicial = 'Pagado';
+    }
+
+    const comprobanteUrl = req.file
+      ? `/uploads/${resolveRequestTenantId(req)}/comprobantes/${req.file.filename}`
+      : undefined;
+
+    const mensualidad = await TenantMensualidad.create({
+      id_alumno: alumnoActual._id,
+      mes,
+      anio,
+      monto_base: totalEsperado,
+      credito_aplicado: 0,
+      ajuste_extraordinario: 0,
+      saldo_a_favor_generado: 0,
+      monto_esperado: totalEsperado,
+      monto_reingreso: montoReingreso,
+      monto_mensualidad_reingreso: montoMensualidad,
+      tipo_registro_inicial: 'reingreso',
+      monto_equivalente_bs: montoEsperadoBs,
+      fecha_pago: fechaPago,
+      metodo_pago: metodoPago,
+      referencia: referencia || undefined,
+      comprobante_url: comprobanteUrl,
+      fecha_vencimiento: fechaVencimiento,
+      estatus: estatusInicial
+    });
+
+    let pagoRegistrado = null;
+    if (totalPagado > 0) {
+      const distribucion = distribuirPagoPorConceptos({
+        montoPagadoUsd: totalPagado,
+        montoPagadoBs,
+        montoReingreso,
+        montoMensualidad
+      });
+
+      pagoRegistrado = await TenantPagoDetalle.create({
+        id_mensualidad: mensualidad._id,
+        concepto: 'Reingreso alumno',
+        origen: 'reactivacion',
+        conceptos_detalle: distribucion.conceptosDetalle,
+        monto_pagado: totalPagado,
+        monto_pagado_bs: montoPagadoBs,
+        monto_esperado_usd: totalEsperado,
+        monto_esperado_bs: montoEsperadoBs,
+        fecha_pago: fechaPago,
+        metodo_pago: metodoPago,
+        referencia: referencia || 'reingreso',
+        comprobante_url: comprobanteUrl
+      });
+    }
+
+    await recalcularMensualidadPorPagos(mensualidad, estatusInicial, {
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle
+    });
+
     const alumno = await TenantAlumno.findByIdAndUpdate(
       req.params.id,
       {
         activo: true,
         dado_de_baja: false,
-        estado: 'Activo',
-        fecha_baja: null,
-        motivo_baja: null
+        estado: 'Activo'
       },
       { new: true }
     );
+
+    await TenantHistorialEstadoAlumno.create({
+      id_alumno: alumno._id,
+      tipo_movimiento: 'REINGRESO',
+      fecha_evento: new Date(),
+      motivo: 'Reingreso administrativo',
+      comentario: comentarioReingreso || undefined,
+      actor_id: req.user?.id || undefined,
+      metadata: {
+        monto_reingreso: montoReingreso,
+        monto_mensualidad: montoMensualidad,
+        monto_total_esperado: totalEsperado,
+        monto_total_pagado: totalPagado,
+        metodo_pago: metodoPago,
+        referencia: referencia || undefined,
+        mensualidad_id: mensualidad?._id,
+        pago_id: pagoRegistrado?._id || undefined
+      }
+    });
+
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
-    res.json({ message: 'Alumno reactivado', alumno });
+    res.json({
+      message: 'Alumno reactivado y reingreso registrado',
+      alumno,
+      mensualidad,
+      pago: pagoRegistrado
+    });
   } catch (err) {
-    res.status(400).json({ error: 'Error al reactivar al alumno' });
+    res.status(400).json({ error: err?.message || 'Error al reactivar al alumno' });
+  }
+};
+
+// Listar historial de estados (bajas y reingresos) de un alumno
+exports.getHistorialEstadosAlumno = async (req, res) => {
+  try {
+    const {
+      Alumno: TenantAlumno,
+      HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+    } = await getTenantAlumnoReadModels(req);
+
+    const alumno = await TenantAlumno.findById(req.params.id).select('_id');
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    const historial = await TenantHistorialEstadoAlumno.find({
+      id_alumno: alumno._id,
+      tipo_movimiento: { $in: ['BAJA', 'REINGRESO', 'REACTIVACION'] }
+    })
+      .select('tipo_movimiento fecha_evento motivo comentario metadata createdAt')
+      .sort({ fecha_evento: -1, createdAt: -1 })
+      .lean();
+
+    return res.json(historial);
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al obtener historial de estados del alumno' });
   }
 };
 

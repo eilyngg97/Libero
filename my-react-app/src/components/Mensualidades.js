@@ -1259,7 +1259,11 @@ function Mensualidades() {
 						<Typography sx={{ color: '#334155' }}>No hay información de pago registrada.</Typography>
 					)}
 
-					{((mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null) || (mensualidadDetalle?.monto_equivalente_bs !== undefined && mensualidadDetalle?.monto_equivalente_bs !== null)) && (
+					{((mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null)
+						|| (mensualidadDetalle?.monto_primera_mensualidad !== undefined && mensualidadDetalle?.monto_primera_mensualidad !== null)
+						|| (mensualidadDetalle?.monto_reingreso !== undefined && mensualidadDetalle?.monto_reingreso !== null)
+						|| (mensualidadDetalle?.monto_mensualidad_reingreso !== undefined && mensualidadDetalle?.monto_mensualidad_reingreso !== null)
+						|| (mensualidadDetalle?.monto_equivalente_bs !== undefined && mensualidadDetalle?.monto_equivalente_bs !== null)) && (
 						<Box
 							sx={{
 								mt: 2,
@@ -1290,6 +1294,26 @@ function Mensualidades() {
 										</Typography>
 										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
 											{`$${formatMoney(mensualidadDetalle?.monto_primera_mensualidad)} USD`}
+										</Typography>
+									</Box>
+								)}
+								{mensualidadDetalle?.monto_reingreso !== undefined && mensualidadDetalle?.monto_reingreso !== null && (
+									<Box>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+											Monto de reingreso
+										</Typography>
+										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+											{`$${formatMoney(mensualidadDetalle?.monto_reingreso)} USD`}
+										</Typography>
+									</Box>
+								)}
+								{mensualidadDetalle?.monto_mensualidad_reingreso !== undefined && mensualidadDetalle?.monto_mensualidad_reingreso !== null && (
+									<Box>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+											Monto de mensualidad de reingreso
+										</Typography>
+										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+											{`$${formatMoney(mensualidadDetalle?.monto_mensualidad_reingreso)} USD`}
 										</Typography>
 									</Box>
 								)}
