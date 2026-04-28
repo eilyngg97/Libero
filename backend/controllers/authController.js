@@ -6,7 +6,13 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
+  const email = String(req.body?.email || '').trim();
+  const password = String(req.body?.password || '').trim();
+
+  if (!email || !password) {
+    return res.status(400).json({ msg: 'Credenciales incompletas' });
+  }
+
   try {
     const tenantConfig = req.tenant || { tenantId: req.tenantId };
     const businessConnection = await getTenantBusinessConnection(tenantConfig);

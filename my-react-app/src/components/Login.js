@@ -91,11 +91,18 @@ function Login({ onLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const emailNormalizado = String(email || '').trim();
+    const passwordNormalizada = String(password || '').trim();
+
+    // Evita errores de autenticacion por espacios accidentales al inicio o final.
+    setEmail(emailNormalizado);
+    setPassword(passwordNormalizada);
+
     try {
       const res = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: emailNormalizado, password: passwordNormalizada })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.msg || 'Error de autenticación');
@@ -291,6 +298,7 @@ function Login({ onLogin }) {
               size="medium"
               value={email}
               onChange={e => setEmail(e.target.value)}
+              onBlur={e => setEmail(String(e.target.value || '').trim())}
               autoFocus
               InputProps={{
                 sx: {
@@ -315,6 +323,7 @@ function Login({ onLogin }) {
               margin="dense"
               value={password}
               onChange={e => setPassword(e.target.value)}
+              onBlur={e => setPassword(String(e.target.value || '').trim())}
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
