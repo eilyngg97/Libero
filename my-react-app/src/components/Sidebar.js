@@ -9,6 +9,7 @@ import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import Collapse from '@mui/material/Collapse';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import LocationCityIcon from '@mui/icons-material/LocationCity';
 import CheckroomIcon from '@mui/icons-material/Checkroom';
@@ -20,8 +21,12 @@ import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import SportsIcon from '@mui/icons-material/Sports';
+import SettingsIcon from '@mui/icons-material/Settings';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
@@ -42,9 +47,15 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   if (rol === 'admin') {
     options.push(
       { text: 'Sedes', icon: <LocationCityIcon />, path: '/sedes' },
-      { text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' },
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
+      {
+        text: 'Configuraciones',
+        icon: <SettingsIcon />,
+        children: [
+          { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' }
+        ]
+      },
       { text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' },
       { text: 'Estadisticas', icon: <QueryStatsIcon />, path: '/estadisticas' },
       { text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' },
@@ -52,6 +63,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
 
     if (tenantId === 'villasport') {
       options.push(
+        { text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' },
         { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
         { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' }
       );
@@ -67,6 +79,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [openConfiguraciones, setOpenConfiguraciones] = useState(true);
 
   const drawerWidth = collapsed ? 64 : 220;
 
@@ -192,6 +205,113 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
       </Toolbar>
       <List>
         {menuOptions.map((option) => {
+          if (Array.isArray(option.children) && option.children.length > 0) {
+            const submenuSelected = option.children.some((child) => location.pathname === child.path);
+
+            return (
+              <React.Fragment key={option.text}>
+                <ListItem disablePadding sx={{ justifyContent: 'center' }}>
+                  <ListItemButton
+                    onClick={() => {
+                      if (collapsed) {
+                        const firstPath = option.children[0]?.path;
+                        if (firstPath) navigate(firstPath);
+                        if (variant === 'temporary' && onClose) onClose();
+                        return;
+                      }
+                      setOpenConfiguraciones((prev) => !prev);
+                    }}
+                    selected={submenuSelected}
+                    sx={{
+                      borderRadius: 2,
+                      my: 0.5,
+                      minHeight: 48,
+                      justifyContent: collapsed ? 'center' : 'flex-start',
+                      px: collapsed ? 1 : 2,
+                      color: '#FFFFFF',
+                      background: submenuSelected
+                        ? 'linear-gradient(90deg, rgba(215, 38, 122, 0.96) 0%, rgba(255, 122, 24, 0.92) 100%)'
+                        : 'transparent',
+                      '&:hover': {
+                        backgroundColor: submenuSelected ? undefined : 'rgba(0, 194, 199, 0.15)',
+                      },
+                      position: 'relative',
+                      ...(submenuSelected && {
+                        boxShadow: '0 10px 20px rgba(215, 38, 122, 0.28)',
+                        '&:after': {
+                          content: '""',
+                          position: 'absolute',
+                          right: 0,
+                          top: 8,
+                          bottom: 8,
+                          width: '4px',
+                          borderRadius: '4px',
+                          background: '#00C2C7',
+                        },
+                      }),
+                    }}
+                  >
+                    <ListItemIcon
+                      sx={{
+                        color: submenuSelected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.86)',
+                        minWidth: 0,
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {option.icon}
+                    </ListItemIcon>
+                    {!collapsed && (
+                      <>
+                        <ListItemText
+                          primary={option.text}
+                          sx={{ color: submenuSelected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.92)', pl: 2 }}
+                        />
+                        {openConfiguraciones ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                      </>
+                    )}
+                  </ListItemButton>
+                </ListItem>
+
+                {!collapsed && (
+                  <Collapse in={openConfiguraciones} timeout="auto" unmountOnExit>
+                    <List component="div" disablePadding>
+                      {option.children.map((child) => {
+                        const childSelected = location.pathname === child.path;
+                        return (
+                          <ListItem key={child.text} disablePadding sx={{ justifyContent: 'center' }}>
+                            <ListItemButton
+                              component={Link}
+                              to={child.path}
+                              selected={childSelected}
+                              sx={{
+                                borderRadius: 2,
+                                my: 0.3,
+                                ml: 2,
+                                minHeight: 42,
+                                px: 2,
+                                color: '#FFFFFF',
+                                backgroundColor: childSelected ? 'rgba(0, 194, 199, 0.18)' : 'transparent',
+                                '&:hover': {
+                                  backgroundColor: childSelected ? 'rgba(0, 194, 199, 0.22)' : 'rgba(0, 194, 199, 0.12)',
+                                }
+                              }}
+                              onClick={variant === 'temporary' ? onClose : undefined}
+                            >
+                              <ListItemIcon sx={{ color: childSelected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.86)', minWidth: 0, justifyContent: 'center' }}>
+                                {child.icon}
+                              </ListItemIcon>
+                              <ListItemText primary={child.text} sx={{ color: childSelected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.92)', pl: 2 }} />
+                            </ListItemButton>
+                          </ListItem>
+                        );
+                      })}
+                    </List>
+                  </Collapse>
+                )}
+              </React.Fragment>
+            );
+          }
+
           const isDashboardOption = option.text === 'Dashboard';
           const selected = isDashboardOption
             ? location.pathname === '/dashboard' || location.pathname === '/dashboard-usuario' || location.pathname.startsWith('/panel-opciones-usuario/')

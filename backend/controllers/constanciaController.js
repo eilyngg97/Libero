@@ -94,7 +94,7 @@ exports.generarConstancia = async (req, res) => {
     if (tipo === 'retiro') {
       doc.fontSize(12).text('Ante todo, reciba un cordial saludo.');
       doc.moveDown();
-      doc.fontSize(12).text(`La escuela VILLA SPORT VOLLEYBALL CLUB, hace constar que el atleta ${nombresMayus} ${apellidosMayus}${cedulaTexto}, anuncia su retiro de nuestra organización.`);
+      doc.fontSize(12).text(`La escuela VILLA SPORT VOLLEYBALL CLUB, hace constar que el/la atleta ${nombresMayus} ${apellidosMayus}${cedulaTexto}, anuncia su retiro de nuestra organización.`);
       doc.moveDown();
       doc.fontSize(12).text('Damos aval que tiene un estado solvente frente a las responsabilidades y obligaciones con la escuela.');
       doc.moveDown();
@@ -103,7 +103,7 @@ exports.generarConstancia = async (req, res) => {
     } else if (tipo === 'horario') {
       doc.fontSize(12).text('Ante todo, reciba un cordial saludo.');
       doc.moveDown();
-      doc.fontSize(12).text(`La escuela VILLA SPORT VOLLEYBALL CLUB, hace constar que la atleta ${nombresMayus} ${apellidosMayus}${cedulaTexto}, es integrante de nuestra escuela, demostrando ser una alumna responsable de buenos valores.`);
+      doc.fontSize(12).text(`La escuela VILLA SPORT VOLLEYBALL CLUB, hace constar que el/la atleta ${nombresMayus} ${apellidosMayus}${cedulaTexto}, es integrante de nuestra escuela, demostrando ser un/a alumno/a responsable de buenos valores.`);
       doc.moveDown();
       const horarioSede = alumno.sede?.horario_constancia;
       if (horarioSede) {
@@ -117,7 +117,7 @@ exports.generarConstancia = async (req, res) => {
     } else {
       doc.fontSize(12).text('Ante todo, reciba un cordial saludo.');
       doc.moveDown();
-      doc.fontSize(12).text(`La escuela VILLA SPORT VOLLEYBALL CLUB, hace constar que la atleta ${nombresMayus} ${apellidosMayus}${cedulaTexto} es integrante de nuestra escuela, demostrando ser una alumna responsable de buenos valores.`);
+      doc.fontSize(12).text(`La escuela VILLA SPORT VOLLEYBALL CLUB, hace constar que el/la atleta ${nombresMayus} ${apellidosMayus}${cedulaTexto} es integrante de nuestra escuela, demostrando ser una alumna responsable de buenos valores.`);
       doc.moveDown();
       doc.fontSize(12).text('Sin más nada que mencionar, agradezco su tiempo y atención.');
       doc.moveDown();

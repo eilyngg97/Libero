@@ -28,6 +28,7 @@ import TorneoDetalle from './components/TorneoDetalle';
 import GestionReposos from './components/GestionReposos';
 import Aspirantes from './components/Aspirantes';
 import LandingConfig from './components/LandingConfig';
+import PaymentConfig from './components/PaymentConfig';
 import ConciliacionBancaria from './components/ConciliacionBancaria';
 import Estadisticas from './components/Estadisticas';
 
@@ -352,6 +353,8 @@ function App() {
                           <Route path="panel-opciones-usuario/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><PanelOpcionesUsuario /></ProtectedRoute>} />
                           <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
                           <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />
+                          <Route path="configuracion" element={<ProtectedRoute allowedRoles={adminOnly}><PaymentConfig /></ProtectedRoute>} />
+                          <Route path="config-pagos" element={<Navigate to="/configuracion" replace />} />
                           <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><Aspirantes /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="estadisticas" element={<ProtectedRoute allowedRoles={adminOnly}><Estadisticas /></ProtectedRoute>} />
                           <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><LandingConfig /></TenantOnlyRoute></ProtectedRoute>} />

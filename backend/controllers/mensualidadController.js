@@ -3,6 +3,7 @@ const Alumno = require('../models/Alumno');
 const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
+const TenantConfig = require('../models/TenantConfig');
 const Representante = require('../models/Representante');
 const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
@@ -19,6 +20,7 @@ async function getTenantMensualidadModels(req) {
   const TenantPagoDetalle = getTenantModel(connection, 'PagoDetalle');
   const TenantSede = getTenantModel(connection, 'Sede');
   const TenantReposo = getTenantModel(connection, 'Reposo');
+  const TenantConfigModel = getTenantModel(connection, 'TenantConfig');
 
   return {
     Representante: TenantRepresentante,
@@ -27,6 +29,7 @@ async function getTenantMensualidadModels(req) {
     PagoDetalle: TenantPagoDetalle,
     Sede: TenantSede,
     Reposo: TenantReposo,
+    TenantConfig: TenantConfigModel,
     connection
   };
 }
@@ -38,8 +41,46 @@ function resolveMensualidadModels(models = {}) {
     Mensualidad: models.Mensualidad || Mensualidad,
     PagoDetalle: models.PagoDetalle || PagoDetalle,
     Sede: models.Sede || Sede,
-    Reposo: models.Reposo || Reposo
+    Reposo: models.Reposo || Reposo,
+    TenantConfig: models.TenantConfig || TenantConfig
   };
+}
+
+function normalizarDiaMes(valor, fallback) {
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 31) {
+    return fallback;
+  }
+  return numero;
+}
+
+function normalizarConfigCobro(rawCobro = {}) {
+  return {
+    dia_cobro: normalizarDiaMes(rawCobro?.dia_cobro, 1),
+    dia_vencimiento: normalizarDiaMes(rawCobro?.dia_vencimiento, 5),
+    dias_gracia: Math.max(0, Math.min(31, Number(rawCobro?.dias_gracia) || 0)),
+    recargo_usd: redondearMonto(Math.max(0, Number(rawCobro?.recargo_usd) || 0))
+  };
+}
+
+async function obtenerConfigCobro(models = {}) {
+  const { TenantConfig: TenantConfigModel } = resolveMensualidadModels(models);
+  const config = await TenantConfigModel.findOne({ key: 'default' }).select('cobro').lean();
+  return normalizarConfigCobro(config?.cobro || {});
+}
+
+function construirFechaPeriodoConDia(mes, anio, dia, { finDelDia = false } = {}) {
+  const ultimoDiaMes = new Date(anio, mes, 0).getDate();
+  const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
+  return new Date(
+    anio,
+    mes - 1,
+    diaAjustado,
+    finDelDia ? 23 : 0,
+    finDelDia ? 59 : 0,
+    finDelDia ? 59 : 0,
+    finDelDia ? 999 : 0
+  );
 }
 
 function redondearMonto(valor) {
@@ -114,6 +155,15 @@ function obtenerPeriodoDesdeFecha(fecha, periodoFallback = getPeriodoZonaCaracas
   };
 }
 
+function obtenerPeriodoInicioCobroAlumno(alumno, periodoFallback = getPeriodoZonaCaracas()) {
+  const fechaInicioCobro = alumno?.fecha_inicio_cobro;
+  if (!(fechaInicioCobro instanceof Date) || Number.isNaN(fechaInicioCobro.getTime())) {
+    return null;
+  }
+
+  return obtenerPeriodoDesdeFecha(fechaInicioCobro, periodoFallback);
+}
+
 function compararPeriodos(a, b) {
   if (a.anio !== b.anio) return a.anio - b.anio;
   return a.mes - b.mes;
@@ -139,8 +189,15 @@ function listarPeriodosEntrePeriodos(inicio, fin) {
   return periodos;
 }
 
-function obtenerFechaVencimientoPeriodo(mes, anio) {
-  return new Date(anio, mes - 1, 5, 23, 59, 59);
+function obtenerFechaVencimientoPeriodo(mes, anio, diaVencimiento = 5) {
+  return construirFechaPeriodoConDia(mes, anio, diaVencimiento, { finDelDia: true });
+}
+
+function obtenerFechaRecargoPeriodo(mes, anio, cobroConfig) {
+  const fechaVencimiento = obtenerFechaVencimientoPeriodo(mes, anio, cobroConfig?.dia_vencimiento);
+  const fechaRecargo = new Date(fechaVencimiento);
+  fechaRecargo.setDate(fechaRecargo.getDate() + (Number(cobroConfig?.dias_gracia) || 0));
+  return fechaRecargo;
 }
 
 function obtenerEstatusPendientePorVencimiento(fechaVencimiento) {
@@ -190,6 +247,115 @@ function obtenerMontoBaseMensualidad(mensualidad) {
   );
 }
 
+async function obtenerAlumnoParaRecargo(mensualidad, models = {}) {
+  const { Alumno: AlumnoModel } = resolveMensualidadModels(models);
+  const alumnoPopulate = mensualidad?.id_alumno;
+  if (alumnoPopulate && typeof alumnoPopulate === 'object' && alumnoPopulate._id) {
+    return alumnoPopulate;
+  }
+  const alumnoId = alumnoPopulate?._id || alumnoPopulate || mensualidad?.id_alumno;
+  if (!alumnoId) return null;
+  return AlumnoModel.findById(alumnoId)
+    .select('tipo_mensualidad aplicar_recargo_mensualidad')
+    .lean();
+}
+
+function calcularSnapshotRecargo({
+  montoSinRecargo,
+  recargoUsd,
+  aplicaRecargo
+}) {
+  const base = redondearMonto(Math.max(0, Number(montoSinRecargo) || 0));
+  const recargo = aplicaRecargo ? redondearMonto(Math.max(0, Number(recargoUsd) || 0)) : 0;
+  const total = redondearMonto(base + recargo);
+
+  return {
+    montoSinRecargoUsd: base,
+    recargoAplicadoUsd: recargo,
+    montoConRecargoUsd: total,
+    montoEsperado: total
+  };
+}
+
+async function aplicarRecargoMensualidadSegunConfig(
+  mensualidad,
+  {
+    models = {},
+    cobroConfig,
+    fechaReferencia = new Date(),
+    persistir = true
+  } = {}
+) {
+  if (!mensualidad) {
+    return { aplicado: false };
+  }
+
+  const configCobro = cobroConfig || await obtenerConfigCobro(models);
+  const alumno = await obtenerAlumnoParaRecargo(mensualidad, models);
+  const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
+  const esBecado = esTipoMensualidadBecaCompleta(alumno?.tipo_mensualidad);
+  const estatusActual = String(mensualidad.estatus || '').toLowerCase();
+
+  const elegibleEstatus = ['pendiente', 'insolvente', 'retrasado', 'abono', 'en revision'];
+  const montoActual = redondearMonto(mensualidad.monto_esperado || 0);
+  const montoSinRecargoActual = redondearMonto(
+    mensualidad.monto_sin_recargo_usd !== undefined && mensualidad.monto_sin_recargo_usd !== null
+      ? mensualidad.monto_sin_recargo_usd
+      : montoActual
+  );
+
+  const fechaRecargo = obtenerFechaRecargoPeriodo(mensualidad.mes, mensualidad.anio, configCobro);
+  const correspondePorFecha = fechaReferencia >= fechaRecargo;
+  const correspondeRecargo =
+    aplicaRecargoAlumno &&
+    !esBecado &&
+    elegibleEstatus.includes(estatusActual) &&
+    montoSinRecargoActual > 0 &&
+    (Number(configCobro.recargo_usd) || 0) > 0 &&
+    correspondePorFecha;
+
+  if (!correspondeRecargo) {
+    return {
+      aplicado: false,
+      configCobro,
+      fechaRecargo
+    };
+  }
+
+  const snapshot = calcularSnapshotRecargo({
+    montoSinRecargo: montoSinRecargoActual,
+    recargoUsd: configCobro.recargo_usd,
+    aplicaRecargo: true
+  });
+
+  if (Number(mensualidad.recargo_aplicado_usd || 0) > 0) {
+    return {
+      aplicado: false,
+      configCobro,
+      fechaRecargo,
+      snapshot
+    };
+  }
+
+  mensualidad.aplica_recargo = true;
+  mensualidad.monto_sin_recargo_usd = snapshot.montoSinRecargoUsd;
+  mensualidad.recargo_aplicado_usd = snapshot.recargoAplicadoUsd;
+  mensualidad.monto_con_recargo_usd = snapshot.montoConRecargoUsd;
+  mensualidad.monto_esperado = snapshot.montoEsperado;
+  mensualidad.fecha_aplicacion_recargo = new Date();
+
+  if (persistir) {
+    await mensualidad.save();
+  }
+
+  return {
+    aplicado: true,
+    configCobro,
+    fechaRecargo,
+    snapshot
+  };
+}
+
 async function resolverMontoBaseAlumno(alumno, models = {}) {
   const { Sede: SedeModel } = resolveMensualidadModels(models);
   if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
@@ -226,6 +392,7 @@ async function crearMensualidadParaPeriodo(
   periodo,
   {
     models = {},
+    cobroConfig,
     montoBaseManual,
     estatusManual,
     fechaVencimientoManual,
@@ -239,6 +406,8 @@ async function crearMensualidadParaPeriodo(
     PagoDetalle: PagoDetalleModel
   } = resolveMensualidadModels(models);
 
+  const configCobro = cobroConfig || await obtenerConfigCobro(models);
+
   const existente = await MensualidadModel.findOne({
     id_alumno: alumno._id,
     mes: periodo.mes,
@@ -249,7 +418,7 @@ async function crearMensualidadParaPeriodo(
     return { mensualidad: existente, creada: false, pagoRegistrado: false };
   }
 
-  const fechaVencimiento = fechaVencimientoManual || obtenerFechaVencimientoPeriodo(periodo.mes, periodo.anio);
+  const fechaVencimiento = fechaVencimientoManual || obtenerFechaVencimientoPeriodo(periodo.mes, periodo.anio, configCobro?.dia_vencimiento);
   const tieneMontoManual = montoBaseManual !== undefined && montoBaseManual !== null;
   const montoBaseOriginal = tieneMontoManual
     ? redondearMonto(montoBaseManual)
@@ -282,6 +451,18 @@ async function crearMensualidadParaPeriodo(
     monto = credito.montoEsperado;
   }
 
+  const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
+  const fechaRecargo = obtenerFechaRecargoPeriodo(periodo.mes, periodo.anio, configCobro);
+  const snapshotRecargo = calcularSnapshotRecargo({
+    montoSinRecargo: monto,
+    recargoUsd: configCobro?.recargo_usd,
+    aplicaRecargo:
+      aplicaRecargoAlumno &&
+      !esTipoMensualidadBecaCompleta(alumno?.tipo_mensualidad) &&
+      monto > 0 &&
+      new Date() >= fechaRecargo
+  });
+
   const mensualidad = await MensualidadModel.create({
     id_alumno: alumno._id,
     mes: periodo.mes,
@@ -290,7 +471,12 @@ async function crearMensualidadParaPeriodo(
     credito_aplicado: creditoAplicado,
     ajuste_extraordinario: 0,
     saldo_a_favor_generado: 0,
-    monto_esperado: monto,
+    aplica_recargo: snapshotRecargo.recargoAplicadoUsd > 0,
+    monto_sin_recargo_usd: snapshotRecargo.montoSinRecargoUsd,
+    recargo_aplicado_usd: snapshotRecargo.recargoAplicadoUsd,
+    monto_con_recargo_usd: snapshotRecargo.montoConRecargoUsd,
+    fecha_aplicacion_recargo: snapshotRecargo.recargoAplicadoUsd > 0 ? new Date() : undefined,
+    monto_esperado: snapshotRecargo.montoEsperado,
     fecha_vencimiento: fechaVencimiento,
     estatus,
     ...(metadataInscripcion && {
@@ -309,10 +495,10 @@ async function crearMensualidadParaPeriodo(
   if (
     crearPagoSiPagado &&
     (estatusNormalizado === 'pagado' || estatusNormalizado === 'abono') &&
-    monto > 0
+    snapshotRecargo.montoEsperado > 0
   ) {
     const montoPagoInicial = estatusNormalizado === 'pagado'
-      ? monto
+      ? snapshotRecargo.montoEsperado
       : redondearMonto(metadataInscripcion?.montoPagadoUsd || 0);
 
     if (montoPagoInicial > 0) {
@@ -320,7 +506,7 @@ async function crearMensualidadParaPeriodo(
       id_mensualidad: mensualidad._id,
       monto_pagado: montoPagoInicial,
       monto_pagado_bs: metadataInscripcion?.montoPagadoBs,
-      monto_esperado_usd: monto,
+      monto_esperado_usd: snapshotRecargo.montoEsperado,
       monto_esperado_bs: metadataInscripcion?.montoEsperadoBs,
       fecha_pago: metadataInscripcion?.fechaPago || new Date(),
       metodo_pago: metadataInscripcion?.metodoPago || 'Registro inicial admin',
@@ -339,6 +525,7 @@ async function generarMensualidadesPendientesAlumno(
   alumno,
   {
     models = {},
+    cobroConfig,
     periodoInicio,
     periodoFin,
     overridePeriodoActual,
@@ -347,7 +534,10 @@ async function generarMensualidadesPendientesAlumno(
   } = {}
 ) {
   const periodoActual = periodoFin || getPeriodoZonaCaracas();
-  const periodoInicial = periodoInicio || obtenerPeriodoDesdeFecha(alumno.fecha_inscripcion, periodoActual);
+  const periodoInicial = periodoInicio || obtenerPeriodoInicioCobroAlumno(alumno, periodoActual);
+  if (!periodoInicial) {
+    throw new Error(`El alumno ${alumno?._id || ''} no tiene fecha_inicio_cobro valida.`);
+  }
   const periodos = listarPeriodosEntrePeriodos(periodoInicial, periodoActual);
   const resultados = [];
 
@@ -360,6 +550,7 @@ async function generarMensualidadesPendientesAlumno(
     resultados.push(
       await crearMensualidadParaPeriodo(alumno, periodo, {
         models,
+        cobroConfig,
         montoBaseManual: esPeriodoOverride ? overridePeriodoActual.montoBaseManual : undefined,
         estatusManual: esPeriodoOverride ? overridePeriodoActual.estatusManual : undefined,
         fechaVencimientoManual: esPeriodoOverride ? overridePeriodoActual.fechaVencimientoManual : undefined,
@@ -387,6 +578,11 @@ async function recalcularMensualidadPorPagos(
     PagoDetalle: PagoDetalleModel,
     Alumno: AlumnoModel
   } = resolveMensualidadModels(models);
+
+  await aplicarRecargoMensualidadSegunConfig(mensualidad, {
+    models,
+    persistir: false
+  });
 
   const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const tienePagosRegistrados = pagos.length > 0;
@@ -606,6 +802,7 @@ function generarVistaPreviaAjusteSede(mensualidades, nuevoMonto) {
 async function generarMensualidadesMesCore(options = {}) {
   const { Alumno: AlumnoModel } = resolveMensualidadModels(options.models);
   const periodoActual = getPeriodoZonaCaracas();
+  const configCobro = await obtenerConfigCobro(options.models);
   const alumnos = await AlumnoModel.find({
     activo: { $ne: false },
     dado_de_baja: { $ne: true }
@@ -613,11 +810,19 @@ async function generarMensualidadesMesCore(options = {}) {
   let creadas = 0;
 
   for (const alumno of alumnos) {
-    const resultados = await generarMensualidadesPendientesAlumno(alumno, {
-      models: options.models,
-      periodoFin: periodoActual
-    });
-    creadas += resultados.filter((resultado) => resultado.creada).length;
+    try {
+      const resultados = await generarMensualidadesPendientesAlumno(alumno, {
+        models: options.models,
+        cobroConfig: configCobro,
+        periodoFin: periodoActual
+      });
+      creadas += resultados.filter((resultado) => resultado.creada).length;
+    } catch (err) {
+      console.error('Alumno omitido en generacion de mensualidades por fecha_inicio_cobro invalida:', {
+        alumnoId: alumno?._id,
+        message: err?.message
+      });
+    }
   }
 
   return creadas;
@@ -664,16 +869,45 @@ async function obtenerPeriodoAdelantoDesdeUltimaMensualidad(idAlumno, Mensualida
 }
 
 async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
-  const { Mensualidad: MensualidadModel } = resolveMensualidadModels(models);
+  const {
+    Mensualidad: MensualidadModel
+  } = resolveMensualidadModels(models);
+
   const hoy = new Date();
-  if (!force && hoy.getDate() !== 6) return 0;
-  const mes = hoy.getMonth() + 1;
-  const anio = hoy.getFullYear();
   const result = await MensualidadModel.updateMany(
-    { mes, anio, estatus: 'Pendiente', fecha_vencimiento: { $lt: hoy } },
+    {
+      estatus: 'Pendiente',
+      fecha_vencimiento: { $lt: hoy },
+      monto_esperado: { $gt: 0 }
+    },
     { $set: { estatus: 'Insolvente' } }
   );
-  return result.modifiedCount;
+
+  const candidatasRecargo = await MensualidadModel.find({
+    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono', 'En revision'] },
+    monto_esperado: { $gt: 0 },
+    $or: [
+      { recargo_aplicado_usd: { $exists: false } },
+      { recargo_aplicado_usd: { $lte: 0 } }
+    ]
+  }).populate({
+    path: 'id_alumno',
+    select: 'tipo_mensualidad aplicar_recargo_mensualidad'
+  });
+
+  let recargosAplicados = 0;
+  for (const mensualidad of candidatasRecargo) {
+    const resultado = await aplicarRecargoMensualidadSegunConfig(mensualidad, {
+      models,
+      fechaReferencia: hoy,
+      persistir: true
+    });
+    if (resultado.aplicado) {
+      recargosAplicados += 1;
+    }
+  }
+
+  return (result.modifiedCount || 0) + recargosAplicados;
 }
 
 // Registrar la primera mensualidad manualmente
@@ -684,7 +918,8 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
       Sede: TenantSede,
-      Reposo: TenantReposo
+      Reposo: TenantReposo,
+      TenantConfig: TenantConfigModel
     } = await getTenantMensualidadModels(req);
     const {
       es_registro_alumno,
@@ -760,14 +995,17 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     };
 
     const periodoActual = getPeriodoZonaCaracas();
+    const configCobro = await obtenerConfigCobro({ TenantConfig: TenantConfigModel });
     const resultados = await generarMensualidadesPendientesAlumno(alumno, {
       models: {
         Alumno: TenantAlumno,
         Mensualidad: TenantMensualidad,
         PagoDetalle: TenantPagoDetalle,
         Sede: TenantSede,
-        Reposo: TenantReposo
+        Reposo: TenantReposo,
+        TenantConfig: TenantConfigModel
       },
+      cobroConfig: configCobro,
       periodoFin: periodoActual,
       overridePeriodoActual: {
         mes: periodoActual.mes,
@@ -817,7 +1055,8 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       Alumno: TenantAlumno,
       Mensualidad: TenantMensualidad,
       Sede: TenantSede,
-      Reposo: TenantReposo
+      Reposo: TenantReposo,
+      TenantConfig: TenantConfigModel
     } = await getTenantMensualidadModels(req);
     const { id_alumno } = req.body;
     if (!id_alumno) {
@@ -847,48 +1086,22 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
       });
     }
 
-    const montoBase = await resolverMontoBaseAlumno(alumno, { Sede: TenantSede });
-    let montoBaseAplicable = montoBase;
-    let monto = montoBase;
-    let creditoAplicado = 0;
-    let estatus = 'Pendiente';
+    const configCobro = await obtenerConfigCobro({ TenantConfig: TenantConfigModel });
+    const { mensualidad: mensualidadPopulada } = await crearMensualidadParaPeriodo(
+      alumno,
+      { mes, anio },
+      {
+        models: {
+          Alumno: TenantAlumno,
+          Mensualidad: TenantMensualidad,
+          Sede: TenantSede,
+          Reposo: TenantReposo,
+          TenantConfig: TenantConfigModel
+        },
+        cobroConfig: configCobro
+      }
+    );
 
-    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, mes, anio, { Reposo: TenantReposo });
-    if (reglaReposo.tipo === 'EXENTO_POR_REPOSO') {
-      monto = 0;
-      estatus = 'Exento por reposo';
-    } else if (reglaReposo.tipo === 'PRORRATEO_PARCIAL') {
-      montoBaseAplicable = redondearMonto(
-        Number.isFinite(Number(reglaReposo.montoPersonalizado))
-          ? reglaReposo.montoPersonalizado
-          : montoBase
-      );
-      const credito = await consumirSaldoAFavor(alumno, montoBaseAplicable);
-      creditoAplicado = credito.creditoAplicado;
-      monto = credito.montoEsperado;
-    } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
-      monto = 0;
-      estatus = 'Becado';
-    } else {
-      const credito = await consumirSaldoAFavor(alumno, montoBaseAplicable);
-      creditoAplicado = credito.creditoAplicado;
-      monto = credito.montoEsperado;
-    }
-
-    const mensualidad = await TenantMensualidad.create({
-      id_alumno,
-      mes,
-      anio,
-      monto_base: montoBaseAplicable,
-      credito_aplicado: creditoAplicado,
-      ajuste_extraordinario: 0,
-      saldo_a_favor_generado: 0,
-      monto_esperado: monto,
-      fecha_vencimiento: obtenerFechaVencimientoPeriodo(mes, anio),
-      estatus
-    });
-
-    const mensualidadPopulada = await TenantMensualidad.findById(mensualidad._id).populate('id_alumno');
     return res.status(201).json({
       message: 'Mensualidad del mes siguiente creada correctamente',
       mensualidad: mensualidadPopulada,
@@ -899,13 +1112,13 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
   }
 };
 
-// Actualizar mensualidades a 'Retrasado' el día 6 si siguen en 'Pendiente'
+// Actualizar mensualidades vencidas a Insolvente y aplicar recargo cuando corresponda.
 exports.actualizarRetrasados = async (req, res) => {
   try {
     const tenantModels = await getTenantMensualidadModels(req);
     const actualizadas = await actualizarRetrasadosCore({ models: tenantModels });
-    if (!actualizadas) return res.json({ message: 'Solo se ejecuta el día 6' });
-    res.json({ message: `Mensualidades actualizadas a Insolvente: ${actualizadas}` });
+    if (!actualizadas) return res.json({ message: 'No hubo mensualidades pendientes por actualizar.' });
+    res.json({ message: `Mensualidades ajustadas (insolvente/recargo): ${actualizadas}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -913,6 +1126,8 @@ exports.actualizarRetrasados = async (req, res) => {
 
 exports.generarMensualidadesMesCore = generarMensualidadesMesCore;
 exports.actualizarRetrasadosCore = actualizarRetrasadosCore;
+exports.generarMensualidadesPendientesAlumno = generarMensualidadesPendientesAlumno;
+exports.aplicarRecargoMensualidadSegunConfig = aplicarRecargoMensualidadSegunConfig;
 
 exports.previewAjusteExtraordinarioSede = async (req, res) => {
   try {

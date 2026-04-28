@@ -5,6 +5,7 @@ import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useSede } from '../context/SedeContext';
 import { mediaUrl } from '../utils/mediaUrl';
+import { getCategoriaPorFechaNacimiento } from '../utils/categoria';
 import './Alumnos.css';
 const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado'];
 const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
@@ -15,9 +16,11 @@ function AlumnoEditar({ locationState }) {
   const { sedeSeleccionada } = useSede();
   const token = localStorage.getItem('token');
   const [form, setForm] = useState({
+    fecha_inicio_cobro: new Date().toISOString().split('T')[0],
     tipo_mensualidad: 'monto_sede',
     numero_franela: '',
     habilitar_pago_cuotas: false,
+    aplicar_recargo_mensualidad: true,
     etiquetas: [],
   });
   const [preview, setPreview] = useState(null);
@@ -45,6 +48,11 @@ function AlumnoEditar({ locationState }) {
     }
     if (rest.fecha_inscripcion) {
       rest.fecha_inscripcion = rest.fecha_inscripcion.slice(0, 10);
+    }
+    if (rest.fecha_inicio_cobro) {
+      rest.fecha_inicio_cobro = rest.fecha_inicio_cobro.slice(0, 10);
+    } else {
+      rest.fecha_inicio_cobro = new Date().toISOString().split('T')[0];
     }
     let formData = { ...rest };
     if (representante) {
@@ -96,22 +104,9 @@ function AlumnoEditar({ locationState }) {
   }, [id, locationState, token]);
 
   useEffect(() => {
-    if (form.fecha_nacimiento) {
-      const anioNacimiento = parseInt(form.fecha_nacimiento.substring(0, 4));
-      const anioActual = new Date().getFullYear();
-      const edadDeportiva = anioActual - anioNacimiento;
-      let cat = '';
-      if (edadDeportiva <= 11) cat = 'U11';
-      else if (edadDeportiva <= 13) cat = 'U13';
-      else if (edadDeportiva <= 15) cat = 'U15';
-      else if (edadDeportiva <= 17) cat = 'U17';
-      else cat = 'MAYORES / LIBRE';
-      setCategoria(cat);
-      setForm(prev => ({ ...prev, categoria: cat }));
-    } else {
-      setCategoria('');
-      setForm(prev => ({ ...prev, categoria: '' }));
-    }
+    const cat = getCategoriaPorFechaNacimiento(form.fecha_nacimiento);
+    setCategoria(cat);
+    setForm(prev => ({ ...prev, categoria: cat }));
   }, [form.fecha_nacimiento]);
 
   useEffect(() => {
@@ -251,6 +246,8 @@ function AlumnoEditar({ locationState }) {
       }));
     } else if (name === 'habilitar_pago_cuotas') {
       setForm((prev) => ({ ...prev, habilitar_pago_cuotas: e.target.checked }));
+    } else if (name === 'aplicar_recargo_mensualidad') {
+      setForm((prev) => ({ ...prev, aplicar_recargo_mensualidad: e.target.checked }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
@@ -272,14 +269,19 @@ function AlumnoEditar({ locationState }) {
         return;
       }
     }
+    if (!String(form.fecha_inicio_cobro || '').trim()) {
+      setError('La fecha de inicio de cobro es obligatoria.');
+      return;
+    }
     setLoading(true);
     try {
       const formData = new FormData();
       const camposEditables = [
-        'nombres', 'apellidos', 'fecha_nacimiento', 'fecha_inscripcion', 'cedula',
+        'nombres', 'apellidos', 'fecha_nacimiento', 'fecha_inscripcion', 'fecha_inicio_cobro', 'cedula',
         'domicilio', 'telefono', 'talla', 'peso', 'alcance', 'envergadura', 'proyeccion',
         'tipo_sangre', 'alergias', 'antecedentes_patologicos', 'observaciones',
         'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
+        'aplicar_recargo_mensualidad',
         'sede', 'categoria', 'usuario', 'parentesco', 'tipo_mensualidad',
         'monto_personalizado_valor', 'sinRepresentante',
         'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_domicilio'
@@ -509,6 +511,32 @@ function AlumnoEditar({ locationState }) {
                 </Box>
               </Paper>
             )}
+
+            {localStorage.getItem('rol') === 'admin' && (
+              <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Aplicar recargo mensual</Typography>
+                    <Typography sx={{ fontSize: 11, color: '#64748b' }}>
+                      Si esta activo, se sumara recargo USD al vencer la tolerancia.
+                    </Typography>
+                  </Box>
+                  <FormControlLabel
+                    sx={{ m: 0 }}
+                    control={
+                      <Switch
+                        checked={form.aplicar_recargo_mensualidad !== false}
+                        onChange={handleChange}
+                        name="aplicar_recargo_mensualidad"
+                        color="primary"
+                        disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                      />
+                    }
+                    label=""
+                  />
+                </Box>
+              </Paper>
+            )}
           </Box>
 
           <Box
@@ -536,6 +564,22 @@ function AlumnoEditar({ locationState }) {
               sx={{ my: 1 }}
               disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
             />
+            <TextField
+              id="outlined-basic-fecha-inicio-cobro"
+              label="Fecha de inicio de cobro *"
+              name="fecha_inicio_cobro"
+              type="date"
+              variant="outlined"
+              value={form.fecha_inicio_cobro || ''}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              sx={{ my: 1 }}
+              disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+            />
+          </div>
+          <div className="form-row">
             <TextField id="outlined-basic-categoria" disabled label="Categoría asignada" name="categoria" variant="outlined" value={categoria} InputProps={{ readOnly: true }} fullWidth size="small" helperText="Se asigna automáticamente" sx={{ my: 1 }} />
           </div>
           <div className="form-row">

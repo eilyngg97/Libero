@@ -13,6 +13,7 @@ import { MenuItem, FormControl, InputLabel, Select, TextField, Autocomplete, Cir
 import './Alumnos.css';
 import { useDolar } from '../context/DolarContext';
 import { metodoRequiereReferencia, normalizeMetodoPago } from '../utils/paymentMethod';
+import { getCategoriaPorFechaNacimiento } from '../utils/categoria';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -54,9 +55,11 @@ function Alumnos() {
   // Estado para el formulario
   const [form, setForm] = useState({
     fecha_inscripcion: new Date().toISOString().split('T')[0],
+    fecha_inicio_cobro: new Date().toISOString().split('T')[0],
     tipo_mensualidad: 'monto_sede',
     numero_franela: '',
     habilitar_pago_cuotas: false,
+    aplicar_recargo_mensualidad: true,
     etiquetas: [],
   });
   // Estado para ocultar datos de representante
@@ -149,24 +152,11 @@ function Alumnos() {
       color: '#64748b'
     }
   };
-    // Calcular categoría automáticamente
+    // Calcular categoria automaticamente
     useEffect(() => {
-      if (form.fecha_nacimiento) {
-        const anioNacimiento = parseInt(form.fecha_nacimiento.substring(0, 4));
-        const anioActual = new Date().getFullYear();
-        const edadDeportiva = anioActual - anioNacimiento;
-        let cat = '';
-        if (edadDeportiva <= 11) cat = 'U11';
-        else if (edadDeportiva <= 13) cat = 'U13';
-        else if (edadDeportiva <= 15) cat = 'U15';
-        else if (edadDeportiva <= 17) cat = 'U17';
-        else cat = 'MAYORES / LIBRE';
-        setCategoria(cat);
-        setForm(prev => ({ ...prev, categoria: cat }));
-      } else {
-        setCategoria('');
-        setForm(prev => ({ ...prev, categoria: '' }));
-      }
+      const cat = getCategoriaPorFechaNacimiento(form.fecha_nacimiento);
+      setCategoria(cat);
+      setForm(prev => ({ ...prev, categoria: cat }));
     }, [form.fecha_nacimiento]);
   useEffect(() => {
     if (success && !showMensualidadModal) {
@@ -366,6 +356,8 @@ function Alumnos() {
       setForm((prev) => ({ ...prev, sinRepresentante: checked }));
     } else if (name === 'habilitar_pago_cuotas') {
       setForm((prev) => ({ ...prev, habilitar_pago_cuotas: checked }));
+    } else if (name === 'aplicar_recargo_mensualidad') {
+      setForm((prev) => ({ ...prev, aplicar_recargo_mensualidad: checked }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
@@ -494,9 +486,11 @@ function Alumnos() {
   function resetAlumnoForm() {
       setForm({
         fecha_inscripcion: new Date().toISOString().split('T')[0],
+        fecha_inicio_cobro: new Date().toISOString().split('T')[0],
         tipo_mensualidad: 'monto_sede',
         numero_franela: '',
         habilitar_pago_cuotas: false,
+        aplicar_recargo_mensualidad: true,
         etiquetas: [],
       });
       setPreview(null);
@@ -520,6 +514,7 @@ function Alumnos() {
     // Validación de campos obligatorios
     const requiredFields = [
       {key: 'fecha_inscripcion', label: 'Fecha de inscripción' },
+      {key: 'fecha_inicio_cobro', label: 'Fecha de inicio de cobro' },
       { key: 'nombres', label: 'Nombres del alumno' },
       { key: 'apellidos', label: 'Apellidos del alumno' },
       { key: 'sede', label: 'Sede' },
@@ -730,6 +725,31 @@ function Alumnos() {
                 />
               </Box>
             </Paper>
+
+            <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                    Aplicar recargo mensual
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: '#64748b' }}>
+                    Si esta activo, al vencerse la tolerancia se sumara recargo en USD.
+                  </Typography>
+                </Box>
+                <FormControlLabel
+                  sx={{ m: 0 }}
+                  control={
+                    <Switch
+                      checked={form.aplicar_recargo_mensualidad !== false}
+                      onChange={handleChange}
+                      name="aplicar_recargo_mensualidad"
+                      color="primary"
+                    />
+                  }
+                  label=""
+                />
+              </Box>
+            </Paper>
           </Box>
 
           <Box
@@ -756,6 +776,21 @@ function Alumnos() {
               InputLabelProps={{ shrink: true }}
               sx={{ my: 1 }}
             />
+            <TextField
+              id="outlined-basic-fecha-inicio-cobro"
+              label="Fecha de inicio de cobro *"
+              name="fecha_inicio_cobro"
+              type="date"
+              variant="outlined"
+              value={form.fecha_inicio_cobro || ''}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              sx={{ my: 1 }}
+            />
+          </div>
+          <div className="form-row">
             <TextField id="outlined-basic-categoria" disabled label="Categoría asignada" name="categoria" variant="outlined" value={categoria} InputProps={{ readOnly: true }} fullWidth size="small" helperText="Se asigna automáticamente" sx={{ my: 1 }} />
           </div>
           <div className="form-row">

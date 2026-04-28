@@ -3,6 +3,8 @@ import {
   Alert,
   Box,
   Button,
+  Card,
+  CardContent,
   Chip,
   Dialog,
   DialogActions,
@@ -28,14 +30,53 @@ import {
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import { useDolar } from '../context/DolarContext';
 
 const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
-const METODOS_PAGO = ['Pago movil', 'Transferencia'];
+const METODO_PAGO_DEFAULT = '';
+
+function buildPaymentMethods(config) {
+  return [
+    {
+      id: 'Pago movil',
+      nombre: 'Pago Movil',
+      detalles: {
+        banco: config?.pago_movil?.banco || '',
+        telefono: config?.pago_movil?.telefono || '',
+        cedula: config?.pago_movil?.cedula || '',
+        titular: config?.pago_movil?.titular || ''
+      }
+    },
+    {
+      id: 'Transferencia',
+      nombre: 'Transferencia',
+      detalles: {
+        banco: config?.transferencia?.banco || '',
+        cuenta: config?.transferencia?.cuenta || '',
+        titular: config?.transferencia?.titular || '',
+        cedula: config?.transferencia?.cedula || ''
+      }
+    }
+  ];
+}
+const OPCIONES_NOMBRE_REPRESENTANTE = [
+  'Volley Mom',
+  'Volley Dad',
+  'Volley Grandmom',
+  'Volley Granddad',
+  'Volley Sister',
+  'Volley Brother'
+];
 
 const ESTADO_LABELS = {
   pendiente: 'Pendiente',
   esperando_pago: 'Esperando pago',
+  abono: 'Abono',
   pago_en_revision: 'Pago en revision',
   verificado: 'Verificado',
   entregado: 'Entregado',
@@ -45,10 +86,17 @@ const ESTADO_LABELS = {
 const ESTADO_STYLES = {
   pendiente: { bgcolor: '#e2e8f0', color: '#475569' },
   esperando_pago: { bgcolor: '#fef3c7', color: '#92400e' },
+  abono: { bgcolor: '#ffedd5', color: '#9a3412' },
   pago_en_revision: { bgcolor: '#dbeafe', color: '#1d4ed8' },
   verificado: { bgcolor: '#dcfce7', color: '#166534' },
   entregado: { bgcolor: '#ccfbf1', color: '#0f766e' },
   cancelado: { bgcolor: '#fee2e2', color: '#b91c1c' }
+};
+
+const getLocalInputDate = (dateValue = new Date()) => {
+  const date = new Date(dateValue);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
 };
 
 function construirNombrePersonalizado(alumno) {
@@ -83,9 +131,19 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [confirmCancelId, setConfirmCancelId] = useState(null);
   const [pagoDialogOpen, setPagoDialogOpen] = useState(false);
   const [pedidoPago, setPedidoPago] = useState(null);
-  const [metodoPago, setMetodoPago] = useState(METODOS_PAGO[0]);
+  const [metodoPago, setMetodoPago] = useState(METODO_PAGO_DEFAULT);
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [loadingMetodosPago, setLoadingMetodosPago] = useState(false);
+  const [errorMetodosPago, setErrorMetodosPago] = useState('');
+  const metodosPagoUniforme = buildPaymentMethods(paymentConfig);
+  const metodoPagoConfig = metodosPagoUniforme.find((item) => item.id === metodoPago) || null;
+  const [fechaPago, setFechaPago] = useState(() => getLocalInputDate());
+  const [montoPagado, setMontoPagado] = useState('');
+  const [montoPagadoBsConfirmacion, setMontoPagadoBsConfirmacion] = useState('');
   const [referencia, setReferencia] = useState('');
   const [comprobante, setComprobante] = useState(null);
+  const [copySuccess, setCopySuccess] = useState('');
+  const [mostrarConfirmacionPago, setMostrarConfirmacionPago] = useState(false);
   const [submittingPago, setSubmittingPago] = useState(false);
   const [numeroFranelaAsignado, setNumeroFranelaAsignado] = useState(() => String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());
   const [numeroFranelaSeleccionado, setNumeroFranelaSeleccionado] = useState('');
@@ -97,7 +155,14 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const token = localStorage.getItem('token');
   const numeroFranelaAlumno = String(numeroFranelaAsignado || '').trim();
   const categoriaAlumno = String(alumno?.categoria || '').trim();
-  const nombrePersonalizado = construirNombrePersonalizado(alumno);
+  const nombrePersonalizadoDefault = construirNombrePersonalizado(alumno);
+  const [nombrePersonalizadoInput, setNombrePersonalizadoInput] = useState(nombrePersonalizadoDefault);
+  const prendaSeleccionada = prendas.find((item) => item.prenda === prenda);
+  const esFranelaRepresentante = Boolean(prendaSeleccionada?.franela_representante);
+  const permiteEditarNombrePersonalizado = esFranelaRepresentante && Boolean(prendaSeleccionada?.lleva_personalizacion_nombre);
+  const usaSelectorNombreRepresentante = esFranelaRepresentante && prendaSeleccionada?.lleva_personalizacion_nombre === false;
+  const ocultarNumeroFranela = Boolean(prendaSeleccionada) && prendaSeleccionada.lleva_numero_franela === false;
+  const requiereNumeroFranela = !ocultarNumeroFranela;
 
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -154,6 +219,43 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   }, [fetchPedidos]);
 
   useEffect(() => {
+    if (!pagoDialogOpen) return;
+
+    let cancelled = false;
+
+    const fetchMetodosPago = async () => {
+      try {
+        setLoadingMetodosPago(true);
+        setErrorMetodosPago('');
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/configuracion/pagos`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || data?.msg || 'No se pudo cargar la configuracion de pago');
+
+        if (!cancelled) {
+          setPaymentConfig(data?.pagos || null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPaymentConfig(null);
+          setErrorMetodosPago(err.message || 'No se pudo cargar la configuracion de pago');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMetodosPago(false);
+        }
+      }
+    };
+
+    fetchMetodosPago();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pagoDialogOpen, token]);
+
+  useEffect(() => {
     setNumeroFranelaAsignado(String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());
     setNumeroFranelaSeleccionado('');
     setNumeroFranelaError('');
@@ -161,6 +263,22 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   }, [alumno?._id, alumno?.numero_franela, alumno?.numeroFranela]);
 
   useEffect(() => {
+    if (permiteEditarNombrePersonalizado || usaSelectorNombreRepresentante) {
+      setNombrePersonalizadoInput('');
+      return;
+    }
+
+    setNombrePersonalizadoInput(nombrePersonalizadoDefault);
+  }, [nombrePersonalizadoDefault, permiteEditarNombrePersonalizado, usaSelectorNombreRepresentante]);
+
+  useEffect(() => {
+    if (!requiereNumeroFranela) {
+      setNumeroFranelaError('');
+      setNumeroFranelaLoading(false);
+      setNumeroFranelaSeleccionado('');
+      return;
+    }
+
     const categoriaNormalizada = String(categoriaAlumno || '').trim().toUpperCase();
 
     if (numeroFranelaAlumno) {
@@ -214,7 +332,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     return () => {
       cancelled = true;
     };
-  }, [categoriaAlumno, numeroFranelaAlumno, token]);
+  }, [categoriaAlumno, numeroFranelaAlumno, requiereNumeroFranela, token]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -224,8 +342,13 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
     const numeroFranelaFinal = numeroFranelaAlumno || String(numeroFranelaSeleccionado || '').trim();
 
-    if (!numeroFranelaFinal) {
+    if (requiereNumeroFranela && !numeroFranelaFinal) {
       setErrorMessage('Debes seleccionar un numero de franela para continuar');
+      return;
+    }
+
+    if (usaSelectorNombreRepresentante && !String(nombrePersonalizadoInput || '').trim()) {
+      setErrorMessage('Debes seleccionar el nombre para la franela de representante');
       return;
     }
 
@@ -237,8 +360,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       formData.append('sedeId', sedeId);
       formData.append('prenda', prenda);
       formData.append('talla', talla);
-      formData.append('nombrePersonalizado', nombrePersonalizado);
-      formData.append('numeroFranela', numeroFranelaFinal);
+      formData.append('nombrePersonalizado', String(nombrePersonalizadoInput || '').trim());
+      if (requiereNumeroFranela && numeroFranelaFinal) {
+        formData.append('numeroFranela', numeroFranelaFinal);
+      }
 
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
         method: 'POST',
@@ -250,7 +375,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
       setPrenda('');
       setTalla('');
-      if (!numeroFranelaAlumno) {
+      if (requiereNumeroFranela && !numeroFranelaAlumno) {
         setNumeroFranelaAsignado(numeroFranelaFinal);
       }
       setSuccessMessage('Pedido realizado con exito');
@@ -285,9 +410,17 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
   const openPagoDialog = (pedido) => {
     setPedidoPago(pedido);
-    setMetodoPago(METODOS_PAGO[0]);
+    setMetodoPago(METODO_PAGO_DEFAULT);
+    setFechaPago(getLocalInputDate());
+    const saldoPendiente = Number(pedido?.saldo_pendiente);
+    const totalPedido = Number(pedido?.precio) || 0;
+    const montoSugerido = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
+    setMontoPagado(montoSugerido > 0 ? String(montoSugerido) : '');
+    setMontoPagadoBsConfirmacion('');
     setReferencia('');
     setComprobante(null);
+    setCopySuccess('');
+    setMostrarConfirmacionPago(false);
     setPagoDialogOpen(true);
   };
 
@@ -295,15 +428,115 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     if (submittingPago) return;
     setPagoDialogOpen(false);
     setPedidoPago(null);
-    setMetodoPago(METODOS_PAGO[0]);
+    setMetodoPago(METODO_PAGO_DEFAULT);
+    setFechaPago(getLocalInputDate());
+    setMontoPagado('');
+    setMontoPagadoBsConfirmacion('');
     setReferencia('');
     setComprobante(null);
+    setCopySuccess('');
+    setMostrarConfirmacionPago(false);
+  };
+
+  const formatearValorDetallePago = (clave, valor) => {
+    if (clave === 'cedula') {
+      const base = String(valor || '').replace(/^V-?/i, '').trim();
+      return base ? `V-${base}` : '-';
+    }
+    if (clave === 'telefono') {
+      const digits = String(valor || '').replace(/\D/g, '');
+      if (!digits) return '-';
+      if (digits.length <= 4) return digits;
+      return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    }
+    if (clave === 'cuenta') {
+      const digits = String(valor || '').replace(/\D/g, '');
+      if (!digits) return '-';
+      return digits.match(/.{1,4}/g)?.join('-') || digits;
+    }
+    return String(valor || '-');
+  };
+
+  const copiarDatoPago = async (clave, valor) => {
+    const valorFormateado = formatearValorDetallePago(clave, valor);
+    const soloDigitos = String(valor || '').replace(/\D/g, '');
+    const textoParaCopiar = (clave === 'cedula' || clave === 'cuenta' || clave === 'telefono')
+      ? soloDigitos
+      : String(valorFormateado || '');
+
+    if (!textoParaCopiar || textoParaCopiar === '-') return;
+
+    try {
+      await navigator.clipboard.writeText(textoParaCopiar);
+      setCopySuccess(`${String(clave || '').replace('_', ' ')} copiado`);
+      setTimeout(() => setCopySuccess(''), 1800);
+    } catch {
+      setCopySuccess('No se pudo copiar');
+      setTimeout(() => setCopySuccess(''), 1800);
+    }
+  };
+
+  const handleYaPagueClick = () => {
+    if (!metodoPago) {
+      setErrorMessage('Debes seleccionar un metodo de pago');
+      return;
+    }
+    const montoPagadoNum = Number(montoPagado);
+    const saldoValido = Number(getSaldoPendienteVisible(pedidoPago)) || 0;
+
+    if (!montoPagadoNum || Number.isNaN(montoPagadoNum) || montoPagadoNum <= 0) {
+      setErrorMessage('Debes indicar un monto pagado valido');
+      return;
+    }
+
+    if (saldoValido > 0 && montoPagadoNum > saldoValido) {
+      setErrorMessage(`El monto pagado no puede superar el saldo pendiente ($${formatMoney(saldoValido)})`);
+      return;
+    }
+
+    setMontoPagadoBsConfirmacion(montoPagadoBsInput !== null && Number.isFinite(montoPagadoBsInput) ? formatMoney(montoPagadoBsInput) : '');
+    setMostrarConfirmacionPago(true);
   };
 
   const handlePagarPedido = async () => {
     if (!pedidoPago?._id) return;
+    if (!metodoPago) {
+      setErrorMessage('Debes seleccionar un metodo de pago');
+      return;
+    }
     if ((metodoPago === 'Transferencia' || metodoPago === 'Pago movil') && !/^[0-9]{6,}$/.test(referencia)) {
       setErrorMessage('La referencia debe tener minimo 6 digitos');
+      return;
+    }
+
+    if (!fechaPago) {
+      setErrorMessage('Debes indicar la fecha del pago');
+      return;
+    }
+
+    const montoPagadoBsNum = Number(montoPagadoBsConfirmacion);
+    const montoPagadoNum = tasaBCV > 0 ? (montoPagadoBsNum / tasaBCV) : Number(montoPagado);
+    const saldoPendiente = Number(pedidoPago?.saldo_pendiente);
+    const totalPedido = Number(pedidoPago?.precio) || 0;
+    const saldoValido = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
+
+    if (tasaBCV <= 0) {
+      setErrorMessage('No hay tasa BCV disponible para convertir el monto en Bs');
+      return;
+    }
+
+    if (!montoPagadoBsNum || Number.isNaN(montoPagadoBsNum) || montoPagadoBsNum <= 0) {
+      setErrorMessage('Debes indicar un monto pagado en Bs valido');
+      return;
+    }
+
+    if (!montoPagadoNum || Number.isNaN(montoPagadoNum) || montoPagadoNum <= 0) {
+      setErrorMessage('Debes indicar un monto pagado valido');
+      return;
+    }
+
+    if (montoPagadoNum > saldoValido) {
+      setErrorMessage(`El monto pagado no puede superar el saldo pendiente ($${formatMoney(saldoValido)})`);
       return;
     }
 
@@ -311,8 +544,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setSubmittingPago(true);
       const formData = new FormData();
       formData.append('metodo_pago', metodoPago);
+      formData.append('monto_pagado', montoPagadoNum.toFixed(2));
+      formData.append('monto_pagado_bs', montoPagadoBsNum.toFixed(2));
       if (referencia) formData.append('referencia', referencia);
-      formData.append('fecha_pago', new Date().toISOString());
+      formData.append('fecha_pago', fechaPago);
       if (comprobante) formData.append('comprobante', comprobante);
 
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoPago._id}/pagar`, {
@@ -326,10 +561,21 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setPedidos((prev) => prev.map((pedido) => (pedido._id === data._id ? data : pedido)));
       setPagoDialogOpen(false);
       setPedidoPago(null);
-      setMetodoPago(METODOS_PAGO[0]);
+      setMetodoPago(METODO_PAGO_DEFAULT);
+      setFechaPago(getLocalInputDate());
+      setMontoPagado('');
+      setMontoPagadoBsConfirmacion('');
       setReferencia('');
       setComprobante(null);
-      setSuccessMessage('Pago registrado correctamente');
+      setCopySuccess('');
+      setMostrarConfirmacionPago(false);
+      setSuccessMessage(
+        data?.estado === 'abono'
+          ? `Abono registrado. Saldo pendiente: $${formatMoney(data?.saldo_pendiente)}`
+          : data?.estado === 'pago_en_revision'
+            ? 'Pago enviado a revision'
+            : 'Pago registrado correctamente'
+      );
     } catch (err) {
       setErrorMessage(err.message || 'Error al registrar el pago');
     } finally {
@@ -338,6 +584,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   };
 
   const montoPagoBs = pedidoPago?.precio && tasaBCV ? Number(pedidoPago.precio) * tasaBCV : null;
+  const montoPagadoBsInput = montoPagado && tasaBCV ? Number(montoPagado) * tasaBCV : null;
 
   const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -355,6 +602,16 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
 
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
+
+  const getSaldoPendienteVisible = (pedido) => {
+    const saldo = Number(pedido?.saldo_pendiente);
+    const precio = Number(pedido?.precio) || 0;
+    if (Number.isFinite(saldo) && saldo > 0) return saldo;
+    if (pedido?.estado === 'esperando_pago' || pedido?.estado === 'abono' || pedido?.estado === 'pago_en_revision') {
+      return precio;
+    }
+    return 0;
+  };
 
   return (
     <Grid container justifyContent="center" alignItems="flex-start" sx={{ minHeight: '80vh', py: { xs: 2, md: 3 } }}>
@@ -425,29 +682,31 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                   </FormControl>
                 </Grid>
                 <Grid item size={{ xs: 12, md: 6 }}>
-                  <TextField
-                    fullWidth
-                    label="Nombre personalizado"
-                    value={nombrePersonalizado}
-                    disabled
-                    sx={{
-                      '& .MuiInputBase-input.Mui-disabled': {
-                        WebkitTextFillColor: '#64748b'
-                      },
-                      '& .MuiOutlinedInput-root.Mui-disabled': {
-                        backgroundColor: '#fdfdfd'
-                      }
-                    }}
-                    helperText="Se asigna automaticamente: primer apellido + inicial del primer nombre"
-                  />
-                </Grid>
-                <Grid item size={{ xs: 12, md: 6 }}>
-                  {numeroFranelaAlumno ? (
+                  {usaSelectorNombreRepresentante ? (
+                    <FormControl fullWidth required>
+                      <InputLabel id="nombre-representante-label">Nombre para franela</InputLabel>
+                      <Select
+                        labelId="nombre-representante-label"
+                        value={nombrePersonalizadoInput}
+                        label="Nombre para franela"
+                        onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
+                      >
+                        <MenuItem value=""><em>Seleccione</em></MenuItem>
+                        {OPCIONES_NOMBRE_REPRESENTANTE.map((opcion) => (
+                          <MenuItem key={opcion} value={opcion}>{opcion}</MenuItem>
+                        ))}
+                      </Select>
+                      <Typography variant="caption" sx={{ mt: 0.6, color: '#64748b', display: 'block' }}>
+                        Selecciona el texto que llevara la franela del representante
+                      </Typography>
+                    </FormControl>
+                  ) : (
                     <TextField
                       fullWidth
-                      label="Numero de franela"
-                      value={numeroFranelaAlumno}
-                      disabled
+                      label="Nombre personalizado"
+                      value={nombrePersonalizadoInput}
+                      onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
+                      disabled={!permiteEditarNombrePersonalizado}
                       sx={{
                         '& .MuiInputBase-input.Mui-disabled': {
                           WebkitTextFillColor: '#64748b'
@@ -456,31 +715,54 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           backgroundColor: '#fdfdfd'
                         }
                       }}
-                      helperText="Se usa el numero asignado en la ficha del alumno"
+                      helperText={permiteEditarNombrePersonalizado
+                        ? 'Escribe el nombre personalizado para la franela del representante'
+                        : 'Se asigna automaticamente: primer apellido + inicial del primer nombre'}
                     />
-                  ) : (
-                    <FormControl fullWidth required error={!!numeroFranelaError && !numeroFranelaLoading}>
-                      <InputLabel id="numero-franela-label">Numero de franela</InputLabel>
-                      <Select
-                        labelId="numero-franela-label"
-                        value={numeroFranelaSeleccionado}
-                        label="Numero de franela"
-                        onChange={(event) => setNumeroFranelaSeleccionado(event.target.value)}
-                        disabled={numeroFranelaLoading || numerosFranelaDisponibles.length === 0}
-                      >
-                        <MenuItem value=""><em>Seleccione</em></MenuItem>
-                        {numerosFranelaDisponibles.map((numero) => (
-                          <MenuItem key={numero} value={String(numero)}>{numero}</MenuItem>
-                        ))}
-                      </Select>
-                      <Typography variant="caption" sx={{ mt: 0.6, color: numeroFranelaError ? '#d32f2f' : '#64748b', display: 'block' }}>
-                        {numeroFranelaLoading
-                          ? 'Cargando numeros disponibles por categoria...'
-                          : (numeroFranelaError || `Disponibles: ${numerosFranelaDisponibles.length} de 100 en ${String(categoriaAlumno || '').toUpperCase()}`)}
-                      </Typography>
-                    </FormControl>
                   )}
                 </Grid>
+                {requiereNumeroFranela && (
+                  <Grid item size={{ xs: 12, md: 6 }}>
+                    {numeroFranelaAlumno ? (
+                      <TextField
+                        fullWidth
+                        label="Numero de franela"
+                        value={numeroFranelaAlumno}
+                        disabled
+                        sx={{
+                          '& .MuiInputBase-input.Mui-disabled': {
+                            WebkitTextFillColor: '#64748b'
+                          },
+                          '& .MuiOutlinedInput-root.Mui-disabled': {
+                            backgroundColor: '#fdfdfd'
+                          }
+                        }}
+                        helperText="Se usa el numero asignado en la ficha del alumno"
+                      />
+                    ) : (
+                      <FormControl fullWidth required error={!!numeroFranelaError && !numeroFranelaLoading}>
+                        <InputLabel id="numero-franela-label">Numero de franela</InputLabel>
+                        <Select
+                          labelId="numero-franela-label"
+                          value={numeroFranelaSeleccionado}
+                          label="Numero de franela"
+                          onChange={(event) => setNumeroFranelaSeleccionado(event.target.value)}
+                          disabled={numeroFranelaLoading || numerosFranelaDisponibles.length === 0}
+                        >
+                          <MenuItem value=""><em>Seleccione</em></MenuItem>
+                          {numerosFranelaDisponibles.map((numero) => (
+                            <MenuItem key={numero} value={String(numero)}>{numero}</MenuItem>
+                          ))}
+                        </Select>
+                        <Typography variant="caption" sx={{ mt: 0.6, color: numeroFranelaError ? '#d32f2f' : '#64748b', display: 'block' }}>
+                          {numeroFranelaLoading
+                            ? 'Cargando numeros disponibles por categoria...'
+                            : (numeroFranelaError || `Disponibles: ${numerosFranelaDisponibles.length} de 100 en ${String(categoriaAlumno || '').toUpperCase()}`)}
+                        </Typography>
+                      </FormControl>
+                    )}
+                  </Grid>
+                )}
               </Grid>
               {prendasError && (
                 <Typography variant="body2" color="error" sx={{ mb: 2 }}>
@@ -493,7 +775,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                 color="primary"
                 fullWidth
                 size="large"
-                disabled={guardando || (!numeroFranelaAlumno && !numeroFranelaSeleccionado) || numeroFranelaLoading || !!numeroFranelaError}
+                disabled={guardando || (usaSelectorNombreRepresentante && !String(nombrePersonalizadoInput || '').trim()) || (requiereNumeroFranela && (!numeroFranelaAlumno && !numeroFranelaSeleccionado)) || (requiereNumeroFranela && numeroFranelaLoading) || (requiereNumeroFranela && !!numeroFranelaError)}
               >
                 {guardando ? 'Guardando...' : 'Guardar pedido'}
               </Button>
@@ -560,6 +842,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                       <Box sx={{ mb: 1 }}>
                         <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Precio</Typography>
                         <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>${formatMoney(pedido.precio)}</Typography>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          Saldo pendiente: ${formatMoney(getSaldoPendienteVisible(pedido))}
+                        </Typography>
                         {tasaBCV ? (
                           <Typography variant="body2" sx={{ color: '#64748b' }}>
                             Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
@@ -567,7 +852,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         ) : null}
                       </Box>
 
-                      {pedido.estado === 'esperando_pago' ? (
+                      {(pedido.estado === 'esperando_pago' || pedido.estado === 'abono') ? (
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                           <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
                             Realizar pago
@@ -601,6 +886,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         <Typography variant="body2" sx={{ color: '#64748b' }}>
                           {pedido.estado === 'cancelado'
                             ? 'Solicitud cancelada'
+                            : pedido.estado === 'abono'
+                              ? `Abono registrado. Saldo pendiente: $${formatMoney(getSaldoPendienteVisible(pedido))}`
                             : pedido.estado === 'pago_en_revision'
                               ? 'Pago enviado, en revision'
                               : pedido.estado === 'verificado'
@@ -638,6 +925,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           <TableCell>{pedido.numero_franela || '-'}</TableCell>
                           <TableCell>
                             <Typography sx={{ fontWeight: 700 }}>${formatMoney(pedido.precio)}</Typography>
+                            <Typography variant="body2" sx={{ color: '#64748b' }}>
+                              Pendiente: ${formatMoney(getSaldoPendienteVisible(pedido))}
+                            </Typography>
                             {tasaBCV ? (
                               <Typography variant="body2" sx={{ color: '#64748b' }}>
                                 Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
@@ -666,7 +956,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                             />
                           </TableCell>
                           <TableCell>
-                            {pedido.estado === 'esperando_pago' ? (
+                            {(pedido.estado === 'esperando_pago' || pedido.estado === 'abono') ? (
                               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                                 <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
                                   Realizar pago
@@ -700,6 +990,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                               <Typography variant="body2" sx={{ color: '#64748b' }}>
                                 {pedido.estado === 'cancelado'
                                   ? 'Solicitud cancelada'
+                                  : pedido.estado === 'abono'
+                                    ? `Abono registrado. Saldo pendiente: $${formatMoney(getSaldoPendienteVisible(pedido))}`
                                   : pedido.estado === 'pago_en_revision'
                                     ? 'Pago enviado, en revision'
                                     : pedido.estado === 'verificado'
@@ -775,108 +1067,271 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         </DialogTitle>
         <DialogContent sx={{ p: 3, pt: 1.5, bgcolor: '#f8fafc' }}>
           <Box sx={{ display: 'grid', gap: 2 }}>
-            <Box
-              sx={{
-                position: 'relative',
-                bgcolor: '#ffffff',
-                borderRadius: 2.5,
-                border: '1px solid #e7eaf2',
-                p: 2,
-                '&::before': {
-                  content: '""',
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 6,
-                  borderTopLeftRadius: 10,
-                  borderTopRightRadius: 10,
-                  background: 'linear-gradient(90deg, #ff8a00 0%, #8a4b00 100%)'
-                }
-              }}
-            >
-              <Box sx={{ pt: 1.25, display: 'grid', gap: 1 }}>
-                <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 700 }}>
-                  Prenda
+            {!metodoPago && (
+              <>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                  Como vas a pagar?
                 </Typography>
-                <Typography sx={{ color: '#0f172a', fontWeight: 800 }}>
-                  {pedidoPago?.prenda || '-'}
-                </Typography>
-                <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 700, mt: 0.75 }}>
-                  Monto
-                </Typography>
-                <Typography sx={{ color: '#9a5a00', fontWeight: 900, fontSize: 18 }}>
-                  ${formatMoney(pedidoPago?.precio)}{montoPagoBs ? ` / Bs. ${formatMoney(montoPagoBs)}` : ''}
-                </Typography>
-              </Box>
-            </Box>
-            <FormControl fullWidth>
-              <InputLabel id="metodo-pago-uniforme-label">Metodo de pago</InputLabel>
-              <Select
-                labelId="metodo-pago-uniforme-label"
-                value={metodoPago}
-                label="Metodo de pago"
-                onChange={(event) => setMetodoPago(event.target.value)}
-                size="small"
-                sx={inputSx}
-              >
-                {METODOS_PAGO.map((item) => (
-                  <MenuItem key={item} value={item}>{item}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              label="Referencia"
-              value={referencia}
-              onChange={(event) => setReferencia(event.target.value.replace(/[^0-9]/g, '').slice(0, 20))}
-              size="small"
-              sx={inputSx}
-              helperText={metodoPago === 'Transferencia' || metodoPago === 'Pago movil' ? 'Minimo 6 digitos' : ''}
-            />
-            <Box
-              component="label"
-              sx={{
-                mt: 0.5,
-                border: '1px dashed #cbd5f0',
-                borderRadius: 2,
-                p: 2,
-                textAlign: 'center',
-                backgroundColor: '#f8fafc',
-                display: 'block',
-                cursor: 'pointer'
-              }}
-            >
-              <Box
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  backgroundColor: '#fff2e7',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  mx: 'auto',
-                  mb: 1
-                }}
-              >
-                <PaymentIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
-              </Box>
-              <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>Haz clic para adjuntar comprobante</Typography>
-              <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG o PDF hasta 5MB</Typography>
-              <input type="file" hidden onChange={(event) => setComprobante(event.target.files?.[0] || null)} />
-            </Box>
-            {comprobante && (
-              <Box sx={{ mt: 0.25, px: 1.5, py: 1, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                  <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
-                  <Typography variant="body2" sx={{ color: '#475569', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {comprobante.name}
+                {loadingMetodosPago && (
+                  <Typography variant="body2" sx={{ color: '#64748b' }}>
+                    Cargando metodos de pago...
                   </Typography>
-                </Box>
-                <IconButton size="small" onClick={() => setComprobante(null)}>
-                  <CloseIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
-                </IconButton>
-              </Box>
+                )}
+                {errorMetodosPago && (
+                  <Alert severity="error" sx={{ borderRadius: 2 }}>
+                    {errorMetodosPago}
+                  </Alert>
+                )}
+                {metodosPagoUniforme.map((metodo) => (
+                  <Card
+                    key={metodo.id}
+                    sx={{
+                      borderRadius: 2.5,
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 10px 20px rgba(15, 23, 42, 0.06)',
+                      cursor: loadingMetodosPago ? 'not-allowed' : 'pointer',
+                      opacity: loadingMetodosPago ? 0.6 : 1
+                    }}
+                    onClick={() => {
+                      if (!loadingMetodosPago) setMetodoPago(metodo.id);
+                    }}
+                  >
+                    <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, py: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Box
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: '50%',
+                            backgroundColor: '#fff2e7',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {metodo.id === 'Pago movil' ? (
+                            <PhoneIphoneIcon sx={{ color: '#f97316' }} />
+                          ) : (
+                            <AccountBalanceIcon sx={{ color: '#f97316' }} />
+                          )}
+                        </Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                          {metodo.nombre}
+                        </Typography>
+                      </Box>
+                      <ArrowForwardIosIcon sx={{ color: '#cbd5f0', fontSize: 18 }} />
+                    </CardContent>
+                  </Card>
+                ))}
+              </>
+            )}
+
+            {metodoPago && (
+              <>
+                <Button
+                  variant="text"
+                  fullWidth
+                  onClick={() => {
+                    setMetodoPago('');
+                    setCopySuccess('');
+                    setMostrarConfirmacionPago(false);
+                  }}
+                  startIcon={<ArrowBackIosNewIcon sx={{ fontSize: 16 }} />}
+                  sx={{ mt: -0.25, color: '#64748b', fontWeight: 700 }}
+                >
+                  Volver
+                </Button>
+
+                {!mostrarConfirmacionPago && (
+                  <>
+                    <Box
+                      sx={{
+                        borderRadius: 2.5,
+                        border: '1px solid #e2e8f0',
+                        backgroundColor: '#ffffff',
+                        p: 2
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.08em', color: '#0f172a' }}>
+                        DATOS PARA EL PAGO
+                      </Typography>
+                      <Box sx={{ display: 'grid', gap: 1, mt: 1 }}>
+                        {Object.entries(metodoPagoConfig?.detalles || {}).map(([clave, valor]) => (
+                          <Box key={clave}>
+                            <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                              {clave.replace('_', ' ')}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
+                                {formatearValorDetallePago(clave, valor)}
+                              </Typography>
+                              <IconButton size="small" onClick={() => copiarDatoPago(clave, valor)} sx={{ color: '#64748b' }}>
+                                <ContentCopyIcon fontSize="inherit" />
+                              </IconButton>
+                            </Box>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+
+                    {copySuccess && (
+                      <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 700, display: 'block', mt: -0.5 }}>
+                        {copySuccess}
+                      </Typography>
+                    )}
+
+                    <TextField
+                      label="Monto a pagar (USD)"
+                      type="number"
+                      value={montoPagado}
+                      onChange={(event) => setMontoPagado(event.target.value)}
+                      size="small"
+                      sx={inputSx}
+                      inputProps={{
+                        min: 0,
+                        step: '0.01',
+                        max: getSaldoPendienteVisible(pedidoPago) || undefined
+                      }}
+                      helperText={`Saldo pendiente actual: $${formatMoney(getSaldoPendienteVisible(pedidoPago))}`}
+                    />
+
+                    <Box
+                      sx={{
+                        borderRadius: 2,
+                        backgroundColor: '#343e48',
+                        color: '#ffffff',
+                        px: 1.5,
+                        py: 1.25,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1
+                      }}
+                    >
+                      <Box>
+                        <Typography variant="caption" sx={{ opacity: 0.9, letterSpacing: '0.08em' }}>
+                          MONTO A TRANSFERIR EN BS
+                        </Typography>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                          {montoPagadoBsInput !== null && Number.isFinite(montoPagadoBsInput)
+                            ? `${formatMoney(montoPagadoBsInput)} Bs`
+                            : '-'}
+                        </Typography>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={() => copiarDatoPago('monto_bs', montoPagadoBsInput !== null ? formatMoney(montoPagadoBsInput) : '')}
+                        disabled={montoPagadoBsInput === null || !Number.isFinite(montoPagadoBsInput)}
+                        sx={{ color: '#ffffff', opacity: (montoPagadoBsInput === null || !Number.isFinite(montoPagadoBsInput)) ? 0.45 : 0.9 }}
+                        aria-label="Copiar monto en Bs"
+                      >
+                        <ContentCopyIcon fontSize="inherit" />
+                      </IconButton>
+                    </Box>
+
+                    <Typography variant="caption" sx={{ color: '#64748b', mt: -0.5, display: 'block' }}>
+                      Tasa aplicada: {tasaBCV ? `${formatMoney(tasaBCV)} Bs/USD` : 'No disponible'}
+                    </Typography>
+
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleYaPagueClick}
+                    disabled={!montoPagado || Number(montoPagado) <= 0}
+                    sx={{
+                      bgcolor: '#f97316',
+                      '&:hover': { bgcolor: '#ea580c' },
+                      fontWeight: 800,
+                      borderRadius: 2,
+                      py: 1.2
+                    }}
+                  >
+                    Ya pague
+                  </Button>
+                  </>
+                )}
+
+                {mostrarConfirmacionPago && (
+                  <Box sx={{ display: 'grid', gap: 1.25 }}>
+                    <TextField
+                      label="Monto pagado Bs"
+                      type="number"
+                      value={montoPagadoBsConfirmacion}
+                      onChange={(event) => setMontoPagadoBsConfirmacion(event.target.value)}
+                      size="small"
+                      sx={inputSx}
+                      inputProps={{ min: 0, step: '0.01' }}
+                      helperText={tasaBCV > 0
+                        ? `Equivalente en USD: $${formatMoney((Number(montoPagadoBsConfirmacion) || 0) / tasaBCV)}`
+                        : 'No hay tasa BCV disponible'}
+                      required
+                    />
+                    <TextField
+                      label="Fecha de pago"
+                      type="date"
+                      value={fechaPago}
+                      onChange={(event) => setFechaPago(event.target.value)}
+                      size="small"
+                      sx={inputSx}
+                      InputLabelProps={{ shrink: true }}
+                      required
+                    />
+                    <TextField
+                      label="Referencia"
+                      value={referencia}
+                      onChange={(event) => setReferencia(event.target.value.replace(/[^0-9]/g, '').slice(0, 20))}
+                      size="small"
+                      sx={inputSx}
+                      helperText={metodoPago === 'Transferencia' || metodoPago === 'Pago movil' ? 'Minimo ultimos 6 digitos' : ''}
+                    />
+                    <Box
+                      component="label"
+                      sx={{
+                        mt: 0.5,
+                        border: '1px dashed #cbd5f0',
+                        borderRadius: 2,
+                        p: 2,
+                        textAlign: 'center',
+                        backgroundColor: '#f8fafc',
+                        display: 'block',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: '50%',
+                          backgroundColor: '#fff2e7',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          mx: 'auto',
+                          mb: 1
+                        }}
+                      >
+                        <PaymentIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
+                      </Box>
+                      <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>Haz clic para adjuntar comprobante</Typography>
+                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG o PDF hasta 5MB</Typography>
+                      <input type="file" hidden onChange={(event) => setComprobante(event.target.files?.[0] || null)} />
+                    </Box>
+                    {comprobante && (
+                      <Box sx={{ mt: 0.25, px: 1.5, py: 1, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                          <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
+                          <Typography variant="body2" sx={{ color: '#475569', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {comprobante.name}
+                          </Typography>
+                        </Box>
+                        <IconButton size="small" onClick={() => setComprobante(null)}>
+                          <CloseIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+                        </IconButton>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </>
             )}
           </Box>
         </DialogContent>
@@ -887,7 +1342,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
           <Button
             onClick={handlePagarPedido}
             variant="contained"
-            disabled={submittingPago}
+            disabled={submittingPago || !mostrarConfirmacionPago}
             sx={{ bgcolor: '#ff7a00', '&:hover': { bgcolor: '#f97316' }, fontWeight: 800, borderRadius: 2, px: 3 }}
           >
             {submittingPago ? 'Procesando...' : 'Confirmar pago'}

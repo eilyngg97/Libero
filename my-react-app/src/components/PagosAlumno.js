@@ -72,6 +72,11 @@ function PagosAlumno(props) {
     monto_total: m.monto_total ?? m.monto_esperado,
     total_pagado: m.total_pagado || 0,
     estado: m.estatus,
+    aplica_recargo: m.aplica_recargo,
+    monto_sin_recargo_usd: m.monto_sin_recargo_usd,
+    recargo_aplicado_usd: m.recargo_aplicado_usd,
+    monto_con_recargo_usd: m.monto_con_recargo_usd,
+    fecha_aplicacion_recargo: m.fecha_aplicacion_recargo,
     detalle: m.detalle || `Mensualidad correspondiente a ${m.mes}/${m.anio}`,
     descripcion: 'Mensualidad'
   });
@@ -1102,6 +1107,30 @@ function PagosAlumno(props) {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ bgcolor: '#f3f5fb', pt: 2.5, pb: 2.5 }}>
+          {mensualidadDetalle && Number(mensualidadDetalle.recargo_aplicado_usd || 0) > 0 && (
+            <Box
+              sx={{
+                mb: 2,
+                bgcolor: '#fff7ed',
+                border: '1px solid #fed7aa',
+                borderRadius: 2,
+                p: 1.5
+              }}
+            >
+              <Typography sx={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9a3412', fontWeight: 800 }}>
+                Desglose de recargo
+              </Typography>
+              <Typography sx={{ mt: 0.6, color: '#7c2d12', fontWeight: 700, fontSize: 13 }}>
+                Monto base: ${formatMoney(mensualidadDetalle.monto_sin_recargo_usd || 0)} USD | Recargo: ${formatMoney(mensualidadDetalle.recargo_aplicado_usd || 0)} USD | Total: ${formatMoney(mensualidadDetalle.monto_con_recargo_usd || mensualidadDetalle.monto_total || 0)} USD
+              </Typography>
+              {mensualidadDetalle.fecha_aplicacion_recargo && (
+                <Typography sx={{ mt: 0.4, color: '#9a3412', fontSize: 12, fontWeight: 600 }}>
+                  Aplicado: {formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)}
+                </Typography>
+              )}
+            </Box>
+          )}
+
           {detallePago ? (
             <>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>

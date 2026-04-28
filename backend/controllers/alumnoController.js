@@ -57,6 +57,7 @@ const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
+const { generarMensualidadesPendientesAlumno } = require('./mensualidadController');
 
 async function getTenantAlumnoReadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -90,6 +91,7 @@ async function getTenantAlumnoWriteModels(req) {
     Reposo: getTenantModel(connection, 'Reposo'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
+    TenantConfig: getTenantModel(connection, 'TenantConfig'),
     HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno')
   };
 }
@@ -956,7 +958,16 @@ exports.createAlumno = async (req, res) => {
     console.log('BODY recibido:', req.body);
     console.log('FILE recibido:', req.file);
   try {
-    const { Alumno: TenantAlumno, Representante: TenantRepresentante, User: TenantUser } = await getTenantAlumnoWriteModels(req);
+    const {
+      Alumno: TenantAlumno,
+      Representante: TenantRepresentante,
+      User: TenantUser,
+      Sede: TenantSede,
+      Reposo: TenantReposo,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      TenantConfig: TenantConfigModel
+    } = await getTenantAlumnoWriteModels(req);
     let sedeId = req.body.sede;
     if (typeof sedeId === 'string') {
       try {
@@ -966,6 +977,12 @@ exports.createAlumno = async (req, res) => {
         // Si no es JSON, se asume que es el id directamente
       }
     }
+
+    const fechaInicioCobro = parseDateInput(req.body.fecha_inicio_cobro);
+    if (!fechaInicioCobro) {
+      return res.status(400).json({ error: 'fecha_inicio_cobro es obligatoria y debe ser valida.' });
+    }
+
     const cedula = (req.body.cedula || '').trim();
     if (cedula && sedeId) {
       const existente = await TenantAlumno.findOne({ cedula, sede: sedeId });
@@ -1039,6 +1056,7 @@ exports.createAlumno = async (req, res) => {
     // 3. Crear alumno con referencia al representante
     const alumnoData = {
       ...req.body,
+      fecha_inicio_cobro: fechaInicioCobro,
       sede: sedeId,
       representante: representante ? representante._id : undefined,
       usuario: user ? user._id : undefined,
@@ -1062,6 +1080,10 @@ exports.createAlumno = async (req, res) => {
     });
     if (alumnoData.habilitar_pago_cuotas !== undefined) {
       alumnoData.habilitar_pago_cuotas = alumnoData.habilitar_pago_cuotas === true || alumnoData.habilitar_pago_cuotas === 'true';
+    }
+    if (alumnoData.aplicar_recargo_mensualidad !== undefined) {
+      alumnoData.aplicar_recargo_mensualidad =
+        alumnoData.aplicar_recargo_mensualidad === true || alumnoData.aplicar_recargo_mensualidad === 'true';
     }
     if (alumnoData.etiquetas) {
       if (typeof alumnoData.etiquetas === 'string') {
@@ -1096,6 +1118,25 @@ exports.createAlumno = async (req, res) => {
 
     const alumno = new TenantAlumno(alumnoData);
     await alumno.save();
+
+    if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
+      try {
+        await generarMensualidadesPendientesAlumno(alumno, {
+          models: {
+            Alumno: TenantAlumno,
+            Mensualidad: TenantMensualidad,
+            PagoDetalle: TenantPagoDetalle,
+            Sede: TenantSede,
+            Reposo: TenantReposo,
+            TenantConfig: TenantConfigModel
+          }
+        });
+      } catch (errGeneracionBeca) {
+        await alumno.deleteOne().catch(() => {});
+        throw new Error(`No se pudo generar mensualidades inmediatas para alumno becado: ${errGeneracionBeca.message}`);
+      }
+    }
+
     res.status(201).json(alumno);
   } catch (err) {
     console.error('Error al crear alumno:', err);
@@ -1133,6 +1174,15 @@ exports.updateAlumno = async (req, res) => {
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
+
+    if (req.body.fecha_inicio_cobro !== undefined) {
+      const fechaInicioCobro = parseDateInput(req.body.fecha_inicio_cobro);
+      if (!fechaInicioCobro) {
+        return res.status(400).json({ error: 'fecha_inicio_cobro es obligatoria y debe ser valida.' });
+      }
+      updateData.fecha_inicio_cobro = fechaInicioCobro;
+    }
+
     let sedeId = updateData.sede;
     if (typeof sedeId === 'string') {
       try {
@@ -1244,6 +1294,10 @@ exports.updateAlumno = async (req, res) => {
     }
     if (updateData.habilitar_pago_cuotas !== undefined) {
       updateData.habilitar_pago_cuotas = updateData.habilitar_pago_cuotas === true || updateData.habilitar_pago_cuotas === 'true';
+    }
+    if (updateData.aplicar_recargo_mensualidad !== undefined) {
+      updateData.aplicar_recargo_mensualidad =
+        updateData.aplicar_recargo_mensualidad === true || updateData.aplicar_recargo_mensualidad === 'true';
     }
     if (updateData.etiquetas) {
       if (typeof updateData.etiquetas === 'string') {

@@ -16,6 +16,8 @@
     "migrate:media": "node scripts/migrar_media_base64_a_archivos.js --apply",
     "qa:multi-tenant": "node scripts/qa_multi_tenant_ab.js",
     "tenant:init-db": "node scripts/initTenantDb.js",
+    "alumnos:migrate:inicio-cobro:dry": "node scripts/migrar_fecha_inicio_cobro.js --all-tenants",
+    "alumnos:migrate:inicio-cobro": "node scripts/migrar_fecha_inicio_cobro.js --all-tenants --apply",
     "mensualidades:repair:sin-detalle:dry": "node scripts/reparar_mensualidades_sin_detalle_a_insolvente.js",
     "mensualidades:repair:sin-detalle": "node scripts/reparar_mensualidades_sin_detalle_a_insolvente.js --apply",
     "tenant:seed:core": "node scripts/seedTenantCore.js"

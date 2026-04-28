@@ -222,6 +222,7 @@ app.use('/api/pagos', require('./routes/pagos'));
 app.use('/api/conciliacion', require('./routes/conciliacion'));
 app.use('/api/constancias', require('./routes/constancias'));
 app.use('/api/cumpleaneros', require('./routes/cumpleaneros'));
+app.use('/api/configuracion', require('./routes/configuracion'));
 app.use('/api/uniformes', require('./routes/uniformes'));
 app.use('/api/aspirantes', require('./routes/aspirantes'));
 app.use('/api/landing', require('./routes/landing'));

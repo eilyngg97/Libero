@@ -250,7 +250,7 @@ function PanelOpcionesUsuario() {
   }, [mensualidades, mensualidadesError, mensualidadesLoading]);
 
   const uniformesPendientesPago = useMemo(
-    () => pedidosUniforme.filter((pedido) => pedido.estado === 'esperando_pago'),
+    () => pedidosUniforme.filter((pedido) => pedido.estado === 'esperando_pago' || pedido.estado === 'abono'),
     [pedidosUniforme]
   );
 
@@ -274,7 +274,7 @@ function PanelOpcionesUsuario() {
     if (uniformesPendientesPago.length > 0) {
       return {
         label: 'Pago pendiente',
-        detalle: `Tienes ${uniformesPendientesPago.length} solicitud${uniformesPendientesPago.length > 1 ? 'es' : ''} de uniforme esperando pago`,
+        detalle: `Tienes ${uniformesPendientesPago.length} solicitud${uniformesPendientesPago.length > 1 ? 'es' : ''} de uniforme con saldo pendiente`,
         color: 'warning'
       };
     }
@@ -307,16 +307,31 @@ function PanelOpcionesUsuario() {
             }}
             action={
               <Button
+                variant="contained"
                 color="inherit"
                 size="small"
                 onClick={() => navigate('/solicitud-uniforme', { state: { alumno, sede } })}
-                sx={{ fontWeight: 700 }}
+                sx={{
+                  fontWeight: 800,
+                  borderRadius: 999,
+                  px: 2,
+                  py: 0.6,
+                  whiteSpace: 'nowrap',
+                  textTransform: 'none',
+                  bgcolor: '#0f172a',
+                  color: '#ffffff',
+                  boxShadow: '0 8px 18px rgba(15, 23, 42, 0.28)',
+                  '&:hover': {
+                    bgcolor: '#020617',
+                    boxShadow: '0 10px 20px rgba(2, 6, 23, 0.38)'
+                  }
+                }}
               >
                 Pagar ahora
               </Button>
             }
           >
-            Tienes {uniformesPendientesPago.length} solicitud{uniformesPendientesPago.length > 1 ? 'es' : ''} de uniforme esperando pago.
+            Tienes {uniformesPendientesPago.length} solicitud{uniformesPendientesPago.length > 1 ? 'es' : ''} de uniforme con saldo pendiente.
           </Alert>
         )}
         <Grid container spacing={4} sx={{ mt: 3 }}>

@@ -8,6 +8,7 @@ const PagoDetalle = require('../models/PagoDetalle');
 const Aspirante = require('../models/Aspirante');
 const Uniforme = require('../models/Uniforme');
 const UniformePedido = require('../models/UniformePedido');
+const TenantConfig = require('../models/TenantConfig');
 const LandingAtletaFoto = require('../models/LandingAtletaFoto');
 const Entrenador = require('../models/Entrenador');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
@@ -23,6 +24,7 @@ const modelSchemaMap = {
   Aspirante: Aspirante.schema,
   Uniforme: Uniforme.schema,
   UniformePedido: UniformePedido.schema,
+  TenantConfig: TenantConfig.schema,
   LandingAtletaFoto: LandingAtletaFoto.schema,
   Entrenador: Entrenador.schema,
   HistorialEstadoAlumno: HistorialEstadoAlumno.schema

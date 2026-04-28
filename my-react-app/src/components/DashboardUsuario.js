@@ -272,42 +272,6 @@ function DashboardUsuario() {
                 </Grid>
               );
             })}
-
-            <Grid item xs={12} sm={6} md={4} sx={{ display: 'flex', justifyContent: 'center' }}>
-              <Card
-                sx={{
-                  width: '100%',
-                  maxWidth: 380,
-                  borderRadius: 3,
-                  minHeight: 330,
-                  border: '2px dashed #cbd5e1',
-                  boxShadow: 'none',
-                  backgroundColor: '#f8fafc',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                  p: 2
-                }}
-              >
-                <Box>
-                  <AddCircleOutlineIcon sx={{ fontSize: 42, color: '#94a3b8', mb: 1 }} />
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#334155' }}>
-                    Inscribir Alumno
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5, mb: 1.5 }}>
-                    Anadir nuevo miembro de la familia
-                  </Typography>
-                  <Button
-                    variant="outlined"
-                    sx={{ borderRadius: 999, textTransform: 'none', fontWeight: 700 }}
-                    onClick={() => window.alert('Para inscribir un nuevo alumno, contacta a la academia.')}
-                  >
-                    Solicitar inscripcion
-                  </Button>
-                </Box>
-              </Card>
-            </Grid>
           </>
         )}
       </Grid>

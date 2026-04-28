@@ -161,6 +161,16 @@ function AlumnoDetalle() {
   const estaRetirado = alumno.dado_de_baja || alumno.activo === false;
   const observacionesTexto = alumno.observaciones?.trim() || 'Sin observaciones registradas';
   const etiquetas = Array.isArray(alumno.etiquetas) ? alumno.etiquetas : [];
+  const getSiNoChipSx = (enabled) => ({
+    width: 46,
+    fontWeight: 700,
+    bgcolor: enabled ? '#dcfce7' : '#fee2e2',
+    color: enabled ? '#166534' : '#b91c1c',
+    '& .MuiChip-label': {
+      px: 0,
+      textAlign: 'center'
+    }
+  });
   const infoItems = [
     { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de nacimiento", value: formatFecha(alumno.fecha_nacimiento) },
     { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de inscripcion", value: formatFecha(alumno.fecha_inscripcion) },
@@ -221,17 +231,25 @@ function AlumnoDetalle() {
                   variant="text"
                   onClick={handleOpenHistorialEstados}
                   sx={{
-                    mt: -0.5,
-                    minHeight: 20,
-                    px: 0,
+                    mt: -0.25,
+                    minHeight: 26,
+                    px: 1.2,
+                    borderRadius: 999,
+                    border: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
                     fontSize: 11,
-                    color: '#64748b',
+                    fontWeight: 700,
+                    color: '#475569',
                     textTransform: 'none',
-                    textDecoration: 'underline',
-                    '&:hover': { backgroundColor: 'transparent', color: '#334155' }
+                    letterSpacing: '0.02em',
+                    '&:hover': {
+                      backgroundColor: '#eef2ff',
+                      borderColor: '#cbd5e1',
+                      color: '#1e293b'
+                    }
                   }}
                 >
-                  Ver historial
+                  Ver historial de bajas
                 </Button>
                 {estaRetirado && (
                   <Box
@@ -294,7 +312,15 @@ function AlumnoDetalle() {
               <Box sx={{ mt: 2, display: 'grid', gap: 1 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b' }}>
                   <Typography sx={{ fontSize: 12, color: '#64748b' }}>Pago en cuotas</Typography>
-                  <Chip label={alumno.habilitar_pago_cuotas ? 'SI' : 'NO'} size="small" sx={{ bgcolor: alumno.habilitar_pago_cuotas ? '#dcfce7' : '#fee2e2', color: alumno.habilitar_pago_cuotas ? '#166534' : '#b91c1c', fontWeight: 700 }} />
+                  <Chip label={alumno.habilitar_pago_cuotas ? 'SI' : 'NO'} size="small" sx={getSiNoChipSx(Boolean(alumno.habilitar_pago_cuotas))} />
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b' }}>
+                  <Typography sx={{ fontSize: 12, color: '#64748b' }}>Aplica recargo mensual</Typography>
+                  <Chip
+                    label={alumno.aplicar_recargo_mensualidad !== false ? 'SI' : 'NO'}
+                    size="small"
+                    sx={getSiNoChipSx(alumno.aplicar_recargo_mensualidad !== false)}
+                  />
                 </Box>
               </Box>
               <Box sx={{ mt: 2, p: 1.5, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>

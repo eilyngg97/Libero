@@ -495,6 +495,7 @@ describe('Backend smoke tests', () => {
       .post('/api/alumnos')
       .set('Authorization', `Bearer ${token}`)
       .field('fecha_inscripcion', '2026-03-06')
+      .field('fecha_inicio_cobro', '2026-03-06')
       .field('nombres', 'Carlos')
       .field('apellidos', 'Perez')
       .field('sede', 's1');

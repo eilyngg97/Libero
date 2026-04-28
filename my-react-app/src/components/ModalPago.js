@@ -13,30 +13,42 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
-const metodos = [
-  {
-    id: 'pago-movil',
-    nombre: 'Pago Móvil',
-    detalles: {
-      banco: 'BANCO BANESCO',
-      telefono: '0412-5228727',
-      cedula: '19433844',
+const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
+
+function buildMetodosFromConfig(config = {}) {
+  const pagos = config?.pagos || {};
+
+  return [
+    {
+      id: 'pago-movil',
+      nombre: 'Pago movil',
+      etiqueta: 'Pago Movil',
+      detalles: {
+        banco: pagos?.pago_movil?.banco || '',
+        telefono: pagos?.pago_movil?.telefono || '',
+        cedula: pagos?.pago_movil?.cedula || '',
+        titular: pagos?.pago_movil?.titular || ''
+      }
+    },
+    {
+      id: 'transferencia',
+      nombre: 'Transferencia',
+      etiqueta: 'Transferencia',
+      detalles: {
+        banco: pagos?.transferencia?.banco || '',
+        cuenta: pagos?.transferencia?.cuenta || '',
+        titular: pagos?.transferencia?.titular || '',
+        cedula: pagos?.transferencia?.cedula || ''
+      }
+    },
+    {
+      id: 'deposito-usd',
+      nombre: 'Deposito USD',
+      etiqueta: 'Deposito USD',
+      instrucciones: pagos?.deposito_usd?.instrucciones || ''
     }
-  },
-  {
-    id: 'transferencia',
-    nombre: 'Transferencia',
-    detalles: {
-      banco: 'BANCO BANESCO',
-      cuenta: '0134-0945-5094-6116-6130',
-      titular: 'EDIXON NELO',
-    }
-  },
-  {
-    id: 'deposito-usd',
-    nombre: 'Depósito USD',
-  }
-];
+  ];
+}
 
 const getTodayInCaracas = () => {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -55,6 +67,9 @@ const getTodayInCaracas = () => {
 };
 
 function ModalPago({ open, onClose, pago, onSuccess }) {
+  const [metodos, setMetodos] = useState([]);
+  const [loadingMetodos, setLoadingMetodos] = useState(false);
+  const [metodosError, setMetodosError] = useState('');
   const [metodoSeleccionado, setMetodoSeleccionado] = useState(null);
   const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
   const [montoPagado, setMontoPagado] = useState('');
@@ -102,6 +117,39 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const referenciaInvalida = !/^[0-9]{6,}$/.test(referencia);
 
   useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    const cargarConfiguracion = async () => {
+      try {
+        setLoadingMetodos(true);
+        setMetodosError('');
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/configuracion/pagos`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'No se pudo cargar configuracion de pagos');
+        if (cancelled) return;
+        setMetodos(buildMetodosFromConfig(data));
+      } catch (err) {
+        if (cancelled) return;
+        setMetodos(buildMetodosFromConfig({}));
+        setMetodosError(err.message || 'No se pudo cargar configuracion de pagos');
+      } finally {
+        if (!cancelled) setLoadingMetodos(false);
+      }
+    };
+
+    cargarConfiguracion();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
     if (!open) {
       setMetodoSeleccionado(null);
       setMostrarFormularioPago(false);
@@ -115,6 +163,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setCopySuccess('');
       setTasaPago(Number(tasa) || null);
       setPreferenciaCuota(null);
+      setMetodosError('');
     }
   }, [open, tasa]);
 
@@ -370,7 +419,12 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       <DialogContent sx={{ px: 3, pb: 2.5, pt: 1.5, bgcolor: '#f8fafc' }}>
         {!metodoSeleccionado ? (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            {metodos.map((m) => (
+            {loadingMetodos && (
+              <Typography variant="body2" sx={{ color: '#64748b' }}>
+                Cargando metodos de pago...
+              </Typography>
+            )}
+            {!loadingMetodos && metodos.map((m) => (
               <Card
                 key={m.id}
                 sx={{
@@ -406,7 +460,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     </Box>
                     <Box>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                        {m.nombre}
+                        {m.etiqueta || m.nombre}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#94a3b8' }}>
                         {m.id === 'pago-movil' && 'Transaccion inmediata'}
@@ -419,6 +473,11 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </CardContent>
               </Card>
             ))}
+            {!loadingMetodos && metodosError && (
+              <Typography variant="caption" sx={{ color: '#dc2626', display: 'block' }}>
+                {metodosError}
+              </Typography>
+            )}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mt: 1 }}>
               <LockIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
               <Typography variant="caption" sx={{ color: '#94a3b8' }}>
@@ -439,10 +498,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
               >
                 <CardContent>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                    {metodoSeleccionado.nombre}
+                    {metodoSeleccionado.etiqueta || metodoSeleccionado.nombre}
                   </Typography>
                   <Typography variant="body2" sx={{ mt: 1, color: '#64748b' }}>
-                    Por favor comunicate con el administrador de la academia para registrar el pago en USD.
+                    {metodoSeleccionado.instrucciones || 'Por favor comunicate con el administrador de la academia para registrar el pago en USD.'}
                   </Typography>
                 </CardContent>
               </Card>

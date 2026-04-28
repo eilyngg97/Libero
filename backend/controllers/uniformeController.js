@@ -21,8 +21,21 @@ exports.getUniformes = async (req, res) => {
 exports.createUniforme = async (req, res) => {
   try {
     const TenantUniforme = await getTenantUniformeModel(req);
-    const { prenda, precio } = req.body;
-    const uniforme = new TenantUniforme({ prenda, precio });
+    const {
+      prenda,
+      precio,
+      lleva_personalizacion_nombre,
+      lleva_numero_franela,
+      franela_representante
+    } = req.body;
+
+    const uniforme = new TenantUniforme({
+      prenda,
+      precio,
+      lleva_personalizacion_nombre: Boolean(lleva_personalizacion_nombre),
+      lleva_numero_franela: Boolean(lleva_numero_franela),
+      franela_representante: Boolean(franela_representante)
+    });
     await uniforme.save();
     res.status(201).json(uniforme);
   } catch (err) {
@@ -34,8 +47,25 @@ exports.updateUniforme = async (req, res) => {
   try {
     const TenantUniforme = await getTenantUniformeModel(req);
     const { id } = req.params;
-    const { prenda, precio } = req.body;
-    const uniforme = await TenantUniforme.findByIdAndUpdate(id, { prenda, precio }, { new: true });
+    const {
+      prenda,
+      precio,
+      lleva_personalizacion_nombre,
+      lleva_numero_franela,
+      franela_representante
+    } = req.body;
+
+    const uniforme = await TenantUniforme.findByIdAndUpdate(
+      id,
+      {
+        prenda,
+        precio,
+        lleva_personalizacion_nombre: Boolean(lleva_personalizacion_nombre),
+        lleva_numero_franela: Boolean(lleva_numero_franela),
+        franela_representante: Boolean(franela_representante)
+      },
+      { new: true }
+    );
     if (!uniforme) return res.status(404).json({ error: 'Uniforme no encontrado' });
     res.json(uniforme);
   } catch (err) {

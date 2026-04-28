@@ -6,6 +6,7 @@ const path = require('path');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
+const { aplicarRecargoMensualidadSegunConfig } = require('./mensualidadController');
 
 const MONTO_TOLERANCIA_BS = 100;
 
@@ -90,13 +91,20 @@ async function getTenantFinanceModels(req) {
   return {
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
-    Alumno: getTenantModel(connection, 'Alumno')
+    Alumno: getTenantModel(connection, 'Alumno'),
+    TenantConfig: getTenantModel(connection, 'TenantConfig')
   };
 }
 
 async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, models = {}) {
   const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
   const AlumnoModel = models.Alumno || Alumno;
+
+  await aplicarRecargoMensualidadSegunConfig(mensualidad, {
+    models,
+    persistir: false
+  });
+
   const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const totalPagado = redondearMonto(pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0));
   const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
