@@ -43,7 +43,7 @@ async function resolveTenants() {
       throw new Error('Debes indicar --tenant-id <id> o --all-tenants');
     }
 
-    return TenantCore.find({ estado: 'active' }).sort({ tenantId: 1 }).lean();
+    return await TenantCore.find({ estado: 'active' }).sort({ tenantId: 1 }).lean();
   } finally {
     await connection.close();
   }
