@@ -44,7 +44,7 @@ function buildFiltro({ anio, incluirExoneradas }) {
 
   if (!incluirExoneradas) {
     filtro.estatus = {
-      $nin: ['Pagado', 'Exonerado', 'Exento por reposo']
+      $nin: ['Pagado', 'Exonerado', 'Exento por reposo', 'Becado']
     };
   }
 
