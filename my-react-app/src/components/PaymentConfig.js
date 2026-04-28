@@ -220,7 +220,7 @@ function PaymentConfig() {
         Configuracion de academia
       </Typography>
       <Typography sx={{ color: '#475569', mb: 2.5 }}>
-        Este modulo centraliza variables de negocio del tenant. Solo el rol admin puede ver y editar estos valores.
+        Este modulo centraliza variables de negocio de la academia. Solo el rol admin puede ver y editar estos valores.
       </Typography>
 
       {error && (
@@ -309,6 +309,7 @@ function PaymentConfig() {
             </Button>
           </Box>
         </Paper>
+
       </Box>
     </Box>
   );

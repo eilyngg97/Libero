@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Torneo = require('../models/Torneo');
 const Partido = require('../models/Partido');
+const Alumno = require('../models/Alumno');
 const { authMiddleware, rolMiddleware } = require('../middleware/auth');
 
 // ...otros endpoints...
@@ -96,7 +97,19 @@ router.post('/', authMiddleware, rolMiddleware('admin'), async (req, res) => {
     const uniqueIds = Array.isArray(convocados)
       ? Array.from(new Set(convocados.filter(Boolean).map((id) => String(id))))
       : [];
-    const convocadosList = uniqueIds.map((alumno) => ({ alumno }));
+
+    // Obtener la categoría actual de cada alumno para guardarla como snapshot
+    const alumnosDocs = await Alumno.find({ _id: { $in: uniqueIds } }, 'categoria');
+    const mapCategorias = {};
+    for (const al of alumnosDocs) {
+      mapCategorias[String(al._id)] = al.categoria || '';
+    }
+
+    const convocadosList = uniqueIds.map((alumno) => ({ 
+      alumno,
+      categoria_snapshot: mapCategorias[alumno] || ''
+    }));
+
     const torneo = await Torneo.create({
       nombre,
       descripcion,
@@ -127,11 +140,23 @@ router.put('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
       );
       const nuevos = Array.isArray(convocados) ? convocados.filter(Boolean) : [];
       const uniqueNuevos = Array.from(new Set(nuevos.map((id) => String(id))));
+      
+      const alumnosDocs = await Alumno.find({ _id: { $in: uniqueNuevos } }, 'categoria');
+      const mapCategorias = {};
+      for (const al of alumnosDocs) {
+        mapCategorias[String(al._id)] = al.categoria || '';
+      }
+
       update.convocados = uniqueNuevos.map((alumnoId) => {
         const key = String(alumnoId);
         const prev = existentes.get(key);
+        // Si el alumno ya existía, podríamos mantener la categoría vieja,
+        // pero por simplicidad se puede guardar el snapshot guardado previamente
+        //  o se actualiza. Lo idóneo es mantener el que tenía para no alterar el pasado,
+        // o si es un torneo actual, tomar el actual de "mapCategorias".
         return {
           alumno: alumnoId,
+          categoria_snapshot: prev?.categoria_snapshot || mapCategorias[key] || '',
           estado: prev?.estado || 'pendiente',
           respondido_en: prev?.respondido_en || null
         };
@@ -198,6 +223,7 @@ router.post('/:id/partidos', authMiddleware, rolMiddleware('admin'), async (req,
     // Copiar los convocados del torneo al partido (estado pendiente)
     const convocadosPartido = (torneo.convocados || []).map(c => ({
       alumno: c.alumno,
+      categoria_snapshot: c.categoria_snapshot || '',
       estado: 'pendiente',
       respondido_en: null
     }));

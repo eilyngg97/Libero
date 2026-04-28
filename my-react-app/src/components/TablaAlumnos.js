@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSede } from '../context/SedeContext';
 import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
@@ -9,7 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Chip, Box, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
+import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Chip, Box, MenuItem, Select, FormControl, InputLabel, Checkbox } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -24,6 +24,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import { mediaUrl } from '../utils/mediaUrl';
+import { CATEGORIAS_DISPONIBLES } from '../utils/categoria';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return '';
@@ -59,6 +60,13 @@ function obtenerEstadoAlumno(alumno) {
   return alumno?.estado || 'Activo';
 }
 
+function obtenerSexoAlumno(alumno) {
+  const raw = String(alumno?.sexo || '').trim().toLowerCase();
+  if (raw === 'femenino') return 'Femenino';
+  if (raw === 'masculino') return 'Masculino';
+  return '-';
+}
+
 const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
 
 function normalizeMetodoPago(value) {
@@ -92,6 +100,8 @@ function TablaAlumnos() {
       const [filtroNombreApellido, setFiltroNombreApellido] = useState('');
       const [filtroFechaNacimientoDesde, setFiltroFechaNacimientoDesde] = useState('');
       const [filtroFechaNacimientoHasta, setFiltroFechaNacimientoHasta] = useState('');
+      const [filtroSexo, setFiltroSexo] = useState('');
+      const [filtroCategoria, setFiltroCategoria] = useState([]);
       const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
       const [filtroEstado, setFiltroEstado] = useState('');
     // Formatear fecha a DD/MM/YYYY (corrige desfase por zona horaria)
@@ -160,13 +170,14 @@ function TablaAlumnos() {
     const data = alumnosActivos.map(a => ({
       Nombre: a.nombres,
       Apellido: a.apellidos,
+      Sexo: obtenerSexoAlumno(a),
       Fecha_Nacimiento: formatFecha(a.fecha_nacimiento),
       Edad: calcularEdad(a.fecha_nacimiento),
       Cedula: a.cedula,
       Representante: a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
       Telefono: a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-'),
     }));
-    const headers = ['Nombre', 'Apellido', 'Fecha_Nacimiento', 'Edad', 'Cedula', 'Representante', 'Telefono'];
+    const headers = ['Nombre', 'Apellido', 'Sexo', 'Fecha_Nacimiento', 'Edad', 'Cedula', 'Representante', 'Telefono'];
     exportToCsv(
       data,
       `alumnos${sedeSeleccionada && sedeSeleccionada.nombre ? '_' + sedeSeleccionada.nombre.replace(/\s+/g, '_') : ''}.csv`,
@@ -177,11 +188,12 @@ function TablaAlumnos() {
   // Función para descargar PDF
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
-    const columns = ["N°", "Nombre", "Apellido", "Fecha de Nacimiento", "Edad", "Cedula", "Representante", "Telefono"];
+    const columns = ["N°", "Nombre", "Apellido", "Sexo", "Fecha de Nacimiento", "Edad", "Cedula", "Representante", "Telefono"];
     const rows = alumnosFiltrados.map((a, i) => [
       i + 1,
       a.nombres,
       a.apellidos,
+      obtenerSexoAlumno(a),
       formatFecha(a.fecha_nacimiento),
       calcularEdad(a.fecha_nacimiento),
       a.cedula,
@@ -336,30 +348,31 @@ function TablaAlumnos() {
     }
   };
 
-  useEffect(() => {
-    const fetchAlumnos = async () => {
-      setLoading(true);
+  const fetchAlumnos = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos?incluirBajas=1`);
+      if (!res.ok) throw new Error('Error al obtener alumnos');
+      let data;
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos?incluirBajas=1`);
-        if (!res.ok) throw new Error('Error al obtener alumnos');
-        let data;
-        try {
-          data = await res.json();
-        } catch (jsonErr) {
-          // Si la respuesta no es JSON, intenta leer el texto y mostrarlo como error
-          const text = await res.text();
-          throw new Error('Respuesta inesperada del servidor: ' + text.substring(0, 200));
-        }
-        setAlumnos(data);
-        setError(null);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+        data = await res.json();
+      } catch (jsonErr) {
+        // Si la respuesta no es JSON, intenta leer el texto y mostrarlo como error
+        const text = await res.text();
+        throw new Error('Respuesta inesperada del servidor: ' + text.substring(0, 200));
       }
-    };
-    fetchAlumnos();
+      setAlumnos(data);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchAlumnos();
+  }, [fetchAlumnos]);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -374,6 +387,8 @@ function TablaAlumnos() {
     setFiltroNombreApellido('');
     setFiltroFechaNacimientoDesde('');
     setFiltroFechaNacimientoHasta('');
+    setFiltroSexo('');
+    setFiltroCategoria([]);
     setFiltroTipoMensualidad('');
     setFiltroEstado('');
     setPage(0);
@@ -395,13 +410,20 @@ function TablaAlumnos() {
     const fechaDesdeMatch = !fechaDesde || (fechaNacimientoAlumno && fechaNacimientoAlumno >= fechaDesde);
     const fechaHastaMatch = !fechaHasta || (fechaNacimientoAlumno && fechaNacimientoAlumno <= fechaHasta);
 
+    const sexoAlumno = String(obtenerSexoAlumno(a)).toLowerCase();
+    const sexoMatch = filtroSexo === '' || sexoAlumno === filtroSexo.toLowerCase();
+
+    const categoriaAlumno = String(a.categoria || '').trim().toUpperCase();
+    const categoriasSeleccionadas = (filtroCategoria || []).map((item) => String(item).toUpperCase());
+    const categoriaMatch = categoriasSeleccionadas.length === 0 || categoriasSeleccionadas.includes(categoriaAlumno);
+
     const tipoMensualidad = obtenerTipoMensualidadKey(a);
     const tipoMensualidadMatch = filtroTipoMensualidad === '' || tipoMensualidad === filtroTipoMensualidad;
 
     const estadoAlumno = String(obtenerEstadoAlumno(a)).toLowerCase();
     const estadoMatch = filtroEstado === '' || estadoAlumno === filtroEstado.toLowerCase();
 
-    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && tipoMensualidadMatch && estadoMatch;
+    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch;
   });
   const alumnosPaginados = alumnosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
@@ -455,7 +477,7 @@ function TablaAlumnos() {
           mb: 2,
           display: 'grid',
           gap: 2,
-          gridTemplateColumns: { xs: '1fr', md: 'repeat(6, minmax(0, 1fr))' }
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(8, minmax(0, 1fr))' }
         }}
       >
         <Box>
@@ -497,6 +519,47 @@ function TablaAlumnos() {
             sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
             InputLabelProps={{ shrink: true }}
           />
+        </Box>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>SEXO</Typography>
+          <TextField
+            select
+            size="small"
+            value={filtroSexo}
+            onChange={(e) => setFiltroSexo(e.target.value)}
+            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
+          >
+            <MenuItem value="">Todos</MenuItem>
+            <MenuItem value="Femenino">Femenino</MenuItem>
+            <MenuItem value="Masculino">Masculino</MenuItem>
+          </TextField>
+        </Box>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>CATEGORÍA</Typography>
+          <FormControl size="small" sx={{ width: '100%' }}>
+            <Select
+              multiple
+            size="small"
+            value={filtroCategoria}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFiltroCategoria(typeof value === 'string' ? value.split(',') : value);
+              }}
+              displayEmpty
+              renderValue={(selected) => {
+                if (!selected || selected.length === 0) return 'Todas';
+                return selected.join(', ');
+              }}
+              sx={{ '& .MuiSelect-select': { py: 0.8, fontSize: 13 } }}
+            >
+              {CATEGORIAS_DISPONIBLES.map((categoria) => (
+                <MenuItem key={categoria} value={categoria}>
+                  <Checkbox size="small" checked={filtroCategoria.includes(categoria)} />
+                  <Typography sx={{ fontSize: 13 }}>{categoria}</Typography>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
         <Box>
           <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>TIPO MENSUALIDAD</Typography>
@@ -597,6 +660,12 @@ function TablaAlumnos() {
               </Box>
 
               <Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
+                  <strong>Sexo:</strong> {obtenerSexoAlumno(alumno)}
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
+                  <strong>Categoría:</strong> {alumno.categoria || '-'}
+                </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Tipo de mensualidad:</strong> {obtenerTipoMensualidad(alumno)}
                 </Typography>
@@ -706,6 +775,8 @@ function TablaAlumnos() {
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE DEL ALUMNO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>EDAD</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEXO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORÍA</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>TIPO DE MENSUALIDAD</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>REPRESENTANTE</TableCell>
@@ -738,6 +809,8 @@ function TablaAlumnos() {
                     </Box>
                   </TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{calcularEdad(alumno.fecha_nacimiento)}</TableCell>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{obtenerSexoAlumno(alumno)}</TableCell>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{alumno.categoria || '-'}</TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
                     {obtenerTipoMensualidad(alumno)}
                   </TableCell>

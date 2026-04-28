@@ -106,6 +106,42 @@ function normalizarCategoria(valor) {
   return String(valor || '').trim().toUpperCase();
 }
 
+function normalizarSexo(valor) {
+  if (valor === undefined || valor === null) return undefined;
+  const raw = String(valor).trim().toLowerCase();
+  if (!raw) return undefined;
+
+  if (raw === 'f' || raw === 'femenino' || raw === 'femenina') {
+    return 'Femenino';
+  }
+
+  if (raw === 'm' || raw === 'masculino') {
+    return 'Masculino';
+  }
+
+  return null;
+}
+
+function normalizarDivision(valor) {
+  if (valor === undefined || valor === null) return undefined;
+  const raw = String(valor).trim().toLowerCase();
+  if (!raw) return undefined;
+
+  if (raw === 'primer division' || raw === 'primera division' || raw === 'primera división' || raw === 'primer division') {
+    return 'Primer division';
+  }
+
+  if (raw === 'segunda division' || raw === 'segunda división') {
+    return 'Segunda division';
+  }
+
+  if (raw === 'tercera division' || raw === 'tercera división') {
+    return 'Tercera division';
+  }
+
+  return null;
+}
+
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -164,6 +200,7 @@ function normalizarModalidadCobroParcial(modalidad) {
 
 function parseDateInput(value) {
   const raw = String(value || '').trim();
+  if (!raw) return null;
   const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 
   if (matchIso) {
@@ -1004,11 +1041,13 @@ exports.createAlumno = async (req, res) => {
         return res.status(400).json({ error: 'Faltan campos obligatorios del representante', detalle: missingRepFields });
       }
       const repData = {
-        nombres: req.body.rep_nombres,
-        apellidos: req.body.rep_apellidos,
-        cedula: req.body.rep_cedula,
-        telefono: req.body.rep_telefono,
-        domicilio: req.body.rep_domicilio || ''
+        nombres: String(req.body.rep_nombres || '').trim(),
+        apellidos: String(req.body.rep_apellidos || '').trim(),
+        cedula: String(req.body.rep_cedula || '').trim(),
+        telefono: String(req.body.rep_telefono || '').trim(),
+        fecha_nacimiento: parseDateInput(req.body.rep_fecha_nacimiento),
+        correo: String(req.body.rep_correo || '').trim(),
+        direccion: String(req.body.rep_direccion || req.body.rep_domicilio || '').trim()
       };
       representante = await TenantRepresentante.findOne({ cedula: repData.cedula });
       user = await TenantUser.findOne({ email: repData.cedula });
@@ -1065,6 +1104,28 @@ exports.createAlumno = async (req, res) => {
     if (alumnoData.categoria !== undefined) {
       alumnoData.categoria = normalizarCategoria(alumnoData.categoria);
     }
+    if (Object.prototype.hasOwnProperty.call(alumnoData, 'division')) {
+      const divisionNormalizada = normalizarDivision(alumnoData.division);
+      if (divisionNormalizada === null) {
+        return res.status(400).json({ error: 'El campo division debe ser Primer division, Segunda division o Tercera division.' });
+      }
+      if (divisionNormalizada === undefined) {
+        delete alumnoData.division;
+      } else {
+        alumnoData.division = divisionNormalizada;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(alumnoData, 'sexo')) {
+      const sexoNormalizado = normalizarSexo(alumnoData.sexo);
+      if (sexoNormalizado === null) {
+        return res.status(400).json({ error: 'El campo sexo debe ser Femenino o Masculino.' });
+      }
+      if (sexoNormalizado === undefined) {
+        delete alumnoData.sexo;
+      } else {
+        alumnoData.sexo = sexoNormalizado;
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(alumnoData, 'numero_franela')) {
       const nro = normalizarNumeroFranela(alumnoData.numero_franela);
       if (nro === undefined) {
@@ -1104,6 +1165,9 @@ exports.createAlumno = async (req, res) => {
     delete alumnoData.rep_parentesco;
     delete alumnoData.rep_telefono;
     delete alumnoData.rep_domicilio;
+    delete alumnoData.rep_fecha_nacimiento;
+    delete alumnoData.rep_correo;
+    delete alumnoData.rep_direccion;
 
     // Si hay archivo de foto, guardar solo la URL pública
     if (req.files && req.files['foto'] && req.files['foto'][0]) {
@@ -1198,19 +1262,32 @@ exports.updateAlumno = async (req, res) => {
     const repCedulaInput = req.body.rep_cedula !== undefined ? String(req.body.rep_cedula || '').trim() : undefined;
     const repTelefonoInput = req.body.rep_telefono !== undefined ? String(req.body.rep_telefono || '').trim() : undefined;
     const repDomicilioInput = req.body.rep_domicilio !== undefined ? String(req.body.rep_domicilio || '').trim() : undefined;
+    const repFechaNacimientoInput = req.body.rep_fecha_nacimiento !== undefined
+      ? parseDateInput(req.body.rep_fecha_nacimiento)
+      : undefined;
+    const repCorreoInput = req.body.rep_correo !== undefined ? String(req.body.rep_correo || '').trim() : undefined;
+    const repDireccionInput = req.body.rep_direccion !== undefined
+      ? String(req.body.rep_direccion || '').trim()
+      : repDomicilioInput;
 
     const hayCambiosRepresentante =
       repNombresInput !== undefined ||
       repApellidosInput !== undefined ||
       repCedulaInput !== undefined ||
       repTelefonoInput !== undefined ||
-      repDomicilioInput !== undefined;
+      repDomicilioInput !== undefined ||
+      repFechaNacimientoInput !== undefined ||
+      repCorreoInput !== undefined ||
+      repDireccionInput !== undefined;
 
     delete updateData.rep_nombres;
     delete updateData.rep_apellidos;
     delete updateData.rep_cedula;
     delete updateData.rep_telefono;
     delete updateData.rep_domicilio;
+    delete updateData.rep_fecha_nacimiento;
+    delete updateData.rep_correo;
+    delete updateData.rep_direccion;
 
     if (hayCambiosRepresentante) {
       const representanteObjetivoId = updateData.representante !== undefined
@@ -1252,8 +1329,14 @@ exports.updateAlumno = async (req, res) => {
       if (repTelefonoInput !== undefined) {
         representanteActual.telefono = repTelefonoInput;
       }
-      if (repDomicilioInput !== undefined) {
-        representanteActual.domicilio = repDomicilioInput;
+      if (repFechaNacimientoInput !== undefined) {
+        representanteActual.fecha_nacimiento = repFechaNacimientoInput;
+      }
+      if (repCorreoInput !== undefined) {
+        representanteActual.correo = repCorreoInput;
+      }
+      if (repDireccionInput !== undefined) {
+        representanteActual.direccion = repDireccionInput;
       }
       await sincronizarUsuarioPortalRepresentante({
         representante: representanteActual,
@@ -1271,6 +1354,20 @@ exports.updateAlumno = async (req, res) => {
     }
     if (updateData.categoria !== undefined) {
       updateData.categoria = normalizarCategoria(updateData.categoria);
+    }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'division')) {
+      const divisionNormalizada = normalizarDivision(updateData.division);
+      if (divisionNormalizada === null) {
+        return res.status(400).json({ error: 'El campo division debe ser Primer division, Segunda division o Tercera division.' });
+      }
+      updateData.division = divisionNormalizada || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'sexo')) {
+      const sexoNormalizado = normalizarSexo(updateData.sexo);
+      if (sexoNormalizado === null) {
+        return res.status(400).json({ error: 'El campo sexo debe ser Femenino o Masculino.' });
+      }
+      updateData.sexo = sexoNormalizado || null;
     }
     if (Object.prototype.hasOwnProperty.call(updateData, 'numero_franela')) {
       const nro = normalizarNumeroFranela(updateData.numero_franela);
@@ -2095,5 +2192,92 @@ exports.eliminarReposoAlumno = async (req, res) => {
     return res.json({ message: 'Reposo eliminado' });
   } catch (err) {
     return res.status(500).json({ error: 'Error al eliminar reposo', detalle: err.message });
+  }
+};
+
+// ======================= ASIGNACION MASIVA DE CATEGORIAS =======================
+const CATEGORIAS_DISPONIBLES = [
+  'U9',
+  'U11',
+  'U13',
+  'U15',
+  'U17',
+  'U19',
+  'U21',
+  'U23',
+  'MAYORES / LIBRE'
+];
+
+function getCategoriaPorFechaNacimiento(fechaNacimiento) {
+  if (!fechaNacimiento) return '';
+
+  let nacimiento = null;
+
+  if (fechaNacimiento instanceof Date && !Number.isNaN(fechaNacimiento.getTime())) {
+    nacimiento = fechaNacimiento;
+  } else {
+    const raw = String(fechaNacimiento).trim();
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      nacimiento = parsed;
+    }
+  }
+
+  if (!nacimiento || Number.isNaN(nacimiento.getTime())) return '';
+
+  const hoy = new Date();
+  let edadDeportiva = hoy.getFullYear() - nacimiento.getFullYear();
+  const mesDiff = hoy.getMonth() - nacimiento.getMonth();
+  if (mesDiff < 0 || (mesDiff === 0 && hoy.getDate() < nacimiento.getDate())) {
+    edadDeportiva -= 1;
+  }
+
+  if (edadDeportiva <= 8) return CATEGORIAS_DISPONIBLES[0];
+  if (edadDeportiva <= 10) return CATEGORIAS_DISPONIBLES[1];
+  if (edadDeportiva <= 12) return CATEGORIAS_DISPONIBLES[2];
+  if (edadDeportiva <= 14) return CATEGORIAS_DISPONIBLES[3];
+  if (edadDeportiva <= 16) return CATEGORIAS_DISPONIBLES[4];
+  if (edadDeportiva <= 18) return CATEGORIAS_DISPONIBLES[5];
+  if (edadDeportiva <= 20) return CATEGORIAS_DISPONIBLES[6];
+  if (edadDeportiva <= 22) return CATEGORIAS_DISPONIBLES[7];
+  return CATEGORIAS_DISPONIBLES[8];
+}
+
+exports.asignarCategoriasMasivamente = async (req, res) => {
+  try {
+    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
+    const alumnos = await TenantAlumno.find({ 
+      activo: { $ne: false }, 
+      dado_de_baja: { $ne: true } 
+    }).select('_id categoria fecha_nacimiento');
+    const operaciones = [];
+    
+    for (const alumno of alumnos) {
+      if (alumno.fecha_nacimiento) {
+        const nuevaCat = getCategoriaPorFechaNacimiento(alumno.fecha_nacimiento);
+        const categoriaActual = String(alumno.categoria || '').trim();
+        if (nuevaCat && categoriaActual !== nuevaCat) {
+          operaciones.push({
+            updateOne: {
+              filter: { _id: alumno._id },
+              update: { $set: { categoria: nuevaCat } }
+            }
+          });
+        }
+      }
+    }
+
+    let actualizados = 0;
+    if (operaciones.length > 0) {
+      const resultado = await TenantAlumno.bulkWrite(operaciones, { ordered: false });
+      actualizados = Number(resultado.modifiedCount || 0);
+    }
+    
+    return res.json({ 
+      message: `Categorías asignadas correctamente. Se actualizaron ${actualizados} alumno(s).` 
+    });
+  } catch (err) {
+    console.error('Error en asignarCategoriasMasivamente:', err);
+    return res.status(500).json({ error: 'Error del servidor al asignar categorias masivamente', detalle: err.message });
   }
 };

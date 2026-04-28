@@ -53,7 +53,8 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
         text: 'Configuraciones',
         icon: <SettingsIcon />,
         children: [
-          { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' }
+          { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' },
+          { text: 'General', icon: <SettingsIcon />, path: '/config-general' }
         ]
       },
       { text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' },

@@ -15,6 +15,7 @@ const PartidoSchema = new mongoose.Schema({
   convocados: [
     {
       alumno: { type: mongoose.Schema.Types.ObjectId, ref: 'Alumno', required: true },
+      categoria_snapshot: { type: String }, // Guardar la categoría del alumno al ser convocado
       estado: { type: String, enum: ['pendiente', 'aceptado', 'rechazado'], default: 'pendiente' },
       respondido_en: { type: Date }
     }

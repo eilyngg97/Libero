@@ -175,6 +175,7 @@ function AlumnoDetalle() {
     { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de nacimiento", value: formatFecha(alumno.fecha_nacimiento) },
     { icon: <CalendarMonthIcon sx={{ fontSize: 16 }} />, label: "Fecha de inscripcion", value: formatFecha(alumno.fecha_inscripcion) },
     { icon: <EmojiPeopleIcon sx={{ fontSize: 16 }} />, label: "Edad", value: `${calcularEdad(alumno.fecha_nacimiento)} Años` },
+    { icon: <PersonIcon sx={{ fontSize: 16 }} />, label: "Sexo", value: alumno.sexo || "-" },
     { icon: <BadgeIcon sx={{ fontSize: 16 }} />, label: "Cedula", value: alumno.cedula || "-" },
     { icon: <SportsVolleyballIcon sx={{ fontSize: 16 }} />, label: "Nro de franela", value: alumno.numero_franela || "-" },
     { icon: <ShowChartIcon sx={{ fontSize: 16 }} />, label: "Tipo de mensualidad", value: formatTipoMensualidad(alumno.tipo_mensualidad) }
@@ -458,7 +459,7 @@ function AlumnoDetalle() {
                   </Box>
                   <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>Datos del Representante</Typography>
                 </Box>
-                <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: 'flex-start', gap: 2 }}>
                   <Avatar sx={{ width: 64, height: 64, bgcolor: '#e2e8f0', color: '#475569' }}>
                     {representante?.nombres ? representante.nombres[0] : 'R'}
                   </Avatar>
@@ -470,11 +471,36 @@ function AlumnoDetalle() {
                       {alumno?.parentesco || '-'}
                     </Typography>
                   </Box>
-                  <Box sx={{ ml: 'auto', textAlign: 'right' }}>
-                    <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>DOCUMENTO DE IDENTIDAD</Typography>
-                    <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.cedula || '-'}</Typography>
-                    <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em', mt: 1 }}>TELEFONO DE CONTACTO</Typography>
-                    <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.telefono || '-'}</Typography>
+                  <Box
+                    sx={{
+                      ml: 'auto',
+                      width: '100%',
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                      gap: 1.25,
+                      alignSelf: 'stretch'
+                    }}
+                  >
+                    <Box>
+                      <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>DOCUMENTO DE IDENTIDAD</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.cedula || '-'}</Typography>
+                    </Box>
+                    <Box>
+                      <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>FECHA DE NACIMIENTO</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{formatFecha(representante?.fecha_nacimiento)}</Typography>
+                    </Box>
+                    <Box>
+                      <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>TELEFONO DE CONTACTO</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.telefono || '-'}</Typography>
+                    </Box>
+                    <Box>
+                      <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>CORREO</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.correo || '-'}</Typography>
+                    </Box>
+                    <Box sx={{ gridColumn: { xs: 'auto', sm: '1 / -1' } }}>
+                      <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>DIRECCION</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.direccion || representante?.domicilio || '-'}</Typography>
+                    </Box>
                   </Box>
                 </Paper>
               </Paper>

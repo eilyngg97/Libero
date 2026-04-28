@@ -13,7 +13,7 @@ import { MenuItem, FormControl, InputLabel, Select, TextField, Autocomplete, Cir
 import './Alumnos.css';
 import { useDolar } from '../context/DolarContext';
 import { metodoRequiereReferencia, normalizeMetodoPago } from '../utils/paymentMethod';
-import { getCategoriaPorFechaNacimiento } from '../utils/categoria';
+import { getCategoriaPorFechaNacimiento, CATEGORIAS_DISPONIBLES } from '../utils/categoria';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -31,6 +31,8 @@ const PARENTESCOS = [
 ];
 
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
+const SEXOS = ['Femenino', 'Masculino'];
+const DIVISIONES = ['Primera división', 'Segunda división', 'Tercera división'];
 
 
 // Opciones de tipo de mensualidad
@@ -56,6 +58,8 @@ function Alumnos() {
   const [form, setForm] = useState({
     fecha_inscripcion: new Date().toISOString().split('T')[0],
     fecha_inicio_cobro: new Date().toISOString().split('T')[0],
+    division: '',
+    sexo: '',
     tipo_mensualidad: 'monto_sede',
     numero_franela: '',
     habilitar_pago_cuotas: false,
@@ -127,6 +131,8 @@ function Alumnos() {
   const [categoria, setCategoria] = useState('');
   const navigate = useNavigate();
   const { dolar } = useDolar();
+  const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+  const esAdmin = rolActual === 'admin' || rolActual === 'administrador';
 
   const montoInscripcionNum = Number(montoInscripcion) || 0;
   const montoPrimeraMensualidadNum = Number(montoMensualidad) || 0;
@@ -487,6 +493,8 @@ function Alumnos() {
       setForm({
         fecha_inscripcion: new Date().toISOString().split('T')[0],
         fecha_inicio_cobro: new Date().toISOString().split('T')[0],
+        division: '',
+        sexo: '',
         tipo_mensualidad: 'monto_sede',
         numero_franela: '',
         habilitar_pago_cuotas: false,
@@ -517,6 +525,7 @@ function Alumnos() {
       {key: 'fecha_inicio_cobro', label: 'Fecha de inicio de cobro' },
       { key: 'nombres', label: 'Nombres del alumno' },
       { key: 'apellidos', label: 'Apellidos del alumno' },
+      { key: 'sexo', label: 'Sexo' },
       { key: 'sede', label: 'Sede' },
     ];
     // Solo pedir datos de representante si NO está tildado sinRepresentante
@@ -791,14 +800,69 @@ function Alumnos() {
             />
           </div>
           <div className="form-row">
-            <TextField id="outlined-basic-categoria" disabled label="Categoría asignada" name="categoria" variant="outlined" value={categoria} InputProps={{ readOnly: true }} fullWidth size="small" helperText="Se asigna automáticamente" sx={{ my: 1 }} />
+            <TextField id="outlined-basic-fecha-nacimiento" label="Fecha de nacimiento" name="fecha_nacimiento" type="date" variant="outlined" value={form.fecha_nacimiento || ''} onChange={handleChange} fullWidth size="small" InputLabelProps={{ shrink: true }} sx={{ my: 1 }} />
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="sexo-label">Sexo *</InputLabel>
+              <Select
+                labelId="sexo-label"
+                id="select-sexo"
+                name="sexo"
+                value={form.sexo || ''}
+                label="Sexo *"
+                onChange={handleChange}
+              >
+                <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                {SEXOS.map((sexo) => (
+                  <MenuItem key={sexo} value={sexo}>{sexo}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </div>
           <div className="form-row">
             <TextField id="outlined-basic-nombres" label="Nombres *" name="nombres" variant="outlined" value={form.nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
             <TextField id="outlined-basic-apellidos" label="Apellidos *" name="apellidos" variant="outlined" value={form.apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
-            <TextField id="outlined-basic-fecha-nacimiento" label="Fecha de nacimiento" name="fecha_nacimiento" type="date" variant="outlined" value={form.fecha_nacimiento || ''} onChange={handleChange} fullWidth size="small" InputLabelProps={{ shrink: true }} sx={{ my: 1 }} />
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="categoria-label">{esAdmin ? 'Categoría' : 'Categoría asignada'}</InputLabel>
+              <Select
+                labelId="categoria-label"
+                id="select-categoria"
+                name="categoria"
+                value={form.categoria || categoria || ''}
+                label={esAdmin ? 'Categoría' : 'Categoría asignada'}
+                onChange={handleChange}
+                disabled={!esAdmin}
+              >
+                {CATEGORIAS_DISPONIBLES.map((cat) => (
+                  <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                ))}
+                {!!(form.categoria || categoria) && !CATEGORIAS_DISPONIBLES.includes(form.categoria || categoria) && (
+                  <MenuItem value={form.categoria || categoria}>{form.categoria || categoria}</MenuItem>
+                )}
+              </Select>
+              <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
+                {esAdmin ? 'Se asigna automáticamente, pero puedes ajustarla.' : 'Se asigna automáticamente'}
+              </Typography>
+            </FormControl>
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="division-label">División</InputLabel>
+              <Select
+                labelId="division-label"
+                id="select-division"
+                name="division"
+                value={form.division || ''}
+                label="División"
+                onChange={handleChange}
+              >
+                <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                {DIVISIONES.map((division) => (
+                  <MenuItem key={division} value={division}>{division}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </div>
+          <div className="form-row">
             <TextField
               id="outlined-basic-numero-franela"
               label="Nro de franela"
@@ -827,8 +891,6 @@ function Alumnos() {
                 <MenuItem key={nro} value={String(nro)}>{nro}</MenuItem>
               ))}
             </TextField>
-          </div>
-          <div className="form-row">
             <TextField
               id="outlined-basic-cedula"
               label="Cédula"
@@ -842,6 +904,8 @@ function Alumnos() {
               helperText={cedulaDuplicada ? cedulaCheckMsg : (cedulaCheckLoading ? 'Verificando cédula...' : '')}
               sx={{ my: 1 }}
             />
+          </div>
+          <div className="form-row">
             <FormControl fullWidth sx={{ my: 1 }}>
               <InputLabel id="monto-personalizado-label">Tipo de monto mensualidad</InputLabel>
               <Select
@@ -857,23 +921,6 @@ function Alumnos() {
                 ))}
               </Select>
             </FormControl>
-            {form.tipo_mensualidad === 'monto_personalizado' && (
-              <TextField
-                id="input-monto-personalizado"
-                label="Monto personalizado"
-                name="monto_personalizado_valor"
-                type="number"
-                variant="outlined"
-                value={form.monto_personalizado_valor || ''}
-                onChange={handleChange}
-                fullWidth
-                size="small"
-                sx={{ mt: 1 }}
-              />
-            )}
-          </div>
-          
-          <div className="form-row">
             <FormControl fullWidth required sx={{ my: 1 }}>
               <InputLabel id="sede-label">Sede</InputLabel>
                 <Select
@@ -889,21 +936,38 @@ function Alumnos() {
                   {form.sede?.nombre && <MenuItem value={form.sede.nombre}>{form.sede.nombre}</MenuItem>}
                 </Select>
             </FormControl>
+          </div>
+          {form.tipo_mensualidad === 'monto_personalizado' && (
+            <div className="form-row">
+              <TextField
+                id="input-monto-personalizado"
+                label="Monto personalizado"
+                name="monto_personalizado_valor"
+                type="number"
+                variant="outlined"
+                value={form.monto_personalizado_valor || ''}
+                onChange={handleChange}
+                fullWidth
+                size="small"
+                sx={{ my: 1 }}
+              />
+              <Box sx={{ my: 1 }} />
+            </div>
+          )}
+          <div className="form-row">
             <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+            <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
           </div>
           <div className="form-row">
-             <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
             <TextField id="outlined-basic-peso" InputProps={{ endAdornment: <InputAdornment position="end">kg</InputAdornment> }} label="Peso" name="peso" variant="outlined" value={form.peso || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-          </div>
-          <div className="form-row">
             <TextField id="outlined-basic-talla" InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment> }} label="Talla" name="talla" variant="outlined" value={form.talla || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+          </div>
+          <div className="form-row">
             <TextField id="outlined-basic-proyeccion" label="Proyección" name="proyeccion" variant="outlined" value={form.proyeccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-          </div>
-          <div className="form-row">
             <TextField id="outlined-basic-alcance" InputProps={{ endAdornment: <InputAdornment position="end">m</InputAdornment> }} label="Alcance" name="alcance" variant="outlined" value={form.alcance || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-            <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
+            <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
             <FormControl fullWidth size="small" sx={{ my: 1 }}>
               <InputLabel id="tipo-sangre-label">Tipo de sangre</InputLabel>
               <Select
@@ -920,13 +984,13 @@ function Alumnos() {
                 ))}
               </Select>
             </FormControl>
+          </div>
+          <div className="form-row">
            <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-          </div>
-          <div className="form-row">
             <TextField id="outlined-basic-alergias" label="Alergias" name="alergias" variant="outlined" value={form.alergias || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-            <TextField id="outlined-basic-observaciones" label="Observaciones" name="observaciones" variant="outlined" value={form.observaciones || ''} onChange={handleChange} fullWidth size="small" multiline minRows={2} sx={{ my: 1 }} />
           </div>
           <div className="form-row">
+            <TextField id="outlined-basic-observaciones" label="Observaciones" name="observaciones" variant="outlined" value={form.observaciones || ''} onChange={handleChange} fullWidth size="small" multiline minRows={2} sx={{ my: 1 }} />
             <Autocomplete
               multiple
               freeSolo
@@ -935,7 +999,7 @@ function Alumnos() {
               onChange={(event, newValue) => {
                 setForm(prev => ({ ...prev, etiquetas: newValue }));
               }}
-              sx={{ width: '49%' }}
+              sx={{ width: '100%' }}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -968,6 +1032,10 @@ function Alumnos() {
         <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
           <legend>Datos del Representante</legend>
           <div className="form-row">
+            <TextField id="outlined-basic-rep-nombres" label="Nombres del representante *" name="rep_nombres" variant="outlined" value={form.rep_nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+            <TextField id="outlined-basic-rep-apellidos" label="Apellidos del representante *" name="rep_apellidos" variant="outlined" value={form.rep_apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+          </div>
+          <div className="form-row">
             <Autocomplete
               freeSolo
               id="autocomplete-rep-cedula"
@@ -975,12 +1043,10 @@ function Alumnos() {
               getOptionLabel={option => option.cedula ? `${option.cedula} - ${option.nombres} ${option.apellidos}` : ''}
               inputValue={form.rep_cedula || ''}
               onInputChange={(event, newInputValue, reason) => {
-                // Si el usuario escribe, solo setea el texto
                 if (reason === 'input') {
                   setForm(prev => ({ ...prev, rep_cedula: newInputValue }));
                   buscarOpcionesRepresentantes(newInputValue);
                 }
-                // Si selecciona una opción, setea solo la cédula
                 if (reason === 'reset' && newInputValue) {
                   const cedulaSolo = newInputValue.split(' - ')[0];
                   setForm(prev => ({ ...prev, rep_cedula: cedulaSolo }));
@@ -994,6 +1060,9 @@ function Alumnos() {
                     rep_nombres: value.nombres,
                     rep_apellidos: value.apellidos,
                     rep_telefono: value.telefono,
+                    rep_fecha_nacimiento: value.fecha_nacimiento ? String(value.fecha_nacimiento).slice(0, 10) : '',
+                    rep_correo: value.correo || '',
+                    rep_direccion: value.direccion || value.domicilio || '',
                   }));
                 }
               }}
@@ -1019,10 +1088,19 @@ function Alumnos() {
                 />
               )}
             />
-          </div>
-          <div className="form-row">
-            <TextField id="outlined-basic-rep-nombres" label="Nombres del representante *" name="rep_nombres" variant="outlined" value={form.rep_nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-            <TextField id="outlined-basic-rep-apellidos" label="Apellidos del representante *" name="rep_apellidos" variant="outlined" value={form.rep_apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+            <TextField
+              id="outlined-basic-rep-fecha-nacimiento"
+              label="Fecha de nacimiento del representante"
+              name="rep_fecha_nacimiento"
+              type="date"
+              variant="outlined"
+              value={form.rep_fecha_nacimiento || ''}
+              onChange={handleChange}
+              fullWidth
+              size="small"
+              InputLabelProps={{ shrink: true }}
+              sx={{ my: 1 }}
+            />
           </div>
           <div className="form-row"> 
             <TextField id="outlined-basic-rep-telefono" label="Teléfono del representante" name="rep_telefono" type="tel" variant="outlined" value={form.rep_telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
@@ -1042,6 +1120,10 @@ function Alumnos() {
                 ))}
               </Select>
             </FormControl>
+          </div>
+          <div className="form-row">
+            <TextField id="outlined-basic-rep-correo" label="Correo del representante" name="rep_correo" type="email" variant="outlined" value={form.rep_correo || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+            <TextField id="outlined-basic-rep-direccion" label="Dirección del representante" name="rep_direccion" variant="outlined" value={form.rep_direccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
           </div>
         </fieldset>
         )}

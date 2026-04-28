@@ -5,16 +5,19 @@ import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useSede } from '../context/SedeContext';
 import { mediaUrl } from '../utils/mediaUrl';
-import { getCategoriaPorFechaNacimiento } from '../utils/categoria';
+import { getCategoriaPorFechaNacimiento, CATEGORIAS_DISPONIBLES } from '../utils/categoria';
 import './Alumnos.css';
 const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado'];
 const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
+const SEXOS = ['Femenino', 'Masculino'];
+const DIVISIONES = ['Primera división', 'Segunda división', 'Tercera división'];
 
 function AlumnoEditar({ locationState }) {
   const { id } = useParams();
   const { sedeSeleccionada } = useSede();
   const token = localStorage.getItem('token');
+  const esAdmin = localStorage.getItem('rol') === 'admin';
   const [form, setForm] = useState({
     fecha_inicio_cobro: new Date().toISOString().split('T')[0],
     tipo_mensualidad: 'monto_sede',
@@ -61,7 +64,10 @@ function AlumnoEditar({ locationState }) {
         rep_nombres: representante.nombres || '',
         rep_apellidos: representante.apellidos || '',
         rep_cedula: representante.cedula || '',
-        rep_telefono: representante.telefono || ''
+        rep_telefono: representante.telefono || '',
+        rep_fecha_nacimiento: representante.fecha_nacimiento ? String(representante.fecha_nacimiento).slice(0, 10) : '',
+        rep_correo: representante.correo || '',
+        rep_direccion: representante.direccion || representante.domicilio || ''
       };
     }
     setForm(formData);
@@ -278,13 +284,14 @@ function AlumnoEditar({ locationState }) {
       const formData = new FormData();
       const camposEditables = [
         'nombres', 'apellidos', 'fecha_nacimiento', 'fecha_inscripcion', 'fecha_inicio_cobro', 'cedula',
+        'sexo', 'division',
         'domicilio', 'telefono', 'talla', 'peso', 'alcance', 'envergadura', 'proyeccion',
         'tipo_sangre', 'alergias', 'antecedentes_patologicos', 'observaciones',
         'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
         'aplicar_recargo_mensualidad',
         'sede', 'categoria', 'usuario', 'parentesco', 'tipo_mensualidad',
         'monto_personalizado_valor', 'sinRepresentante',
-        'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_domicilio'
+        'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_fecha_nacimiento', 'rep_correo', 'rep_direccion'
       ];
 
       camposEditables.forEach((key) => {
@@ -580,14 +587,72 @@ function AlumnoEditar({ locationState }) {
             />
           </div>
           <div className="form-row">
-            <TextField id="outlined-basic-categoria" disabled label="Categoría asignada" name="categoria" variant="outlined" value={categoria} InputProps={{ readOnly: true }} fullWidth size="small" helperText="Se asigna automáticamente" sx={{ my: 1 }} />
+            <TextField id="outlined-basic-fecha-nacimiento" label="Fecha de nacimiento" name="fecha_nacimiento" type="date" variant="outlined" value={form.fecha_nacimiento || ''} onChange={handleChange} fullWidth size="small" InputLabelProps={{ shrink: true }} sx={{ my: 1 }} />
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="sexo-editar-label">Sexo *</InputLabel>
+              <Select
+                labelId="sexo-editar-label"
+                id="select-sexo-editar"
+                name="sexo"
+                value={form.sexo || ''}
+                label="Sexo *"
+                onChange={handleChange}
+              >
+                <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                {SEXOS.map((sexo) => (
+                  <MenuItem key={sexo} value={sexo}>{sexo}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </div>
+          
           <div className="form-row">
-          <TextField id="outlined-basic-nombres" label="Nombres *" name="nombres" variant="outlined" value={form.nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+            <TextField id="outlined-basic-nombres" label="Nombres *" name="nombres" variant="outlined" value={form.nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
             <TextField id="outlined-basic-apellidos" label="Apellidos *" name="apellidos" variant="outlined" value={form.apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
+
           <div className="form-row">
-            <TextField id="outlined-basic-fecha-nacimiento" label="Fecha de nacimiento" name="fecha_nacimiento" type="date" variant="outlined" value={form.fecha_nacimiento || ''} onChange={handleChange} fullWidth size="small" InputLabelProps={{ shrink: true }} sx={{ my: 1 }} />
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="categoria-editar-label">{esAdmin ? 'Categoría' : 'Categoría asignada'}</InputLabel>
+              <Select
+                labelId="categoria-editar-label"
+                id="select-categoria-editar"
+                name="categoria"
+                value={form.categoria || categoria || ''}
+                label={esAdmin ? 'Categoría' : 'Categoría asignada'}
+                onChange={handleChange}
+                disabled={!esAdmin}
+              >
+                {CATEGORIAS_DISPONIBLES.map((cat) => (
+                  <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                ))}
+                {!!(form.categoria || categoria) && !CATEGORIAS_DISPONIBLES.includes(form.categoria || categoria) && (
+                  <MenuItem value={form.categoria || categoria}>{form.categoria || categoria}</MenuItem>
+                )}
+              </Select>
+              <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
+                {esAdmin ? 'Se asigna automáticamente, pero puedes ajustarla.' : 'Se asigna automáticamente'}
+              </Typography>
+            </FormControl>
+            <FormControl fullWidth size="small" sx={{ my: 1 }}>
+              <InputLabel id="division-editar-label">División</InputLabel>
+              <Select
+                labelId="division-editar-label"
+                id="select-division-editar"
+                name="division"
+                value={form.division || ''}
+                label="División"
+                onChange={handleChange}
+              >
+                <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                {DIVISIONES.map((division) => (
+                  <MenuItem key={division} value={division}>{division}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </div>
+          
+          <div className="form-row">
             <TextField
               id="outlined-basic-numero-franela"
               label="Nro de franela"
@@ -616,9 +681,9 @@ function AlumnoEditar({ locationState }) {
                 <MenuItem key={nro} value={String(nro)}>{nro}</MenuItem>
               ))}
             </TextField>
+            <TextField id="outlined-basic-cedula" label="Cédula" name="cedula" variant="outlined" value={form.cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
           </div>
           <div className="form-row">
-            <TextField id="outlined-basic-cedula" label="Cédula" name="cedula" variant="outlined" value={form.cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
             <FormControl fullWidth sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}>
               <InputLabel id="monto-personalizado-label">Tipo de monto mensualidad</InputLabel>
               <Select
@@ -634,23 +699,6 @@ function AlumnoEditar({ locationState }) {
                 ))}
               </Select>
             </FormControl>
-            {form.tipo_mensualidad === 'monto_personalizado' && (
-              <TextField
-                id="input-monto-personalizado"
-                label="Monto personalizado"
-                name="monto_personalizado_valor"
-                type="number"
-                variant="outlined"
-                value={form.monto_personalizado_valor || ''}
-                onChange={handleChange}
-                fullWidth
-                size="small"
-                sx={{ mt: 1 }}
-                disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
-              />
-            )}
-          </div>
-          <div className="form-row">
             <FormControl fullWidth required style={{ minWidth: 180, marginRight: 8 }} sx={{ my: 1 }}>
                               <InputLabel id="sede-label">Sede *</InputLabel>
                 <Select
@@ -665,21 +713,39 @@ function AlumnoEditar({ locationState }) {
                   {form.sede?.nombre && <MenuItem value={form.sede.nombre}>{form.sede.nombre}</MenuItem>}
                 </Select>
             </FormControl>
+          </div>
+          {form.tipo_mensualidad === 'monto_personalizado' && (
+            <div className="form-row">
+              <TextField
+                id="input-monto-personalizado"
+                label="Monto personalizado"
+                name="monto_personalizado_valor"
+                type="number"
+                variant="outlined"
+                value={form.monto_personalizado_valor || ''}
+                onChange={handleChange}
+                fullWidth
+                size="small"
+                sx={{ mt: 1 }}
+                disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+              />
+              <Box sx={{ my: 1 }} />
+            </div>
+          )}
+          <div className="form-row">
             <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+            <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
           </div>
           <div className="form-row">
-             <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
             <TextField id="outlined-basic-peso" label="Peso" name="peso" variant="outlined" value={form.peso || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
-          </div>
-          <div className="form-row">
             <TextField id="outlined-basic-talla" label="Talla" name="talla" variant="outlined" value={form.talla || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
+          </div>
+          <div className="form-row">
             <TextField id="outlined-basic-proyeccion" label="Proyección" name="proyeccion" variant="outlined" value={form.proyeccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'} />
-          </div>
-          <div className="form-row">
             <TextField id="outlined-basic-alcance" label="Alcance" name="alcance" variant="outlined" value={form.alcance || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
-            <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
           </div>
           <div className="form-row">
+            <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
             <FormControl fullWidth size="small" sx={{ my: 1 }}>
               <InputLabel id="tipo-sangre-label">Tipo de sangre</InputLabel>
               <Select
@@ -699,14 +765,14 @@ function AlumnoEditar({ locationState }) {
                 )}
               </Select>
             </FormControl>
-           <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
+           <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
             <TextField id="outlined-basic-alergias" label="Alergias" name="alergias" variant="outlined" value={form.alergias || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-            <TextField id="outlined-basic-observaciones" label="Observaciones" name="observaciones" variant="outlined" value={form.observaciones || ''} onChange={handleChange} fullWidth size="small" multiline minRows={2} sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
           </div>
           {localStorage.getItem('rol') === 'admin' && (
           <div className="form-row">
+            <TextField id="outlined-basic-observaciones" label="Observaciones" name="observaciones" variant="outlined" value={form.observaciones || ''} onChange={handleChange} fullWidth size="small" multiline minRows={2} sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
             <Autocomplete
               multiple
               freeSolo
@@ -716,7 +782,7 @@ function AlumnoEditar({ locationState }) {
                 setForm(prev => ({ ...prev, etiquetas: newValue }));
               }}
               disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
-              sx={{ width: '48%' }}
+              sx={{ width: '100%' }}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -742,6 +808,22 @@ function AlumnoEditar({ locationState }) {
                 </div>
                 <div className="form-row">
                   <TextField id="outlined-basic-rep-cedula" label="Cédula del representante *" name="rep_cedula" variant="outlined" value={form.rep_cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+                  <TextField
+                    id="outlined-basic-rep-fecha-nacimiento"
+                    label="Fecha de nacimiento del representante"
+                    name="rep_fecha_nacimiento"
+                    type="date"
+                    variant="outlined"
+                    value={form.rep_fecha_nacimiento || ''}
+                    onChange={handleChange}
+                    fullWidth
+                    size="small"
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ my: 1 }}
+                  />
+                </div>
+                <div className="form-row">
+                  <TextField id="outlined-basic-rep-telefono" label="Teléfono del representante" name="rep_telefono" type="tel" variant="outlined" value={form.rep_telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
                   <FormControl fullWidth size="small" sx={{ my: 1 }}>
                     <InputLabel id="select-parentesco-editar-label">Parentesco *</InputLabel>
                     <Select
@@ -759,7 +841,8 @@ function AlumnoEditar({ locationState }) {
                   </FormControl>
                 </div>
                 <div className="form-row">
-                  <TextField id="outlined-basic-rep-telefono" label="Teléfono del representante" name="rep_telefono" type="tel" variant="outlined" value={form.rep_telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+                  <TextField id="outlined-basic-rep-correo" label="Correo del representante" name="rep_correo" type="email" variant="outlined" value={form.rep_correo || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+                  <TextField id="outlined-basic-rep-direccion" label="Dirección del representante" name="rep_direccion" variant="outlined" value={form.rep_direccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
                 </div>
               </fieldset>
             )}
