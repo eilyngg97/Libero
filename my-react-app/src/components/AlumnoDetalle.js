@@ -59,6 +59,12 @@ function formatTipoMovimiento(tipo) {
   return tipo || '-';
 }
 
+function obtenerDiaLimitePersonalizado(alumno) {
+  const valor = Number(alumno?.dia_limite_personalizado);
+  if (!Number.isInteger(valor) || valor < 1 || valor > 31) return null;
+  return valor;
+}
+
 // Calcula el IMC y su clasificación
 function calcularIMC(peso, talla) {
   const pesoNum = parseFloat(peso);
@@ -161,6 +167,7 @@ function AlumnoDetalle() {
   const estaRetirado = alumno.dado_de_baja || alumno.activo === false;
   const observacionesTexto = alumno.observaciones?.trim() || 'Sin observaciones registradas';
   const etiquetas = Array.isArray(alumno.etiquetas) ? alumno.etiquetas : [];
+  const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(alumno);
   const getSiNoChipSx = (enabled) => ({
     width: 46,
     fontWeight: 700,
@@ -322,6 +329,16 @@ function AlumnoDetalle() {
                     size="small"
                     sx={getSiNoChipSx(alumno.aplicar_recargo_mensualidad !== false)}
                   />
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: 12, color: '#64748b' }}>Fecha de recargo</Typography>
+                  {alumno.aplicar_recargo_mensualidad === false ? (
+                    <Chip label="No aplica" size="small" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }} />
+                  ) : diaLimitePersonalizado ? (
+                    <Chip label={`Personalizada: dia ${diaLimitePersonalizado}`} size="small" sx={{ bgcolor: '#ffedd5', color: '#9a3412', fontWeight: 700 }} />
+                  ) : (
+                    <Chip label="Global" size="small" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }} />
+                  )}
                 </Box>
               </Box>
               <Box sx={{ mt: 2, p: 1.5, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>

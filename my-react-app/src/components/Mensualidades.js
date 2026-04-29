@@ -44,6 +44,12 @@ const esMensualidadDeBecado = (mensualidad) => {
 	return String(mensualidad?.estatus || '').toLowerCase() === 'becado';
 };
 
+const obtenerDiaLimitePersonalizado = (mensualidad) => {
+	const valor = Number(mensualidad?.id_alumno?.dia_limite_personalizado);
+	if (!Number.isInteger(valor) || valor < 1 || valor > 31) return null;
+	return valor;
+};
+
 function Mensualidades() {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
@@ -1019,6 +1025,7 @@ function Mensualidades() {
 	const fechaRecargoAplicadoTexto = mensualidadDetalle?.fecha_aplicacion_recargo
 		? formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)
 		: 'No aplicado';
+	const diaRecargoPersonalizadoDetalle = obtenerDiaLimitePersonalizado(mensualidadDetalle);
 	const formatMontoCorto = (value) => `$${formatMoney(value)}`;
 
 	return (
@@ -1099,6 +1106,29 @@ function Mensualidades() {
 								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha recargo:</b></Typography>
+									{(() => {
+										const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(m);
+										if (!diaLimitePersonalizado) {
+											return (
+												<Chip
+													size="small"
+													label="Global"
+													sx={{ height: 22, bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700, fontSize: 11 }}
+												/>
+											);
+										}
+
+										return (
+											<Chip
+												size="small"
+												label={`Personalizado: dia ${diaLimitePersonalizado}`}
+												sx={{ height: 22, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }}
+											/>
+										);
+									})()}
+								</Box>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 							</Box>
 							<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
@@ -1177,6 +1207,7 @@ function Mensualidades() {
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>RECARGO USD</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>FECHA RECARGO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO A FAVOR</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
@@ -1205,6 +1236,15 @@ function Mensualidades() {
 									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
+									<TableCell>
+										{(() => {
+											const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(m);
+											if (!diaLimitePersonalizado) {
+												return <Chip size="small" label="Global" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700, fontSize: 11 }} />;
+											}
+											return <Chip size="small" label={`Dia ${diaLimitePersonalizado}`} sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }} />;
+										})()}
+									</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
 									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
 									<TableCell>
@@ -1256,7 +1296,7 @@ function Mensualidades() {
 						</TableBody>
 						<tfoot>
 							<TableRow>
-								<TableCell colSpan={11}>
+								<TableCell colSpan={12}>
 									<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
 										<TablePagination
 											component="div"
@@ -1418,6 +1458,24 @@ function Mensualidades() {
 							<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800, mb: 1.2 }}>
 								Desglose de recargo
 							</Typography>
+							<Box sx={{ mb: 1.2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+								<Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 700 }}>
+									Regla usada:
+								</Typography>
+								{diaRecargoPersonalizadoDetalle ? (
+									<Chip
+										size="small"
+										label={`Personalizado: dia ${diaRecargoPersonalizadoDetalle}`}
+										sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }}
+									/>
+								) : (
+									<Chip
+										size="small"
+										label="Global"
+										sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }}
+									/>
+								)}
+							</Box>
 							<Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 700, mb: 1.2 }}>
 								Fecha aplicada: {fechaRecargoAplicadoTexto}
 							</Typography>

@@ -780,6 +780,14 @@ function Alumnos() {
                 size="small"
                 inputProps={{ min: 1, max: 31 }}
                 helperText="Opcional. Si se define, reemplaza la fecha global para recargo en este alumno."
+                FormHelperTextProps={{
+                  sx: {
+                    mt: 0.9,
+                    lineHeight: 1.45,
+                    color: '#64748b'
+                  }
+                }}
+                sx={{ mb: 0.6 }}
               />
             </Paper>
           </Box>
