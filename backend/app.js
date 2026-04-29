@@ -54,6 +54,15 @@ function buildTenantBrandingPayload(req) {
   };
 }
 
+function getOriginHost(origin) {
+  if (!origin) return '';
+  try {
+    return normalizeHost(new URL(origin).host);
+  } catch {
+    return '';
+  }
+}
+
 async function resolveTenantForUploads(req) {
   if (process.env.MULTI_TENANT_MODE !== 'true') {
     return getDefaultTenantId();
@@ -134,7 +143,27 @@ app.use(cors({
       callback(null, true);
       return;
     }
-    callback(new Error('Origen no permitido por CORS'));
+
+    if (process.env.MULTI_TENANT_MODE !== 'true') {
+      callback(new Error('Origen no permitido por CORS'));
+      return;
+    }
+
+    const originHost = getOriginHost(origin);
+    if (!originHost) {
+      callback(new Error('Origen no permitido por CORS'));
+      return;
+    }
+
+    resolveTenantByHost(originHost)
+      .then((tenant) => {
+        if (tenant?.tenantId) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error('Origen no permitido por CORS'));
+      })
+      .catch((err) => callback(err));
   }
 }));
 
