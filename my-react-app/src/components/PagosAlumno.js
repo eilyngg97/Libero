@@ -803,6 +803,19 @@ function PagosAlumno(props) {
             return tieneVencimiento ? `Vence: ${formatFechaBonita(vencimiento)}` : `Periodo: ${mesNombre} ${anio}`;
           })();
 
+          const recargoAplicado = Math.max(0, Number(pago.recargo_aplicado_usd) || 0);
+          const tieneRecargoAplicado = recargoAplicado > 0;
+          const montoBaseSinRecargo = (() => {
+            const baseRaw = Number(pago.monto_sin_recargo_usd);
+            if (Number.isFinite(baseRaw) && baseRaw >= 0) return baseRaw;
+            const totalRaw = Number(pago.monto_con_recargo_usd ?? pago.monto_total ?? pago.monto);
+            if (Number.isFinite(totalRaw)) return Math.max(0, totalRaw - recargoAplicado);
+            return 0;
+          })();
+          const fechaRecargoTexto = pago.fecha_aplicacion_recargo
+            ? formatFechaBonita(pago.fecha_aplicacion_recargo)
+            : null;
+
           const mostrarMontoEsperado = estado === 'pagado' || estado === 'en revision';
           const montoCard = mostrarMontoEsperado
             ? (Number(pago.monto_total) || Number(pago.monto) || 0)
@@ -861,6 +874,24 @@ function PagosAlumno(props) {
                         {subInfo}
                       </Typography>
                     </Box>
+                    {tieneRecargoAplicado && (
+                      <Box sx={{ mt: 0.6, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Chip
+                          size="small"
+                          label={`Recargo aplicado: +$${formatMoney(recargoAplicado)} USD`}
+                          sx={{
+                            height: 22,
+                            bgcolor: '#fee2e2',
+                            color: '#b91c1c',
+                            fontWeight: 800,
+                            fontSize: 12
+                          }}
+                        />
+                        <Typography sx={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>
+                          Base: ${formatMoney(montoBaseSinRecargo)} USD{fechaRecargoTexto ? ` | Aplicado: ${fechaRecargoTexto}` : ''}
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
 
                   <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.7 }}>

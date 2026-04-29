@@ -10,7 +10,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import LocationCityIcon from '@mui/icons-material/LocationCity';
 import Avatar from '@mui/material/Avatar';
 import Pagination from '@mui/material/Pagination';
-import { exportToCsv } from '../utils/exportCsv';
+import { exportToExcel } from '../utils/exportExcel';
 import { mediaUrl } from '../utils/mediaUrl';
 
 function Dashboard() {
@@ -341,17 +341,19 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
         'Apellido': al.apellidos || '',
         'Cédula': al.cedula || '',
         'Categoría': al.categoria || '',
+        'División': al.division || '-',
+        'Nro de franela': (al.numero_franela ?? '-') || '-',
         'Edad': calcularEdad(al.fecha_nacimiento),
         'Fecha de nacimiento': formatFechaNacimiento(al.fecha_nacimiento),
         'Sede': al.sede?.nombre || ''
       }));
 
-      const headers = ['Nombre', 'Apellido', 'Cédula', 'Categoría', 'Edad', 'Fecha de nacimiento', 'Sede'];
+      const headers = ['Nombre', 'Apellido', 'Cédula', 'Categoría', 'División', 'Nro de franela', 'Edad', 'Fecha de nacimiento', 'Sede'];
       const fecha = new Date().toISOString().slice(0, 10);
-      exportToCsv(rows, `alumnos_${fecha}.csv`, headers, { delimiter: ';' });
+      await exportToExcel(rows, `alumnos_${fecha}.xlsx`, headers);
     } catch (error) {
-      console.error('Error al exportar CSV:', error);
-      window.alert('No se pudo exportar el archivo CSV. Intenta nuevamente.');
+      console.error('Error al exportar Excel:', error);
+      window.alert('No se pudo exportar el archivo Excel. Intenta nuevamente.');
     } finally {
       setExportLoading(false);
     }

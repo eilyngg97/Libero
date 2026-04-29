@@ -24,6 +24,7 @@ function AlumnoEditar({ locationState }) {
     numero_franela: '',
     habilitar_pago_cuotas: false,
     aplicar_recargo_mensualidad: true,
+    dia_limite_personalizado: '',
     etiquetas: [],
   });
   const [preview, setPreview] = useState(null);
@@ -69,6 +70,9 @@ function AlumnoEditar({ locationState }) {
         rep_correo: representante.correo || '',
         rep_direccion: representante.direccion || representante.domicilio || ''
       };
+    }
+    if (formData.dia_limite_personalizado === undefined || formData.dia_limite_personalizado === null) {
+      formData.dia_limite_personalizado = '';
     }
     setForm(formData);
     if (data.foto) setPreview(mediaUrl(data.foto));
@@ -254,6 +258,8 @@ function AlumnoEditar({ locationState }) {
       setForm((prev) => ({ ...prev, habilitar_pago_cuotas: e.target.checked }));
     } else if (name === 'aplicar_recargo_mensualidad') {
       setForm((prev) => ({ ...prev, aplicar_recargo_mensualidad: e.target.checked }));
+    } else if (name === 'dia_limite_personalizado') {
+      setForm((prev) => ({ ...prev, dia_limite_personalizado: value }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
@@ -289,6 +295,7 @@ function AlumnoEditar({ locationState }) {
         'tipo_sangre', 'alergias', 'antecedentes_patologicos', 'observaciones',
         'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
         'aplicar_recargo_mensualidad',
+        'dia_limite_personalizado',
         'sede', 'categoria', 'usuario', 'parentesco', 'tipo_mensualidad',
         'monto_personalizado_valor', 'sinRepresentante',
         'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_fecha_nacimiento', 'rep_correo', 'rep_direccion'
@@ -304,6 +311,15 @@ function AlumnoEditar({ locationState }) {
             return;
           }
           formData.append('numero_franela', String(value));
+          return;
+        }
+
+        if (key === 'dia_limite_personalizado') {
+          if (value === null || value === undefined || String(value).trim() === '') {
+            formData.append('dia_limite_personalizado', '');
+            return;
+          }
+          formData.append('dia_limite_personalizado', String(value));
           return;
         }
 
@@ -516,6 +532,24 @@ function AlumnoEditar({ locationState }) {
                     label=""
                   />
                 </Box>
+              </Paper>
+            )}
+
+            {localStorage.getItem('rol') === 'admin' && (
+              <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+                <TextField
+                  id="input-dia-limite-personalizado-editar"
+                  label="Pago extendido (dia del mes)"
+                  name="dia_limite_personalizado"
+                  type="number"
+                  variant="outlined"
+                  value={form.dia_limite_personalizado || ''}
+                  onChange={handleChange}
+                  fullWidth
+                  size="small"
+                  inputProps={{ min: 1, max: 31 }}
+                  helperText="Opcional. Si se define, reemplaza la fecha global para recargo en este alumno."
+                />
               </Paper>
             )}
 

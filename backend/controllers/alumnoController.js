@@ -153,6 +153,13 @@ function normalizarNumeroFranela(valor) {
   return nro;
 }
 
+function normalizarDiaLimitePersonalizado(valor) {
+  if (valor === undefined || valor === null || String(valor).trim() === '') return undefined;
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 31) return NaN;
+  return numero;
+}
+
 async function validarNumeroFranelaDisponible({ numeroFranela, categoria, excludeAlumnoId, AlumnoModel = Alumno }) {
   if (numeroFranela === undefined || numeroFranela === null || numeroFranela === '') return;
 
@@ -1146,6 +1153,17 @@ exports.createAlumno = async (req, res) => {
       alumnoData.aplicar_recargo_mensualidad =
         alumnoData.aplicar_recargo_mensualidad === true || alumnoData.aplicar_recargo_mensualidad === 'true';
     }
+    if (Object.prototype.hasOwnProperty.call(alumnoData, 'dia_limite_personalizado')) {
+      const diaLimite = normalizarDiaLimitePersonalizado(alumnoData.dia_limite_personalizado);
+      if (Number.isNaN(diaLimite)) {
+        return res.status(400).json({ error: 'dia_limite_personalizado debe ser un numero entero entre 1 y 31.' });
+      }
+      if (diaLimite === undefined) {
+        delete alumnoData.dia_limite_personalizado;
+      } else {
+        alumnoData.dia_limite_personalizado = diaLimite;
+      }
+    }
     if (alumnoData.etiquetas) {
       if (typeof alumnoData.etiquetas === 'string') {
         try {
@@ -1395,6 +1413,13 @@ exports.updateAlumno = async (req, res) => {
     if (updateData.aplicar_recargo_mensualidad !== undefined) {
       updateData.aplicar_recargo_mensualidad =
         updateData.aplicar_recargo_mensualidad === true || updateData.aplicar_recargo_mensualidad === 'true';
+    }
+    if (Object.prototype.hasOwnProperty.call(updateData, 'dia_limite_personalizado')) {
+      const diaLimite = normalizarDiaLimitePersonalizado(updateData.dia_limite_personalizado);
+      if (Number.isNaN(diaLimite)) {
+        return res.status(400).json({ error: 'dia_limite_personalizado debe ser un numero entero entre 1 y 31.' });
+      }
+      updateData.dia_limite_personalizado = diaLimite === undefined ? null : diaLimite;
     }
     if (updateData.etiquetas) {
       if (typeof updateData.etiquetas === 'string') {

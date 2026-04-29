@@ -76,7 +76,7 @@ function GeneralConfig() {
         Configuracion general
       </Typography>
       <Typography sx={{ color: '#475569', mb: 2.5 }}>
-        Acciones globales del tenant que no dependen de una sede en particular.
+        Acciones globales de la academia que no dependen de una sede en particular.
       </Typography>
 
       {error && (
@@ -86,7 +86,7 @@ function GeneralConfig() {
       <Paper sx={sectionCardSx}>
         <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.8 }}>Categorias de alumnos</Typography>
         <Typography sx={{ color: '#64748b', fontSize: 13, mb: 1.8 }}>
-          Recalcula y asigna categorias para todos los alumnos activos del tenant usando la fecha de nacimiento.
+          Recalcula y asigna categorias para todos los alumnos activos de la academia usando la fecha de nacimiento.
         </Typography>
         <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
           <Button

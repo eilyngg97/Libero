@@ -19,7 +19,8 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import { exportToCsv } from '../utils/exportCsv';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import { exportToExcel } from '../utils/exportExcel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
@@ -58,6 +59,12 @@ function obtenerTipoMensualidadKey(alumno) {
 function obtenerEstadoAlumno(alumno) {
   if (alumno?.dado_de_baja || alumno?.activo === false) return 'Baja';
   return alumno?.estado || 'Activo';
+}
+
+function obtenerDiaLimitePersonalizado(alumno) {
+  const valor = Number(alumno?.dia_limite_personalizado);
+  if (!Number.isInteger(valor) || valor < 1 || valor > 31) return null;
+  return valor;
 }
 
 function obtenerSexoAlumno(alumno) {
@@ -170,17 +177,20 @@ function TablaAlumnos() {
     const data = alumnosActivos.map(a => ({
       Nombre: a.nombres,
       Apellido: a.apellidos,
+      Cedula: a.cedula,
+      Categoria: a.categoria || '-',
+      Division: a.division || '-',
+      Nro_Franela: (a.numero_franela ?? '-') || '-',
       Sexo: obtenerSexoAlumno(a),
       Fecha_Nacimiento: formatFecha(a.fecha_nacimiento),
       Edad: calcularEdad(a.fecha_nacimiento),
-      Cedula: a.cedula,
       Representante: a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
       Telefono: a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-'),
     }));
-    const headers = ['Nombre', 'Apellido', 'Sexo', 'Fecha_Nacimiento', 'Edad', 'Cedula', 'Representante', 'Telefono'];
-    exportToCsv(
+    const headers = ['Nombre', 'Apellido', 'Cedula', 'Categoria', 'Division', 'Nro_Franela', 'Sexo', 'Fecha_Nacimiento', 'Edad', 'Representante', 'Telefono'];
+    exportToExcel(
       data,
-      `alumnos${sedeSeleccionada && sedeSeleccionada.nombre ? '_' + sedeSeleccionada.nombre.replace(/\s+/g, '_') : ''}.csv`,
+      `alumnos${sedeSeleccionada && sedeSeleccionada.nombre ? '_' + sedeSeleccionada.nombre.replace(/\s+/g, '_') : ''}.xlsx`,
       headers
     );
   };
@@ -188,15 +198,18 @@ function TablaAlumnos() {
   // Función para descargar PDF
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
-    const columns = ["N°", "Nombre", "Apellido", "Sexo", "Fecha de Nacimiento", "Edad", "Cedula", "Representante", "Telefono"];
+    const columns = ["N°", "Nombre", "Apellido", "Cedula", "Categoria", "Division", "Nro franela", "Sexo", "Fecha de Nacimiento", "Edad", "Representante", "Telefono"];
     const rows = alumnosFiltrados.map((a, i) => [
       i + 1,
       a.nombres,
       a.apellidos,
+      a.cedula,
+      a.categoria || '-',
+      a.division || '-',
+      (a.numero_franela ?? '-') || '-',
       obtenerSexoAlumno(a),
       formatFecha(a.fecha_nacimiento),
       calcularEdad(a.fecha_nacimiento),
-      a.cedula,
       a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
       a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-')
     ]);
@@ -456,7 +469,7 @@ function TablaAlumnos() {
             startIcon={<TableChartIcon />}
             onClick={handleDownloadExcel}
           >
-            CSV
+            Excel
           </Button>
           <Button
             variant="outlined"
@@ -669,6 +682,16 @@ function TablaAlumnos() {
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Tipo de mensualidad:</strong> {obtenerTipoMensualidad(alumno)}
                 </Typography>
+                {obtenerDiaLimitePersonalizado(alumno) && (
+                  <Box sx={{ mt: 0.35 }}>
+                    <Chip
+                      icon={<CalendarMonthIcon sx={{ fontSize: 16 }} />}
+                      label={`Pago extendido: dia ${obtenerDiaLimitePersonalizado(alumno)}`}
+                      size="small"
+                      sx={{ bgcolor: '#ecfeff', color: '#0f766e', fontWeight: 700 }}
+                    />
+                  </Box>
+                )}
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Representante:</strong> {alumno.representante && typeof alumno.representante === 'object'
                     ? `${alumno.representante.nombres} ${alumno.representante.apellidos}`
@@ -805,6 +828,14 @@ function TablaAlumnos() {
                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
                           Fecha Nac: {formatFecha(alumno.fecha_nacimiento) || '-'}
                         </Typography>
+                        {obtenerDiaLimitePersonalizado(alumno) && (
+                          <Chip
+                            icon={<CalendarMonthIcon sx={{ fontSize: 14 }} />}
+                            label={`Pago extendido: dia ${obtenerDiaLimitePersonalizado(alumno)}`}
+                            size="small"
+                            sx={{ mt: 0.8, bgcolor: '#ecfeff', color: '#0f766e', fontWeight: 700 }}
+                          />
+                        )}
                       </Box>
                     </Box>
                   </TableCell>

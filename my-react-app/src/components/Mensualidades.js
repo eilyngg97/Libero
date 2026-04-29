@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip } from '@mui/material';
+import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip, Checkbox, FormGroup, FormControlLabel } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
@@ -10,7 +10,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import TablePagination from '@mui/material/TablePagination';
-import { exportToCsv } from '../utils/exportCsv';
+import { exportToExcel } from '../utils/exportExcel';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import PaidIcon from '@mui/icons-material/Paid';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -95,6 +95,12 @@ function Mensualidades() {
 	const [confirmarEliminarMensualidadOpen, setConfirmarEliminarMensualidadOpen] = useState(false);
 	const [mensualidadAEliminar, setMensualidadAEliminar] = useState(null);
 	const [eliminandoMensualidadId, setEliminandoMensualidadId] = useState('');
+	const [modalExportExcelOpen, setModalExportExcelOpen] = useState(false);
+	const [opcionesExportExcel, setOpcionesExportExcel] = useState({
+		mesCompleto: true,
+		insolventesRepresentante: false,
+		insolventesAlumnoRepresentante: false
+	});
 
 	const getAuthHeaders = () => {
 		const token = localStorage.getItem('token');
@@ -644,6 +650,36 @@ function Mensualidades() {
 		return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
 	};
 
+	const obtenerDesgloseRecargo = (mensualidad) => {
+		if (!mensualidad) return null;
+
+		const montoConRecargoRaw = Number(mensualidad?.monto_con_recargo_usd);
+		const montoEsperadoRaw = Number(mensualidad?.monto_esperado);
+		const montoSinRecargoRaw = Number(mensualidad?.monto_sin_recargo_usd);
+		const recargoRaw = Number(mensualidad?.recargo_aplicado_usd);
+
+		const recargoAplicado = Number.isFinite(recargoRaw) ? Math.max(0, recargoRaw) : 0;
+		const totalConRecargo = Number.isFinite(montoConRecargoRaw)
+			? montoConRecargoRaw
+			: (Number.isFinite(montoEsperadoRaw) ? montoEsperadoRaw : null);
+
+		const montoSinRecargo = Number.isFinite(montoSinRecargoRaw)
+			? montoSinRecargoRaw
+			: (Number.isFinite(totalConRecargo) ? Math.max(0, totalConRecargo - recargoAplicado) : null);
+
+		if (!Number.isFinite(totalConRecargo) && !Number.isFinite(montoSinRecargo)) {
+			return null;
+		}
+
+		return {
+			montoSinRecargo: Number.isFinite(montoSinRecargo) ? montoSinRecargo : 0,
+			recargoAplicado,
+			totalConRecargo: Number.isFinite(totalConRecargo)
+				? totalConRecargo
+				: ((Number.isFinite(montoSinRecargo) ? montoSinRecargo : 0) + recargoAplicado)
+		};
+	};
+
 	const obtenerMontoTablaMensualidad = (mensualidad) => {
 		const montoPrimeraMensualidad = mensualidad?.monto_primera_mensualidad;
 		if (
@@ -796,23 +832,127 @@ function Mensualidades() {
 		'&:hover': { bgcolor: '#e2e8f0' }
 	};
 
-	const hayInsolventes = mensualidades.some(
-		(m) => ['retrasado', 'insolvente'].includes((m.estatus || '').toLowerCase())
-	);
+	const obtenerNombreRepresentanteMensualidad = (mensualidad) => {
+		const representante = mensualidad?.id_alumno?.representante;
+		if (!representante) return 'Sin representante';
+		if (typeof representante === 'string') return representante;
+		const nombre = `${representante?.nombres || ''} ${representante?.apellidos || ''}`.trim();
+		return nombre || 'Sin representante';
+	};
 
-	const exportarExcel = () => {
-		const alumnosRetrasados = mensualidades.filter(m => m.estatus && ['retrasado', 'insolvente'].includes(m.estatus.toLowerCase()));
-		const datos = alumnosRetrasados.map(m => ({
-			Representante: `${m.id_alumno?.representante?.nombres || ''} ${m.id_alumno?.representante?.apellidos || ''}`.trim() || 'Sin representante',
-			Categoria: m.id_alumno?.categoria || '-',
-			Mes: meses[(m.mes || 1) - 1],
-			Monto: obtenerMontoTablaMensualidad(m),
-			Estado: 'Insolvente'
-		}));
+	const obtenerNombreAlumnoMensualidad = (mensualidad) => {
+		const alumno = mensualidad?.id_alumno;
+		if (!alumno) return '-';
+		const nombre = `${alumno?.nombres || ''} ${alumno?.apellidos || ''}`.trim();
+		return nombre || '-';
+	};
 
-		const headers = ['Representante', 'Categoria', 'Mes', 'Monto', 'Estado'];
-		const nombreSede = sedeSeleccionada?.nombre || 'sede';
-		exportToCsv(datos, `alumnos_insolventes_${nombreSede}.csv`, headers);
+	const normalizarNombreArchivo = (valor) => String(valor || '')
+		.toLowerCase()
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/\s+/g, '_');
+
+	const estilosEstadoExcel = {
+		pagado: { bg: '#dff7ea', color: '#0f7a4a' },
+		pendiente: { bg: '#fff3dc', color: '#b45309' },
+		retrasado: { bg: '#ffe1e6', color: '#d32f2f' },
+		insolvente: { bg: '#ffe1e6', color: '#d32f2f' },
+		exonerado: { bg: '#e3f2fd', color: '#0288d1' },
+		becado: { bg: '#e0f2fe', color: '#0284c7' },
+		abono: { bg: '#efe9e7', color: '#6d4c41' },
+		'en revision': { bg: '#fff6cc', color: '#b45309' }
+	};
+
+	const exportarExcelSeleccionado = async () => {
+		const seleccionadas = Object.entries(opcionesExportExcel)
+			.filter(([, activa]) => !!activa)
+			.map(([clave]) => clave);
+
+		if (seleccionadas.length === 0) {
+			alert('Selecciona al menos una opcion para exportar.');
+			return;
+		}
+
+		const fuente = Array.isArray(mensualidadesBD) ? mensualidadesBD : [];
+		if (fuente.length === 0) {
+			alert('No hay datos para exportar.');
+			return;
+		}
+
+		const nombreSede = normalizarNombreArchivo(sedeSeleccionada?.nombre || 'sede');
+		const nombreMes = filtroMes ? normalizarNombreArchivo(meses[Number(filtroMes) - 1] || 'mes') : 'todos_los_meses';
+
+		if (opcionesExportExcel.mesCompleto) {
+			const rowsMesCompleto = fuente.map((m) => ({
+				Alumno: obtenerNombreAlumnoMensualidad(m),
+				Representante: obtenerNombreRepresentanteMensualidad(m),
+				Categoria: m.id_alumno?.categoria || '-',
+				Mes: meses[(m.mes || 1) - 1],
+				Anio: m.anio || '-',
+				Monto: Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2),
+				Recargo: Number(m.recargo_aplicado_usd || 0).toFixed(2),
+				Estado: m.estatus || '-'
+			}));
+
+			await exportToExcel(
+				rowsMesCompleto,
+				`mes_completo_${nombreMes}_${nombreSede}.xlsx`,
+				['Alumno', 'Representante', 'Categoria', 'Mes', 'Anio', 'Monto', 'Recargo', 'Estado'],
+				{ statusColumnName: 'Estado', statusStyleMap: estilosEstadoExcel }
+			);
+		}
+
+		const insolventes = fuente.filter((m) => ['retrasado', 'insolvente'].includes(String(m.estatus || '').toLowerCase()));
+
+		if (opcionesExportExcel.insolventesRepresentante) {
+			const rowsRepresentante = insolventes.map((m) => {
+				const alumnoNombre = obtenerNombreAlumnoMensualidad(m);
+				const representanteOriginal = obtenerNombreRepresentanteMensualidad(m);
+				const representante = representanteOriginal === 'Sin representante'
+					? alumnoNombre
+					: representanteOriginal;
+
+				return {
+					Representante: representante,
+					Categoria: m.id_alumno?.categoria || '-',
+					Mes: meses[(m.mes || 1) - 1],
+					Anio: m.anio || '-',
+					Monto: Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2),
+					Recargo: Number(m.recargo_aplicado_usd || 0).toFixed(2),
+					Estado: 'Insolvente'
+				};
+			});
+
+			await exportToExcel(
+				rowsRepresentante,
+				`insolventes_por_representante_${nombreMes}_${nombreSede}.xlsx`,
+				['Representante', 'Categoria', 'Mes', 'Anio', 'Monto', 'Recargo', 'Estado'],
+				{ statusColumnName: 'Estado', statusStyleMap: estilosEstadoExcel }
+			);
+		}
+
+		if (opcionesExportExcel.insolventesAlumnoRepresentante) {
+			const rowsAlumnoRepresentante = insolventes.map((m) => ({
+				Alumno: obtenerNombreAlumnoMensualidad(m),
+				Representante: obtenerNombreRepresentanteMensualidad(m),
+				Categoria: m.id_alumno?.categoria || '-',
+				Mes: meses[(m.mes || 1) - 1],
+				Anio: m.anio || '-',
+				Monto: Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2),
+				Recargo: Number(m.recargo_aplicado_usd || 0).toFixed(2),
+				Estado: 'Insolvente'
+			}));
+
+			await exportToExcel(
+				rowsAlumnoRepresentante,
+				`insolventes_alumno_representante_${nombreMes}_${nombreSede}.xlsx`,
+				['Alumno', 'Representante', 'Categoria', 'Mes', 'Anio', 'Monto', 'Recargo', 'Estado'],
+				{ statusColumnName: 'Estado', statusStyleMap: estilosEstadoExcel }
+			);
+		}
+
+		setModalExportExcelOpen(false);
 	};
 
 	const aplicarAjusteSede = async () => {
@@ -875,6 +1015,10 @@ function Mensualidades() {
 	};
 
 	const mensualidadesPaginadas = mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina);
+	const desgloseRecargoDetalle = obtenerDesgloseRecargo(mensualidadDetalle);
+	const fechaRecargoAplicadoTexto = mensualidadDetalle?.fecha_aplicacion_recargo
+		? formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)
+		: 'No aplicado';
 	const formatMontoCorto = (value) => `$${formatMoney(value)}`;
 
 	return (
@@ -911,16 +1055,15 @@ function Mensualidades() {
 						Ajuste por sede
 					</Button>
 				)}
-				{hayInsolventes && (
-					<Button
-						className="mensualidades-export-btn"
-						variant="contained"
-						onClick={exportarExcel}
-						sx={{ width: { xs: '100%', sm: 'auto' } }}
-					>
-						Exportar CSV insolventes
-					</Button>
-				)}
+				<Button
+					className="mensualidades-export-btn"
+					variant="contained"
+					onClick={() => setModalExportExcelOpen(true)}
+					disabled={(mensualidadesBD || []).length === 0}
+					sx={{ width: { xs: '100%', sm: 'auto' } }}
+				>
+					Exportar Excel
+				</Button>
 			</Box>
 			{esAdmin && !sedeSeleccionada?._id && (
 				<Alert severity="info" sx={{ mb: 2 }}>
@@ -955,6 +1098,7 @@ function Mensualidades() {
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
+								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 							</Box>
 							<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
@@ -1032,6 +1176,7 @@ function Mensualidades() {
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>RECARGO USD</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO A FAVOR</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
@@ -1059,6 +1204,7 @@ function Mensualidades() {
 									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
 									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
+									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
 									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
 									<TableCell>
@@ -1110,7 +1256,7 @@ function Mensualidades() {
 						</TableBody>
 						<tfoot>
 							<TableRow>
-								<TableCell colSpan={10}>
+								<TableCell colSpan={11}>
 									<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
 										<TablePagination
 											component="div"
@@ -1259,6 +1405,51 @@ function Mensualidades() {
 						<Typography sx={{ color: '#334155' }}>No hay información de pago registrada.</Typography>
 					)}
 
+					{desgloseRecargoDetalle && (
+						<Box
+							sx={{
+								mt: 2,
+								bgcolor: '#ffffff',
+								border: '1px solid #e8ebf2',
+								borderRadius: 2,
+								p: { xs: 1.5, sm: 2 }
+							}}
+						>
+							<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800, mb: 1.2 }}>
+								Desglose de recargo
+							</Typography>
+							<Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 700, mb: 1.2 }}>
+								Fecha aplicada: {fechaRecargoAplicadoTexto}
+							</Typography>
+							<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1.2 }}>
+								<Box>
+									<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+										Monto base (sin recargo)
+									</Typography>
+									<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+										{`$${formatMoney(desgloseRecargoDetalle.montoSinRecargo)} USD`}
+									</Typography>
+								</Box>
+								<Box>
+									<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+										Recargo aplicado
+									</Typography>
+									<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+										{`$${formatMoney(desgloseRecargoDetalle.recargoAplicado)} USD`}
+									</Typography>
+								</Box>
+								<Box>
+									<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+										Total con recargo
+									</Typography>
+									<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+										{`$${formatMoney(desgloseRecargoDetalle.totalConRecargo)} USD`}
+									</Typography>
+								</Box>
+							</Box>
+						</Box>
+					)}
+
 					{((mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null)
 						|| (mensualidadDetalle?.monto_primera_mensualidad !== undefined && mensualidadDetalle?.monto_primera_mensualidad !== null)
 						|| (mensualidadDetalle?.monto_reingreso !== undefined && mensualidadDetalle?.monto_reingreso !== null)
@@ -1372,6 +1563,19 @@ function Mensualidades() {
 													Esperado: {formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado)}
 												</Typography>
 											)}
+											{desgloseRecargoDetalle && (
+												<Box sx={{ mt: 0.35, display: 'grid', gap: 0.15 }}>
+													<Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 700 }}>
+														Base: ${formatMoney(desgloseRecargoDetalle.montoSinRecargo)}
+													</Typography>
+													<Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 700 }}>
+														Recargo: ${formatMoney(desgloseRecargoDetalle.recargoAplicado)}
+													</Typography>
+													<Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 700 }}>
+														Total: ${formatMoney(desgloseRecargoDetalle.totalConRecargo)}
+													</Typography>
+												</Box>
+											)}
 										</Box>
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Fecha</Typography>
@@ -1441,6 +1645,41 @@ function Mensualidades() {
 								<DialogActions>
 									<Button onClick={() => setComprobanteDialogOpen(false)}>Cerrar</Button>
 								</DialogActions>
+			</Dialog>
+			<Dialog
+				open={modalExportExcelOpen}
+				onClose={() => setModalExportExcelOpen(false)}
+				maxWidth="sm"
+				fullWidth
+			>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Exportar Excel</DialogTitle>
+				<DialogContent>
+					<Typography sx={{ color: '#64748b', mb: 1.5 }}>
+						Selecciona una o varias opciones y luego presiona Aplicar para descargar archivos XLSX.
+					</Typography>
+					<FormGroup>
+						<FormControlLabel
+							control={<Checkbox checked={opcionesExportExcel.mesCompleto} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, mesCompleto: e.target.checked }))} />}
+							label="Mes completo"
+						/>
+						<FormControlLabel
+							control={<Checkbox checked={opcionesExportExcel.insolventesRepresentante} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, insolventesRepresentante: e.target.checked }))} />}
+							label="Insolventes nombre de representante"
+						/>
+						<FormControlLabel
+							control={<Checkbox checked={opcionesExportExcel.insolventesAlumnoRepresentante} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, insolventesAlumnoRepresentante: e.target.checked }))} />}
+							label="Insolventes alumno + representante"
+						/>
+					</FormGroup>
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={() => setModalExportExcelOpen(false)}>
+						Cancelar
+					</Button>
+					<Button variant="contained" onClick={exportarExcelSeleccionado}>
+						Aplicar
+					</Button>
+				</DialogActions>
 			</Dialog>
 			<Dialog
 				open={confirmarEliminarOpen}

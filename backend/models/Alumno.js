@@ -26,6 +26,7 @@ const AlumnoSchema = new mongoose.Schema({
   numero_franela: { type: Number, min: 1, max: 100 },
   habilitar_pago_cuotas: { type: Boolean, default: false },
   aplicar_recargo_mensualidad: { type: Boolean, default: true },
+  dia_limite_personalizado: { type: Number, min: 1, max: 31 },
   saldo_a_favor_mensualidades: { type: Number, default: 0 },
   etiquetas: [{ type: String }],
   activo: { type: Boolean, default: true },

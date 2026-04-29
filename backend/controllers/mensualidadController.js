@@ -200,6 +200,15 @@ function obtenerFechaRecargoPeriodo(mes, anio, cobroConfig) {
   return fechaRecargo;
 }
 
+function obtenerFechaRecargoAlumnoPeriodo(mes, anio, cobroConfig, alumno) {
+  const diaPersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado, null);
+  if (diaPersonalizado) {
+    return construirFechaPeriodoConDia(mes, anio, diaPersonalizado, { finDelDia: true });
+  }
+
+  return obtenerFechaRecargoPeriodo(mes, anio, cobroConfig);
+}
+
 function obtenerEstatusPendientePorVencimiento(fechaVencimiento) {
   return fechaVencimiento < new Date() ? 'Insolvente' : 'Pendiente';
 }
@@ -256,7 +265,7 @@ async function obtenerAlumnoParaRecargo(mensualidad, models = {}) {
   const alumnoId = alumnoPopulate?._id || alumnoPopulate || mensualidad?.id_alumno;
   if (!alumnoId) return null;
   return AlumnoModel.findById(alumnoId)
-    .select('tipo_mensualidad aplicar_recargo_mensualidad')
+    .select('tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado')
     .lean();
 }
 
@@ -304,7 +313,7 @@ async function aplicarRecargoMensualidadSegunConfig(
       : montoActual
   );
 
-  const fechaRecargo = obtenerFechaRecargoPeriodo(mensualidad.mes, mensualidad.anio, configCobro);
+  const fechaRecargo = obtenerFechaRecargoAlumnoPeriodo(mensualidad.mes, mensualidad.anio, configCobro, alumno);
   const correspondePorFecha = fechaReferencia >= fechaRecargo;
   const correspondeRecargo =
     aplicaRecargoAlumno &&
@@ -452,7 +461,7 @@ async function crearMensualidadParaPeriodo(
   }
 
   const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
-  const fechaRecargo = obtenerFechaRecargoPeriodo(periodo.mes, periodo.anio, configCobro);
+  const fechaRecargo = obtenerFechaRecargoAlumnoPeriodo(periodo.mes, periodo.anio, configCobro, alumno);
   const snapshotRecargo = calcularSnapshotRecargo({
     montoSinRecargo: monto,
     recargoUsd: configCobro?.recargo_usd,
@@ -892,7 +901,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     ]
   }).populate({
     path: 'id_alumno',
-    select: 'tipo_mensualidad aplicar_recargo_mensualidad'
+    select: 'tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado'
   });
 
   let recargosAplicados = 0;

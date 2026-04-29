@@ -12,6 +12,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
+    "exceljs": "^4.4.0",
     "framer-motion": "^12.38.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",

@@ -64,6 +64,7 @@ function Alumnos() {
     numero_franela: '',
     habilitar_pago_cuotas: false,
     aplicar_recargo_mensualidad: true,
+    dia_limite_personalizado: '',
     etiquetas: [],
   });
   // Estado para ocultar datos de representante
@@ -364,6 +365,8 @@ function Alumnos() {
       setForm((prev) => ({ ...prev, habilitar_pago_cuotas: checked }));
     } else if (name === 'aplicar_recargo_mensualidad') {
       setForm((prev) => ({ ...prev, aplicar_recargo_mensualidad: checked }));
+    } else if (name === 'dia_limite_personalizado') {
+      setForm((prev) => ({ ...prev, dia_limite_personalizado: value }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
@@ -473,6 +476,9 @@ function Alumnos() {
         if (cleanForm.tipo_mensualidad !== 'monto_personalizado') {
           delete cleanForm.monto_personalizado_valor;
         }
+        if (!String(cleanForm.dia_limite_personalizado || '').trim()) {
+          delete cleanForm.dia_limite_personalizado;
+        }
     Object.entries(cleanForm).forEach(([key, value]) => {
       if (typeof value === 'object' && value !== null) {
         formData.append(key, JSON.stringify(value));
@@ -499,6 +505,7 @@ function Alumnos() {
         numero_franela: '',
         habilitar_pago_cuotas: false,
         aplicar_recargo_mensualidad: true,
+        dia_limite_personalizado: '',
         etiquetas: [],
       });
       setPreview(null);
@@ -758,6 +765,22 @@ function Alumnos() {
                   label=""
                 />
               </Box>
+            </Paper>
+
+            <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+              <TextField
+                id="input-dia-limite-personalizado"
+                label="Pago extendido (dia del mes)"
+                name="dia_limite_personalizado"
+                type="number"
+                variant="outlined"
+                value={form.dia_limite_personalizado || ''}
+                onChange={handleChange}
+                fullWidth
+                size="small"
+                inputProps={{ min: 1, max: 31 }}
+                helperText="Opcional. Si se define, reemplaza la fecha global para recargo en este alumno."
+              />
             </Paper>
           </Box>
 
