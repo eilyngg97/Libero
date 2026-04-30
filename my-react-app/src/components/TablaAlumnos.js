@@ -950,11 +950,13 @@ function TablaAlumnos() {
           component={Paper}
           sx={{
             borderRadius: 3,
-            overflow: 'hidden',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            maxWidth: '100%',
             boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
           }}
         >
-          <Table sx={{ minWidth: 780 }}>
+          <Table sx={{ minWidth: 700 }}>
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE DEL ALUMNO</TableCell>
@@ -963,7 +965,6 @@ function TablaAlumnos() {
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORÍA</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>TIPO DE MENSUALIDAD</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>REPRESENTANTE</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
@@ -1023,11 +1024,6 @@ function TablaAlumnos() {
                         />
                       </span>
                     </Tooltip>
-                  </TableCell>
-                  <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
-                    {alumno.representante && typeof alumno.representante === 'object'
-                      ? `${alumno.representante.nombres} ${alumno.representante.apellidos}`
-                      : (alumno.representante || '-')}
                   </TableCell>
                   <TableCell>
                     <Tooltip title="Ver detalles">

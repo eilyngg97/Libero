@@ -26,6 +26,8 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 
 const API_URL = `${process.env.REACT_APP_API_URL}/api/uniformes`;
@@ -52,8 +54,13 @@ const modalInputSx = {
 };
 
 export default function Uniformes() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [uniformes, setUniformes] = useState([]);
   const [open, setOpen] = useState(false);
+  const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
+  const [uniformeAEliminar, setUniformeAEliminar] = useState(null);
+  const [deletingId, setDeletingId] = useState('');
   const [form, setForm] = useState(initialForm);
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -153,8 +160,9 @@ export default function Uniformes() {
   };
 
   const handleDelete = async (id) => {
-    if (!token) return;
+    if (!token || !id) return false;
     try {
+      setDeletingId(id);
       const res = await fetch(`${API_URL}/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
@@ -163,13 +171,38 @@ export default function Uniformes() {
       if (!res.ok) throw new Error(data?.error || 'No se pudo eliminar el uniforme');
       setAlert({ open: true, message: 'Uniforme eliminado con exito.', severity: 'success' });
       await fetchUniformes();
+      return true;
     } catch (e) {
       setAlert({ open: true, message: e.message || 'No se pudo eliminar el uniforme', severity: 'error' });
+      return false;
+    } finally {
+      setDeletingId('');
+    }
+  };
+
+  const solicitarEliminarUniforme = (uniforme) => {
+    if (!uniforme?._id) return;
+    setUniformeAEliminar(uniforme);
+    setConfirmarEliminarOpen(true);
+  };
+
+  const cerrarDialogoEliminar = () => {
+    if (deletingId) return;
+    setConfirmarEliminarOpen(false);
+    setUniformeAEliminar(null);
+  };
+
+  const confirmarEliminarUniforme = async () => {
+    if (!uniformeAEliminar?._id) return;
+    const eliminado = await handleDelete(uniformeAEliminar._id);
+    if (eliminado) {
+      setConfirmarEliminarOpen(false);
+      setUniformeAEliminar(null);
     }
   };
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
       <h2>Gestion de uniformes</h2>
       {!token && (
         <Typography color="error" sx={{ mb: 2 }}>
@@ -180,49 +213,132 @@ export default function Uniformes() {
         variant="contained"
         color="secondary"
         onClick={() => handleOpen()}
-        sx={{ mb: 2, borderRadius: 999 }}
+        sx={{ mb: 2, borderRadius: 999, width: { xs: '100%', sm: 'auto' } }}
         disabled={!token}
       >
         Agregar Prenda
       </Button>
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Prenda</TableCell>
-              <TableCell>Precio</TableCell>
-              <TableCell>Personalizacion nombre</TableCell>
-              <TableCell>Numero de franela</TableCell>
-              <TableCell>Franela de representante</TableCell>
-              <TableCell align="right">Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={6} align="center">Cargando...</TableCell></TableRow>
-            ) : (
-              uniformes.map((uniforme) => (
-                <TableRow key={uniforme._id}>
-                  <TableCell>{uniforme.prenda}</TableCell>
-                  <TableCell>{uniforme.precio}</TableCell>
-                  <TableCell>{uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</TableCell>
-                  <TableCell>{uniforme.lleva_numero_franela ? 'Si' : 'No'}</TableCell>
-                  <TableCell>{uniforme.franela_representante ? 'Si' : 'No'}</TableCell>
-                  <TableCell align="right">
-                    <IconButton onClick={() => handleOpen(uniforme._id)} disabled={!token}><EditIcon /></IconButton>
-                    <IconButton onClick={() => handleDelete(uniforme._id)} disabled={!token}><DeleteIcon /></IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-            {!loading && uniformes.length === 0 && (
+      {isMobile ? (
+        <Box sx={{ display: 'grid', gap: 1.25 }}>
+          {loading && (
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography color="text.secondary">Cargando...</Typography>
+            </Paper>
+          )}
+
+          {!loading && uniformes.length === 0 && (
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography color="text.secondary">No hay uniformes registrados.</Typography>
+            </Paper>
+          )}
+
+          {!loading && uniformes.map((uniforme) => (
+            <Paper key={uniforme._id} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #eef0f3' }}>
+              <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.75 }}>
+                {uniforme.prenda}
+              </Typography>
+              <Box sx={{ display: 'grid', gap: 0.35 }}>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Precio:</b> ${uniforme.precio}</Typography>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Personalización nombre:</b> {uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</Typography>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Número de franela:</b> {uniforme.lleva_numero_franela ? 'Si' : 'No'}</Typography>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Franela representante:</b> {uniforme.franela_representante ? 'Si' : 'No'}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                <IconButton onClick={() => handleOpen(uniforme._id)} disabled={!token}>
+                  <EditIcon />
+                </IconButton>
+                <IconButton
+                  onClick={() => solicitarEliminarUniforme(uniforme)}
+                  disabled={!token || deletingId === uniforme._id}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Box>
+            </Paper>
+          ))}
+        </Box>
+      ) : (
+        <TableContainer
+          component={Paper}
+          sx={{
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            maxWidth: '100%'
+          }}
+        >
+          <Table sx={{ minWidth: 760 }}>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={6} align="center">No hay uniformes registrados.</TableCell>
+                <TableCell>Prenda</TableCell>
+                <TableCell>Precio</TableCell>
+                <TableCell>Personalizacion nombre</TableCell>
+                <TableCell>Numero de franela</TableCell>
+                <TableCell>Franela de representante</TableCell>
+                <TableCell align="right">Acciones</TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={6} align="center">Cargando...</TableCell></TableRow>
+              ) : (
+                uniformes.map((uniforme) => (
+                  <TableRow key={uniforme._id}>
+                    <TableCell>{uniforme.prenda}</TableCell>
+                    <TableCell>{uniforme.precio}</TableCell>
+                    <TableCell>{uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</TableCell>
+                    <TableCell>{uniforme.lleva_numero_franela ? 'Si' : 'No'}</TableCell>
+                    <TableCell>{uniforme.franela_representante ? 'Si' : 'No'}</TableCell>
+                    <TableCell align="right">
+                      <IconButton onClick={() => handleOpen(uniforme._id)} disabled={!token}><EditIcon /></IconButton>
+                      <IconButton
+                        onClick={() => solicitarEliminarUniforme(uniforme)}
+                        disabled={!token || deletingId === uniforme._id}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+              {!loading && uniformes.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">No hay uniformes registrados.</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+      <Dialog
+        open={confirmarEliminarOpen}
+        onClose={cerrarDialogoEliminar}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ color: '#0B0F2A', fontWeight: 800 }}>
+          Confirmar eliminación
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2.5 }}>
+          <Typography sx={{ color: '#334155', fontSize: 14 }}>
+            ¿Seguro que deseas eliminar la prenda {uniformeAEliminar?.prenda ? `"${uniformeAEliminar.prenda}"` : ''}? Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={cerrarDialogoEliminar} disabled={!!deletingId}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={confirmarEliminarUniforme}
+            disabled={!!deletingId}
+          >
+            {deletingId ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog
         open={open}
         onClose={handleClose}

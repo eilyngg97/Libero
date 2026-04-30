@@ -106,8 +106,51 @@ function buildUploadUrl(req, file, folder) {
   return `/uploads/${tenantId}/${folder}/${file.filename}`;
 }
 
+const CATEGORIA_CANONICA_POR_ALIAS = new Map([
+  ['u9/iniciacion', 'U9/INICIACION'],
+  ['u9', 'U9/INICIACION'],
+  ['iniciacion', 'U9/INICIACION'],
+  ['u11/formacion', 'U11/FORMACION'],
+  ['u11', 'U11/FORMACION'],
+  ['formacion', 'U11/FORMACION'],
+  ['u13/mini', 'U13/MINI'],
+  ['u13', 'U13/MINI'],
+  ['mini', 'U13/MINI'],
+  ['u15/infantil', 'U15/INFANTIL'],
+  ['u15', 'U15/INFANTIL'],
+  ['infantil', 'U15/INFANTIL'],
+  ['u17/juvenil', 'U17/JUVENIL'],
+  ['u17', 'U17/JUVENIL'],
+  ['juvenil', 'U17/JUVENIL'],
+  ['u19/juvenil libre', 'U19/JUVENIL LIBRE'],
+  ['u19', 'U19/JUVENIL LIBRE'],
+  ['juvenil libre', 'U19/JUVENIL LIBRE'],
+  ['u21', 'U21'],
+  ['u23/libre', 'U23/ LIBRE'],
+  ['u23', 'U23/ LIBRE'],
+  ['mayores/libre', 'MAYORES / LIBRE'],
+  ['mayores libre', 'MAYORES / LIBRE'],
+  ['mayores', 'MAYORES / LIBRE']
+]);
+
+function normalizarClaveCategoria(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function normalizarCategoria(valor) {
-  return String(valor || '').trim().toUpperCase();
+  const raw = String(valor || '').trim();
+  if (!raw) return '';
+
+  const categoriaCanonica = CATEGORIA_CANONICA_POR_ALIAS.get(normalizarClaveCategoria(raw));
+  if (categoriaCanonica) return categoriaCanonica;
+
+  return raw.toUpperCase();
 }
 
 function normalizarSexo(valor) {
@@ -2681,14 +2724,14 @@ exports.eliminarReposoAlumno = async (req, res) => {
 
 // ======================= ASIGNACION MASIVA DE CATEGORIAS =======================
 const CATEGORIAS_DISPONIBLES = [
-  'U9',
-  'U11',
-  'U13',
-  'U15',
-  'U17',
-  'U19',
+  'U9/INICIACION',
+  'U11/FORMACION',
+  'U13/MINI',
+  'U15/INFANTIL',
+  'U17/JUVENIL',
+  'U19/JUVENIL LIBRE',
   'U21',
-  'U23',
+  'U23/ LIBRE',
   'MAYORES / LIBRE'
 ];
 

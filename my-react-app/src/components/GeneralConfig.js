@@ -287,8 +287,6 @@ function GeneralConfig() {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
       )}
-
-      {/*
       <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
         <Box sx={sectionHeaderSx}>
           <Box sx={sectionIconWrapSx}>
@@ -320,7 +318,6 @@ function GeneralConfig() {
           {asignandoCategorias ? 'Asignando categorias...' : 'Asignar categorias'}
         </Button>
       </Paper>
-      */}
 
       <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
         <Box sx={sectionHeaderSx}>

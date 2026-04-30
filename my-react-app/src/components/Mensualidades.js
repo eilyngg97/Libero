@@ -763,27 +763,18 @@ function Mensualidades() {
 		return <Chip label={estatusRaw || '-'} variant="outlined" />;
 	};
 
-	const renderEstadoAlumnoChip = (alumno) => {
+	const obtenerEstadoAlumnoVisual = (alumno) => {
 		const dadoDeBaja = alumno?.dado_de_baja === true;
 		const activo = alumno?.activo !== false;
 		const estadoRaw = String(alumno?.estado || '').toLowerCase();
 		const esBaja = dadoDeBaja || !activo || estadoRaw === 'baja' || estadoRaw === 'inactivo';
 
-		if (esBaja) {
-			return (
-				<Chip
-					label="Baja"
-					sx={{ borderRadius: 999, fontWeight: 700, bgcolor: '#ffe1e6', color: '#d32f2f' }}
-				/>
-			);
-		}
-
-		return (
-			<Chip
-				label="Activo"
-				sx={{ borderRadius: 999, fontWeight: 700, bgcolor: '#dff7ea', color: '#0f7a4a' }}
-			/>
-		);
+		return {
+			esBaja,
+			label: esBaja ? 'Baja' : 'Activo',
+			color: esBaja ? '#ef4444' : '#22c55e',
+			borderColor: esBaja ? '#fecdd3' : '#bbf7d0'
+		};
 	};
 
 	const renderEtiquetasAlumno = (alumno) => {
@@ -1079,10 +1070,25 @@ function Mensualidades() {
 			)}
 			{isMobile ? (
 				<Box sx={{ mt: 2, display: 'grid', gap: 1.5 }}>
-					{mensualidadesPaginadas.map((m) => (
+					{mensualidadesPaginadas.map((m) => {
+						const estadoAlumno = obtenerEstadoAlumnoVisual(m.id_alumno);
+
+						return (
 						<Paper key={m._id} sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)' }}>
 							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
 								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+									<Tooltip title={`Alumno ${estadoAlumno.label}`}>
+										<Box
+											sx={{
+												width: 10,
+												height: 10,
+												borderRadius: '50%',
+												bgcolor: estadoAlumno.color,
+												border: `2px solid ${estadoAlumno.borderColor}`,
+												flexShrink: 0
+											}}
+										/>
+									</Tooltip>
 									<Avatar sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 										{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 									</Avatar>
@@ -1093,10 +1099,6 @@ function Mensualidades() {
 								{renderEstatusChip(m.estatus)}
 							</Box>
 							<Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Alumno:</b></Typography>
-									{renderEstadoAlumnoChip(m.id_alumno)}
-								</Box>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
 								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Etiquetas:</b></Typography>
@@ -1172,7 +1174,8 @@ function Mensualidades() {
 								)}
 							</Box>
 						</Paper>
-					))}
+						);
+					})}
 					<Paper sx={{ borderRadius: 3, border: '1px solid #eef0f3' }}>
 						<TablePagination
 							component="div"
@@ -1192,7 +1195,9 @@ function Mensualidades() {
 					sx={{
 						mt: 3,
 						borderRadius: 3,
-						overflow: 'hidden',
+						overflowX: 'auto',
+						overflowY: 'hidden',
+						maxWidth: '100%',
 						boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
 					}}
 				>
@@ -1200,7 +1205,6 @@ function Mensualidades() {
 						<TableHead>
 							<TableRow sx={{ backgroundColor: '#f8fafc' }}>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
-								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACTIVO/BAJA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ETIQUETAS</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
@@ -1214,20 +1218,34 @@ function Mensualidades() {
 							</TableRow>
 						</TableHead>
 						<TableBody>
-							{mensualidadesPaginadas.map((m) => (
+							{mensualidadesPaginadas.map((m) => {
+								const estadoAlumno = obtenerEstadoAlumnoVisual(m.id_alumno);
+
+								return (
 								<TableRow
 									key={m._id}
 									sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}
 								>
 									<TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>
 										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+											<Tooltip title={`Alumno ${estadoAlumno.label}`}>
+												<Box
+													sx={{
+														width: 9,
+														height: 9,
+														borderRadius: '50%',
+														bgcolor: estadoAlumno.color,
+														border: `2px solid ${estadoAlumno.borderColor}`,
+														flexShrink: 0
+													}}
+												/>
+											</Tooltip>
 											<Avatar sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 												{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 											</Avatar>
 											{m.id_alumno ? m.id_alumno.nombres + ' ' + m.id_alumno.apellidos : ''}
 										</Box>
 									</TableCell>
-									<TableCell>{renderEstadoAlumnoChip(m.id_alumno)}</TableCell>
 									<TableCell>
 										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 									</TableCell>
@@ -1292,7 +1310,8 @@ function Mensualidades() {
 										</Box>
 									</TableCell>
 								</TableRow>
-							))}
+								);
+							})}
 						</TableBody>
 						<tfoot>
 							<TableRow>

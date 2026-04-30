@@ -1,12 +1,12 @@
 export const CATEGORIAS_DISPONIBLES = [
-  'U9',
-  'U11',
-  'U13',
-  'U15',
-  'U17',
-  'U19',
+  'U9/INICIACION',
+  'U11/FORMACION',
+  'U13/MINI',
+  'U15/INFANTIL',
+  'U17/JUVENIL',
+  'U19/JUVENIL LIBRE',
   'U21',
-  'U23',
+  'U23/ LIBRE',
   'MAYORES / LIBRE'
 ];
 
