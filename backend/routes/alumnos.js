@@ -40,10 +40,23 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+const importUpload = multer({
+	storage: multer.memoryStorage(),
+	limits: { fileSize: 8 * 1024 * 1024 },
+	fileFilter: (req, file, cb) => {
+		const ext = path.extname(String(file?.originalname || '')).toLowerCase();
+		if (ext !== '.xlsx' && ext !== '.xls') {
+			return cb(new Error('Formato no permitido. Usa .xlsx o .xls'));
+		}
+		return cb(null, true);
+	}
+});
+
 // CRUD rutas para alumnos
 router.get('/', authMiddleware, alumnoController.getAlumnos);
 router.get('/estadisticas/inscritos-retirados', authMiddleware, rolMiddleware('admin'), alumnoController.getEstadisticasInscritosRetirados);
 router.get('/numeros-franela/disponibilidad', authMiddleware, alumnoController.getDisponibilidadNumeroFranela);
+router.post('/importar-excel', authMiddleware, rolMiddleware('admin'), importUpload.single('archivo'), alumnoController.importarAlumnosExcel);
 router.post('/', authMiddleware, rolMiddleware('admin'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.createAlumno);
 router.get('/por-representante/:representanteId', authMiddleware, ensureRepresentanteOwnershipFromParam('representanteId'), alumnoController.getAlumnosPorRepresentante);
 router.get('/:id/historial-estados', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getHistorialEstadosAlumno);

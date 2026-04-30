@@ -54,10 +54,14 @@ const PagoDetalle = require('../models/PagoDetalle');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const XLSX = require('xlsx');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { generarMensualidadesPendientesAlumno } = require('./mensualidadController');
+
+const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 4, 1, 12, 0, 0));
+const IMPORT_FIXED_PERIODO_COBRO = { mes: 5, anio: 2026 };
 
 async function getTenantAlumnoReadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -220,6 +224,232 @@ function parseDateInput(value) {
 
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizarTextoPlano(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizarCedula(value) {
+  const raw = String(value || '').trim();
+  if (!raw || /^s\/?c$/i.test(raw)) return '';
+  return raw.replace(/[^0-9A-Za-z-]/g, '');
+}
+
+function parseExcelDateInput(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return null;
+    return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d, 12, 0, 0));
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const match = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3].length === 2 ? `20${match[3]}` : match[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return parseDateInput(raw);
+}
+
+function findColumnIndexByCandidates(headerRow, candidates) {
+  if (!Array.isArray(headerRow)) return -1;
+  const normalizedHeaders = headerRow.map((header) => normalizarTextoPlano(header));
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizarTextoPlano(candidate);
+    const idx = normalizedHeaders.findIndex((h) => h === normalizedCandidate);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+function findColumnIndexesByCandidates(headerRow, candidates) {
+  if (!Array.isArray(headerRow)) return [];
+  const normalizedHeaders = headerRow.map((header) => normalizarTextoPlano(header));
+  const result = [];
+
+  candidates.forEach((candidate) => {
+    const normalizedCandidate = normalizarTextoPlano(candidate);
+    normalizedHeaders.forEach((header, index) => {
+      if (header === normalizedCandidate) {
+        result.push(index);
+      }
+    });
+  });
+
+  return Array.from(new Set(result)).sort((a, b) => a - b);
+}
+
+function splitNombreCompleto(valor) {
+  const full = String(valor || '').replace(/\s+/g, ' ').trim();
+  if (!full) return { nombres: '', apellidos: '' };
+
+  const parts = full.split(' ');
+  if (parts.length === 1) {
+    return { nombres: parts[0], apellidos: 'N/A' };
+  }
+
+  const apellidos = parts.slice(-1).join(' ');
+  const nombres = parts.slice(0, -1).join(' ');
+  return { nombres, apellidos };
+}
+
+function normalizarTelefonoPlano(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits;
+}
+
+function parseAlumnoExcelRows(fileBuffer) {
+  const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellDates: true });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    throw new Error('El archivo Excel no tiene hojas.');
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    raw: true,
+    defval: '',
+    blankrows: false
+  });
+
+  if (!rows.length) {
+    throw new Error('El archivo Excel esta vacio.');
+  }
+
+  const maxHeaderScanRows = Math.min(20, rows.length);
+  let headerRowIndex = -1;
+  let headerRow = [];
+
+  for (let i = 0; i < maxHeaderScanRows; i += 1) {
+    const candidate = Array.isArray(rows[i]) ? rows[i] : [];
+    const idxNombresTmp = findColumnIndexByCandidates(candidate, ['NOMBRES', 'NOMBRE', 'NOMBRES DEL ALUMNO']);
+    const idxApellidosTmp = findColumnIndexByCandidates(candidate, ['APELLIDOS', 'APELLIDO']);
+    if (idxNombresTmp >= 0 && idxApellidosTmp >= 0) {
+      headerRowIndex = i;
+      headerRow = candidate;
+      break;
+    }
+  }
+
+  if (headerRowIndex < 0) {
+    const previewHeaders = (rows[0] || [])
+      .map((h) => String(h || '').trim())
+      .filter(Boolean)
+      .slice(0, 12)
+      .join(' | ');
+
+    throw new Error(
+      `No se encontraron columnas obligatorias del alumno (NOMBRES y APELLIDOS). Hoja: ${firstSheetName}. Encabezados detectados (fila 1): ${previewHeaders || 'sin datos'}`
+    );
+  }
+
+  const idxNombres = findColumnIndexByCandidates(headerRow, ['NOMBRES', 'NOMBRE', 'NOMBRES DEL ALUMNO']);
+  const idxApellidos = findColumnIndexByCandidates(headerRow, ['APELLIDOS', 'APELLIDO']);
+  const idxRepresentante = findColumnIndexByCandidates(headerRow, ['REPRESENTANTE', 'NOMBRE REPRESENTANTE']);
+  const cedulaIndexes = findColumnIndexesByCandidates(headerRow, ['CEDULA', 'CEDULA ALUMNO', 'CEDULA ESTUDIANTE', 'CEDULA REPRESENTANTE']);
+  const fechaNacIndexes = findColumnIndexesByCandidates(headerRow, ['FECHA NAC', 'FECHA NACIMIENTO', 'FECHA DE NACIMIENTO']);
+
+  let idxCedula = findColumnIndexByCandidates(headerRow, ['CEDULA ALUMNO', 'CEDULA ESTUDIANTE']);
+  if (idxCedula < 0 && cedulaIndexes.length > 0) {
+    idxCedula = idxRepresentante >= 0
+      ? (cedulaIndexes.find((idx) => idx < idxRepresentante) ?? cedulaIndexes[0])
+      : cedulaIndexes[0];
+  }
+
+  let idxRepCedula = findColumnIndexByCandidates(headerRow, ['CEDULA REPRESENTANTE']);
+  if (idxRepCedula < 0 && cedulaIndexes.length > 1) {
+    idxRepCedula = idxRepresentante >= 0
+      ? (cedulaIndexes.find((idx) => idx > idxRepresentante) ?? cedulaIndexes[cedulaIndexes.length - 1])
+      : cedulaIndexes[1];
+  }
+
+  const idxSexo = findColumnIndexByCandidates(headerRow, ['SEXO']);
+  let idxFechaNac = findColumnIndexByCandidates(headerRow, ['FECHA NAC ALUMNO']);
+  if (idxFechaNac < 0 && fechaNacIndexes.length > 0) {
+    idxFechaNac = idxRepresentante >= 0
+      ? (fechaNacIndexes.find((idx) => idx < idxRepresentante) ?? fechaNacIndexes[0])
+      : fechaNacIndexes[0];
+  }
+
+  let idxRepFechaNac = findColumnIndexByCandidates(headerRow, ['FECHA NAC REPRESENTANTE']);
+  if (idxRepFechaNac < 0 && fechaNacIndexes.length > 1) {
+    idxRepFechaNac = idxRepresentante >= 0
+      ? (fechaNacIndexes.find((idx) => idx > idxRepresentante) ?? fechaNacIndexes[fechaNacIndexes.length - 1])
+      : fechaNacIndexes[1];
+  }
+
+  const idxFechaIngreso = findColumnIndexByCandidates(headerRow, ['FECHA INGRESO', 'FECHA DE INGRESO', 'INGRESO']);
+  const idxClasif = findColumnIndexByCandidates(headerRow, ['CLASIF INTERNA', 'CLASIFICACION INTERNA', 'CATEGORIA']);
+  const idxNumeroFranela = findColumnIndexByCandidates(headerRow, ['NRO DE FRANELA', 'NRO FRANELA', 'NUMERO FRANELA']);
+  const idxDireccion = findColumnIndexByCandidates(headerRow, ['DIRECCION', 'DOMICILIO']);
+  const idxRepTelefono = findColumnIndexByCandidates(headerRow, ['NRO DE TEL DEL REPRESENTANTE', 'TELEFONO REPRESENTANTE', 'TEL REPRESENTANTE', 'TELEFONO']);
+  const idxRepCorreo = findColumnIndexByCandidates(headerRow, ['CORREO REPRESENTANTE', 'CORREO', 'EMAIL REPRESENTANTE', 'EMAIL']);
+  const idxRepDireccion = findColumnIndexByCandidates(headerRow, ['DIRECCION REPRESENTANTE', 'DOMICILIO REPRESENTANTE']);
+
+  if (idxNombres < 0 || idxApellidos < 0) {
+    throw new Error('No se encontraron columnas obligatorias del alumno: NOMBRES y APELLIDOS.');
+  }
+
+  return rows.slice(headerRowIndex + 1).map((row, index) => {
+    const nombres = String(row[idxNombres] || '').trim();
+    const apellidos = String(row[idxApellidos] || '').trim();
+    const cedula = idxCedula >= 0 ? normalizarCedula(row[idxCedula]) : '';
+    const sexo = idxSexo >= 0 ? row[idxSexo] : '';
+    const fecha_nacimiento = idxFechaNac >= 0 ? parseExcelDateInput(row[idxFechaNac]) : null;
+    const fecha_inscripcion = idxFechaIngreso >= 0 ? parseExcelDateInput(row[idxFechaIngreso]) : null;
+    const categoria = idxClasif >= 0 ? String(row[idxClasif] || '').trim() : '';
+    const domicilio = idxDireccion >= 0 ? String(row[idxDireccion] || '').trim() : '';
+    const numeroFranelaRaw = idxNumeroFranela >= 0 ? row[idxNumeroFranela] : '';
+    const representanteRaw = idxRepresentante >= 0 ? String(row[idxRepresentante] || '').trim() : '';
+    const repCedula = idxRepCedula >= 0 ? normalizarCedula(row[idxRepCedula]) : '';
+    const repTelefono = idxRepTelefono >= 0 ? normalizarTelefonoPlano(row[idxRepTelefono]) : '';
+    const repFechaNacimiento = idxRepFechaNac >= 0 ? parseExcelDateInput(row[idxRepFechaNac]) : null;
+    const repCorreo = idxRepCorreo >= 0 ? String(row[idxRepCorreo] || '').trim() : '';
+    const repDireccion = idxRepDireccion >= 0
+      ? String(row[idxRepDireccion] || '').trim()
+      : (domicilio || '');
+    const repNombrePartes = splitNombreCompleto(representanteRaw);
+
+    return {
+      excelRow: headerRowIndex + index + 2,
+      nombres,
+      apellidos,
+      cedula,
+      sexo,
+      fecha_nacimiento,
+      fecha_inscripcion,
+      categoria,
+      domicilio,
+      numero_franela: numeroFranelaRaw,
+      representante_nombre_completo: representanteRaw,
+      rep_nombres: repNombrePartes.nombres,
+      rep_apellidos: repNombrePartes.apellidos,
+      rep_cedula: repCedula,
+      rep_telefono: repTelefono,
+      rep_fecha_nacimiento: repFechaNacimiento,
+      rep_correo: repCorreo,
+      rep_direccion: repDireccion
+    };
+  });
 }
 
 function getPeriodoFromInput(rawValue, parsedDate) {
@@ -996,6 +1226,232 @@ exports.getDisponibilidadNumeroFranela = async (req, res) => {
   }
 };
 
+exports.importarAlumnosExcel = async (req, res) => {
+  try {
+    if (!req.file?.buffer) {
+      return res.status(400).json({ error: 'Debes adjuntar un archivo Excel en el campo archivo.' });
+    }
+
+    const sedeIdRaw = String(req.body?.sede || '').trim();
+    if (!mongoose.Types.ObjectId.isValid(sedeIdRaw)) {
+      return res.status(400).json({ error: 'Debes enviar una sede valida en el campo sede.' });
+    }
+
+    const {
+      Alumno: TenantAlumno,
+      Representante: TenantRepresentante,
+      User: TenantUser,
+      Sede: TenantSede,
+      Reposo: TenantReposo,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      TenantConfig: TenantConfigModel
+    } = await getTenantAlumnoWriteModels(req);
+
+    const sede = await TenantSede.findById(sedeIdRaw).select('_id nombre');
+    if (!sede) {
+      return res.status(404).json({ error: 'Sede no encontrada.' });
+    }
+
+    const dryRun = String(req.body?.dryRun || '').trim() === '1';
+
+    const rows = parseAlumnoExcelRows(req.file.buffer);
+    const created = [];
+    const skipped = [];
+    const errors = [];
+    const seenCedulaInFile = new Set();
+
+    for (const row of rows) {
+      try {
+        if (!row.nombres || !row.apellidos) {
+          skipped.push({ fila: row.excelRow, motivo: 'Fila sin nombres/apellidos.' });
+          continue;
+        }
+
+        const cedulaKey = row.cedula ? `${String(row.cedula).toLowerCase()}::${sedeIdRaw}` : '';
+        if (cedulaKey && seenCedulaInFile.has(cedulaKey)) {
+          skipped.push({ fila: row.excelRow, motivo: 'Cedula duplicada dentro del mismo archivo.' });
+          continue;
+        }
+        if (cedulaKey) {
+          seenCedulaInFile.add(cedulaKey);
+        }
+
+        if (row.cedula) {
+          const existente = await TenantAlumno.findOne({ cedula: row.cedula, sede: sedeIdRaw }).select('_id');
+          if (existente) {
+            skipped.push({ fila: row.excelRow, motivo: 'Ya existe un alumno con esa cedula en esta sede.' });
+            continue;
+          }
+        }
+
+        const alumnoData = {
+          nombres: row.nombres,
+          apellidos: row.apellidos,
+          sede: sedeIdRaw,
+          fecha_inicio_cobro: new Date(IMPORT_FIXED_FECHA_INICIO_COBRO),
+          fecha_inscripcion: row.fecha_inscripcion || undefined,
+          fecha_nacimiento: row.fecha_nacimiento || undefined,
+          cedula: row.cedula || undefined,
+          domicilio: row.domicilio || undefined,
+          sinRepresentante: true
+        };
+
+        const tieneDatosRepresentante = row.rep_cedula && row.rep_nombres && row.rep_apellidos;
+        if (tieneDatosRepresentante) {
+          if (!dryRun) {
+            let representante = await TenantRepresentante.findOne({ cedula: row.rep_cedula });
+            let user = await TenantUser.findOne({ email: row.rep_cedula });
+
+            if (!user) {
+              const password = await bcrypt.hash(row.rep_cedula, 10);
+              user = new TenantUser({
+                nombre: `${row.rep_nombres} ${row.rep_apellidos}`.trim(),
+                email: row.rep_cedula,
+                password,
+                rol: 'usuario'
+              });
+              await user.save();
+            }
+
+            if (!representante) {
+              representante = new TenantRepresentante({
+                nombres: row.rep_nombres,
+                apellidos: row.rep_apellidos,
+                cedula: row.rep_cedula,
+                telefono: row.rep_telefono || undefined,
+                fecha_nacimiento: row.rep_fecha_nacimiento || undefined,
+                correo: row.rep_correo || undefined,
+                direccion: row.rep_direccion || undefined,
+                usuario: user._id
+              });
+              await representante.save();
+            } else {
+              let updated = false;
+              if (!representante.usuario) {
+                representante.usuario = user._id;
+                updated = true;
+              }
+              if (row.rep_telefono && !representante.telefono) {
+                representante.telefono = row.rep_telefono;
+                updated = true;
+              }
+              if (row.rep_fecha_nacimiento && !representante.fecha_nacimiento) {
+                representante.fecha_nacimiento = row.rep_fecha_nacimiento;
+                updated = true;
+              }
+              if (row.rep_correo && !representante.correo) {
+                representante.correo = row.rep_correo;
+                updated = true;
+              }
+              if (row.rep_direccion && !representante.direccion) {
+                representante.direccion = row.rep_direccion;
+                updated = true;
+              }
+              if (updated) {
+                await representante.save();
+              }
+            }
+
+            alumnoData.representante = representante._id;
+            alumnoData.usuario = user._id;
+            alumnoData.sinRepresentante = false;
+            alumnoData.parentesco = row.parentesco || undefined;
+          } else {
+            alumnoData.sinRepresentante = false;
+          }
+        }
+
+        if (row.categoria) {
+          alumnoData.categoria = normalizarCategoria(row.categoria);
+        }
+
+        const sexoNormalizado = normalizarSexo(row.sexo);
+        if (sexoNormalizado === null) {
+          skipped.push({ fila: row.excelRow, motivo: 'Sexo invalido. Debe ser Femenino o Masculino.' });
+          continue;
+        }
+        if (sexoNormalizado) {
+          alumnoData.sexo = sexoNormalizado;
+        }
+
+        const nroFranela = normalizarNumeroFranela(row.numero_franela);
+        if (nroFranela !== undefined) {
+          if (Number.isNaN(nroFranela)) {
+            skipped.push({ fila: row.excelRow, motivo: 'Nro de franela invalido.' });
+            continue;
+          }
+          alumnoData.numero_franela = nroFranela;
+        }
+
+        await validarNumeroFranelaDisponible({
+          numeroFranela: alumnoData.numero_franela,
+          categoria: alumnoData.categoria,
+          AlumnoModel: TenantAlumno
+        });
+
+        if (!dryRun) {
+          const alumno = new TenantAlumno(alumnoData);
+          await alumno.save();
+
+          try {
+            await generarMensualidadesPendientesAlumno(alumno, {
+              models: {
+                Alumno: TenantAlumno,
+                Mensualidad: TenantMensualidad,
+                PagoDetalle: TenantPagoDetalle,
+                Sede: TenantSede,
+                Reposo: TenantReposo,
+                TenantConfig: TenantConfigModel
+              },
+              periodoInicio: IMPORT_FIXED_PERIODO_COBRO,
+              periodoFin: IMPORT_FIXED_PERIODO_COBRO
+            });
+          } catch (errMensualidad) {
+            await alumno.deleteOne().catch(() => {});
+            throw new Error(`No se pudo crear mensualidad inicial de mayo 2026: ${errMensualidad.message}`);
+          }
+
+          created.push({
+            fila: row.excelRow,
+            id: alumno._id,
+            nombres: alumno.nombres,
+            apellidos: alumno.apellidos,
+            representanteCreado: Boolean(alumno.representante)
+          });
+        } else {
+          created.push({
+            fila: row.excelRow,
+            nombres: alumnoData.nombres,
+            apellidos: alumnoData.apellidos,
+            preview: true,
+            representanteDetectado: Boolean(tieneDatosRepresentante)
+          });
+        }
+      } catch (rowErr) {
+        errors.push({ fila: row.excelRow, error: rowErr.message });
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      dryRun,
+      sede: { id: sede._id, nombre: sede.nombre },
+      totalFilas: rows.length,
+      creados: created.length,
+      omitidos: skipped.length,
+      conError: errors.length,
+      detalle: {
+        creados: created,
+        omitidos: skipped,
+        errores: errors
+      }
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudo importar el archivo.', detalle: err.message });
+  }
+};
+
 
 // Crear un alumno con representante y usuario
 exports.createAlumno = async (req, res) => {
@@ -1481,25 +1937,28 @@ exports.updateAlumno = async (req, res) => {
       updateData.monto_personalizado_valor !== undefined ||
       updateData.sede !== undefined;
     if (debeRecalcularMonto) {
-      const { mes, anio } = getPeriodoZonaCaracas();
-      let monto = 0;
-      if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
-        const sede = await TenantSede.findById(alumno.sede);
-        monto = sede && sede.costo ? sede.costo : 0;
-      } else if (alumno.tipo_mensualidad === 'monto_personalizado') {
-        monto = alumno.monto_personalizado_valor || 0;
-      } else if (alumno.tipo_mensualidad === 'beca_completa') {
-        monto = 0;
-      }
-      const mensualidadesPeriodo = await TenantMensualidad.find({
-        id_alumno: alumno._id,
-        mes,
-        anio,
-        estatus: { $nin: ['Pagado', 'Exonerado', 'Exento por reposo'] }
+      const montoBaseActualizado = await resolverMontoBaseAlumno(alumno, {
+        Sede: TenantSede
       });
 
-      for (const mensualidad of mensualidadesPeriodo) {
-        mensualidad.monto_esperado = redondearMonto(monto);
+      const mensualidadesPendientes = await TenantMensualidad.find({
+        id_alumno: alumno._id,
+        estatus: { $in: ['Pendiente', 'Insolvente', 'Retrasado'] }
+      });
+
+      for (const mensualidad of mensualidadesPendientes) {
+        const creditoAplicado = redondearMonto(mensualidad.credito_aplicado || 0);
+        const ajusteExtraordinario = redondearMonto(mensualidad.ajuste_extraordinario || 0);
+        const montoSinRecargo = redondearMonto(
+          Math.max(0, montoBaseActualizado - creditoAplicado - ajusteExtraordinario)
+        );
+        const recargoAplicado = redondearMonto(mensualidad.recargo_aplicado_usd || 0);
+
+        mensualidad.monto_base = redondearMonto(montoBaseActualizado);
+        mensualidad.monto_sin_recargo_usd = montoSinRecargo;
+        mensualidad.monto_con_recargo_usd = redondearMonto(montoSinRecargo + recargoAplicado);
+        mensualidad.monto_esperado = redondearMonto(montoSinRecargo + recargoAplicado);
+
         const estatusAnteriorMensualidad = mensualidad.estatus;
         await recalcularMensualidadPorPagos(mensualidad, estatusAnteriorMensualidad, {
           Alumno: TenantAlumno,
