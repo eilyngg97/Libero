@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSede } from '../context/SedeContext';
 import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
@@ -20,6 +20,7 @@ import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { exportToExcel } from '../utils/exportExcel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -75,6 +76,7 @@ function obtenerSexoAlumno(alumno) {
 }
 
 const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
+const PREVIEW_PAGE_SIZE = 20;
 
 function normalizeMetodoPago(value) {
   const raw = String(value || '').trim().toLowerCase();
@@ -142,6 +144,16 @@ function TablaAlumnos() {
   const [reactivarLoading, setReactivarLoading] = useState(false);
   const [reactivarSuccess, setReactivarSuccess] = useState({ open: false, message: '' });
   const [reactivarError, setReactivarError] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importSuccess, setImportSuccess] = useState({ open: false, message: '' });
+  const [importPreviewOpen, setImportPreviewOpen] = useState(false);
+  const [importPreviewData, setImportPreviewData] = useState(null);
+  const [importPreviewLoading, setImportPreviewLoading] = useState(false);
+  const [importPendingFile, setImportPendingFile] = useState(null);
+  const [previewCreatePage, setPreviewCreatePage] = useState(0);
+  const [previewSkipPage, setPreviewSkipPage] = useState(0);
+  const [previewErrorPage, setPreviewErrorPage] = useState(0);
+  const importInputRef = useRef(null);
   const [reactivarForm, setReactivarForm] = useState({
     montoReingreso: '',
     montoMensualidad: '',
@@ -237,6 +249,114 @@ function TablaAlumnos() {
       setError(err.message);
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  const openImportPicker = () => {
+    if (!sedeSeleccionada?._id) {
+      setError('Debes seleccionar una sede antes de importar alumnos.');
+      return;
+    }
+    if (importInputRef.current) {
+      importInputRef.current.value = '';
+      importInputRef.current.click();
+    }
+  };
+
+  const requestImport = async ({ file, dryRun }) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No hay token de sesion. Inicia sesion nuevamente.');
+    }
+
+    const formData = new FormData();
+    formData.append('archivo', file);
+    formData.append('sede', String(sedeSeleccionada._id));
+    if (dryRun) {
+      formData.append('dryRun', '1');
+    }
+
+    const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/importar-excel`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data?.error || data?.detalle || 'No se pudo procesar el archivo.');
+    }
+    return data;
+  };
+
+  const handleImportFileSelected = async (event) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+
+    const fileName = String(file.name || '').toLowerCase();
+    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls')) {
+      setError('Formato no permitido. Usa .xlsx o .xls');
+      return;
+    }
+
+    setImportPreviewLoading(true);
+    setError(null);
+    try {
+      const preview = await requestImport({ file, dryRun: true });
+      setImportPendingFile(file);
+      setImportPreviewData(preview);
+      setPreviewCreatePage(0);
+      setPreviewSkipPage(0);
+      setPreviewErrorPage(0);
+      setImportPreviewOpen(true);
+    } catch (err) {
+      setError(err.message || 'Error al importar el archivo.');
+    } finally {
+      setImportPreviewLoading(false);
+    }
+  };
+
+  const closeImportPreview = () => {
+    if (importLoading || importPreviewLoading) return;
+    setImportPreviewOpen(false);
+    setImportPreviewData(null);
+    setImportPendingFile(null);
+    setPreviewCreatePage(0);
+    setPreviewSkipPage(0);
+    setPreviewErrorPage(0);
+  };
+
+  const confirmImportFromPreview = async () => {
+    if (!importPendingFile) {
+      setError('No hay archivo seleccionado para importar.');
+      return;
+    }
+
+    setImportLoading(true);
+    setError(null);
+    try {
+      const data = await requestImport({ file: importPendingFile, dryRun: false });
+
+      setImportSuccess({
+        open: true,
+        message: `Importacion completada. Creados: ${data.creados || 0}, Omitidos: ${data.omitidos || 0}, Errores: ${data.conError || 0}.`
+      });
+
+      if (Array.isArray(data?.detalle?.errores) && data.detalle.errores.length > 0) {
+        const resumenErrores = data.detalle.errores
+          .slice(0, 4)
+          .map((item) => `Fila ${item.fila}: ${item.error}`)
+          .join(' | ');
+        setError(`Algunas filas no se importaron. ${resumenErrores}`);
+      }
+
+      closeImportPreview();
+      await fetchAlumnos();
+    } catch (err) {
+      setError(err.message || 'Error al importar el archivo.');
+    } finally {
+      setImportLoading(false);
     }
   };
   const handleBajaAlumno = async () => {
@@ -440,9 +560,41 @@ function TablaAlumnos() {
   });
   const alumnosPaginados = alumnosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
+  const previewCreados = importPreviewData?.detalle?.creados || [];
+  const previewOmitidos = importPreviewData?.detalle?.omitidos || [];
+  const previewErrores = importPreviewData?.detalle?.errores || [];
+
+  const createTotalPages = Math.max(1, Math.ceil(previewCreados.length / PREVIEW_PAGE_SIZE));
+  const skipTotalPages = Math.max(1, Math.ceil(previewOmitidos.length / PREVIEW_PAGE_SIZE));
+  const errorTotalPages = Math.max(1, Math.ceil(previewErrores.length / PREVIEW_PAGE_SIZE));
+
+  const currentCreatePage = Math.min(previewCreatePage, createTotalPages - 1);
+  const currentSkipPage = Math.min(previewSkipPage, skipTotalPages - 1);
+  const currentErrorPage = Math.min(previewErrorPage, errorTotalPages - 1);
+
+  const createdPageRows = previewCreados.slice(
+    currentCreatePage * PREVIEW_PAGE_SIZE,
+    (currentCreatePage + 1) * PREVIEW_PAGE_SIZE
+  );
+  const skippedPageRows = previewOmitidos.slice(
+    currentSkipPage * PREVIEW_PAGE_SIZE,
+    (currentSkipPage + 1) * PREVIEW_PAGE_SIZE
+  );
+  const errorPageRows = previewErrores.slice(
+    currentErrorPage * PREVIEW_PAGE_SIZE,
+    (currentErrorPage + 1) * PREVIEW_PAGE_SIZE
+  );
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          style={{ display: 'none' }}
+          onChange={handleImportFileSelected}
+        />
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>Lista de Alumnos</Typography>
           <Typography variant="body2" sx={{ color: '#94a3b8' }}>
@@ -470,6 +622,15 @@ function TablaAlumnos() {
             onClick={handleDownloadExcel}
           >
             Excel
+          </Button>
+          <Button
+            variant="outlined"
+            sx={{ borderColor: '#e2e8f0', color: '#0369a1', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
+            startIcon={<UploadFileIcon />}
+            onClick={openImportPicker}
+            disabled={importLoading || importPreviewLoading}
+          >
+            {importLoading || importPreviewLoading ? 'Procesando...' : 'Importar Excel'}
           </Button>
           <Button
             variant="outlined"
@@ -1226,6 +1387,104 @@ function TablaAlumnos() {
           </Button>
         </DialogActions>
       </Dialog>
+      <Dialog
+        open={importPreviewOpen}
+        onClose={closeImportPreview}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Previsualizacion de importacion</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1.5, color: '#475569' }}>
+            Revisa los registros antes de confirmar.
+          </Typography>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(4, minmax(0, 1fr))' },
+              gap: 1,
+              mb: 2
+            }}
+          >
+            <Chip label={`Total filas: ${importPreviewData?.totalFilas || 0}`} sx={{ justifyContent: 'flex-start' }} />
+            <Chip label={`Se crearan: ${importPreviewData?.creados || 0}`} color="success" sx={{ justifyContent: 'flex-start' }} />
+            <Chip label={`Omitidos: ${importPreviewData?.omitidos || 0}`} color="warning" sx={{ justifyContent: 'flex-start' }} />
+            <Chip label={`Errores: ${importPreviewData?.conError || 0}`} color="error" sx={{ justifyContent: 'flex-start' }} />
+          </Box>
+
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Registros a crear</Typography>
+          <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 1.25, maxHeight: 180, overflowY: 'auto', mb: 2 }}>
+            {previewCreados.length === 0 ? (
+              <Typography sx={{ color: '#64748b' }}>No hay registros para crear.</Typography>
+            ) : (
+              createdPageRows.map((item, index) => (
+                <Typography key={`crear-${index}`} sx={{ fontSize: 13, color: '#0f172a', mb: 0.4 }}>
+                  {`Fila ${item.fila}: ${item.nombres || ''} ${item.apellidos || ''}`.trim()}
+                </Typography>
+              ))
+            )}
+          </Box>
+          {previewCreados.length > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography sx={{ fontSize: 12, color: '#64748b' }}>{`Pagina ${currentCreatePage + 1} de ${createTotalPages}`}</Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" variant="outlined" onClick={() => setPreviewCreatePage((p) => Math.max(0, p - 1))} disabled={currentCreatePage === 0}>Anterior</Button>
+                <Button size="small" variant="outlined" onClick={() => setPreviewCreatePage((p) => Math.min(createTotalPages - 1, p + 1))} disabled={currentCreatePage >= createTotalPages - 1}>Siguiente</Button>
+              </Box>
+            </Box>
+          )}
+
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Registros omitidos</Typography>
+          <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 1.25, maxHeight: 180, overflowY: 'auto', mb: 2 }}>
+            {previewOmitidos.length === 0 ? (
+              <Typography sx={{ color: '#64748b' }}>No hay registros omitidos.</Typography>
+            ) : (
+              skippedPageRows.map((item, index) => (
+                <Typography key={`omitido-${index}`} sx={{ fontSize: 13, color: '#92400e', mb: 0.4 }}>
+                  {`Fila ${item.fila}: ${item.motivo || 'Omitido'}`}
+                </Typography>
+              ))
+            )}
+          </Box>
+          {previewOmitidos.length > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography sx={{ fontSize: 12, color: '#64748b' }}>{`Pagina ${currentSkipPage + 1} de ${skipTotalPages}`}</Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" variant="outlined" onClick={() => setPreviewSkipPage((p) => Math.max(0, p - 1))} disabled={currentSkipPage === 0}>Anterior</Button>
+                <Button size="small" variant="outlined" onClick={() => setPreviewSkipPage((p) => Math.min(skipTotalPages - 1, p + 1))} disabled={currentSkipPage >= skipTotalPages - 1}>Siguiente</Button>
+              </Box>
+            </Box>
+          )}
+
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Filas con error</Typography>
+          <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 1.25, maxHeight: 180, overflowY: 'auto' }}>
+            {previewErrores.length === 0 ? (
+              <Typography sx={{ color: '#64748b' }}>No hay errores.</Typography>
+            ) : (
+              errorPageRows.map((item, index) => (
+                <Typography key={`error-${index}`} sx={{ fontSize: 13, color: '#b91c1c', mb: 0.4 }}>
+                  {`Fila ${item.fila}: ${item.error || 'Error desconocido'}`}
+                </Typography>
+              ))
+            )}
+          </Box>
+          {previewErrores.length > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5 }}>
+              <Typography sx={{ fontSize: 12, color: '#64748b' }}>{`Pagina ${currentErrorPage + 1} de ${errorTotalPages}`}</Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" variant="outlined" onClick={() => setPreviewErrorPage((p) => Math.max(0, p - 1))} disabled={currentErrorPage === 0}>Anterior</Button>
+                <Button size="small" variant="outlined" onClick={() => setPreviewErrorPage((p) => Math.min(errorTotalPages - 1, p + 1))} disabled={currentErrorPage >= errorTotalPages - 1}>Siguiente</Button>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeImportPreview} disabled={importLoading || importPreviewLoading}>Cancelar</Button>
+          <Button onClick={confirmImportFromPreview} variant="contained" disabled={importLoading || importPreviewLoading || (importPreviewData?.creados || 0) === 0}>
+            {importLoading ? 'Importando...' : 'Confirmar importacion'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Snackbar open={deleteSuccess.open} autoHideDuration={2500} onClose={() => setDeleteSuccess({ open: false, message: '' })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <MuiAlert onClose={() => setDeleteSuccess({ open: false, message: '' })} severity="success" sx={{ width: '100%' }}>
           {deleteSuccess.message}
@@ -1239,6 +1498,11 @@ function TablaAlumnos() {
       <Snackbar open={reactivarSuccess.open} autoHideDuration={2500} onClose={() => setReactivarSuccess({ open: false, message: '' })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <MuiAlert onClose={() => setReactivarSuccess({ open: false, message: '' })} severity="success" sx={{ width: '100%' }}>
           {reactivarSuccess.message}
+        </MuiAlert>
+      </Snackbar>
+      <Snackbar open={importSuccess.open} autoHideDuration={3500} onClose={() => setImportSuccess({ open: false, message: '' })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <MuiAlert onClose={() => setImportSuccess({ open: false, message: '' })} severity="success" sx={{ width: '100%' }}>
+          {importSuccess.message}
         </MuiAlert>
       </Snackbar>
     </Box>

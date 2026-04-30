@@ -36,6 +36,10 @@ function AlumnoEditar({ locationState }) {
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [successOpen, setSuccessOpen] = useState(false);
+  const [initialMensualidadConfig, setInitialMensualidadConfig] = useState({
+    tipo_mensualidad: 'monto_sede',
+    monto_personalizado_valor: ''
+  });
   const [categoria, setCategoria] = useState('');
   const [numeroFranelaDuplicado, setNumeroFranelaDuplicado] = useState(false);
   const [numeroFranelaCheckLoading, setNumeroFranelaCheckLoading] = useState(false);
@@ -75,6 +79,10 @@ function AlumnoEditar({ locationState }) {
       formData.dia_limite_personalizado = '';
     }
     setForm(formData);
+    setInitialMensualidadConfig({
+      tipo_mensualidad: formData.tipo_mensualidad || 'monto_sede',
+      monto_personalizado_valor: formData.monto_personalizado_valor ?? ''
+    });
     if (data.foto) setPreview(mediaUrl(data.foto));
     if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
   };
@@ -91,6 +99,14 @@ function AlumnoEditar({ locationState }) {
     hidratarFormularioAlumno(data);
     return data;
   };
+
+  const tipoMensualidadActual = form.tipo_mensualidad || 'monto_sede';
+  const montoPersonalizadoActual = form.monto_personalizado_valor ?? '';
+  const cambioTipoMensualidad = tipoMensualidadActual !== (initialMensualidadConfig.tipo_mensualidad || 'monto_sede');
+  const cambioMontoPersonalizado =
+    String(montoPersonalizadoActual || '').trim() !== String(initialMensualidadConfig.monto_personalizado_valor || '').trim();
+  const debeMostrarAvisoRecalculoMensualidades =
+    cambioTipoMensualidad || (tipoMensualidadActual === 'monto_personalizado' && cambioMontoPersonalizado);
 
   useEffect(() => {
     let mounted = true;
@@ -773,6 +789,11 @@ function AlumnoEditar({ locationState }) {
               />
               <Box sx={{ my: 1 }} />
             </div>
+          )}
+          {debeMostrarAvisoRecalculoMensualidades && (
+            <Alert severity="info" sx={{ mt: 1, mb: 1.5, borderRadius: 2 }}>
+              Al guardar, se recalcularan las mensualidades del alumno que esten en Pendiente, Insolvente o Retrasado usando la configuracion de monto actual.
+            </Alert>
           )}
           <div className="form-row">
             <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
