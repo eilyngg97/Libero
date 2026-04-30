@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSede } from '../context/SedeContext';
 import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
@@ -113,6 +113,7 @@ function TablaAlumnos() {
       const [filtroCategoria, setFiltroCategoria] = useState([]);
       const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
       const [filtroEstado, setFiltroEstado] = useState('');
+      const [mostrarFiltrosMobile, setMostrarFiltrosMobile] = useState(false);
     // Formatear fecha a DD/MM/YYYY (corrige desfase por zona horaria)
     const formatFecha = (fecha) => {
       if (!fecha) return '';
@@ -586,8 +587,8 @@ function TablaAlumnos() {
   );
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+    <Box sx={{ width: '100%', boxSizing: 'border-box' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2, flexWrap: 'wrap', width: '100%' }}>
         <input
           ref={importInputRef}
           type="file"
@@ -595,13 +596,13 @@ function TablaAlumnos() {
           style={{ display: 'none' }}
           onChange={handleImportFileSelected}
         />
-        <Box>
+        <Box sx={{ minWidth: 0, maxWidth: '100%' }}>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>Lista de Alumnos</Typography>
           <Typography variant="body2" sx={{ color: '#94a3b8' }}>
             Gestion centralizada de estudiantes y categorias.
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' } }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' }, minWidth: 0 }}>
           <Button
             variant="contained"
             color="secondary"
@@ -634,9 +635,32 @@ function TablaAlumnos() {
           </Button>
         </Box>
       </Box>
+      {isMobile && (
+        <Box sx={{ mb: 1.25, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setMostrarFiltrosMobile((prev) => !prev)}
+            sx={{
+              borderColor: '#cbd5e1',
+              color: '#475569',
+              fontWeight: 700,
+              textTransform: 'none'
+            }}
+          >
+            {mostrarFiltrosMobile ? 'Ocultar filtros' : 'Mostrar filtros'}
+          </Button>
+        </Box>
+      )}
+
+      {(!isMobile || mostrarFiltrosMobile) && (
       <Box
         sx={{
-          bgcolor: '#fff',
+          width: '100%',
+          maxWidth: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
+            bgcolor: '#fff',
           border: '1px solid #eef0f3',
           borderRadius: 3,
           p: 2,
@@ -772,13 +796,14 @@ function TablaAlumnos() {
           </Button>
         </Box>
       </Box>
+      )}
       <Box sx={{ display: 'none' }} />
       {loading ? (
         <Typography>Cargando...</Typography>
       ) : error ? (
         <Typography color="error">{error}</Typography>
       ) : isMobile ? (
-        <Box sx={{ display: 'grid', gap: 1.5 }}>
+        <Box sx={{ display: 'grid', gap: 1.5, width: '100%', boxSizing: 'border-box' }}>
           {alumnosPaginados.map((alumno) => (
             <Paper
               key={alumno._id}
@@ -786,11 +811,15 @@ function TablaAlumnos() {
                 p: 1.5,
                 borderRadius: 3,
                 border: '1px solid #eef0f3',
-                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)'
-              }}
+                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                  overflowWrap: 'break-word'
+                }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, mb: 1.2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, mb: 1.2, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0, flex: 1 }}>
                   <Avatar
                     src={mediaUrl(alumno.foto) || ''}
                     alt={alumno.nombres}
@@ -934,6 +963,19 @@ function TablaAlumnos() {
               onRowsPerPageChange={handleChangeRowsPerPage}
               rowsPerPageOptions={[5, 10, 25]}
               labelRowsPerPage="Filas por página:"
+              sx={{
+                width: '100%',
+                '& .MuiTablePagination-toolbar': {
+                  minHeight: 44,
+                  px: 1,
+                  flexWrap: 'wrap',
+                  rowGap: 0.5
+                },
+                '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': {
+                  m: 0,
+                  fontSize: 12
+                }
+              }}
             />
           </Paper>
         </Box>
@@ -1498,3 +1540,4 @@ function TablaAlumnos() {
 }
 
 export default TablaAlumnos;
+
