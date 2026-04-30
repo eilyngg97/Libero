@@ -1,5 +1,11 @@
+const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantCoreConnection } = require('../config/tenantCoreConnection');
+const { getTenantCoreModel } = require('../models/TenantCore');
 const { getTenantModel } = require('../services/tenantModelService');
+const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const DEFAULT_CONFIG = {
   pagos: {
@@ -31,6 +37,34 @@ async function getTenantConfigModel(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
   return getTenantModel(connection, 'TenantConfig');
+}
+
+async function getTenantUserModel(req) {
+  const tenantConfig = req.tenant || { tenantId: req.tenantId };
+  const connection = await getTenantBusinessConnection(tenantConfig);
+  return getTenantModel(connection, 'User');
+}
+
+function buildBrandingLogoUrl(req, file) {
+  if (!file?.filename) return null;
+  const tenantId = resolveRequestTenantId(req);
+  return `/uploads/${tenantId}/branding/${file.filename}`;
+}
+
+async function eliminarLogoAnteriorSiAplica(previousLogoUrl) {
+  const logoUrl = String(previousLogoUrl || '').trim();
+  if (!logoUrl.startsWith('/uploads/')) return;
+  if (!logoUrl.includes('/branding/')) return;
+
+  const relativePath = logoUrl.replace(/^\/+/, '');
+  const absolutePath = path.join(__dirname, '..', relativePath);
+  try {
+    await fs.promises.unlink(absolutePath);
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.warn('No se pudo eliminar logo anterior:', err.message);
+    }
+  }
 }
 
 function cleanValue(value) {
@@ -319,5 +353,93 @@ exports.patchConfiguracionAdmin = async (req, res) => {
     return res.json(serializeConfig(updated));
   } catch (err) {
     return res.status(400).json({ error: 'Error al actualizar parcialmente la configuracion.', detalle: err.message });
+  }
+};
+
+exports.subirLogoAcademia = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes adjuntar un archivo de imagen en el campo logo.' });
+    }
+
+    const tenantId = resolveRequestTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ error: 'No se pudo resolver el tenant actual.' });
+    }
+
+    const logoUrl = buildBrandingLogoUrl(req, req.file);
+    if (!logoUrl) {
+      return res.status(400).json({ error: 'No se pudo procesar el archivo de logo.' });
+    }
+
+    const coreConnection = await getTenantCoreConnection();
+    const TenantCore = getTenantCoreModel(coreConnection);
+    const tenantActual = await TenantCore.findOne({ tenantId }).select('tenantId nombre branding').lean();
+    if (!tenantActual) {
+      return res.status(404).json({ error: 'Tenant no encontrado en base core.' });
+    }
+
+    await TenantCore.updateOne(
+      { tenantId },
+      {
+        $set: {
+          'branding.logoUrl': logoUrl,
+          'branding.displayName': tenantActual?.branding?.displayName || tenantActual?.nombre || tenantId
+        }
+      }
+    );
+
+    await eliminarLogoAnteriorSiAplica(tenantActual?.branding?.logoUrl);
+
+    return res.status(200).json({
+      message: 'Logo de la academia actualizado con exito.',
+      logoUrl
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudo subir el logo de la academia.', detalle: err.message });
+  }
+};
+
+exports.cambiarClaveUsuario = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Sesion invalida.' });
+    }
+
+    const claveActual = String(req.body?.clave_actual || '').trim();
+    const claveNueva = String(req.body?.clave_nueva || '').trim();
+    const confirmarClaveNueva = String(req.body?.confirmar_clave_nueva || '').trim();
+
+    if (!claveActual || !claveNueva || !confirmarClaveNueva) {
+      return res.status(400).json({ error: 'Debes completar clave actual, nueva clave y confirmacion.' });
+    }
+
+    if (claveNueva.length < 8) {
+      return res.status(400).json({ error: 'La nueva clave debe tener al menos 8 caracteres.' });
+    }
+
+    if (claveNueva !== confirmarClaveNueva) {
+      return res.status(400).json({ error: 'La confirmacion de clave no coincide.' });
+    }
+
+    const TenantUser = await getTenantUserModel(req);
+    const user = await TenantUser.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado.' });
+    }
+
+    const coincideClaveActual = await bcrypt.compare(claveActual, user.password);
+    if (!coincideClaveActual) {
+      return res.status(400).json({ error: 'La clave actual es incorrecta.' });
+    }
+
+    const nuevaHash = await bcrypt.hash(claveNueva, 10);
+    user.password = nuevaHash;
+    await user.save();
+
+    return res.status(200).json({ message: 'Clave actualizada con exito.' });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudo cambiar la clave.', detalle: err.message });
   }
 };

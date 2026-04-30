@@ -13,10 +13,24 @@ export const mediaUrl = (value) => {
   }
 
   if (value.startsWith('/uploads/')) {
-    // En dev CRA (3000) + API (4000), resolver contra API para evitar 404.
+    // En local multi-tenant, conservar el subdominio del tenant en el host.
     if (apiBase) {
-      return `${apiBase}${value}`;
+      try {
+        const apiUrl = new URL(apiBase);
+        const currentHost = window.location.hostname;
+        const isApiLocalhost = apiUrl.hostname === 'localhost' || apiUrl.hostname === '127.0.0.1';
+        const isTenantLocalhost = currentHost.endsWith('.localhost');
+
+        if (isApiLocalhost && isTenantLocalhost) {
+          apiUrl.hostname = currentHost;
+        }
+
+        return `${apiUrl.origin}${value}`;
+      } catch (_) {
+        return `${apiBase}${value}`;
+      }
     }
+
     return value;
   }
 

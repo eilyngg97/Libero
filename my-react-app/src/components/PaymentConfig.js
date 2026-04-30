@@ -3,11 +3,17 @@ import {
   Alert,
   Box,
   Button,
+  Divider,
+  InputAdornment,
   Paper,
   Snackbar,
   TextField,
   Typography
 } from '@mui/material';
+import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
+import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
@@ -92,22 +98,85 @@ function PaymentConfig() {
   const fechaInicioRecargoTexto = buildFechaInicioRecargoTexto();
 
   const sectionCardSx = {
-    position: 'relative',
     p: 2.2,
-    pt: 2.6,
     borderRadius: 3,
-    border: '1px solid #e2e8f0',
-    boxShadow: '0 12px 26px rgba(15, 23, 42, 0.06)',
-    overflow: 'hidden',
-    bgcolor: '#ffffff',
-    '&::before': {
-      content: '""',
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: 7,
-      background: 'linear-gradient(90deg, #ff8a00 0%, #8a4b00 100%)'
+    border: '1px solid #e4e9f1',
+    boxShadow: '0 2px 6px rgba(15, 23, 42, 0.04)',
+    bgcolor: '#ffffff'
+  };
+
+  const cardTitleSx = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 0.8,
+    color: '#243145',
+    fontWeight: 800,
+    fontSize: 17
+  };
+
+  const fieldSx = {
+    '& .MuiInputLabel-root': {
+      fontSize: 14,
+      fontWeight: 800,
+      color: '#8b97aa',
+      letterSpacing: '0.03em',
+      textTransform: 'uppercase'
+    },
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 1.8,
+      bgcolor: '#ffffff',
+      '& fieldset': {
+        borderColor: '#dfe6f0'
+      },
+      '&:hover fieldset': {
+        borderColor: '#d5deeb'
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: '#d1d9e8'
+      }
+    },
+    '& .MuiInputBase-input': {
+      color: '#4b5a73',
+      fontWeight: 600,
+      fontSize: 13
+    }
+  };
+
+  const sectionHeaderSx = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 0.8,
+    mb: 1.6,
+    color: '#27364b',
+  };
+
+  const darkButtonSx = {
+    textTransform: 'none',
+    fontWeight: 800,
+    fontSize: 13,
+    px: 2.6,
+    bgcolor: '#0d1117',
+    '&:hover': {
+      bgcolor: '#080b10'
+    },
+    '&.Mui-disabled': {
+      bgcolor: '#e5eaf2',
+      color: '#a4adbc'
+    }
+  };
+
+  const orangeButtonSx = {
+    textTransform: 'none',
+    fontWeight: 800,
+    fontSize: 13,
+    px: 2.6,
+    bgcolor: '#ff7a1a',
+    '&:hover': {
+      bgcolor: '#ea6d11'
+    },
+    '&.Mui-disabled': {
+      bgcolor: '#e5eaf2',
+      color: '#a4adbc'
     }
   };
 
@@ -216,10 +285,10 @@ function PaymentConfig() {
         </Alert>
       </Snackbar>
 
-      <Typography sx={{ fontSize: { xs: 24, md: 30 }, fontWeight: 900, color: '#0f172a', mb: 0.5 }}>
+      <Typography sx={{ fontSize: { xs: 22, md: 25 }, fontWeight: 900, color: '#1f2a3d', mb: 0.5 }}>
         Configuracion de academia
       </Typography>
-      <Typography sx={{ color: '#475569', mb: 2.5 }}>
+      <Typography sx={{ color: '#66758d', mb: 2.5, fontSize: 13 }}>
         Este modulo centraliza variables de negocio de la academia. Solo el rol admin puede ver y editar estos valores.
       </Typography>
 
@@ -227,44 +296,74 @@ function PaymentConfig() {
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
       )}
 
+      <Box sx={sectionHeaderSx}>
+        <AccountBalanceOutlinedIcon sx={{ color: '#b5641a', fontSize: 20 }} />
+        <Typography sx={{ fontWeight: 900, color: '#2a374d', fontSize: 24 }}>Metodos de Pago</Typography>
+      </Box>
+
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 2 }}>
         <Paper sx={sectionCardSx}>
-          <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1.5 }}>Pago movil</Typography>
-          <Box sx={{ display: 'grid', gap: 1.25 }}>
-            <TextField label="Banco" size="small" value={config.pagos.pago_movil.banco} onChange={(e) => updateField('pagos', 'pago_movil', 'banco', e.target.value)} />
-            <TextField label="Telefono" size="small" value={config.pagos.pago_movil.telefono} onChange={(e) => updateField('pagos', 'pago_movil', 'telefono', e.target.value)} />
-            <TextField label="Cedula" size="small" value={config.pagos.pago_movil.cedula} onChange={(e) => updateField('pagos', 'pago_movil', 'cedula', e.target.value)} />
-            <TextField label="Titular (opcional)" size="small" value={config.pagos.pago_movil.titular} onChange={(e) => updateField('pagos', 'pago_movil', 'titular', e.target.value)} />
+          <Box sx={cardTitleSx}>
+            <PhoneIphoneOutlinedIcon sx={{ color: '#bd6e26', fontSize: 18 }} />
+            <Typography sx={{ fontWeight: 800, color: '#2a374d', fontSize: 22 }}>Pago movil</Typography>
+          </Box>
+          <Divider sx={{ my: 1.4, borderColor: '#e6ebf3' }} />
+          <Box sx={{ display: 'grid', gap: 1.75 }}>
+            <TextField label="Banco" placeholder="Seleccione un banco" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.banco} onChange={(e) => updateField('pagos', 'pago_movil', 'banco', e.target.value)} />
+            <TextField label="Telefono" placeholder="0412 000 0000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.telefono} onChange={(e) => updateField('pagos', 'pago_movil', 'telefono', e.target.value)} />
+            <TextField label="Cedula" placeholder="V-00.000.000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.cedula} onChange={(e) => updateField('pagos', 'pago_movil', 'cedula', e.target.value)} />
+            <TextField label="Titular (opcional)" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.titular} onChange={(e) => updateField('pagos', 'pago_movil', 'titular', e.target.value)} />
           </Box>
         </Paper>
 
         <Paper sx={sectionCardSx}>
-          <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1.5 }}>Transferencia</Typography>
-          <Box sx={{ display: 'grid', gap: 1.25 }}>
-            <TextField label="Banco" size="small" value={config.pagos.transferencia.banco} onChange={(e) => updateField('pagos', 'transferencia', 'banco', e.target.value)} />
-            <TextField label="Cuenta" size="small" value={config.pagos.transferencia.cuenta} onChange={(e) => updateField('pagos', 'transferencia', 'cuenta', e.target.value)} />
-            <TextField label="Titular" size="small" value={config.pagos.transferencia.titular} onChange={(e) => updateField('pagos', 'transferencia', 'titular', e.target.value)} />
-            <TextField label="Cedula" size="small" value={config.pagos.transferencia.cedula} onChange={(e) => updateField('pagos', 'transferencia', 'cedula', e.target.value)} />
+          <Box sx={cardTitleSx}>
+            <AccountBalanceOutlinedIcon sx={{ color: '#bd6e26', fontSize: 18 }} />
+            <Typography sx={{ fontWeight: 800, color: '#2a374d', fontSize: 22 }}>Transferencia</Typography>
+          </Box>
+          <Divider sx={{ my: 1.4, borderColor: '#e6ebf3' }} />
+          <Box sx={{ display: 'grid', gap: 1.75 }}>
+            <TextField label="Banco" placeholder="Seleccione un banco" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.banco} onChange={(e) => updateField('pagos', 'transferencia', 'banco', e.target.value)} />
+            <TextField label="Cuenta" placeholder="0000 0000 00 0000000000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.cuenta} onChange={(e) => updateField('pagos', 'transferencia', 'cuenta', e.target.value)} />
+            <TextField label="Titular" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.titular} onChange={(e) => updateField('pagos', 'transferencia', 'titular', e.target.value)} />
+            <TextField label="Cedula" placeholder="J-00000000-0" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.cedula} onChange={(e) => updateField('pagos', 'transferencia', 'cedula', e.target.value)} />
           </Box>
         </Paper>
 
         <Box sx={{ gridColumn: { xs: '1 / -1' }, display: 'flex', justifyContent: 'flex-end', mt: -0.5 }}>
           <Button
+            type="button"
             variant="contained"
-            onClick={savePagos}
-            disabled={loading || savingPagos || savingCobro}
-            sx={{ textTransform: 'none', fontWeight: 700, px: 2.6 }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              savePagos();
+            }}
+            disabled={loading || savingPagos}
+            sx={darkButtonSx}
           >
             {savingPagos ? 'Guardando pagos...' : 'Guardar pagos'}
           </Button>
         </Box>
 
+        <Box sx={{ ...sectionHeaderSx, gridColumn: { xs: '1 / -1' }, mt: 0.8, mb: 1.2 }}>
+          <ReceiptLongOutlinedIcon sx={{ color: '#b5641a', fontSize: 20 }} />
+          <Typography sx={{ fontWeight: 900, color: '#2a374d', fontSize: 24 }}>Facturacion</Typography>
+        </Box>
+
         <Paper sx={{ ...sectionCardSx, gridColumn: { xs: '1 / -1' } }}>
-          <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1.5 }}>Cobro mensual</Typography>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.25 }}>
+          <Box sx={cardTitleSx}>
+            <RequestQuoteOutlinedIcon sx={{ color: '#bd6e26', fontSize: 18 }} />
+            <Typography sx={{ fontWeight: 800, color: '#2a374d', fontSize: 22 }}>Cobro mensual</Typography>
+          </Box>
+          <Divider sx={{ my: 1.4, borderColor: '#e6ebf3' }} />
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.25 }}>
             <TextField
               label="Dia de cobro"
+              placeholder="1"
+              InputLabelProps={{ shrink: true }}
               size="small"
+              sx={fieldSx}
               type="number"
               inputProps={{ min: 1, max: 31 }}
               value={config.cobro.dia_cobro}
@@ -272,7 +371,10 @@ function PaymentConfig() {
             />
             <TextField
               label="Dia de vencimiento"
+              placeholder="5"
+              InputLabelProps={{ shrink: true }}
               size="small"
+              sx={fieldSx}
               type="number"
               inputProps={{ min: 1, max: 31 }}
               value={config.cobro.dia_vencimiento}
@@ -280,7 +382,10 @@ function PaymentConfig() {
             />
             <TextField
               label="Dias de tolerancia"
+              placeholder="3"
+              InputLabelProps={{ shrink: true }}
               size="small"
+              sx={fieldSx}
               type="number"
               inputProps={{ min: 0, max: 31 }}
               value={config.cobro.dias_gracia}
@@ -288,22 +393,33 @@ function PaymentConfig() {
             />
             <TextField
               label="Recargo (USD)"
+              placeholder="0.00"
+              InputLabelProps={{ shrink: true }}
               size="small"
+              sx={fieldSx}
+              InputProps={{
+                startAdornment: <InputAdornment position="start">$</InputAdornment>
+              }}
               type="number"
               inputProps={{ min: 0, max: 100000, step: '0.01' }}
               value={config.cobro.recargo_usd}
               onChange={(e) => updateCobroField('recargo_usd', e.target.value)}
             />
           </Box>
-          <Typography sx={{ mt: 1.2, color: '#94a3b8', fontSize: 12 }}>
+          <Typography sx={{ mt: 1.2, color: '#8f9cb2', fontSize: 12 }}>
             Con esta configuracion, el recargo se aplicara a partir del {fechaInicioRecargoTexto}.
           </Typography>
           <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
             <Button
+              type="button"
               variant="contained"
-              onClick={saveCobro}
-              disabled={loading || savingCobro || savingPagos}
-              sx={{ textTransform: 'none', fontWeight: 700, px: 2.6 }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                saveCobro();
+              }}
+              disabled={loading || savingCobro}
+              sx={orangeButtonSx}
             >
               {savingCobro ? 'Guardando cobro...' : 'Guardar cobro'}
             </Button>
