@@ -146,6 +146,25 @@ function Alumnos() {
   const montoPagadoInscripcionBs = tasaBCV > 0
     ? Number((montoPagadoInscripcionNum * tasaBCV).toFixed(2))
     : null;
+  const estatusPrimeraMensualidad = form.habilitar_pago_cuotas ? 'Abono' : estadoMensualidad;
+  const requiereDatosPagoInscripcion =
+    !['Pendiente', 'Insolvente', 'Exonerado'].includes(estatusPrimeraMensualidad);
+  const requiereReferenciaInscripcion =
+    requiereDatosPagoInscripcion && metodoRequiereReferencia(metodoPagoInscripcion);
+
+  useEffect(() => {
+    if (!requiereDatosPagoInscripcion) {
+      if (metodoPagoInscripcion !== METODOS_PAGO[0]) setMetodoPagoInscripcion(METODOS_PAGO[0]);
+      if (fechaPagoInscripcion !== getLocalInputDate()) setFechaPagoInscripcion(getLocalInputDate());
+    }
+  }, [requiereDatosPagoInscripcion, metodoPagoInscripcion, fechaPagoInscripcion]);
+
+  useEffect(() => {
+    if (!requiereReferenciaInscripcion) {
+      if (referenciaPagoInscripcion) setReferenciaPagoInscripcion('');
+      if (comprobantePagoInscripcion) setComprobantePagoInscripcion(null);
+    }
+  }, [requiereReferenciaInscripcion, referenciaPagoInscripcion, comprobantePagoInscripcion]);
 
   const modalInputSx = {
     '& .MuiOutlinedInput-root': {
@@ -392,7 +411,11 @@ function Alumnos() {
         return;
       }
     }
-    if (metodoRequiereReferencia(metodoPagoNormalizado)) {
+    const requiereReferenciaPorEstado =
+      metodoRequiereReferencia(metodoPagoNormalizado) &&
+      !['Pendiente', 'Insolvente', 'Exonerado'].includes(estatusPrimeraMensualidad);
+
+    if (requiereReferenciaPorEstado) {
       if (!/^[0-9]{6,}$/.test(String(referenciaPagoInscripcion || '').trim())) {
         setErrorMensualidad('Debes ingresar minimo 6 ultimos digitos de la referencia de pago.');
         setLoadingMensualidad(false);
@@ -417,7 +440,6 @@ function Alumnos() {
       }
       const dataAlumno = await resAlumno.json();
       // 2. Registrar mensualidad
-      const estatusPrimeraMensualidad = form.habilitar_pago_cuotas ? 'Abono' : estadoMensualidad;
       const formDataMensualidad = new FormData();
       formDataMensualidad.append('es_registro_alumno', 'true');
       formDataMensualidad.append('id_alumno', dataAlumno._id);
@@ -434,7 +456,7 @@ function Alumnos() {
       formDataMensualidad.append('metodo_pago', metodoPagoNormalizado);
       formDataMensualidad.append(
         'referencia',
-        metodoRequiereReferencia(metodoPagoNormalizado)
+        requiereReferenciaPorEstado
           ? String(referenciaPagoInscripcion || '').trim()
           : ''
       );
@@ -1341,33 +1363,51 @@ function Alumnos() {
             />
           )}
 
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-            <TextField
-              label="Fecha de pago"
-              type="date"
-              value={fechaPagoInscripcion}
-              onChange={e => setFechaPagoInscripcion(e.target.value)}
-              fullWidth
-              size="small"
-              sx={modalInputSx}
-              InputLabelProps={{ shrink: true }}
-            />
-            <FormControl fullWidth size="small" sx={modalInputSx}>
-              <InputLabel id="metodo-pago-inscripcion-label">Metodo de pago</InputLabel>
+          {!form.habilitar_pago_cuotas && (
+            <FormControl fullWidth sx={{ ...modalInputSx, my: 1.25 }} size="small">
+              <InputLabel id="estado-label">Estado de pago</InputLabel>
               <Select
-                labelId="metodo-pago-inscripcion-label"
-                value={metodoPagoInscripcion}
-                label="Metodo de pago"
-                onChange={e => setMetodoPagoInscripcion(normalizeMetodoPago(e.target.value))}
+                labelId="estado-label"
+                value={estadoMensualidad}
+                label="Estado de pago"
+                onChange={e => setEstadoMensualidad(e.target.value)}
               >
-                {METODOS_PAGO.map((metodo) => (
-                  <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
+                {ESTADOS_MENSUALIDAD.map(e => (
+                  <MenuItem key={e} value={e}>{e}</MenuItem>
                 ))}
               </Select>
             </FormControl>
-          </Box>
+          )}
 
-          {metodoRequiereReferencia(metodoPagoInscripcion) && (
+          {requiereDatosPagoInscripcion && (
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+              <TextField
+                label="Fecha de pago"
+                type="date"
+                value={fechaPagoInscripcion}
+                onChange={e => setFechaPagoInscripcion(e.target.value)}
+                fullWidth
+                size="small"
+                sx={modalInputSx}
+                InputLabelProps={{ shrink: true }}
+              />
+              <FormControl fullWidth size="small" sx={modalInputSx}>
+                <InputLabel id="metodo-pago-inscripcion-label">Metodo de pago</InputLabel>
+                <Select
+                  labelId="metodo-pago-inscripcion-label"
+                  value={metodoPagoInscripcion}
+                  label="Metodo de pago"
+                  onChange={e => setMetodoPagoInscripcion(normalizeMetodoPago(e.target.value))}
+                >
+                  {METODOS_PAGO.map((metodo) => (
+                    <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+          )}
+
+          {requiereReferenciaInscripcion && (
             <TextField
               label="Referencia de pago (minimo 6 ultimos digitos)"
               value={referenciaPagoInscripcion}
@@ -1379,7 +1419,7 @@ function Alumnos() {
             />
           )}
 
-          {metodoRequiereReferencia(metodoPagoInscripcion) && (
+          {requiereReferenciaInscripcion && (
             <>
               <Box
                 component="label"
@@ -1452,21 +1492,6 @@ function Alumnos() {
             </>
           )}
 
-          {!form.habilitar_pago_cuotas && (
-            <FormControl fullWidth sx={{ ...modalInputSx, my: 1.25, mt: 2 }} size="small">
-              <InputLabel id="estado-label">Estado de pago</InputLabel>
-              <Select
-                labelId="estado-label"
-                value={estadoMensualidad}
-                label="Estado de pago"
-                onChange={e => setEstadoMensualidad(e.target.value)}
-              >
-                {ESTADOS_MENSUALIDAD.map(e => (
-                  <MenuItem key={e} value={e}>{e}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
           {errorMensualidad && <div style={{ color: 'red', marginBottom: 8 }}>{errorMensualidad}</div>}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.25 }}>

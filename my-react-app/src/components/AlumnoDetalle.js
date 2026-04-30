@@ -194,15 +194,17 @@ function AlumnoDetalle() {
 
   return (
     <>
-      <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', p: { xs: 2, md: 3 } }}>
+      <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', p: { xs: 1.25, sm: 2, md: 3 }, width: '100%', overflowX: 'hidden' }}>
       <Box
         sx={{
           maxWidth: { xs: '100%', sm: 720, md: 1000, lg: 1200, xl: 1500 },
           mx: 'auto',
-          px: { xs: 1.5, sm: 2.5, md: 3 }
+          px: { xs: 0.5, sm: 2.5, md: 3 },
+          width: '100%',
+          boxSizing: 'border-box'
         }}
       >
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '340px 1fr' }, gap: 3 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '340px 1fr' }, gap: { xs: 1.25, sm: 2, md: 3 }, width: '100%', minWidth: 0 }}>
           <Box sx={{ position: { md: 'sticky' }, top: 24, alignSelf: 'start', display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1.5 }}>
@@ -219,10 +221,10 @@ function AlumnoDetalle() {
                     '&:hover': alumno.foto ? { transform: 'scale(1.03)' } : undefined
                   }}
                 />
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
                   {alumno.nombres} {alumno.apellidos}
                 </Typography>
-                <Typography variant="caption" sx={{ color: '#f97316', fontWeight: 700, letterSpacing: '0.08em' }}>
+                <Typography variant="caption" sx={{ color: '#f97316', fontWeight: 700, letterSpacing: '0.08em', wordBreak: 'break-word' }}>
                   {alumno.categoria} / {sedeNombre || '-'}
                 </Typography>
                 <Chip
@@ -317,12 +319,12 @@ function AlumnoDetalle() {
                   </Box>
                 ))}
               </Box>
-              <Box sx={{ mt: 2, display: 'grid', gap: 1 }}>
+              <Box sx={{ mt: 2, display: 'grid', gap: 1, minWidth: 0 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b' }}>
                   <Typography sx={{ fontSize: 12, color: '#64748b' }}>Pago en cuotas</Typography>
                   <Chip label={alumno.habilitar_pago_cuotas ? 'SI' : 'NO'} size="small" sx={getSiNoChipSx(Boolean(alumno.habilitar_pago_cuotas))} />
                 </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', gap: 1, flexWrap: 'wrap' }}>
                   <Typography sx={{ fontSize: 12, color: '#64748b' }}>Aplica recargo mensual</Typography>
                   <Chip
                     label={alumno.aplicar_recargo_mensualidad !== false ? 'SI' : 'NO'}
@@ -330,7 +332,7 @@ function AlumnoDetalle() {
                     sx={getSiNoChipSx(alumno.aplicar_recargo_mensualidad !== false)}
                   />
                 </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Typography sx={{ fontSize: 12, color: '#64748b' }}>Fecha de recargo</Typography>
                   {alumno.aplicar_recargo_mensualidad === false ? (
                     <Chip label="No aplica" size="small" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }} />
@@ -367,7 +369,7 @@ function AlumnoDetalle() {
               {contactItems.map((item) => (
                 <Box key={item.label} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                   {item.icon}
-                  <Typography sx={{ fontSize: 13, color: '#e2e8f0' }}>{item.value}</Typography>
+                  <Typography sx={{ fontSize: 13, color: '#e2e8f0', wordBreak: 'break-word' }}>{item.value}</Typography>
                 </Box>
               ))}
             </Paper>
@@ -399,17 +401,17 @@ function AlumnoDetalle() {
                   </Grid>
                 ))}
               </Grid>
-              <Paper sx={{ mt: 2, p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Paper sx={{ mt: 2, p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', flexDirection: { xs: 'column', sm: 'row' }, gap: 1.25 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                   <Box sx={{ width: 28, height: 28, borderRadius: 1.5, bgcolor: '#e0ecff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <TimelineIcon sx={{ fontSize: 16 }} />
                   </Box>
-                  <Box>
+                  <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>PROYECCION</Typography>
-                    <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{alumno.proyeccion || '-'}</Typography>
+                    <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>{alumno.proyeccion || '-'}</Typography>
                   </Box>
                 </Box>
-                <Button size="small" variant="text" sx={{ color: '#f97316', fontWeight: 700 }}>
+                <Button size="small" variant="text" sx={{ color: '#f97316', fontWeight: 700, alignSelf: { xs: 'flex-start', sm: 'center' }, px: 0 }}>
                   Ver grafico
                 </Button>
               </Paper>
@@ -476,26 +478,27 @@ function AlumnoDetalle() {
                   </Box>
                   <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>Datos del Representante</Typography>
                 </Box>
-                <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                  <Avatar sx={{ width: 64, height: 64, bgcolor: '#e2e8f0', color: '#475569' }}>
+                <Paper sx={{ p: 2, borderRadius: 2.5, bgcolor: '#f8fafc', display: 'flex', alignItems: { xs: 'stretch', md: 'flex-start' }, gap: 2, flexDirection: { xs: 'column', md: 'row' }, minWidth: 0 }}>
+                  <Avatar sx={{ width: 64, height: 64, bgcolor: '#e2e8f0', color: '#475569', alignSelf: { xs: 'flex-start', md: 'auto' } }}>
                     {representante?.nombres ? representante.nombres[0] : 'R'}
                   </Avatar>
-                  <Box>
-                    <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
                       {representante?.nombres} {representante?.apellidos}
                     </Typography>
-                    <Typography sx={{ fontSize: 12, color: '#f97316', fontWeight: 700, letterSpacing: '0.04em' }}>
+                    <Typography sx={{ fontSize: 12, color: '#f97316', fontWeight: 700, letterSpacing: '0.04em', wordBreak: 'break-word' }}>
                       {alumno?.parentesco || '-'}
                     </Typography>
                   </Box>
                   <Box
                     sx={{
-                      ml: 'auto',
+                      ml: { xs: 0, md: 'auto' },
                       width: '100%',
                       display: 'grid',
                       gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
                       gap: 1.25,
-                      alignSelf: 'stretch'
+                      alignSelf: 'stretch',
+                      minWidth: 0
                     }}
                   >
                     <Box>
@@ -512,11 +515,11 @@ function AlumnoDetalle() {
                     </Box>
                     <Box>
                       <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>CORREO</Typography>
-                      <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.correo || '-'}</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>{representante?.correo || '-'}</Typography>
                     </Box>
                     <Box sx={{ gridColumn: { xs: 'auto', sm: '1 / -1' } }}>
                       <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>DIRECCION</Typography>
-                      <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>{representante?.direccion || representante?.domicilio || '-'}</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>{representante?.direccion || representante?.domicilio || '-'}</Typography>
                     </Box>
                   </Box>
                 </Paper>

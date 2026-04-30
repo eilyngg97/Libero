@@ -4,6 +4,8 @@ import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
 import { useParams } from 'react-router-dom';
 import { ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import './GestionReposos.css';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
@@ -17,6 +19,8 @@ import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 
 const GestionReposos = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [reposos, setReposos] = useState([]);
   const [nuevoReposo, setNuevoReposo] = useState({
     fechaInicio: '',
@@ -510,7 +514,7 @@ const GestionReposos = () => {
   };
 
   return (
-    <Box sx={{ p: 3, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+    <Box sx={{ p: { xs: 1.25, sm: 2, md: 3 }, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)', width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
       <Typography variant="h5" sx={{ fontWeight: 700 }}>Gestión de Reposos Médicos</Typography>
       <Box sx={{ mt: 0.5, mb: 1.5 }}>
         <Typography sx={{ fontSize: 15 }}>
@@ -520,8 +524,8 @@ const GestionReposos = () => {
           Sede: {studentSede} | Monto base: ${formatMonto(studentMontoBase)} USD
         </Typography>
       </Box>
-      <Box sx={{ display: 'flex', gap: 4, mb: 4, mt: 2 }}>
-        <Box sx={{ flex: 1, backgroundColor: '#ffffff', p: 3, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: { xs: 1.5, md: 4 }, mb: 4, mt: 2, width: '100%', minWidth: 0 }}>
+        <Box sx={{ flex: 1, backgroundColor: '#ffffff', p: { xs: 1.5, sm: 2.25, md: 3 }, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)', minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <AddCircleOutlineIcon sx={{ color: '#0284c7', mr: 1 }} />
             <Typography variant="h6">Registrar Nuevo Reposo</Typography>
@@ -553,15 +557,15 @@ const GestionReposos = () => {
             value={tipoReposo}
             exclusive
             onChange={handleTipoReposoChange}
-            sx={{ mb: 2, width: '100%' }}
+            sx={{ mb: 2, width: '100%', display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1 }}
           >
-            <ToggleButton value="Parcial" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, flex: 1 }}>
+            <ToggleButton value="Parcial" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, width: '100%' }}>
               Parcial
             </ToggleButton>
-            <ToggleButton value="Total" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, flex: 1 }}>
+            <ToggleButton value="Total" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, width: '100%' }}>
               Total
             </ToggleButton>
-            <ToggleButton value="Indefinido" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, flex: 1 }}>
+            <ToggleButton value="Indefinido" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, width: '100%' }}>
               Indefinido
             </ToggleButton>
           </ToggleButtonGroup>
@@ -642,8 +646,8 @@ const GestionReposos = () => {
                                 Puedes agregar mas archivos con el boton de abajo.
                               </Typography>
                               {certificadosNuevos.map((archivo, index) => (
-                                <Box key={`${archivo.name}-${index}`} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, bgcolor: '#fff', border: '1px solid #e2e8f0', borderRadius: 1.5, px: 1, py: 0.5 }}>
-                                  <Typography sx={{ fontSize: 12, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+                                <Box key={`${archivo.name}-${index}`} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, bgcolor: '#fff', border: '1px solid #e2e8f0', borderRadius: 1.5, px: 1, py: 0.5, minWidth: 0 }}>
+                                  <Typography sx={{ fontSize: 12, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: { xs: 150, sm: 180 } }}>
                                     {archivo.name}
                                   </Typography>
                                   <IconButton
@@ -695,12 +699,13 @@ const GestionReposos = () => {
             {guardando ? 'Guardando...' : 'Guardar Reposo'}
           </Button>
         </Box>
-        <Box sx={{ flex: 2, backgroundColor: '#ffffff', p: 3, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+        <Box sx={{ flex: 2, backgroundColor: '#ffffff', p: { xs: 1.5, sm: 2.25, md: 3 }, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)', minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <HistoryIcon sx={{ color: '#0284c7', mr: 1 }} />
             <Typography variant="h6">Historial de Reposos</Typography>
           </Box>
-          <TableContainer component={Paper} sx={{ mt: 2 }}>
+          {!isMobile ? (
+          <TableContainer component={Paper} sx={{ mt: 2, overflowX: 'auto' }}>
             <Table>
               <TableHead>
                 <TableRow>
@@ -766,9 +771,59 @@ const GestionReposos = () => {
               </TableBody>
             </Table>
           </TableContainer>
-          <Box sx={{ mt: 3, p: 2, backgroundColor: '#fdfdfd', borderRadius: 2, border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', gap: 1 }}>
+          ) : (
+            <Box sx={{ mt: 1.5, display: 'grid', gap: 1 }}>
+              {reposos.map((reposo, index) => {
+                const certificados = normalizarCertificados(reposo);
+                return (
+                  <Paper key={reposo._id || index} sx={{ p: 1.25, borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'flex-start' }}>
+                      <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>
+                        {reposo.tipo === 'Parcial'
+                          ? `${reposo.tipo} (${reposo.modalidad_cobro_parcial === 'Prorrateado' ? 'Prorrateado' : 'Normal'})`
+                          : reposo.tipo}
+                      </Typography>
+                      <Typography sx={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+                        {reposo.estado}
+                      </Typography>
+                    </Box>
+                    <Typography sx={{ mt: 0.7, fontSize: 12, color: '#334155' }}>
+                      Periodo: {formatFecha(reposo.fecha_inicio)} - {reposo.fecha_fin ? formatFecha(reposo.fecha_fin) : 'Indefinido'}
+                    </Typography>
+                    <Typography sx={{ mt: 0.4, fontSize: 12, color: '#334155' }}>
+                      Monto prorrateo: {reposo.tipo === 'Parcial' && reposo.modalidad_cobro_parcial === 'Prorrateado' && reposo.monto_parcial_personalizado !== null && reposo.monto_parcial_personalizado !== undefined
+                        ? `$${formatMonto(reposo.monto_parcial_personalizado)} USD`
+                        : '-'}
+                    </Typography>
+                    <Typography sx={{ mt: 0.4, fontSize: 12, color: '#334155', wordBreak: 'break-word' }}>
+                      Diagnóstico: {reposo.motivo || '-'}
+                    </Typography>
+                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 0.4, flexWrap: 'wrap' }}>
+                      {reposo.tipo === 'Indefinido' && reposo.estado === 'Activo' && (
+                        <IconButton size="small" sx={historialActionButtonSx} onClick={() => solicitarFinalizarReposo(reposo)}>
+                          <TaskAltOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                      {certificados.length > 0 && (
+                        <IconButton size="small" sx={historialActionButtonSx} onClick={() => abrirCertificadoDialog(certificados)}>
+                          <InsertDriveFileIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                      <IconButton size="small" sx={historialActionButtonSx} onClick={() => abrirEdicionReposo(reposo)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton size="small" sx={historialActionButtonSx} onClick={() => solicitarEliminarReposo(reposo)}>
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </Paper>
+                );
+              })}
+            </Box>
+          )}
+          <Box sx={{ mt: 3, p: 2, backgroundColor: '#fdfdfd', borderRadius: 2, border: '1px solid #cbd5e1', display: 'flex', alignItems: 'flex-start', gap: 1 }}>
         <InfoOutlinedIcon sx={{ color: '#2563eb' }} />
-        <Typography sx={{ fontSize: 14, color: '#1e293b', fontWeight: 500 }}>
+        <Typography sx={{ fontSize: { xs: 12.5, sm: 14 }, color: '#1e293b', fontWeight: 500 }}>
           <strong>Información importante</strong>: Los reposos médicos deben ser validados por la coordinación deportiva antes de ser efectivos.
         </Typography>
       </Box>
@@ -796,18 +851,18 @@ const GestionReposos = () => {
         fullWidth
         PaperProps={{ sx: { borderRadius: 2.5, overflow: 'hidden' } }}
       >
-        <DialogTitle sx={{ px: 3, py: 2, borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography sx={{ fontSize: 26, fontWeight: 800, color: '#111827' }}>Editar reposo</Typography>
+        <DialogTitle sx={{ px: { xs: 2, sm: 3 }, py: 2, borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography sx={{ fontSize: { xs: 20, sm: 26 }, fontWeight: 800, color: '#111827' }}>Editar reposo</Typography>
           <IconButton onClick={() => setEditDialogOpen(false)} size="small" sx={{ color: '#9ca3af' }}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </DialogTitle>
-        <DialogContent sx={{ pt: '16px !important', px: 3, pb: 2, bgcolor: '#f9f9f9fc' }}>
+        <DialogContent sx={{ pt: '16px !important', px: { xs: 2, sm: 3 }, pb: 2, bgcolor: '#f9f9f9fc' }}>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
             <Box sx={{ display: 'grid', gap: 2 }}>
               <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #e5e7eb', boxShadow: 'none' }}>
                 <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#4b5563', mb: 1.5 }}>Periodo de Reposo</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.6 }}>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.6 }}>
                   <TextField
                     label="Fecha Inicio"
                     type="date"
@@ -934,10 +989,10 @@ const GestionReposos = () => {
                 {(editandoReposo?.certificadosExistentes || []).length > 0 && (
                   <Box sx={{ display: 'grid', gap: 0.8, mb: 1 }}>
                     {(editandoReposo?.certificadosExistentes || []).map((url, index) => (
-                      <Box key={`${url}-${index}`} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, border: '1px solid #e5e7eb', borderRadius: 1.5, px: 1.2, py: 0.7, bgcolor: '#fff' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box key={`${url}-${index}`} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, border: '1px solid #e5e7eb', borderRadius: 1.5, px: 1.2, py: 0.7, bgcolor: '#fff', minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                           <InsertDriveFileIcon sx={{ fontSize: 18, color: '#2563eb' }} />
-                          <Box>
+                          <Box sx={{ minWidth: 0 }}>
                             <Button size="small" variant="text" sx={{ textTransform: 'none', px: 0, minWidth: 0, fontWeight: 700 }} onClick={() => abrirCertificadoDialog([url])}>
                               {esImagenCertificado(url) ? `Ver imagen_${index + 1}` : `Ver archivo_${index + 1}`}
                             </Button>
@@ -961,11 +1016,11 @@ const GestionReposos = () => {
                 {(editandoReposo?.nuevosCertificados || []).length > 0 && (
                   <Box sx={{ display: 'grid', gap: 0.8, mb: 1 }}>
                     {(editandoReposo?.nuevosCertificados || []).map((archivo, index) => (
-                      <Box key={`${archivo.name}-${index}`} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, border: '1px solid #e5e7eb', borderRadius: 1.5, px: 1.2, py: 0.7, bgcolor: '#fff' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box key={`${archivo.name}-${index}`} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, border: '1px solid #e5e7eb', borderRadius: 1.5, px: 1.2, py: 0.7, bgcolor: '#fff', minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                           <InsertDriveFileIcon sx={{ fontSize: 18, color: '#2563eb' }} />
-                          <Box>
-                            <Typography sx={{ fontSize: 12, color: '#334155', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 190 }}>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography sx={{ fontSize: 12, color: '#334155', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: { xs: 155, sm: 190 } }}>
                               {archivo.name}
                             </Typography>
                             <Typography sx={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.1 }}>
@@ -1006,7 +1061,7 @@ const GestionReposos = () => {
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e5e7eb', bgcolor: '#fff' }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 2, borderTop: '1px solid #e5e7eb', bgcolor: '#fff', flexWrap: 'wrap', gap: 1 }}>
           <Button onClick={() => setEditDialogOpen(false)} sx={{ textTransform: 'none', color: '#6b7280' }}>Cancelar</Button>
           <Button onClick={guardarEdicionReposo} variant="contained" disabled={guardandoEdicion} sx={{ textTransform: 'none', px: 2.2, borderRadius: 2 }}>
             {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
@@ -1040,17 +1095,17 @@ const GestionReposos = () => {
         <DialogContent sx={{ display: 'grid', gap: 1.5 }}>
           {certificadoDialogItems.length > 0 ? (
             <>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#64748b' }}>
+              <Box sx={{ display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', color: '#64748b', flexDirection: { xs: 'column', sm: 'row' }, gap: 1 }}>
                 <Typography sx={{ fontSize: 12, fontWeight: 700 }}>
                   Archivo {certificadoDialogIndex + 1} de {certificadoDialogItems.length}
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                <Box sx={{ display: 'flex', gap: 0.5, width: { xs: '100%', sm: 'auto' } }}>
                   <Button
                     size="small"
                     variant="outlined"
                     startIcon={<NavigateBeforeIcon />}
                     onClick={() => setCertificadoDialogIndex((prev) => (prev === 0 ? certificadoDialogItems.length - 1 : prev - 1))}
-                    sx={{ textTransform: 'none', color: '#475569', borderColor: '#cbd5e1', '&:hover': { borderColor: '#94a3b8', bgcolor: '#f8fafc' } }}
+                    sx={{ textTransform: 'none', color: '#475569', borderColor: '#cbd5e1', '&:hover': { borderColor: '#94a3b8', bgcolor: '#f8fafc' }, width: { xs: '50%', sm: 'auto' } }}
                     disabled={certificadoDialogItems.length <= 1}
                   >
                     Anterior
@@ -1060,7 +1115,7 @@ const GestionReposos = () => {
                     variant="contained"
                     endIcon={<NavigateNextIcon />}
                     onClick={() => setCertificadoDialogIndex((prev) => (prev + 1) % certificadoDialogItems.length)}
-                    sx={{ textTransform: 'none', bgcolor: '#334155', '&:hover': { bgcolor: '#1e293b' } }}
+                    sx={{ textTransform: 'none', bgcolor: '#334155', '&:hover': { bgcolor: '#1e293b' }, width: { xs: '50%', sm: 'auto' } }}
                     disabled={certificadoDialogItems.length <= 1}
                   >
                     Siguiente

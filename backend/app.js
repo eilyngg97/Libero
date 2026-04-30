@@ -30,13 +30,30 @@ function tenantRateLimitKey(req) {
 }
 
 function getRequestHost(req) {
-  return (
+  const directHost = (
     req.headers['x-tenant-host'] ||
     req.headers['x-forwarded-host'] ||
     req.headers.host ||
     req.hostname ||
     ''
   );
+
+  const normalizedDirectHost = normalizeHost(directHost);
+  if (normalizedDirectHost && normalizedDirectHost !== 'localhost' && normalizedDirectHost !== '127.0.0.1') {
+    return normalizedDirectHost;
+  }
+
+  const originHost = normalizeHost(req.headers.origin || '');
+  if (originHost && originHost !== 'localhost' && originHost !== '127.0.0.1') {
+    return originHost;
+  }
+
+  const refererHost = normalizeHost(req.headers.referer || req.headers.referrer || '');
+  if (refererHost && refererHost !== 'localhost' && refererHost !== '127.0.0.1') {
+    return refererHost;
+  }
+
+  return directHost;
 }
 
 function getDefaultTenantId() {
