@@ -623,15 +623,7 @@ function TablaAlumnos() {
           >
             Excel
           </Button>
-          <Button
-            variant="outlined"
-            sx={{ borderColor: '#e2e8f0', color: '#0369a1', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
-            startIcon={<UploadFileIcon />}
-            onClick={openImportPicker}
-            disabled={importLoading || importPreviewLoading}
-          >
-            {importLoading || importPreviewLoading ? 'Procesando...' : 'Importar Excel'}
-          </Button>
+          {/* Botón de importación oculto temporalmente por requerimiento */}
           <Button
             variant="outlined"
             sx={{ borderColor: '#e2e8f0', color: '#ef4444', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
