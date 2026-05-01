@@ -22,6 +22,10 @@ function areScheduledJobsEnabled() {
   return process.env.ENABLE_SCHEDULED_JOBS !== 'false';
 }
 
+function getCronTimezone() {
+  return String(process.env.CRON_TIMEZONE || 'America/Caracas').trim();
+}
+
 function getDefaultTenantConfig() {
   const tenant = isMultiTenantModeEnabled()
     ? getFailSafeTenantConfig()
@@ -155,6 +159,9 @@ async function bootstrap() {
         console.error(`[${new Date().toISOString()}] Error en catch-up de conciliacion/reportes:`, err);
       }
 
+      const cronTimezone = getCronTimezone();
+      logWithTime(`Cron timezone configurada: ${cronTimezone}`);
+
       cron.schedule('5 0 1 * *', async () => {
         try {
           const creadas = isMultiTenantModeEnabled()
@@ -166,7 +173,7 @@ async function bootstrap() {
         } catch (err) {
           console.error(`[${new Date().toISOString()}] Error al generar mensualidades automáticamente:`, err);
         }
-      });
+      }, { timezone: cronTimezone });
 
       cron.schedule('10 0 6 * *', async () => {
         try {
@@ -179,7 +186,7 @@ async function bootstrap() {
         } catch (err) {
           console.error(`[${new Date().toISOString()}] Error al actualizar mensualidades a Retrasado:`, err);
         }
-      });
+      }, { timezone: cronTimezone });
 
       cron.schedule('20 0 * * *', async () => {
         try {
@@ -193,7 +200,7 @@ async function bootstrap() {
         } catch (err) {
           console.error(`[${new Date().toISOString()}] Error al ejecutar conciliacion/reportes diarios:`, err);
         }
-      });
+      }, { timezone: cronTimezone });
     } else {
       logWithTime('ENABLE_SCHEDULED_JOBS=false: catch-up y jobs cron deshabilitados para esta instancia');
     }

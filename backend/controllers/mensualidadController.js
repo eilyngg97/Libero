@@ -157,11 +157,16 @@ function obtenerPeriodoDesdeFecha(fecha, periodoFallback = getPeriodoZonaCaracas
 
 function obtenerPeriodoInicioCobroAlumno(alumno, periodoFallback = getPeriodoZonaCaracas()) {
   const fechaInicioCobro = alumno?.fecha_inicio_cobro;
-  if (!(fechaInicioCobro instanceof Date) || Number.isNaN(fechaInicioCobro.getTime())) {
-    return null;
+  if (fechaInicioCobro instanceof Date && !Number.isNaN(fechaInicioCobro.getTime())) {
+    return obtenerPeriodoDesdeFecha(fechaInicioCobro, periodoFallback);
   }
 
-  return obtenerPeriodoDesdeFecha(fechaInicioCobro, periodoFallback);
+  const fechaInscripcion = alumno?.fecha_inscripcion;
+  if (fechaInscripcion instanceof Date && !Number.isNaN(fechaInscripcion.getTime())) {
+    return obtenerPeriodoDesdeFecha(fechaInscripcion, periodoFallback);
+  }
+
+  return periodoFallback;
 }
 
 function compararPeriodos(a, b) {
@@ -544,9 +549,6 @@ async function generarMensualidadesPendientesAlumno(
 ) {
   const periodoActual = periodoFin || getPeriodoZonaCaracas();
   const periodoInicial = periodoInicio || obtenerPeriodoInicioCobroAlumno(alumno, periodoActual);
-  if (!periodoInicial) {
-    throw new Error(`El alumno ${alumno?._id || ''} no tiene fecha_inicio_cobro valida.`);
-  }
   const periodos = listarPeriodosEntrePeriodos(periodoInicial, periodoActual);
   const resultados = [];
 
@@ -827,8 +829,12 @@ async function generarMensualidadesMesCore(options = {}) {
       });
       creadas += resultados.filter((resultado) => resultado.creada).length;
     } catch (err) {
-      console.error('Alumno omitido en generacion de mensualidades por fecha_inicio_cobro invalida:', {
+      console.error('Alumno omitido en generacion de mensualidades:', {
         alumnoId: alumno?._id,
+        activo: alumno?.activo,
+        dado_de_baja: alumno?.dado_de_baja,
+        fecha_inicio_cobro: alumno?.fecha_inicio_cobro,
+        fecha_inscripcion: alumno?.fecha_inscripcion,
         message: err?.message
       });
     }
