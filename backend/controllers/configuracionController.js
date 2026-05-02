@@ -30,6 +30,61 @@ const DEFAULT_CONFIG = {
     dia_vencimiento: 5,
     dias_gracia: 0,
     recargo_usd: 0
+  },
+  constancias: {
+    institucion_nombre: '',
+    subtitulo: '',
+    logos: [],
+    firmante: {
+      nombre: '',
+      cedula: '',
+      telefono: '',
+      cargo: ''
+    },
+    pie_direccion: '',
+    pie_lema: '',
+    templates: {
+      simple: {
+        titulo: 'CONSTANCIA',
+        destinatario: 'A QUIEN PUEDA INTERESAR',
+        cuerpo: '',
+        nota: '',
+        cierre: 'Constancia que se hace a petición de la parte interesada.',
+        lugarEmision: 'Barquisimeto'
+      },
+      retiro: {
+        titulo: 'CARTA DE RETIRO',
+        destinatario: 'A QUIEN PUEDA INTERESAR',
+        cuerpo: '',
+        nota: '',
+        cierre: 'Constancia que se hace a petición de la parte interesada.',
+        lugarEmision: 'Barquisimeto'
+      },
+      horario_entrenamiento: {
+        titulo: 'CONSTANCIA',
+        destinatario: 'A QUIEN PUEDA INTERESAR',
+        cuerpo: '',
+        nota: '',
+        cierre: 'Constancia que se hace a petición de la parte interesada.',
+        lugarEmision: 'Barquisimeto'
+      },
+      listado_alumnos: {
+        titulo: 'CONSTANCIA',
+        destinatario: 'A QUIEN PUEDA INTERESAR',
+        cuerpo: '',
+        nota: '',
+        cierre: 'Constancia que se hace a petición de la parte interesada.',
+        lugarEmision: 'Barquisimeto'
+      },
+      asistencia: {
+        titulo: 'CONSTANCIA DE ASISTENCIA',
+        destinatario: 'A QUIEN PUEDA INTERESAR',
+        cuerpo: '',
+        nota: '',
+        cierre: 'Sin mas nada que hacer referencia y agradeciendo de antemano la mayor colaboracion que puedan prestar para con nuestro atleta.',
+        lugarEmision: 'Barquisimeto'
+      }
+    }
   }
 };
 
@@ -87,10 +142,57 @@ function clampDecimal(value, fallback, min, max) {
   return number;
 }
 
+function normalizeLogosList(logos, maxItems = 3) {
+  const list = Array.isArray(logos) ? logos : [];
+  const max = Number.isFinite(Number(maxItems)) ? Number(maxItems) : 3;
+  const withLimit = max < 0 ? 0 : max;
+  const cleaned = list
+    .map((item) => cleanValue(item))
+    .filter((item) => item !== '')
+    .slice(0, withLimit);
+  return Array.from(new Set(cleaned));
+}
+
+function normalizeTemplatePayload(template = {}, fallback = {}) {
+  return {
+    titulo: cleanValue(template.titulo || fallback.titulo),
+    destinatario: cleanValue(template.destinatario || fallback.destinatario),
+    cuerpo: cleanValue(template.cuerpo || fallback.cuerpo),
+    nota: cleanValue(template.nota || fallback.nota),
+    cierre: cleanValue(template.cierre || fallback.cierre),
+    lugarEmision: cleanValue(template.lugarEmision || fallback.lugarEmision)
+  };
+}
+
+function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG.constancias) {
+  const root = constancias && typeof constancias === 'object' ? constancias : {};
+  return {
+    institucion_nombre: cleanValue(root.institucion_nombre || fallback.institucion_nombre),
+    subtitulo: cleanValue(root.subtitulo || fallback.subtitulo),
+    logos: normalizeLogosList(root.logos),
+    firmante: {
+      nombre: cleanValue(root?.firmante?.nombre || fallback?.firmante?.nombre),
+      cedula: cleanValue(root?.firmante?.cedula || fallback?.firmante?.cedula),
+      telefono: cleanValue(root?.firmante?.telefono || fallback?.firmante?.telefono),
+      cargo: cleanValue(root?.firmante?.cargo || fallback?.firmante?.cargo)
+    },
+    pie_direccion: cleanValue(root.pie_direccion || fallback.pie_direccion),
+    pie_lema: cleanValue(root.pie_lema || fallback.pie_lema),
+    templates: {
+      simple: normalizeTemplatePayload(root?.templates?.simple, fallback?.templates?.simple),
+      retiro: normalizeTemplatePayload(root?.templates?.retiro, fallback?.templates?.retiro),
+      horario_entrenamiento: normalizeTemplatePayload(root?.templates?.horario_entrenamiento, fallback?.templates?.horario_entrenamiento),
+      listado_alumnos: normalizeTemplatePayload(root?.templates?.listado_alumnos, fallback?.templates?.listado_alumnos),
+      asistencia: normalizeTemplatePayload(root?.templates?.asistencia, fallback?.templates?.asistencia)
+    }
+  };
+}
+
 function normalizeConfigPayload(payload = {}) {
   const root = payload && typeof payload === 'object' ? payload : {};
   const pagos = root.pagos && typeof root.pagos === 'object' ? root.pagos : root;
   const cobro = root.cobro && typeof root.cobro === 'object' ? root.cobro : {};
+  const constancias = root.constancias && typeof root.constancias === 'object' ? root.constancias : {};
   const recargoUsdRaw = cobro.recargo_usd ?? cobro.recargo_porcentaje;
 
   const pagoMovil = pagos.pago_movil || {};
@@ -120,11 +222,12 @@ function normalizeConfigPayload(payload = {}) {
       dia_vencimiento: clampInteger(cobro.dia_vencimiento, DEFAULT_CONFIG.cobro.dia_vencimiento, 1, 31),
       dias_gracia: clampInteger(cobro.dias_gracia, DEFAULT_CONFIG.cobro.dias_gracia, 0, 31),
       recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000)
-    }
+    },
+    constancias: normalizeConstanciasPayload(constancias)
   };
 }
 
-function normalizeConfigPatchPayload(payload = {}) {
+function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
   const root = payload && typeof payload === 'object' ? payload : {};
   const patch = {};
 
@@ -187,6 +290,45 @@ function normalizeConfigPatchPayload(payload = {}) {
     }
   }
 
+  if (root.constancias && typeof root.constancias === 'object') {
+    const existingConstancias = normalizeConstanciasPayload(existingConfig?.constancias || {}, DEFAULT_CONFIG.constancias);
+    const mergedConstanciasInput = {
+      ...existingConstancias,
+      ...root.constancias,
+      logos: root.constancias.logos !== undefined ? root.constancias.logos : existingConstancias.logos,
+      firmante: {
+        ...existingConstancias.firmante,
+        ...(root.constancias.firmante || {})
+      },
+      templates: {
+        ...existingConstancias.templates,
+        simple: {
+          ...existingConstancias.templates.simple,
+          ...(root?.constancias?.templates?.simple || {})
+        },
+        retiro: {
+          ...existingConstancias.templates.retiro,
+          ...(root?.constancias?.templates?.retiro || {})
+        },
+        horario_entrenamiento: {
+          ...existingConstancias.templates.horario_entrenamiento,
+          ...(root?.constancias?.templates?.horario_entrenamiento || {})
+        },
+        listado_alumnos: {
+          ...existingConstancias.templates.listado_alumnos,
+          ...(root?.constancias?.templates?.listado_alumnos || {})
+        },
+        asistencia: {
+          ...existingConstancias.templates.asistencia,
+          ...(root?.constancias?.templates?.asistencia || {})
+        }
+      }
+    };
+
+    const constanciasPatch = normalizeConstanciasPayload(mergedConstanciasInput, DEFAULT_CONFIG.constancias);
+    patch.constancias = constanciasPatch;
+  }
+
   return patch;
 }
 
@@ -200,6 +342,7 @@ function serializeConfig(doc) {
 
   const pagos = doc?.pagos || {};
   const cobro = doc?.cobro || {};
+  const constancias = doc?.constancias || {};
   const recargoUsdRaw = cobro?.recargo_usd ?? cobro?.recargo_porcentaje;
 
   return {
@@ -226,6 +369,7 @@ function serializeConfig(doc) {
       dias_gracia: clampInteger(cobro?.dias_gracia, DEFAULT_CONFIG.cobro.dias_gracia, 0, 31),
       recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000)
     },
+    constancias: normalizeConstanciasPayload(constancias),
     is_default: false,
     updatedAt: doc.updatedAt
   };
@@ -312,7 +456,8 @@ exports.upsertConfiguracionAdmin = async (req, res) => {
 exports.patchConfiguracionAdmin = async (req, res) => {
   try {
     const TenantConfig = await getTenantConfigModel(req);
-    const normalizedPatch = normalizeConfigPatchPayload(req.body || {});
+    const currentConfig = await TenantConfig.findOne({ key: 'default' }).select('constancias').lean();
+    const normalizedPatch = normalizeConfigPatchPayload(req.body || {}, currentConfig || {});
 
     if (Object.keys(normalizedPatch).length === 0) {
       return res.status(400).json({ error: 'No se recibieron secciones validas para actualizar.' });
@@ -338,6 +483,10 @@ exports.patchConfiguracionAdmin = async (req, res) => {
       Object.entries(normalizedPatch.cobro).forEach(([key, value]) => {
         setPayload[`cobro.${key}`] = value;
       });
+    }
+
+    if (normalizedPatch.constancias) {
+      setPayload.constancias = normalizedPatch.constancias;
     }
 
     const updated = await TenantConfig.findOneAndUpdate(
@@ -397,6 +546,49 @@ exports.subirLogoAcademia = async (req, res) => {
     });
   } catch (err) {
     return res.status(400).json({ error: 'No se pudo subir el logo de la academia.', detalle: err.message });
+  }
+};
+
+exports.subirLogosConstancias = async (req, res) => {
+  try {
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'Debes adjuntar al menos una imagen en el campo logos.' });
+    }
+
+    const TenantConfig = await getTenantConfigModel(req);
+    const config = await TenantConfig.findOne({ key: 'default' }).lean();
+    const existentes = normalizeLogosList(config?.constancias?.logos || [], Number.POSITIVE_INFINITY);
+    const nuevos = normalizeLogosList(files.map((file) => buildBrandingLogoUrl(req, file)), Number.POSITIVE_INFINITY);
+    const fusionadosSinRecorte = normalizeLogosList([...existentes, ...nuevos], Number.POSITIVE_INFINITY);
+
+    if (fusionadosSinRecorte.length > 3) {
+      return res.status(400).json({ error: 'Solo se permiten hasta 3 logos para constancias por academia.' });
+    }
+
+    const fusionados = normalizeLogosList(fusionadosSinRecorte, 3);
+
+    await TenantConfig.findOneAndUpdate(
+      { key: 'default' },
+      {
+        $set: {
+          'constancias.logos': fusionados,
+          updated_by: req.user?.id
+        }
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true
+      }
+    ).lean();
+
+    return res.status(200).json({
+      message: 'Logos de constancias actualizados con exito.',
+      logos: fusionados
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudieron subir los logos de constancias.', detalle: err.message });
   }
 };
 

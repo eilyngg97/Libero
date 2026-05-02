@@ -38,11 +38,24 @@ const uploadLogo = multer({
 	limits: { fileSize: 5 * 1024 * 1024 }
 });
 
+const uploadLogosConstancias = multer({
+	storage: logoStorage,
+	fileFilter: (req, file, cb) => {
+		if ((file.mimetype || '').startsWith('image/')) {
+			cb(null, true);
+			return;
+		}
+		cb(new Error('Solo se permiten imagenes para logos de constancias.'));
+	},
+	limits: { fileSize: 5 * 1024 * 1024, files: 3 }
+});
+
 router.get('/pagos', authMiddleware, configuracionController.getConfiguracionPagos);
 router.get('/', authMiddleware, rolMiddleware('admin'), configuracionController.getConfiguracionAdmin);
 router.put('/', authMiddleware, rolMiddleware('admin'), configuracionController.upsertConfiguracionAdmin);
 router.patch('/', authMiddleware, rolMiddleware('admin'), configuracionController.patchConfiguracionAdmin);
 router.post('/logo', authMiddleware, rolMiddleware('admin'), uploadLogo.single('logo'), configuracionController.subirLogoAcademia);
+router.post('/constancias/logos', authMiddleware, rolMiddleware('admin'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstancias);
 router.patch('/cambiar-clave', authMiddleware, configuracionController.cambiarClaveUsuario);
 
 module.exports = router;

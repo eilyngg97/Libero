@@ -7,8 +7,12 @@ import { useLocation } from 'react-router-dom';
 const tipos = [
   { value: 'simple', label: 'Constancia simple' },
   { value: 'retiro', label: 'Constancia de retiro' },
-  // { value: 'horario', label: 'Constancia con horario' }
+  { value: 'horario_entrenamiento', label: 'Constancia con horario de entrenamiento' },
+  { value: 'listado_alumnos', label: 'Constancia con listado de alumnos' },
+  { value: 'asistencia', label: 'Constancia de asistencia' }
 ];
+
+const DIAS_ENTRENAMIENTO = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
 
 
 
@@ -33,6 +37,26 @@ function Constancias() {
   const [rol, setRol] = useState('');
   const [solventeMensualidades, setSolventeMensualidades] = useState(true);
   const [validandoSolvencia, setValidandoSolvencia] = useState(false);
+  const [diasEntrenamiento, setDiasEntrenamiento] = useState([]);
+  const [horaInicioEntrenamiento, setHoraInicioEntrenamiento] = useState('');
+  const [horaFinEntrenamiento, setHoraFinEntrenamiento] = useState('');
+  const [selectedAlumnosListado, setSelectedAlumnosListado] = useState([]);
+  const [asistenciaPara, setAsistenciaPara] = useState('atleta');
+  const [eventoFecha, setEventoFecha] = useState(() => {
+    const hoy = new Date();
+    const year = hoy.getFullYear();
+    const month = String(hoy.getMonth() + 1).padStart(2, '0');
+    const day = String(hoy.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [eventoHoraDesde, setEventoHoraDesde] = useState('');
+  const [eventoHoraHasta, setEventoHoraHasta] = useState('');
+  const [eventoMotivo, setEventoMotivo] = useState('amistoso');
+  const alumnosOptions = React.useMemo(() => (Array.isArray(alumnos) ? alumnos : []), [alumnos]);
+  const alumnosListadoValue = React.useMemo(
+    () => (Array.isArray(selectedAlumnosListado) ? selectedAlumnosListado : []),
+    [selectedAlumnosListado]
+  );
   const inputSx = {
     '& .MuiOutlinedInput-root': {
       bgcolor: '#f8fafc',
@@ -55,10 +79,19 @@ function Constancias() {
         fetch(`${process.env.REACT_APP_API_URL}/api/alumnos?search=${inputValue}`)
           .then(res => res.json())
           .then(data => {
-            setAlumnos(data);
+            if (Array.isArray(data)) {
+              setAlumnos(data);
+            } else if (Array.isArray(data?.alumnos)) {
+              setAlumnos(data.alumnos);
+            } else {
+              setAlumnos([]);
+            }
             setLoadingAlumnos(false);
           })
-          .catch(() => setLoadingAlumnos(false));
+          .catch(() => {
+            setAlumnos([]);
+            setLoadingAlumnos(false);
+          });
       } else {
         setAlumnos([]);
       }
@@ -67,7 +100,8 @@ function Constancias() {
 
   React.useEffect(() => {
     if (!alumnoId) {
-      setSolventeMensualidades(false);
+      setSolventeMensualidades(true);
+      setValidandoSolvencia(false);
       return;
     }
 
@@ -109,10 +143,11 @@ function Constancias() {
   const tiposDisponibles = React.useMemo(() => {
     return tipos.filter((t) => {
       if (t.value === 'retiro' && rol !== 'admin') return false;
-      if (t.value === 'simple' && !solventeMensualidades) return false;
+      if (t.value === 'listado_alumnos' && rol !== 'admin') return false;
+      if (rol !== 'admin' && t.value !== 'listado_alumnos' && alumnoId && !solventeMensualidades) return false;
       return true;
     });
-  }, [rol, solventeMensualidades]);
+  }, [rol, solventeMensualidades, alumnoId]);
 
   React.useEffect(() => {
     if (!tiposDisponibles.length) {
@@ -124,6 +159,29 @@ function Constancias() {
     }
   }, [tipo, tiposDisponibles]);
 
+  React.useEffect(() => {
+    if (tipo !== 'horario_entrenamiento') {
+      setDiasEntrenamiento([]);
+      setHoraInicioEntrenamiento('');
+      setHoraFinEntrenamiento('');
+    }
+  }, [tipo]);
+
+  React.useEffect(() => {
+    if (tipo !== 'listado_alumnos') {
+      setSelectedAlumnosListado([]);
+    }
+  }, [tipo]);
+
+  React.useEffect(() => {
+    if (tipo !== 'asistencia') {
+      setAsistenciaPara('atleta');
+      setEventoHoraDesde('');
+      setEventoHoraHasta('');
+      setEventoMotivo('amistoso');
+    }
+  }, [tipo]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -132,9 +190,25 @@ function Constancias() {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/constancias`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alumnoId, tipo, fechaEmision })
+        body: JSON.stringify({
+          alumnoId: tipo === 'listado_alumnos' ? (selectedAlumnosListado[0]?._id || '') : alumnoId,
+          alumnoIds: tipo === 'listado_alumnos' ? selectedAlumnosListado.map((alumno) => alumno._id) : [],
+          tipo,
+          fechaEmision,
+          asistenciaPara: tipo === 'asistencia' ? asistenciaPara : 'atleta',
+          eventoFecha: tipo === 'asistencia' ? eventoFecha : '',
+          eventoHoraDesde: tipo === 'asistencia' ? eventoHoraDesde : '',
+          eventoHoraHasta: tipo === 'asistencia' ? eventoHoraHasta : '',
+          eventoMotivo: tipo === 'asistencia' ? eventoMotivo : '',
+          diasEntrenamiento: tipo === 'horario_entrenamiento' ? diasEntrenamiento : [],
+          horaInicio: tipo === 'horario_entrenamiento' ? horaInicioEntrenamiento : '',
+          horaFin: tipo === 'horario_entrenamiento' ? horaFinEntrenamiento : ''
+        })
       });
-      if (!res.ok) throw new Error('Error generando constancia');
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || payload?.detalle || 'Error generando constancia');
+      }
       const blob = await res.blob();
       setPdfUrl(URL.createObjectURL(blob));
     } catch (err) {
@@ -169,19 +243,47 @@ function Constancias() {
           <form onSubmit={handleSubmit}>
             {rol === 'admin' ? (
               <FormControl fullWidth margin="normal">
-                <Autocomplete
-                  options={alumnos}
-                  getOptionLabel={option => `${option.nombres} ${option.apellidos} (C.I. ${option.cedula})`}
-                  loading={loadingAlumnos}
-                  onInputChange={(e, value) => setInputValue(value)}
-                  onChange={(e, value) => {
-                    setSelectedAlumno(value);
-                    setAlumnoId(value ? value._id : '');
-                  }}
-                  renderInput={(params) => (
-                    <TextField {...params} label="Buscar alumno" variant="outlined" required sx={inputSx} />
-                  )}
-                />
+                {tipo === 'listado_alumnos' ? (
+                  <Autocomplete
+                    key="autocomplete-listado"
+                    multiple
+                    options={alumnosOptions}
+                    value={alumnosListadoValue}
+                    isOptionEqualToValue={(option, value) => option?._id === value?._id}
+                    getOptionLabel={(option) => `${option?.nombres || ''} ${option?.apellidos || ''} (C.I. ${option?.cedula || 'N/A'})`}
+                    loading={loadingAlumnos}
+                    onInputChange={(e, value, reason) => {
+                      if (reason === 'input' || reason === 'clear') {
+                        setInputValue(typeof value === 'string' ? value : '');
+                      }
+                    }}
+                    onChange={(e, value) => setSelectedAlumnosListado(Array.isArray(value) ? value : [])}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Buscar y seleccionar alumnos" variant="outlined" sx={inputSx} helperText="Escribe al menos 3 caracteres para buscar." />
+                    )}
+                  />
+                ) : (
+                  <Autocomplete
+                    key="autocomplete-simple"
+                    options={alumnosOptions}
+                    value={selectedAlumno || null}
+                    isOptionEqualToValue={(option, value) => option?._id === value?._id}
+                    getOptionLabel={(option) => `${option?.nombres || ''} ${option?.apellidos || ''} (C.I. ${option?.cedula || 'N/A'})`}
+                    loading={loadingAlumnos}
+                    onInputChange={(e, value, reason) => {
+                      if (reason === 'input' || reason === 'clear') {
+                        setInputValue(typeof value === 'string' ? value : '');
+                      }
+                    }}
+                    onChange={(e, value) => {
+                      setSelectedAlumno(value);
+                      setAlumnoId(value ? value._id : '');
+                    }}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Buscar alumno" variant="outlined" required sx={inputSx} />
+                    )}
+                  />
+                )}
               </FormControl>
             ) : (
               <Box my={2}>
@@ -189,11 +291,35 @@ function Constancias() {
                 <Typography variant="subtitle2"><b>Cédula:</b> {selectedAlumno ? selectedAlumno.cedula : ''}</Typography>
               </Box>
             )}
-            {selectedAlumno && (
+            {selectedAlumno && tipo !== 'listado_alumnos' && (
               <Box my={2} p={2} bgcolor="#f8fafc" borderRadius={2} border="1px solid #e2e8f0">
                 <Typography variant="subtitle1"><b>Nombre:</b> {selectedAlumno.nombres} {selectedAlumno.apellidos}</Typography>
                 <Typography variant="subtitle2"><b>Cédula:</b> {selectedAlumno.cedula}</Typography>
                 <Typography variant="subtitle2"><b>Sede:</b> {selectedAlumno.sede.nombre}</Typography>
+              </Box>
+            )}
+            {rol === 'admin' && selectedAlumno && tipo !== 'listado_alumnos' && (
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  mt: -1,
+                  mb: 0.7,
+                  color: validandoSolvencia ? '#475569' : (solventeMensualidades ? '#15803d' : '#b91c1c'),
+                  fontWeight: 700
+                }}
+              >
+                {validandoSolvencia
+                  ? 'Validando solvencia del alumno...'
+                  : (solventeMensualidades ? 'Estado del alumno: SOLVENTE' : 'Estado del alumno: NO SOLVENTE')}
+              </Typography>
+            )}
+            {tipo === 'listado_alumnos' && selectedAlumnosListado.length > 0 && (
+              <Box my={2} p={2} bgcolor="#f8fafc" borderRadius={2} border="1px solid #e2e8f0">
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}><b>Alumnos seleccionados:</b> {selectedAlumnosListado.length}</Typography>
+                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                  El PDF se generará con una tabla de nombres, apellidos y categoría para todos los alumnos seleccionados.
+                </Typography>
               </Box>
             )}
             <FormControl fullWidth margin="normal">
@@ -208,9 +334,9 @@ function Constancias() {
                 {tiposDisponibles.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
               </Select>
             </FormControl>
-            {!solventeMensualidades && (
+            {rol !== 'admin' && alumnoId && !solventeMensualidades && (
               <Typography variant="caption" sx={{ color: '#b91c1c', display: 'block', mt: 0.5 }}>
-                La constancia simple solo está disponible cuando el alumno está solvente.
+                Todas las constancias solo están disponibles cuando el alumno está solvente.
               </Typography>
             )}
             <TextField
@@ -226,11 +352,108 @@ function Constancias() {
               helperText={rol !== 'admin' ? 'Solo un administrador puede modificar la fecha de emisión.' : ''}
               sx={inputSx}
             />
+            {tipo === 'horario_entrenamiento' && (
+              <>
+                <FormControl fullWidth margin="normal" sx={inputSx}>
+                  <Autocomplete
+                    multiple
+                    options={DIAS_ENTRENAMIENTO}
+                    value={diasEntrenamiento}
+                    onChange={(e, value) => setDiasEntrenamiento(value || [])}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Dias de entrenamiento" placeholder="Selecciona uno o varios dias" />
+                    )}
+                  />
+                </FormControl>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                  <TextField
+                    fullWidth
+                    label="Hora de inicio"
+                    type="time"
+                    value={horaInicioEntrenamiento}
+                    onChange={(e) => setHoraInicioEntrenamiento(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={inputSx}
+                  />
+                  <TextField
+                    fullWidth
+                    label="Hora de fin"
+                    type="time"
+                    value={horaFinEntrenamiento}
+                    onChange={(e) => setHoraFinEntrenamiento(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={inputSx}
+                  />
+                </Box>
+              </>
+            )}
+            {tipo === 'asistencia' && (
+              <>
+                <FormControl fullWidth margin="normal" sx={inputSx}>
+                  <InputLabel id="asistencia-para-label">Constancia para</InputLabel>
+                  <Select
+                    labelId="asistencia-para-label"
+                    value={asistenciaPara}
+                    label="Constancia para"
+                    onChange={(e) => setAsistenciaPara(e.target.value)}
+                  >
+                    <MenuItem value="atleta">Atleta</MenuItem>
+                    <MenuItem value="representante">Representante</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Dia del evento"
+                  type="date"
+                  value={eventoFecha}
+                  onChange={(e) => setEventoFecha(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={inputSx}
+                />
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                  <TextField
+                    fullWidth
+                    label="Hora desde"
+                    type="time"
+                    value={eventoHoraDesde}
+                    onChange={(e) => setEventoHoraDesde(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={inputSx}
+                  />
+                  <TextField
+                    fullWidth
+                    label="Hora hasta"
+                    type="time"
+                    value={eventoHoraHasta}
+                    onChange={(e) => setEventoHoraHasta(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={inputSx}
+                  />
+                </Box>
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Motivo del evento"
+                  value={eventoMotivo}
+                  onChange={(e) => setEventoMotivo(e.target.value)}
+                  placeholder="Ej: amistoso"
+                  sx={inputSx}
+                />
+              </>
+            )}
             <Box mt={2} display="flex" justifyContent="center">
               <Button
                 type="submit"
                 variant="contained"
-                disabled={loading || !alumnoId || !tipo || validandoSolvencia}
+                disabled={
+                  loading ||
+                  (tipo === 'listado_alumnos' ? selectedAlumnosListado.length === 0 : !alumnoId) ||
+                  !tipo ||
+                  (rol !== 'admin' && validandoSolvencia) ||
+                  (tipo === 'horario_entrenamiento' && (diasEntrenamiento.length === 0 || !horaInicioEntrenamiento || !horaFinEntrenamiento)) ||
+                  (tipo === 'asistencia' && (!eventoFecha || !eventoHoraDesde || !eventoHoraHasta))
+                }
                 fullWidth
                 sx={{ bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' }, fontWeight: 700, borderRadius: 2, py: 1.2 }}
               >
@@ -243,11 +466,30 @@ function Constancias() {
           </form>
         </Paper>
         {pdfUrl && (
-          <Paper elevation={0} sx={{ p: 2, borderRadius: 3, boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)' }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2,
+              borderRadius: 3,
+              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              height: { xs: 'calc(100vh - 160px)', md: 'calc(100vh - 120px)' },
+              minHeight: { xs: 420, md: 560 }
+            }}
+          >
             <Button href={pdfUrl} download="constancia.pdf" variant="outlined" fullWidth sx={{ mb: 2, borderColor: '#cbd5e1', color: '#334155' }}>
               Descargar constancia
             </Button>
-            <iframe src={pdfUrl+"#navpanes=0&toolbar=0"} title="Vista previa" width="100%" height="400px" style={{ border: '1px solid #e2e8f0', marginTop: 10, borderRadius: 12 }} />
+            <Box sx={{ flex: 1, minHeight: 0, mt: 1.2 }}>
+              <iframe
+                src={pdfUrl + "#navpanes=0&toolbar=0"}
+                title="Vista previa"
+                width="100%"
+                height="100%"
+                style={{ border: '1px solid #e2e8f0', borderRadius: 12 }}
+              />
+            </Box>
             {/* NOTA */}
             <Paper
               elevation={0}
@@ -262,7 +504,7 @@ function Constancias() {
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <InfoOutlinedIcon sx={{ color: '#c2410c', fontSize: 18 }} />
-                <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 600 }}>
+                <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 400 }}>
                   Una vez impresas las constancias, deberán ser presentadas ante la Dirección de la Academia para su correspondiente firma y sello.
                 </Typography>
               </Box>

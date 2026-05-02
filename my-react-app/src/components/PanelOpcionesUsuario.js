@@ -31,6 +31,11 @@ function PanelOpcionesUsuario() {
   const alumno = location.state?.alumno;
   const sede = location.state?.sede;
   const token = localStorage.getItem('token');
+  const tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
+  const ocultarConstancias = tenantId === 'esporta';
+  const sizeTarjetaOpciones = ocultarConstancias
+    ? { xs: 12, sm: 6, md: 4 }
+    : { xs: 12, sm: 6, md: 6 };
   const saldoAFavorActual = Number(alumno?.saldo_a_favor_mensualidades) || 0;
 
   const handleRespuestaJuego = async (torneoId, partidoId, estado) => {
@@ -337,7 +342,7 @@ function PanelOpcionesUsuario() {
         <Grid container spacing={4} sx={{ mt: 3 }}>
           <Grid item size={{ xs:12, md:8 }}>
             <Grid container spacing={2.5} mt={1} justifyContent="center">
-              <Grid item size={{ xs:12, sm:6, md:6 }}>
+              <Grid item size={sizeTarjetaOpciones}>
                 <Box sx={{
                   borderRadius: 3,
                   minWidth: 160,
@@ -375,7 +380,7 @@ function PanelOpcionesUsuario() {
                   />
                 </Box>
               </Grid>
-              <Grid item size={{ xs:12, sm:6, md:6 }}>
+              <Grid item size={sizeTarjetaOpciones}>
                 <Box sx={{
                   borderRadius: 3,
                   minWidth: 160,
@@ -435,7 +440,8 @@ function PanelOpcionesUsuario() {
                   />
                 </Box>
               </Grid>
-              <Grid item size={{ xs:12, sm:6, md:6 }}>
+              {!ocultarConstancias && (
+              <Grid item size={sizeTarjetaOpciones}>
                 <Box sx={{
                   borderRadius: 3,
                   minWidth: 160,
@@ -473,7 +479,8 @@ function PanelOpcionesUsuario() {
                   />
                 </Box>
               </Grid>
-              <Grid item size={{ xs:12, sm:6, md:6 }}>
+              )}
+              <Grid item size={sizeTarjetaOpciones}>
                 <Box sx={{
                   borderRadius: 3,
                   minWidth: 160,
@@ -538,7 +545,7 @@ function PanelOpcionesUsuario() {
                   overflow: 'hidden'
                 }}
               >
-                <Box sx={{ height: 90, background: 'linear-gradient(135deg, #1e293b, #1e293bdb)' }} />
+                <Box sx={{ height: 90, background: '#0f1437' }} />
                 <Box sx={{ px: 3, pb: 3, textAlign: 'center', mt: -5 }}>
                   <Avatar
                     src={mediaUrl(alumno?.foto) || undefined}

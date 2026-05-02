@@ -161,6 +161,13 @@ function Estadisticas() {
 
   useEffect(() => {
     const fetchIngresosPorSede = async () => {
+      if ((sedes || []).length <= 1) {
+        setLoadingIngresosSede(false);
+        setErrorIngresosSede('');
+        setResumenIngresosSede({ anio, sedes: [], total_anual: 0 });
+        return;
+      }
+
       setLoadingIngresosSede(true);
       setErrorIngresosSede('');
 
@@ -191,7 +198,7 @@ function Estadisticas() {
     };
 
     fetchIngresosPorSede();
-  }, [anio]);
+  }, [anio, sedes]);
 
   const dataGrafica = useMemo(() => {
     return LABELS_MESES.map((label, index) => {
@@ -232,6 +239,7 @@ function Estadisticas() {
     return `$${value.toFixed(2)} USD`;
   };
 
+  const mostrarComparativaPorSede = (sedes || []).length > 1;
   const tieneComparativaSedes = (resumenIngresosSede.sedes || []).length > 1;
 
   const abrirDialogoDetalle = (mesObj, tipo) => {
@@ -259,11 +267,11 @@ function Estadisticas() {
       <Paper className="estadisticas-card" elevation={0}>
         <Box className="estadisticas-toolbar">
           <FormControl size="small" sx={{ minWidth: 130 }}>
-            <InputLabel id="anio-estadisticas-label">Ano</InputLabel>
+            <InputLabel id="anio-estadisticas-label">Año</InputLabel>
             <Select
               labelId="anio-estadisticas-label"
               value={anio}
-              label="Ano"
+              label="Año"
               onChange={(event) => setAnio(Number(event.target.value))}
             >
               {anios.map((item) => (
@@ -359,6 +367,7 @@ function Estadisticas() {
         )}
       </Paper>
 
+      {mostrarComparativaPorSede && (
       <Paper className="estadisticas-card" elevation={0}>
         <Box className="estadisticas-header-inline">
           <Typography variant="h6" sx={{ fontWeight: 800, color: '#0b0f2a' }}>
@@ -461,6 +470,7 @@ function Estadisticas() {
           </>
         )}
       </Paper>
+      )}
 
       <Dialog
         open={dialogo.open}

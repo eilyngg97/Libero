@@ -182,6 +182,25 @@ function TenantOnlyRoute({ children, allowedTenantIds = [] }) {
   return <Navigate to={rol === 'usuario' ? '/dashboard-usuario' : '/dashboard'} replace />;
 }
 
+function BlockConstanciasForEsportaUsers({ children }) {
+  let tenantId = '';
+  let rol = '';
+
+  try {
+    tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
+    rol = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+  } catch (_) {
+    tenantId = '';
+    rol = '';
+  }
+
+  if (rol === 'usuario' && tenantId === 'esporta') {
+    return <Navigate to="/dashboard-usuario" replace />;
+  }
+
+  return children;
+}
+
 function TenantHostGate({ children }) {
   const [state, setState] = React.useState({ status: 'loading', message: '' });
 
@@ -350,7 +369,7 @@ function App() {
                           <Route path="torneos" element={<ProtectedRoute allowedRoles={adminOnly}><Torneos /></ProtectedRoute>} />
                           <Route path="torneos/crear" element={<ProtectedRoute allowedRoles={adminOnly}><TorneoCrear /></ProtectedRoute>} />
                           <Route path="dashboard-usuario" element={<ProtectedRoute allowedRoles={userOnly}><DashboardUsuario /></ProtectedRoute>} />
-                          <Route path="constancias" element={<ProtectedRoute allowedRoles={adminAndUser}><Constancias /></ProtectedRoute>} />
+                          <Route path="constancias" element={<ProtectedRoute allowedRoles={adminAndUser}><BlockConstanciasForEsportaUsers><Constancias /></BlockConstanciasForEsportaUsers></ProtectedRoute>} />
                           <Route path="panel-opciones-usuario/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><PanelOpcionesUsuario /></ProtectedRoute>} />
                           <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
                           <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly}><Uniformes /></ProtectedRoute>} />

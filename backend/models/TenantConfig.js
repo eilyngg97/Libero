@@ -23,10 +23,48 @@ const CobroSchema = new mongoose.Schema({
   recargo_usd: { type: Number, default: 0, min: 0, max: 100000 }
 }, { _id: false });
 
+const ConstanciaTemplateSchema = new mongoose.Schema({
+  titulo: { type: String, default: '' },
+  destinatario: { type: String, default: '' },
+  cuerpo: { type: String, default: '' },
+  nota: { type: String, default: '' },
+  cierre: { type: String, default: '' },
+  lugarEmision: { type: String, default: '' }
+}, { _id: false });
+
+const ConstanciasSchema = new mongoose.Schema({
+  institucion_nombre: { type: String, default: '' },
+  subtitulo: { type: String, default: '' },
+  logos: {
+    type: [{ type: String }],
+    default: [],
+    validate: {
+      validator: (arr) => Array.isArray(arr) && arr.length <= 3,
+      message: 'Solo se permiten hasta 3 logos en constancias.'
+    }
+  },
+  firmante: {
+    nombre: { type: String, default: '' },
+    cedula: { type: String, default: '' },
+    telefono: { type: String, default: '' },
+    cargo: { type: String, default: '' }
+  },
+  pie_direccion: { type: String, default: '' },
+  pie_lema: { type: String, default: '' },
+  templates: {
+    simple: { type: ConstanciaTemplateSchema, default: () => ({}) },
+    retiro: { type: ConstanciaTemplateSchema, default: () => ({}) },
+    horario_entrenamiento: { type: ConstanciaTemplateSchema, default: () => ({}) },
+    listado_alumnos: { type: ConstanciaTemplateSchema, default: () => ({}) },
+    asistencia: { type: ConstanciaTemplateSchema, default: () => ({}) }
+  }
+}, { _id: false });
+
 const TenantConfigSchema = new mongoose.Schema({
   key: { type: String, default: 'default', unique: true },
   pagos: { type: PagosSchema, default: () => ({}) },
   cobro: { type: CobroSchema, default: () => ({}) },
+  constancias: { type: ConstanciasSchema, default: () => ({}) },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 

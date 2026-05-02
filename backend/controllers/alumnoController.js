@@ -1755,6 +1755,11 @@ exports.updateAlumno = async (req, res) => {
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
+    const esAdmin = String(req.user?.rol || '').trim().toLowerCase() === 'admin';
+
+    if (!esAdmin && Object.prototype.hasOwnProperty.call(updateData, 'division')) {
+      delete updateData.division;
+    }
 
     if (req.body.fecha_inicio_cobro !== undefined) {
       const fechaInicioCobro = parseDateInput(req.body.fecha_inicio_cobro);

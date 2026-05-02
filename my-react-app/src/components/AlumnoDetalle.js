@@ -194,18 +194,18 @@ function AlumnoDetalle() {
 
   return (
     <>
-      <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', p: { xs: 1.25, sm: 2, md: 3 }, width: '100%', overflowX: 'hidden' }}>
+      <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', p: { xs: 1, sm: 2, md: 3 }, width: '100%', boxSizing: 'border-box', overflowX: 'hidden', display: 'flex', justifyContent: 'center' }}>
       <Box
         sx={{
-          maxWidth: { xs: '100%', sm: 720, md: 1000, lg: 1200, xl: 1500 },
+          maxWidth: { xs: 420, sm: 720, md: 1000, lg: 1200, xl: 1500 },
           mx: 'auto',
-          px: { xs: 0.5, sm: 2.5, md: 3 },
+          px: { xs: 0, sm: 2.5, md: 3 },
           width: '100%',
           boxSizing: 'border-box'
         }}
       >
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '340px 1fr' }, gap: { xs: 1.25, sm: 2, md: 3 }, width: '100%', minWidth: 0 }}>
-          <Box sx={{ position: { md: 'sticky' }, top: 24, alignSelf: 'start', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '340px 1fr' }, gap: { xs: 1.25, sm: 2, md: 3 }, width: '100%', minWidth: 0, justifyItems: { xs: 'center', md: 'stretch' } }}>
+          <Box sx={{ position: { md: 'sticky' }, top: 24, alignSelf: 'start', display: 'flex', flexDirection: 'column', gap: 2, width: '100%', maxWidth: { xs: 420, md: 'none' }, mx: { xs: 'auto', md: 0 } }}>
             <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1.5 }}>
                 <Avatar
@@ -375,7 +375,7 @@ function AlumnoDetalle() {
             </Paper>
           </Box>
 
-          <Box sx={{ display: 'grid', gap: 2 }}>
+          <Box sx={{ display: 'grid', gap: 2, width: '100%', maxWidth: { xs: 420, md: 'none' }, mx: { xs: 'auto', md: 0 } }}>
             <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                 <Box sx={{ width: 26, height: 26, borderRadius: 1.5, bgcolor: '#fff3e6', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

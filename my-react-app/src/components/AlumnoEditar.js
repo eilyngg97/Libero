@@ -701,12 +701,16 @@ function AlumnoEditar({ locationState }) {
                 value={form.division || ''}
                 label="División"
                 onChange={handleChange}
+                disabled={!esAdmin}
               >
                 <MenuItem value=""><em>Seleccionar</em></MenuItem>
                 {DIVISIONES.map((division) => (
                   <MenuItem key={division} value={division}>{division}</MenuItem>
                 ))}
               </Select>
+              <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
+                Solo administrador puede editar este campo.
+              </Typography>
             </FormControl>
           </div>
           
