@@ -933,26 +933,25 @@ function GeneralConfig() {
                         InputLabelProps={{ shrink: true }}
                         sx={fieldLabelSx}
                       />
-                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.6fr 0.8fr' }, gap: 1.5 }}>
-                        <TextField
-                          label="Cierre"
-                          size="small"
-                          multiline
-                          minRows={2}
-                          value={constanciasConfig.templates[section.key].cierre}
-                          onChange={(e) => updateTemplateField(section.key, 'cierre', e.target.value)}
-                          InputLabelProps={{ shrink: true }}
-                          sx={fieldLabelSx}
-                        />
-                        <TextField
-                          label="Lugar de emision"
-                          size="small"
-                          value={constanciasConfig.templates[section.key].lugarEmision}
-                          onChange={(e) => updateTemplateField(section.key, 'lugarEmision', e.target.value)}
-                          InputLabelProps={{ shrink: true }}
-                          sx={fieldLabelSx}
-                        />
-                      </Box>
+                      <TextField
+                        label="Lugar de emision"
+                        size="small"
+                        value={constanciasConfig.templates[section.key].lugarEmision}
+                        onChange={(e) => updateTemplateField(section.key, 'lugarEmision', e.target.value)}
+                        InputLabelProps={{ shrink: true }}
+                        sx={fieldLabelSx}
+                      />
+                      <TextField
+                        label="Cierre"
+                        size="small"
+                        multiline
+                        minRows={2}
+                        value={constanciasConfig.templates[section.key].cierre}
+                        onChange={(e) => updateTemplateField(section.key, 'cierre', e.target.value)}
+                        helperText="Este texto se imprime al final de la pagina en tamano pequeño."
+                        InputLabelProps={{ shrink: true }}
+                        sx={fieldLabelSx}
+                      />
                     </Box>
                   </AccordionDetails>
                 </Accordion>

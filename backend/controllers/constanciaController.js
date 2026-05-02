@@ -130,6 +130,22 @@ function formatFechaEvento(fechaRaw) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+function formatHoraAmPm(horaRaw) {
+  const value = String(horaRaw || '').trim();
+  if (!value) return '';
+
+  const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return value;
+
+  const horas24 = Number.parseInt(match[1], 10);
+  const minutos = match[2];
+  if (!Number.isInteger(horas24) || horas24 < 0 || horas24 > 23) return value;
+
+  const periodo = horas24 >= 12 ? 'PM' : 'AM';
+  const horas12 = horas24 % 12 === 0 ? 12 : horas24 % 12;
+  return `${horas12}:${minutos} ${periodo}`;
+}
+
 function normalizarAsistenciaDesdeRequest(reqBody = {}, alumno = {}, constanciasCfg = {}) {
   const asistenciaPara = String(reqBody?.asistenciaPara || 'atleta').trim().toLowerCase() === 'representante'
     ? 'representante'
@@ -150,6 +166,8 @@ function normalizarAsistenciaDesdeRequest(reqBody = {}, alumno = {}, constancias
   const fechaEvento = String(reqBody?.eventoFecha || '').trim();
   const horaDesde = String(reqBody?.eventoHoraDesde || '').trim();
   const horaHasta = String(reqBody?.eventoHoraHasta || '').trim();
+  const horaDesdeFmt = formatHoraAmPm(horaDesde);
+  const horaHastaFmt = formatHoraAmPm(horaHasta);
   if (!fechaEvento || !horaDesde || !horaHasta) {
     return {
       ok: false,
@@ -167,8 +185,8 @@ function normalizarAsistenciaDesdeRequest(reqBody = {}, alumno = {}, constancias
       asistencia_nombre: nombrePersona || '-',
       asistencia_cedula: cedulaPersona,
       asistencia_dia_evento: formatFechaEvento(fechaEvento),
-      asistencia_hora_desde: horaDesde,
-      asistencia_hora_hasta: horaHasta,
+      asistencia_hora_desde: horaDesdeFmt,
+      asistencia_hora_hasta: horaHastaFmt,
       asistencia_motivo_evento: String(reqBody?.eventoMotivo || '').trim() || 'actividad deportiva',
       firmante_cargo: String(constanciasCfg?.firmante?.cargo || 'PRESIDENTE').trim() || 'PRESIDENTE'
     }
@@ -204,11 +222,13 @@ function normalizarHorarioDesdeRequest(reqBody = {}, alumno = {}) {
 
   const horaInicio = String(reqBody.horaInicio || '').trim();
   const horaFin = String(reqBody.horaFin || '').trim();
+  const horaInicioFmt = formatHoraAmPm(horaInicio);
+  const horaFinFmt = formatHoraAmPm(horaFin);
 
   if (dias.length > 0 || horaInicio || horaFin) {
     const diasTexto = dias.length > 0 ? dias.join(', ') : 'dias no especificados';
-    if (horaInicio && horaFin) return `${diasTexto} de ${horaInicio} a ${horaFin}`;
-    if (horaInicio) return `${diasTexto} desde ${horaInicio}`;
+    if (horaInicioFmt && horaFinFmt) return `${diasTexto} de ${horaInicioFmt} a ${horaFinFmt}`;
+    if (horaInicioFmt) return `${diasTexto} desde ${horaInicioFmt}`;
     return diasTexto;
   }
 
@@ -386,7 +406,7 @@ function drawListadoAlumnosTable(doc, alumnos = []) {
   doc.moveDown(0.7);
 }
 
-function renderLogosInferioresCentrados(doc, logoPaths = []) {
+function renderLogosInferioresCentrados(doc, logoPaths = [], espacioInferior = 0) {
   const logos = (Array.isArray(logoPaths) ? logoPaths : []).slice(0, 3);
   if (!logos.length) return;
 
@@ -403,7 +423,7 @@ function renderLogosInferioresCentrados(doc, logoPaths = []) {
   const gap = preset.gap;
   const totalWidth = logos.length * logoWidth + Math.max(0, logos.length - 1) * gap;
   const startX = (doc.page.width - totalWidth) / 2;
-  const y = doc.page.height - doc.page.margins.bottom - logoHeight - 6;
+  const y = doc.page.height - doc.page.margins.bottom - espacioInferior - logoHeight - 6;
 
   logos.forEach((logoPath, index) => {
     try {
@@ -414,7 +434,7 @@ function renderLogosInferioresCentrados(doc, logoPaths = []) {
   });
 }
 
-function getFooterLogosTopY(doc, logoPaths = []) {
+function getFooterLogosTopY(doc, logoPaths = [], espacioInferior = 0) {
   const logos = (Array.isArray(logoPaths) ? logoPaths : []).slice(0, 3);
   if (!logos.length) return null;
 
@@ -430,37 +450,55 @@ function getFooterLogosTopY(doc, logoPaths = []) {
   const logoWidth = Math.max(42, Math.min(preset.width, maxWidthByLayout));
   const logoHeight = logoWidth;
 
-  return doc.page.height - doc.page.margins.bottom - logoHeight - 6;
+  return doc.page.height - doc.page.margins.bottom - espacioInferior - logoHeight - 6;
 }
 
-function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = []) {
+function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opciones = {}) {
+  const cierreTexto = String(opciones?.cierreTexto || '').trim();
   const tieneLogos = Array.isArray(logosInstitucionales) && logosInstitucionales.length > 0;
   const gapBloqueVsLogos = 20;
+  const anchoTexto = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+  const firmante = constanciasCfg?.firmante || {};
+  const lineasFirmante = 1
+    + (firmante.nombre ? 1 : 0)
+    + (firmante.cedula ? 1 : 0)
+    + (firmante.telefono ? 1 : 0)
+    + (firmante.cargo ? 1 : 0);
+  const lineasPie = (constanciasCfg.pie_direccion ? 1 : 0) + (constanciasCfg.pie_lema ? 1 : 0);
+  const alturaFirmaYPie = 14 + (lineasFirmante * 13) + (lineasPie > 0 ? 18 + lineasPie * 11 : 0);
+
+  const alturaCierre = cierreTexto
+    ? doc.font('Helvetica').fontSize(8.5).heightOfString(cierreTexto, {
+      width: anchoTexto,
+      align: 'justify',
+      lineGap: 2
+    }) + 8
+    : 0;
+  const espacioReservadoInferior = alturaCierre > 0 ? alturaCierre + 6 : 0;
+  const alturaEstimadaBloque = alturaFirmaYPie;
 
   if (tieneLogos) {
-    const firmante = constanciasCfg?.firmante || {};
-    const lineasFirmante = 1
-      + (firmante.nombre ? 1 : 0)
-      + (firmante.cedula ? 1 : 0)
-      + (firmante.telefono ? 1 : 0)
-      + (firmante.cargo ? 1 : 0);
-    const lineasPie = (constanciasCfg.pie_direccion ? 1 : 0) + (constanciasCfg.pie_lema ? 1 : 0);
-    const alturaEstimadaBloque = 14 + (lineasFirmante * 13) + (lineasPie > 0 ? 18 + lineasPie * 11 : 0);
-
-    let logosTopY = getFooterLogosTopY(doc, logosInstitucionales);
+    let logosTopY = getFooterLogosTopY(doc, logosInstitucionales, espacioReservadoInferior);
     let inicioObjetivoBloqueY = logosTopY - gapBloqueVsLogos - alturaEstimadaBloque;
     if (doc.y > inicioObjetivoBloqueY) {
       doc.addPage();
-      logosTopY = getFooterLogosTopY(doc, logosInstitucionales);
+      logosTopY = getFooterLogosTopY(doc, logosInstitucionales, espacioReservadoInferior);
       inicioObjetivoBloqueY = logosTopY - gapBloqueVsLogos - alturaEstimadaBloque;
     }
 
     doc.y = Math.max(doc.y, inicioObjetivoBloqueY);
   } else {
-    ensureSpace(doc, 170);
-    doc.moveDown(4.2);
+    const bottomSafeY = doc.page.height - doc.page.margins.bottom - espacioReservadoInferior - 8;
+    let inicioObjetivoBloqueY = bottomSafeY - alturaEstimadaBloque;
+    if (doc.y > inicioObjetivoBloqueY) {
+      doc.addPage();
+      inicioObjetivoBloqueY = doc.page.height - doc.page.margins.bottom - espacioReservadoInferior - 8 - alturaEstimadaBloque;
+    }
+    doc.y = Math.max(doc.y, inicioObjetivoBloqueY);
   }
 
+  doc.font('Helvetica').fontSize(10.5);
   doc.text('_________________________', { align: 'center' });
   doc.moveDown(0.5);
   doc.text(constanciasCfg.firmante.nombre || 'Direccion de la academia', { align: 'center' });
@@ -478,7 +516,31 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = []) {
     }
   }
 
-  renderLogosInferioresCentrados(doc, logosInstitucionales);
+  renderLogosInferioresCentrados(doc, logosInstitucionales, espacioReservadoInferior);
+}
+
+function renderCierreFinal(doc, cierreTexto = '') {
+  const texto = String(cierreTexto || '').trim();
+  if (!texto) return;
+
+  const anchoTexto = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const alturaCierre = doc.font('Helvetica').fontSize(8.5).heightOfString(texto, {
+    width: anchoTexto,
+    align: 'justify',
+    lineGap: 2
+  }) + 8;
+
+  let inicioCierreY = doc.page.height - doc.page.margins.bottom - alturaCierre;
+  if (doc.y > inicioCierreY) {
+    doc.addPage();
+    inicioCierreY = doc.page.height - doc.page.margins.bottom - alturaCierre;
+  }
+
+  doc.y = inicioCierreY;
+  doc.font('Helvetica').fontSize(8.5).text(texto, {
+    align: 'justify',
+    lineGap: 2
+  });
 }
 
 function createPdfResponseDocument(res) {
@@ -604,19 +666,18 @@ exports.generarConstancia = async (req, res) => {
         });
       }
 
-      doc.moveDown(1.2);
-      doc.fontSize(11).text(renderTemplate(template.cierre, variables), {
-        align: 'justify',
-        lineGap: 3
-      });
-
       const lugar = template.lugarEmision || constanciasCfg.templates?.simple?.lugarEmision || 'Barquisimeto';
-      if (fechaTexto) {
-        doc.moveDown(0.7);
-        doc.fontSize(10.5).text(`En ${lugar}, ${fechaTexto}.`, { align: 'left' });
+      const fechaLinea = fechaTexto ? `En ${lugar}, ${fechaTexto}.` : '';
+      if (fechaLinea) {
+        doc.moveDown(template.nota ? 1.0 : 0.9);
+        doc.font('Helvetica-Oblique').fontSize(10).text(fechaLinea, { align: 'left' });
+        doc.font('Helvetica');
       }
 
-      renderFirmaYPie(doc, constanciasCfg, logosInstitucionales);
+      const cierreTexto = renderTemplate(template.cierre, variables);
+
+      renderFirmaYPie(doc, constanciasCfg, logosInstitucionales, { cierreTexto });
+      renderCierreFinal(doc, cierreTexto);
       doc.end();
       return;
     }
@@ -670,19 +731,18 @@ exports.generarConstancia = async (req, res) => {
       });
     }
 
-    doc.moveDown(1.2);
-    doc.fontSize(11).text(renderTemplate(template.cierre, variables), {
-      align: 'justify',
-      lineGap: 3
-    });
-
     const lugar = template.lugarEmision || constanciasCfg.templates?.simple?.lugarEmision || 'Barquisimeto';
-    if (fechaTexto) {
-      doc.moveDown(0.7);
-      doc.fontSize(10.5).text(`En ${lugar}, ${fechaTexto}.`, { align: 'left' });
+    const fechaLinea = fechaTexto ? `En ${lugar}, ${fechaTexto}.` : '';
+    if (fechaLinea) {
+      doc.moveDown(template.nota ? 1.0 : 0.9);
+      doc.font('Helvetica-Oblique').fontSize(10).text(fechaLinea, { align: 'left' });
+      doc.font('Helvetica');
     }
 
-    renderFirmaYPie(doc, constanciasCfg, logosInstitucionales);
+    const cierreTexto = renderTemplate(template.cierre, variables);
+
+    renderFirmaYPie(doc, constanciasCfg, logosInstitucionales, { cierreTexto });
+    renderCierreFinal(doc, cierreTexto);
 
     doc.end();
   } catch (err) {
