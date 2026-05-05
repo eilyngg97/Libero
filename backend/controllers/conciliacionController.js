@@ -29,6 +29,8 @@ function normalizarTexto(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 }
@@ -171,23 +173,40 @@ function parseExcelRows(fileBuffer) {
   });
   if (!rows.length) throw new Error('El archivo Excel esta vacio');
 
-  const headerRow = Array.isArray(rows[0]) ? rows[0] : [];
-  const headersMap = {};
-  headerRow.forEach((header, index) => {
-    const key = normalizarTexto(header);
-    if (key) headersMap[key] = index;
-  });
+  let headerRowIndex = -1;
+  let fechaIdx = null;
+  let referenciaIdx = null;
+  let montoIdx = null;
+  let descripcionIdx = null;
 
-  const fechaIdx = findColumnKey(headersMap, ['fecha', 'date']);
-  const referenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
-  const montoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe']);
-  const descripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
+  // Algunos bancos agregan filas de resumen antes de los encabezados.
+  for (let i = 0; i < rows.length; i += 1) {
+    const headerRow = Array.isArray(rows[i]) ? rows[i] : [];
+    const headersMap = {};
+
+    headerRow.forEach((header, index) => {
+      const key = normalizarTexto(header);
+      if (key) headersMap[key] = index;
+    });
+
+    const currentReferenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
+    const currentMontoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe']);
+
+    if (currentReferenciaIdx === null || currentMontoIdx === null) continue;
+
+    headerRowIndex = i;
+    referenciaIdx = currentReferenciaIdx;
+    montoIdx = currentMontoIdx;
+    fechaIdx = findColumnKey(headersMap, ['fecha', 'date']);
+    descripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
+    break;
+  }
 
   if (referenciaIdx === null || montoIdx === null) {
     throw new Error('No se encontraron columnas requeridas: Referencia y Monto');
   }
 
-  const dataRows = rows.slice(1);
+  const dataRows = rows.slice(headerRowIndex + 1);
   const parsedRows = dataRows
     .map((row, idx) => {
       const referencia = normalizarReferencia(row[referenciaIdx]);
@@ -198,7 +217,7 @@ function parseExcelRows(fileBuffer) {
       if (!referencia && (montoBs === null || montoBs === undefined)) return null;
 
       return {
-        excelRow: idx + 2,
+        excelRow: headerRowIndex + idx + 2,
         referencia,
         monto_bs: montoBs,
         fecha,
