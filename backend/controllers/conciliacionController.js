@@ -190,7 +190,7 @@ function parseExcelRows(fileBuffer) {
     });
 
     const currentReferenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
-    const currentMontoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe']);
+    const currentMontoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe', 'credito', 'crédito']);
 
     if (currentReferenciaIdx === null || currentMontoIdx === null) continue;
 
@@ -264,7 +264,7 @@ function parseTxtRows(fileBuffer) {
 
     const fechaIdx = findColumnKey(headersMap, ['fecha', 'date']);
     const referenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
-    const montoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe']);
+    const montoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe', 'credito', 'crédito']);
     const descripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
 
     if (referenciaIdx === null || montoIdx === null) {
@@ -301,11 +301,11 @@ function parseTxtRows(fileBuffer) {
   // 2) TXT de ancho fijo (ej. bancos que alinean columnas por espacios)
   const headerIndex = nonEmptyRawLines.findIndex((line) => {
     const normalized = normalizarTexto(line);
-    return normalized.includes('referencia') && normalized.includes('monto');
+    return normalized.includes('referencia') && (normalized.includes('monto') || normalized.includes('credito') || normalized.includes('crédito'));
   });
 
   if (headerIndex < 0) {
-    throw new Error('No se encontro encabezado en TXT (se esperaba Referencia y Monto)');
+    throw new Error('No se encontro encabezado en TXT (se esperaba Referencia y Monto/Credito)');
   }
 
   const headerLine = nonEmptyRawLines[headerIndex];
@@ -316,11 +316,14 @@ function parseTxtRows(fileBuffer) {
   const descripcionStart = headerNormalized.indexOf('descripcion') >= 0
     ? headerNormalized.indexOf('descripcion')
     : (headerNormalized.indexOf('detalle') >= 0 ? headerNormalized.indexOf('detalle') : -1);
-  const montoStart = headerNormalized.indexOf('monto');
+  const montoIdxCandidate = headerNormalized.indexOf('monto');
+  const creditoIdxCandidate = headerNormalized.indexOf('credito');
+  const creditoAccIdxCandidate = headerNormalized.indexOf('crédito');
+  const montoStart = montoIdxCandidate >= 0 ? montoIdxCandidate : (creditoIdxCandidate >= 0 ? creditoIdxCandidate : creditoAccIdxCandidate);
   const saldoStart = headerNormalized.indexOf('saldo');
 
   if (referenciaStart < 0 || montoStart < 0) {
-    throw new Error('No se encontraron columnas requeridas en TXT: Referencia y Monto');
+    throw new Error('No se encontraron columnas requeridas en TXT: Referencia y Monto/Credito');
   }
 
   const parsedRows = [];
