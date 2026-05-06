@@ -78,6 +78,21 @@ describe('adelantarMensualidadSiguiente', () => {
       })
     };
 
+    const TenantConfig = {
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            cobro: {
+              dia_cobro: 1,
+              dia_vencimiento: 5,
+              dias_gracia: 0,
+              recargo_usd: 0
+            }
+          })
+        })
+      })
+    };
+
     getTenantModel.mockImplementation((connection, modelName) => {
       const models = {
         Alumno: TenantAlumno,
@@ -85,7 +100,8 @@ describe('adelantarMensualidadSiguiente', () => {
         PagoDetalle: {},
         Sede: TenantSede,
         Reposo: TenantReposo,
-        Representante: {}
+        Representante: {},
+        TenantConfig
       };
 
       return models[modelName];

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Button, TextField, MenuItem, Select, InputLabel, FormControl, CircularProgress, Typography, Paper, Autocomplete } from '@mui/material';
+import { Box, Button, TextField, MenuItem, Select, InputLabel, FormControl, CircularProgress, Typography, Paper, Autocomplete, Chip } from '@mui/material';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useLocation } from 'react-router-dom';
@@ -13,6 +13,14 @@ const tipos = [
 ];
 
 const DIAS_ENTRENAMIENTO = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
+
+function getAlumnoEstadoVisual(alumno) {
+  const estaRetirado = alumno?.dado_de_baja === true || alumno?.activo === false;
+  return {
+    estaRetirado,
+    label: estaRetirado ? 'Retirado / Baja' : (alumno?.estado || 'Activo')
+  };
+}
 
 
 
@@ -77,7 +85,7 @@ function Constancias() {
     if (rol === 'admin') {
       if (inputValue.length >= 3) {
         setLoadingAlumnos(true);
-        fetch(`${process.env.REACT_APP_API_URL}/api/alumnos?search=${inputValue}`)
+        fetch(`${process.env.REACT_APP_API_URL}/api/alumnos?search=${encodeURIComponent(inputValue)}&incluirBajas=1`)
           .then(res => res.json())
           .then(data => {
             if (Array.isArray(data)) {
@@ -159,6 +167,8 @@ function Constancias() {
       setTipo(tiposDisponibles[0].value);
     }
   }, [tipo, tiposDisponibles]);
+
+  const selectedAlumnoEstado = React.useMemo(() => getAlumnoEstadoVisual(selectedAlumno), [selectedAlumno]);
 
   React.useEffect(() => {
     if (tipo !== 'horario_entrenamiento') {
@@ -261,8 +271,32 @@ function Constancias() {
                       }
                     }}
                     onChange={(e, value) => setSelectedAlumnosListado(Array.isArray(value) ? value : [])}
+                    renderOption={(props, option) => {
+                      const estadoVisual = getAlumnoEstadoVisual(option);
+                      return (
+                        <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography sx={{ fontWeight: 600, color: '#0f172a' }}>
+                              {`${option?.nombres || ''} ${option?.apellidos || ''}`.trim()}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#64748b' }}>
+                              {`C.I. ${option?.cedula || 'N/A'}`}
+                            </Typography>
+                          </Box>
+                          <Chip
+                            size="small"
+                            label={estadoVisual.label}
+                            sx={{
+                              bgcolor: estadoVisual.estaRetirado ? '#fee2e2' : '#eef2ff',
+                              color: estadoVisual.estaRetirado ? '#b91c1c' : '#2563eb',
+                              fontWeight: 700
+                            }}
+                          />
+                        </Box>
+                      );
+                    }}
                     renderInput={(params) => (
-                      <TextField {...params} label="Buscar y seleccionar alumnos" variant="outlined" sx={inputSx} helperText="Escribe al menos 3 caracteres para buscar." />
+                      <TextField {...params} label="Buscar y seleccionar alumnos" variant="outlined" sx={inputSx} helperText="Escribe al menos 3 caracteres para buscar. Incluye alumnos activos y retirados." />
                     )}
                   />
                 ) : (
@@ -282,8 +316,32 @@ function Constancias() {
                       setSelectedAlumno(value);
                       setAlumnoId(value ? value._id : '');
                     }}
+                    renderOption={(props, option) => {
+                      const estadoVisual = getAlumnoEstadoVisual(option);
+                      return (
+                        <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography sx={{ fontWeight: 600, color: '#0f172a' }}>
+                              {`${option?.nombres || ''} ${option?.apellidos || ''}`.trim()}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#64748b' }}>
+                              {`C.I. ${option?.cedula || 'N/A'}`}
+                            </Typography>
+                          </Box>
+                          <Chip
+                            size="small"
+                            label={estadoVisual.label}
+                            sx={{
+                              bgcolor: estadoVisual.estaRetirado ? '#fee2e2' : '#eef2ff',
+                              color: estadoVisual.estaRetirado ? '#b91c1c' : '#2563eb',
+                              fontWeight: 700
+                            }}
+                          />
+                        </Box>
+                      );
+                    }}
                     renderInput={(params) => (
-                      <TextField {...params} label="Buscar alumno" variant="outlined" required sx={inputSx} />
+                      <TextField {...params} label="Buscar alumno" variant="outlined" required sx={inputSx} helperText="La búsqueda incluye alumnos activos y retirados." />
                     )}
                   />
                 )}
@@ -299,6 +357,17 @@ function Constancias() {
                 <Typography variant="subtitle1"><b>Nombre:</b> {selectedAlumno.nombres} {selectedAlumno.apellidos}</Typography>
                 <Typography variant="subtitle2"><b>Cédula:</b> {selectedAlumno.cedula}</Typography>
                 <Typography variant="subtitle2"><b>Sede:</b> {selectedAlumno.sede.nombre}</Typography>
+                <Box sx={{ mt: 1 }}>
+                  <Chip
+                    size="small"
+                    label={selectedAlumnoEstado.label}
+                    sx={{
+                      bgcolor: selectedAlumnoEstado.estaRetirado ? '#fee2e2' : '#eef2ff',
+                      color: selectedAlumnoEstado.estaRetirado ? '#b91c1c' : '#2563eb',
+                      fontWeight: 700
+                    }}
+                  />
+                </Box>
               </Box>
             )}
             {rol === 'admin' && selectedAlumno && tipo !== 'listado_alumnos' && (

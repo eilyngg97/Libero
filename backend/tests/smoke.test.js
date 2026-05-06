@@ -1,4 +1,5 @@
 process.env.JWT_SECRET_CURRENT = 'test-secret';
+process.env.MONGO_URI_CURRENT = process.env.MONGO_URI_CURRENT || 'mongodb://127.0.0.1:27017/libero_test';
 
 jest.mock('../models/User', () => {
   const UserMock = jest.fn().mockImplementation((data = {}) => ({
@@ -53,6 +54,53 @@ jest.mock('../models/PagoDetalle', () => ({
 jest.mock('../models/Reposo', () => ({
   find: jest.fn(),
   findOne: jest.fn()
+}));
+
+jest.mock('../models/TenantConfig', () => ({
+  findOne: jest.fn().mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        key: 'default',
+        cobro: { dia_cobro: 1, dia_vencimiento: 5, dias_gracia: 0, recargo_usd: 0 },
+        constancias: {}
+      })
+    })
+  })
+}));
+
+jest.mock('../config/tenantBusinessConnection', () => ({
+  getTenantBusinessConnection: jest.fn().mockResolvedValue({})
+}));
+
+jest.mock('../services/tenantModelService', () => ({
+  getTenantModel: jest.fn((connection, modelName) => {
+    const User = require('../models/User');
+    const Alumno = require('../models/Alumno');
+    const Representante = require('../models/Representante');
+    const Mensualidad = require('../models/Mensualidad');
+    const PagoDetalle = require('../models/PagoDetalle');
+    const Reposo = require('../models/Reposo');
+    const TenantConfig = require('../models/TenantConfig');
+
+    const map = {
+      User,
+      Alumno,
+      Representante,
+      Mensualidad,
+      PagoDetalle,
+      Reposo,
+      TenantConfig,
+      Sede: { findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 100, nombre: 'TRINITARIAS' }) },
+      Aspirante: { find: jest.fn(), findOne: jest.fn(), create: jest.fn() },
+      Uniforme: { find: jest.fn(), findById: jest.fn() },
+      UniformePedido: { find: jest.fn(), create: jest.fn() },
+      LandingAtletaFoto: { find: jest.fn() },
+      Entrenador: { find: jest.fn(), findById: jest.fn() },
+      HistorialEstadoAlumno: { create: jest.fn(), find: jest.fn() }
+    };
+
+    return map[modelName] || {};
+  })
 }));
 
 jest.mock('bcryptjs', () => ({

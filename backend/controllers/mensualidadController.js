@@ -1422,6 +1422,134 @@ exports.confirmarMensualidad = async (req, res) => {
   }
 };
 
+// Editar una mensualidad individual sin afectar periodos anteriores o posteriores.
+exports.editarMensualidadIndividual = async (req, res) => {
+  try {
+    const tenantModels = await getTenantMensualidadModels(req);
+    const {
+      Mensualidad: TenantMensualidad,
+      Alumno: TenantAlumno,
+      PagoDetalle: TenantPagoDetalle
+    } = tenantModels;
+
+    const mensualidad = await TenantMensualidad.findById(req.params.id);
+    if (!mensualidad) {
+      return res.status(404).json({ error: 'Mensualidad no encontrada' });
+    }
+
+    const montoEsperadoInput = req.body?.monto_esperado;
+    const estatusInput = req.body?.estatus;
+
+    const montoEsperadoNormalizado = normalizarMontoOpcional(montoEsperadoInput);
+    const estatusNormalizado = typeof estatusInput === 'string' ? estatusInput.trim().toLowerCase() : '';
+
+    if (
+      montoEsperadoInput !== undefined &&
+      montoEsperadoInput !== null &&
+      montoEsperadoInput !== '' &&
+      montoEsperadoNormalizado === undefined
+    ) {
+      return res.status(400).json({ error: 'monto_esperado inválido' });
+    }
+
+    if (
+      montoEsperadoNormalizado === undefined &&
+      !estatusNormalizado
+    ) {
+      return res.status(400).json({ error: 'Debes enviar monto_esperado o estatus para editar' });
+    }
+
+    if (montoEsperadoNormalizado !== undefined) {
+      if (montoEsperadoNormalizado < 0) {
+        return res.status(400).json({ error: 'El monto_esperado no puede ser negativo' });
+      }
+
+      // Politica: mantener el monto base de esta mensualidad y ajustar solo su ajuste_extraordinario.
+      const montoBaseActual = obtenerMontoBaseMensualidad(mensualidad);
+      const creditoAplicado = redondearMonto(mensualidad.credito_aplicado || 0);
+
+      mensualidad.monto_base = montoBaseActual;
+      mensualidad.ajuste_extraordinario = redondearMonto(montoBaseActual - creditoAplicado - montoEsperadoNormalizado);
+      mensualidad.monto_esperado = montoEsperadoNormalizado;
+      mensualidad.monto_sin_recargo_usd = montoEsperadoNormalizado;
+      mensualidad.recargo_aplicado_usd = 0;
+      mensualidad.monto_con_recargo_usd = montoEsperadoNormalizado;
+      mensualidad.aplica_recargo = false;
+      mensualidad.fecha_aplicacion_recargo = null;
+      mensualidad.ajuste_descripcion = 'Ajuste manual individual de mensualidad';
+      mensualidad.ajuste_fecha = new Date();
+    }
+
+    if (estatusNormalizado === 'exonerado') {
+      const pagos = await TenantPagoDetalle.find({ id_mensualidad: mensualidad._id }).select('monto_pagado');
+      const totalPagado = redondearMonto(
+        pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0)
+      );
+      const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
+      const saldoGeneradoNuevo = redondearMonto(Math.max(0, totalPagado));
+      const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
+
+      if (deltaSaldo !== 0) {
+        const alumnoDoc = await TenantAlumno.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
+        if (alumnoDoc) {
+          const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
+          const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
+          if (saldoResultante < 0) {
+            return res.status(400).json({
+              error: 'No se puede exonerar porque el saldo a favor previo de esta mensualidad ya fue consumido.'
+            });
+          }
+          alumnoDoc.saldo_a_favor_mensualidades = saldoResultante;
+          await alumnoDoc.save();
+        }
+      }
+
+      const montoBaseActual = obtenerMontoBaseMensualidad(mensualidad);
+      const creditoAplicado = redondearMonto(mensualidad.credito_aplicado || 0);
+
+      mensualidad.monto_base = montoBaseActual;
+      mensualidad.ajuste_extraordinario = redondearMonto(montoBaseActual - creditoAplicado);
+      mensualidad.monto_esperado = 0;
+      mensualidad.monto_sin_recargo_usd = 0;
+      mensualidad.recargo_aplicado_usd = 0;
+      mensualidad.monto_con_recargo_usd = 0;
+      mensualidad.aplica_recargo = false;
+      mensualidad.saldo_a_favor_generado = saldoGeneradoNuevo;
+      mensualidad.fecha_aplicacion_recargo = null;
+      mensualidad.estatus = 'Exonerado';
+      mensualidad.ajuste_descripcion = 'Exoneracion manual individual de mensualidad';
+      mensualidad.ajuste_fecha = new Date();
+      await mensualidad.save();
+
+      return res.json({
+        message: 'Mensualidad exonerada correctamente',
+        saldo_a_favor_generado: saldoGeneradoNuevo,
+        mensualidad
+      });
+    }
+
+    if (estatusNormalizado && estatusNormalizado !== 'exonerado') {
+      return res.status(400).json({ error: 'El único cambio manual de estatus permitido es a Exonerado' });
+    }
+
+    const resultado = await recalcularMensualidadPorPagos(mensualidad, {
+      models: tenantModels,
+      actorRol: req.user?.rol || 'admin',
+      estatusAnterior: mensualidad.estatus,
+      preservarPagadoSinPagos: true,
+      preservarInsolventeSinPagosCuandoMontoCero: true
+    });
+
+    return res.json({
+      message: 'Mensualidad actualizada correctamente',
+      mensualidad,
+      resumen: resultado
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 // Eliminar mensualidad y sus pagos asociados
 exports.eliminarMensualidad = async (req, res) => {
   try {

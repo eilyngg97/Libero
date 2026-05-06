@@ -101,6 +101,11 @@ function Mensualidades() {
 	const [confirmarEliminarMensualidadOpen, setConfirmarEliminarMensualidadOpen] = useState(false);
 	const [mensualidadAEliminar, setMensualidadAEliminar] = useState(null);
 	const [eliminandoMensualidadId, setEliminandoMensualidadId] = useState('');
+	const [modalEditarMensualidadOpen, setModalEditarMensualidadOpen] = useState(false);
+	const [mensualidadAEditar, setMensualidadAEditar] = useState(null);
+	const [editarMontoEsperado, setEditarMontoEsperado] = useState('');
+	const [editarEstatus, setEditarEstatus] = useState('sin_cambio');
+	const [guardandoEdicionMensualidad, setGuardandoEdicionMensualidad] = useState(false);
 	const [modalExportExcelOpen, setModalExportExcelOpen] = useState(false);
 	const [opcionesExportExcel, setOpcionesExportExcel] = useState({
 		mesCompleto: true,
@@ -447,6 +452,65 @@ function Mensualidades() {
 		if (!mensualidad?._id) return;
 		setMensualidadAEliminar(mensualidad);
 		setConfirmarEliminarMensualidadOpen(true);
+	};
+
+	const abrirModalEditarMensualidad = (mensualidad) => {
+		if (!mensualidad?._id) return;
+		setMensualidadAEditar(mensualidad);
+		setEditarMontoEsperado(Number(mensualidad?.monto_esperado || 0).toFixed(2));
+		setEditarEstatus('sin_cambio');
+		setModalEditarMensualidadOpen(true);
+	};
+
+	const cerrarModalEditarMensualidad = () => {
+		if (guardandoEdicionMensualidad) return;
+		setModalEditarMensualidadOpen(false);
+		setMensualidadAEditar(null);
+		setEditarMontoEsperado('');
+		setEditarEstatus('sin_cambio');
+	};
+
+	const guardarEdicionMensualidad = async () => {
+		if (!mensualidadAEditar?._id || guardandoEdicionMensualidad) return;
+
+		const montoNumerico = Number(editarMontoEsperado);
+		if (!Number.isFinite(montoNumerico) || montoNumerico < 0) {
+			alert('Ingresa un monto esperado válido.');
+			return;
+		}
+
+		const payload = { monto_esperado: Number(montoNumerico.toFixed(2)) };
+		if (editarEstatus === 'exonerado') {
+			payload.estatus = 'Exonerado';
+		}
+
+		try {
+			setGuardandoEdicionMensualidad(true);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadAEditar._id}`, {
+				method: 'PATCH',
+				headers: {
+					...getAuthHeaders(),
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(payload)
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo editar la mensualidad');
+
+			setModalEditarMensualidadOpen(false);
+			setMensualidadAEditar(null);
+			setEditarMontoEsperado('');
+			setEditarEstatus('sin_cambio');
+			await cargarMensualidades();
+			if (mensualidadDetalle?._id === mensualidadAEditar._id) {
+				await actualizarDetalleMensualidad({ ...mensualidadDetalle, ...data?.mensualidad }, true);
+			}
+			setSuccessMessage(data?.message || 'Mensualidad actualizada correctamente');
+		} catch (err) {
+			alert(err.message || 'No se pudo editar la mensualidad');
+		} finally {
+			setGuardandoEdicionMensualidad(false);
+		}
 	};
 
 	const eliminarMensualidad = async () => {
@@ -1074,9 +1138,9 @@ function Mensualidades() {
 						const estadoAlumno = obtenerEstadoAlumnoVisual(m.id_alumno);
 
 						return (
-						<Paper key={m._id} sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)' }}>
-							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+						<Paper key={m._id} sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)', minWidth: 0, overflow: 'hidden' }}>
+							<Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, mb: 1, minWidth: 0 }}>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
 									<Tooltip title={`Alumno ${estadoAlumno.label}`}>
 										<Box
 											sx={{
@@ -1092,11 +1156,27 @@ function Mensualidades() {
 									<Avatar sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 										{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 									</Avatar>
-									<Typography sx={{ fontWeight: 700, color: '#1f2937', fontSize: 14 }} noWrap>
+									<Typography
+										sx={{
+											fontWeight: 700,
+											color: '#1f2937',
+											fontSize: 14,
+											minWidth: 0,
+											flex: 1,
+											display: '-webkit-box',
+											WebkitLineClamp: 2,
+											WebkitBoxOrient: 'vertical',
+											whiteSpace: 'normal',
+											overflow: 'hidden',
+											textOverflow: 'ellipsis'
+										}}
+									>
 										{m.id_alumno ? `${m.id_alumno.nombres} ${m.id_alumno.apellidos}` : '-'}
 									</Typography>
 								</Box>
-								{renderEstatusChip(m.estatus)}
+								<Box sx={{ flexShrink: 0, maxWidth: '42%' }}>
+									{renderEstatusChip(m.estatus)}
+								</Box>
 							</Box>
 							<Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
 								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
@@ -1145,6 +1225,13 @@ function Mensualidades() {
 												<PaymentsIcon fontSize="small" />
 											</IconButton>
 										</span>
+									</Tooltip>
+								)}
+								{esAdmin && !esMensualidadDeBecado(m) && (
+									<Tooltip title="Editar mensualidad">
+										<IconButton onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
+											<EditIcon fontSize="small" />
+										</IconButton>
 									</Tooltip>
 								)}
 								{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
@@ -1279,6 +1366,13 @@ function Mensualidades() {
 															<PaymentsIcon fontSize="small" />
 														</IconButton>
 													</span>
+												</Tooltip>
+											)}
+											{esAdmin && !esMensualidadDeBecado(m) && (
+												<Tooltip title="Editar mensualidad">
+													<IconButton size="small" onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
+														<EditIcon fontSize="small" />
+													</IconButton>
 												</Tooltip>
 											)}
 											{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
@@ -1755,6 +1849,55 @@ function Mensualidades() {
 					</Button>
 					<Button variant="contained" onClick={exportarExcelSeleccionado}>
 						Aplicar
+					</Button>
+				</DialogActions>
+			</Dialog>
+			<Dialog
+				open={modalEditarMensualidadOpen}
+				onClose={cerrarModalEditarMensualidad}
+				maxWidth="xs"
+				fullWidth
+			>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Editar mensualidad</DialogTitle>
+				<DialogContent>
+					{mensualidadAEditar && (
+						<Box sx={{ mt: 0.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+							<Typography variant="body2"><b>Alumno:</b> {mensualidadAEditar.id_alumno ? `${mensualidadAEditar.id_alumno.nombres || ''} ${mensualidadAEditar.id_alumno.apellidos || ''}`.trim() : '-'}</Typography>
+							<Typography variant="body2"><b>Mes:</b> {meses[(mensualidadAEditar.mes || 1) - 1] || '-'}</Typography>
+							<Typography variant="body2"><b>Estado actual:</b> {mensualidadAEditar.estatus || '-'}</Typography>
+						</Box>
+					)}
+					<TextField
+						label="Monto esperado (USD)"
+						type="number"
+						fullWidth
+						margin="normal"
+						value={editarMontoEsperado}
+						onChange={(e) => setEditarMontoEsperado(e.target.value)}
+						inputProps={{ min: 0, step: '0.01' }}
+						helperText="Este ajuste solo modifica la mensualidad seleccionada."
+					/>
+					<TextField
+						select
+						label="Estatus"
+						fullWidth
+						margin="normal"
+						value={editarEstatus}
+						onChange={(e) => setEditarEstatus(e.target.value)}
+					>
+						<MenuItem value="sin_cambio">Sin cambio</MenuItem>
+						<MenuItem value="exonerado">Exonerado</MenuItem>
+					</TextField>
+					<Alert severity="info" sx={{ mt: 1 }}>
+						Si la mensualidad tiene pagos, al exonerarla ese monto se trasladará a saldo a favor del alumno.
+					</Alert>
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={cerrarModalEditarMensualidad} disabled={guardandoEdicionMensualidad}>
+						Cancelar
+					</Button>
+					<Button variant="contained" onClick={guardarEdicionMensualidad} disabled={guardandoEdicionMensualidad}>
+						{guardandoEdicionMensualidad ? 'Guardando...' : 'Guardar cambios'}
 					</Button>
 				</DialogActions>
 			</Dialog>
