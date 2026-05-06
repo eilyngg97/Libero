@@ -15,6 +15,7 @@ import {
   InputAdornment,
   Paper,
   Snackbar,
+  Switch,
   TextField,
   Typography
 } from '@mui/material';
@@ -40,6 +41,29 @@ const EMPTY_CONSTANCIAS_CONFIG = {
   },
   pie_direccion: '',
   pie_lema: '',
+  retiro_personalizado: {
+    habilitado: false,
+    incluir_logo_academia: false,
+    institucion_nombre: '',
+    subtitulo: '',
+    logos: [],
+    firmante: {
+      nombre: '',
+      cedula: '',
+      telefono: '',
+      cargo: ''
+    },
+    pie_direccion: '',
+    pie_lema: '',
+    template: {
+      titulo: 'CARTA DE RETIRO',
+      destinatario: 'A QUIEN PUEDA INTERESAR',
+      cuerpo: '',
+      nota: '',
+      cierre: 'Constancia que se hace a peticion de la parte interesada.',
+      lugarEmision: 'Barquisimeto'
+    }
+  },
   templates: {
     simple: {
       titulo: 'CONSTANCIA',
@@ -103,6 +127,25 @@ function buildConstanciasConfig(data = {}) {
     },
     pie_direccion: data?.pie_direccion || EMPTY_CONSTANCIAS_CONFIG.pie_direccion,
     pie_lema: data?.pie_lema || EMPTY_CONSTANCIAS_CONFIG.pie_lema,
+    retiro_personalizado: {
+      habilitado: Boolean(data?.retiro_personalizado?.habilitado),
+      incluir_logo_academia: Boolean(data?.retiro_personalizado?.incluir_logo_academia),
+      institucion_nombre: data?.retiro_personalizado?.institucion_nombre || EMPTY_CONSTANCIAS_CONFIG.retiro_personalizado.institucion_nombre,
+      subtitulo: data?.retiro_personalizado?.subtitulo || EMPTY_CONSTANCIAS_CONFIG.retiro_personalizado.subtitulo,
+      logos: Array.isArray(data?.retiro_personalizado?.logos)
+        ? data.retiro_personalizado.logos
+        : EMPTY_CONSTANCIAS_CONFIG.retiro_personalizado.logos,
+      firmante: {
+        ...EMPTY_CONSTANCIAS_CONFIG.retiro_personalizado.firmante,
+        ...(data?.retiro_personalizado?.firmante || {})
+      },
+      pie_direccion: data?.retiro_personalizado?.pie_direccion || EMPTY_CONSTANCIAS_CONFIG.retiro_personalizado.pie_direccion,
+      pie_lema: data?.retiro_personalizado?.pie_lema || EMPTY_CONSTANCIAS_CONFIG.retiro_personalizado.pie_lema,
+      template: {
+        ...EMPTY_CONSTANCIAS_CONFIG.retiro_personalizado.template,
+        ...(data?.retiro_personalizado?.template || {})
+      }
+    },
     templates: {
       simple: {
         ...EMPTY_CONSTANCIAS_CONFIG.templates.simple,
@@ -133,15 +176,18 @@ function GeneralConfig() {
   const [asignandoCategorias, setAsignandoCategorias] = useState(false);
   const [subiendoLogo, setSubiendoLogo] = useState(false);
   const [subiendoLogosConstancias, setSubiendoLogosConstancias] = useState(false);
+  const [subiendoLogosRetiro, setSubiendoLogosRetiro] = useState(false);
   const [guardandoConstancias, setGuardandoConstancias] = useState(false);
   const [cargandoConfigAdmin, setCargandoConfigAdmin] = useState(true);
   const [logoFile, setLogoFile] = useState(null);
   const [logosConstanciasFiles, setLogosConstanciasFiles] = useState([]);
+  const [logosRetiroFiles, setLogosRetiroFiles] = useState([]);
   const [logoActual, setLogoActual] = useState('');
   const [logoPreview, setLogoPreview] = useState('');
   const [dragLogoActive, setDragLogoActive] = useState(false);
   const [constanciasConfig, setConstanciasConfig] = useState(EMPTY_CONSTANCIAS_CONFIG);
   const [expandedTemplate, setExpandedTemplate] = useState(TEMPLATE_SECTIONS[0].key);
+  const [expandedRetiroSubAccordion, setExpandedRetiroSubAccordion] = useState('global');
   const [cambiandoClave, setCambiandoClave] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     clave_actual: '',
@@ -158,6 +204,7 @@ function GeneralConfig() {
   });
   const logoInputRef = useRef(null);
   const logosConstanciasInputRef = useRef(null);
+  const logosRetiroInputRef = useRef(null);
   const apiBase = useMemo(() => (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/$/, ''), []);
 
   const sectionCardSx = {
@@ -313,6 +360,11 @@ function GeneralConfig() {
     return () => URL.revokeObjectURL(objectUrl);
   }, [logoFile]);
 
+  useEffect(() => {
+    const modoAislado = Boolean(constanciasConfig?.retiro_personalizado?.habilitado);
+    setExpandedRetiroSubAccordion(modoAislado ? 'aislado' : 'global');
+  }, [constanciasConfig?.retiro_personalizado?.habilitado]);
+
   const onSelectLogoFile = (file) => {
     if (!file) return;
     setLogoFile(file);
@@ -369,6 +421,47 @@ function GeneralConfig() {
         }
       }
     }));
+  };
+
+  const updateRetiroField = (field, value) => {
+    setConstanciasConfig((prev) => ({
+      ...prev,
+      retiro_personalizado: {
+        ...prev.retiro_personalizado,
+        [field]: value
+      }
+    }));
+  };
+
+  const updateRetiroFirmanteField = (field, value) => {
+    setConstanciasConfig((prev) => ({
+      ...prev,
+      retiro_personalizado: {
+        ...prev.retiro_personalizado,
+        firmante: {
+          ...prev.retiro_personalizado.firmante,
+          [field]: value
+        }
+      }
+    }));
+  };
+
+  const updateRetiroTemplateField = (field, value) => {
+    setConstanciasConfig((prev) => ({
+      ...prev,
+      retiro_personalizado: {
+        ...prev.retiro_personalizado,
+        template: {
+          ...prev.retiro_personalizado.template,
+          [field]: value
+        }
+      }
+    }));
+  };
+
+  const handleRetiroModeChange = (checked) => {
+    updateRetiroField('habilitado', checked);
+    setExpandedRetiroSubAccordion(checked ? 'aislado' : 'global');
   };
 
   const guardarConstancias = async (nextConfig = constanciasConfig, successText = 'Configuracion de constancias actualizada.') => {
@@ -459,6 +552,70 @@ function GeneralConfig() {
     }
   };
 
+  const onSelectRetiroLogos = (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    const existentes = constanciasConfig?.retiro_personalizado?.logos?.length || 0;
+    const maxPendientes = Math.max(0, 3 - existentes);
+    if (maxPendientes <= 0) {
+      setError('Ya existen 3 logos cargados para retiro personalizado. Elimina uno antes de subir otro.');
+      return;
+    }
+
+    setLogosRetiroFiles((prev) => {
+      const prevFiles = Array.isArray(prev) ? prev : [];
+      const all = [...prevFiles, ...files];
+      const uniqueByFingerprint = Array.from(
+        new Map(all.map((file) => [`${file.name}-${file.size}-${file.lastModified}`, file])).values()
+      );
+      const next = uniqueByFingerprint.slice(0, maxPendientes);
+
+      if (uniqueByFingerprint.length > maxPendientes) {
+        setError(`Solo puedes preparar ${maxPendientes} logo(s) para subir en este momento.`);
+      } else {
+        setError('');
+      }
+      return next;
+    });
+  };
+
+  const subirLogosRetiro = async () => {
+    if (!logosRetiroFiles.length) {
+      setError('Selecciona al menos una imagen para los logos de retiro personalizado.');
+      return;
+    }
+
+    try {
+      setSubiendoLogosRetiro(true);
+      setError('');
+      const formData = new FormData();
+      logosRetiroFiles.forEach((file) => formData.append('logos', file));
+
+      const res = await fetch(`${apiBase}/api/configuracion/constancias/retiro/logos`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.detalle || 'No se pudieron subir los logos de retiro personalizado.');
+
+      setConstanciasConfig((prev) => ({
+        ...prev,
+        retiro_personalizado: {
+          ...prev.retiro_personalizado,
+          logos: Array.isArray(data?.logos) ? data.logos : prev.retiro_personalizado.logos
+        }
+      }));
+      setLogosRetiroFiles([]);
+      setSuccessMessage(data?.message || 'Logos de retiro personalizado actualizados.');
+    } catch (err) {
+      setError(err.message || 'No se pudieron subir los logos de retiro personalizado.');
+    } finally {
+      setSubiendoLogosRetiro(false);
+    }
+  };
+
   const eliminarLogoConstancia = async (logoIndex) => {
     const nextConfig = {
       ...constanciasConfig,
@@ -467,6 +624,22 @@ function GeneralConfig() {
 
     setConstanciasConfig(nextConfig);
     const saved = await guardarConstancias(nextConfig, 'Logo de constancias eliminado correctamente.');
+    if (!saved) {
+      setConstanciasConfig(constanciasConfig);
+    }
+  };
+
+  const eliminarLogoRetiro = async (logoIndex) => {
+    const nextConfig = {
+      ...constanciasConfig,
+      retiro_personalizado: {
+        ...constanciasConfig.retiro_personalizado,
+        logos: constanciasConfig.retiro_personalizado.logos.filter((_, index) => index !== logoIndex)
+      }
+    };
+
+    setConstanciasConfig(nextConfig);
+    const saved = await guardarConstancias(nextConfig, 'Logo de retiro personalizado eliminado correctamente.');
     if (!saved) {
       setConstanciasConfig(constanciasConfig);
     }
@@ -893,66 +1066,322 @@ function GeneralConfig() {
                     </Typography>
                   </AccordionSummary>
                   <AccordionDetails sx={{ px: 2, pb: 2 }}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5, mb: 1.5 }}>
-                      <TextField
-                        label="Titulo"
-                        size="small"
-                        value={constanciasConfig.templates[section.key].titulo}
-                        onChange={(e) => updateTemplateField(section.key, 'titulo', e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={fieldLabelSx}
-                      />
-                      <TextField
-                        label="Destinatario"
-                        size="small"
-                        value={constanciasConfig.templates[section.key].destinatario}
-                        onChange={(e) => updateTemplateField(section.key, 'destinatario', e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={fieldLabelSx}
-                      />
-                    </Box>
-                    <Box sx={{ display: 'grid', gap: 1.5 }}>
-                      <TextField
-                        label="Cuerpo"
-                        size="small"
-                        multiline
-                        minRows={4}
-                        value={constanciasConfig.templates[section.key].cuerpo}
-                        onChange={(e) => updateTemplateField(section.key, 'cuerpo', e.target.value)}
-                        helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{sede_nombre}}, {{horario_resumen}}, {{cantidad_alumnos}}, {{fecha_emision_texto}}, {{asistencia_persona_label}}, {{asistencia_nombre}}, {{asistencia_cedula}}, {{asistencia_dia_evento}}, {{asistencia_hora_desde}}, {{asistencia_hora_hasta}}, {{asistencia_motivo_evento}}"
-                        InputLabelProps={{ shrink: true }}
-                        sx={fieldLabelSx}
-                      />
-                      <TextField
-                        label="Nota"
-                        size="small"
-                        multiline
-                        minRows={2}
-                        value={constanciasConfig.templates[section.key].nota}
-                        onChange={(e) => updateTemplateField(section.key, 'nota', e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={fieldLabelSx}
-                      />
-                      <TextField
-                        label="Lugar de emision"
-                        size="small"
-                        value={constanciasConfig.templates[section.key].lugarEmision}
-                        onChange={(e) => updateTemplateField(section.key, 'lugarEmision', e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={fieldLabelSx}
-                      />
-                      <TextField
-                        label="Cierre"
-                        size="small"
-                        multiline
-                        minRows={2}
-                        value={constanciasConfig.templates[section.key].cierre}
-                        onChange={(e) => updateTemplateField(section.key, 'cierre', e.target.value)}
-                        helperText="Este texto se imprime al final de la pagina en tamano pequeño."
-                        InputLabelProps={{ shrink: true }}
-                        sx={fieldLabelSx}
-                      />
-                    </Box>
+                    {section.key === 'retiro' ? (
+                      <Box sx={{ display: 'grid', gap: 1.2 }}>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1.2,
+                            p: 1.2,
+                            borderRadius: 1.8,
+                            border: '1px solid #fdba74',
+                            bgcolor: '#fff7ed'
+                          }}
+                        >
+                          <Box>
+                            <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: '#7c2d12' }}>
+                              Modo de retiro
+                            </Typography>
+                            <Typography sx={{ fontSize: 12, color: '#9a3412' }}>
+                              {constanciasConfig.retiro_personalizado.habilitado
+                                ? 'Retiro aislado activado'
+                                : 'Usando retiro global'}
+                            </Typography>
+                          </Box>
+                          <Switch
+                            checked={Boolean(constanciasConfig.retiro_personalizado.habilitado)}
+                            onChange={(e) => handleRetiroModeChange(e.target.checked)}
+                            inputProps={{ 'aria-label': 'Activar retiro aislado' }}
+                            sx={{
+                              '& .MuiSwitch-switchBase.Mui-checked': {
+                                color: '#f97316'
+                              },
+                              '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                backgroundColor: '#fdba74',
+                                opacity: 1
+                              },
+                              '& .MuiSwitch-track': {
+                                backgroundColor: '#cbd5e1',
+                                opacity: 1
+                              }
+                            }}
+                          />
+                        </Box>
+
+                        <Accordion
+                          disableGutters
+                          elevation={0}
+                          expanded={expandedRetiroSubAccordion === 'global'}
+                          onChange={(_, isExpanded) => setExpandedRetiroSubAccordion(isExpanded ? 'global' : false)}
+                          sx={{ border: '1px solid #e7ebf3', borderRadius: 2, bgcolor: '#ffffff', '&::before': { display: 'none' } }}
+                        >
+                          <AccordionSummary expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#607089' }} />}>
+                            <Typography sx={{ fontWeight: 800, color: '#1f2a3d' }}>Formato global</Typography>
+                          </AccordionSummary>
+                          <AccordionDetails sx={{ pt: 0.5 }}>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5, mb: 1.5 }}>
+                              <TextField
+                                label="Titulo"
+                                size="small"
+                                value={constanciasConfig.templates.retiro.titulo}
+                                onChange={(e) => updateTemplateField('retiro', 'titulo', e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                              <TextField
+                                label="Destinatario"
+                                size="small"
+                                value={constanciasConfig.templates.retiro.destinatario}
+                                onChange={(e) => updateTemplateField('retiro', 'destinatario', e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                            </Box>
+                            <Box sx={{ display: 'grid', gap: 1.5 }}>
+                              <TextField
+                                label="Cuerpo"
+                                size="small"
+                                multiline
+                                minRows={4}
+                                value={constanciasConfig.templates.retiro.cuerpo}
+                                onChange={(e) => updateTemplateField('retiro', 'cuerpo', e.target.value)}
+                                helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{sede_nombre}}, {{fecha_emision_texto}}"
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                              <TextField
+                                label="Nota"
+                                size="small"
+                                multiline
+                                minRows={2}
+                                value={constanciasConfig.templates.retiro.nota}
+                                onChange={(e) => updateTemplateField('retiro', 'nota', e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                              <TextField
+                                label="Lugar de emision"
+                                size="small"
+                                value={constanciasConfig.templates.retiro.lugarEmision}
+                                onChange={(e) => updateTemplateField('retiro', 'lugarEmision', e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                              <TextField
+                                label="Cierre"
+                                size="small"
+                                multiline
+                                minRows={2}
+                                value={constanciasConfig.templates.retiro.cierre}
+                                onChange={(e) => updateTemplateField('retiro', 'cierre', e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                            </Box>
+                          </AccordionDetails>
+                        </Accordion>
+
+                        <Accordion
+                          disableGutters
+                          elevation={0}
+                          expanded={expandedRetiroSubAccordion === 'aislado'}
+                          onChange={(_, isExpanded) => setExpandedRetiroSubAccordion(isExpanded ? 'aislado' : false)}
+                          sx={{ border: '1px solid #e7ebf3', borderRadius: 2, bgcolor: '#ffffff', '&::before': { display: 'none' } }}
+                        >
+                          <AccordionSummary expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#607089' }} />}>
+                            <Typography sx={{ fontWeight: 800, color: '#1f2a3d' }}>Formato aislado (personalizado)</Typography>
+                          </AccordionSummary>
+                          <AccordionDetails sx={{ pt: 0.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, p: 1.2, borderRadius: 1.6, border: '1px solid #fdba74', bgcolor: '#fff' }}>
+                              <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#9a3412' }}>
+                                Incluir logo principal de academia
+                              </Typography>
+                              <Switch
+                                checked={Boolean(constanciasConfig.retiro_personalizado.incluir_logo_academia)}
+                                onChange={(e) => updateRetiroField('incluir_logo_academia', e.target.checked)}
+                                inputProps={{ 'aria-label': 'Incluir logo principal en retiro aislado' }}
+                              />
+                            </Box>
+
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5, mb: 1.5 }}>
+                              <TextField
+                                label="Nombre institucional (aislado)"
+                                size="small"
+                                multiline
+                                minRows={2}
+                                value={constanciasConfig.retiro_personalizado.institucion_nombre}
+                                onChange={(e) => updateRetiroField('institucion_nombre', e.target.value)}
+                                helperText="Usa Enter para salto de linea."
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                              <TextField
+                                label="Subtitulo (aislado)"
+                                size="small"
+                                value={constanciasConfig.retiro_personalizado.subtitulo}
+                                onChange={(e) => updateRetiroField('subtitulo', e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                sx={fieldLabelSx}
+                              />
+                            </Box>
+
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mb: 1.5 }}>
+                              <TextField label="Firmante" size="small" value={constanciasConfig.retiro_personalizado.firmante.nombre} onChange={(e) => updateRetiroFirmanteField('nombre', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Cedula" size="small" value={constanciasConfig.retiro_personalizado.firmante.cedula} onChange={(e) => updateRetiroFirmanteField('cedula', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Telefono" size="small" value={constanciasConfig.retiro_personalizado.firmante.telefono} onChange={(e) => updateRetiroFirmanteField('telefono', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Cargo" size="small" value={constanciasConfig.retiro_personalizado.firmante.cargo} onChange={(e) => updateRetiroFirmanteField('cargo', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                            </Box>
+
+                            <Box sx={{ mb: 1.5, p: 1.2, borderRadius: 1.6, border: '1px dashed #fdba74', bgcolor: '#fff7ed' }}>
+                              <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#9a3412', mb: 0.5 }}>
+                                Bloque fijo de liga (siempre en retiro aislado)
+                              </Typography>
+                              <Typography sx={{ fontSize: 12.5, color: '#7c2d12' }}>
+                                Recibido por el personal de la liga: _____________________________
+                              </Typography>
+                              <Typography sx={{ fontSize: 12.5, color: '#7c2d12' }}>
+                                Fecha: ________________________________________________
+                              </Typography>
+                            </Box>
+
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5, mb: 1.5 }}>
+                              <TextField label="Pie direccion" size="small" multiline minRows={2} value={constanciasConfig.retiro_personalizado.pie_direccion} onChange={(e) => updateRetiroField('pie_direccion', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Pie lema" size="small" multiline minRows={2} value={constanciasConfig.retiro_personalizado.pie_lema} onChange={(e) => updateRetiroField('pie_lema', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                            </Box>
+
+                            <Box sx={{ mb: 1.5 }}>
+                              <Typography sx={{ fontWeight: 800, color: '#9a3412', mb: 0.6 }}>Logos exclusivos para retiro</Typography>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.2, mb: 1.2 }}>
+                                {constanciasConfig.retiro_personalizado.logos.map((logo, index) => (
+                                  <Box key={`${logo}-${index}`} sx={{ width: 92, borderRadius: 2, border: '1px solid #fdba74', bgcolor: '#fff', p: 1, display: 'grid', gap: 0.8, justifyItems: 'center' }}>
+                                    <Box component="img" src={mediaUrl(logo)} alt={`Logo retiro ${index + 1}`} sx={{ width: '100%', height: 58, objectFit: 'contain' }} />
+                                    <Button size="small" color="inherit" onClick={() => eliminarLogoRetiro(index)} disabled={guardandoConstancias} sx={{ textTransform: 'none', fontSize: 11, minWidth: 0, p: 0 }}>
+                                      Quitar
+                                    </Button>
+                                  </Box>
+                                ))}
+                                {!constanciasConfig.retiro_personalizado.logos.length && (
+                                  <Typography sx={{ color: '#c2410c', fontSize: 12.5 }}>Aun no hay logos de retiro cargados.</Typography>
+                                )}
+                              </Box>
+
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mb: 1 }}>
+                                <input
+                                  ref={logosRetiroInputRef}
+                                  type="file"
+                                  hidden
+                                  accept="image/*"
+                                  multiple
+                                  onChange={(e) => {
+                                    onSelectRetiroLogos(e.target.files);
+                                    e.target.value = '';
+                                  }}
+                                />
+                                <Button
+                                  variant="outlined"
+                                  onClick={() => logosRetiroInputRef.current?.click()}
+                                  disabled={(constanciasConfig.retiro_personalizado.logos?.length || 0) >= 3 || subiendoLogosRetiro}
+                                  sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#fdba74', color: '#9a3412', bgcolor: '#fff' }}
+                                >
+                                  Seleccionar logos retiro
+                                </Button>
+                                <Button
+                                  variant="contained"
+                                  onClick={subirLogosRetiro}
+                                  disabled={subiendoLogosRetiro || !logosRetiroFiles.length}
+                                  sx={orangeButtonSx}
+                                >
+                                  {subiendoLogosRetiro ? 'Subiendo logos retiro...' : `Subir ${logosRetiroFiles.length} logo(s)`}
+                                </Button>
+                              </Box>
+
+                              {!!logosRetiroFiles.length && (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8 }}>
+                                  {logosRetiroFiles.map((file) => (
+                                    <Chip key={`${file.name}-${file.lastModified}`} label={file.name} size="small" />
+                                  ))}
+                                </Box>
+                              )}
+                            </Box>
+
+                            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5, mb: 1.5 }}>
+                              <TextField label="Titulo" size="small" value={constanciasConfig.retiro_personalizado.template.titulo} onChange={(e) => updateRetiroTemplateField('titulo', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Destinatario" size="small" value={constanciasConfig.retiro_personalizado.template.destinatario} onChange={(e) => updateRetiroTemplateField('destinatario', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                            </Box>
+
+                            <Box sx={{ display: 'grid', gap: 1.5 }}>
+                              <TextField label="Cuerpo" size="small" multiline minRows={5} value={constanciasConfig.retiro_personalizado.template.cuerpo} onChange={(e) => updateRetiroTemplateField('cuerpo', e.target.value)} helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_fecha_nacimiento}}, {{alumno_fecha_ingreso_academia}}, {{sede_nombre}}, {{fecha_emision_texto}}" InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Lugar de emision" size="small" value={constanciasConfig.retiro_personalizado.template.lugarEmision} onChange={(e) => updateRetiroTemplateField('lugarEmision', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                            </Box>
+                          </AccordionDetails>
+                        </Accordion>
+                      </Box>
+                    ) : (
+                      <>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5, mb: 1.5 }}>
+                          <TextField
+                            label="Titulo"
+                            size="small"
+                            value={constanciasConfig.templates[section.key].titulo}
+                            onChange={(e) => updateTemplateField(section.key, 'titulo', e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            sx={fieldLabelSx}
+                          />
+                          <TextField
+                            label="Destinatario"
+                            size="small"
+                            value={constanciasConfig.templates[section.key].destinatario}
+                            onChange={(e) => updateTemplateField(section.key, 'destinatario', e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            sx={fieldLabelSx}
+                          />
+                        </Box>
+                        <Box sx={{ display: 'grid', gap: 1.5 }}>
+                          <TextField
+                            label="Cuerpo"
+                            size="small"
+                            multiline
+                            minRows={4}
+                            value={constanciasConfig.templates[section.key].cuerpo}
+                            onChange={(e) => updateTemplateField(section.key, 'cuerpo', e.target.value)}
+                            helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{sede_nombre}}, {{horario_resumen}}, {{cantidad_alumnos}}, {{fecha_emision_texto}}, {{asistencia_persona_label}}, {{asistencia_nombre}}, {{asistencia_cedula}}, {{asistencia_dia_evento}}, {{asistencia_hora_desde}}, {{asistencia_hora_hasta}}, {{asistencia_motivo_evento}}, {{asistencia_verbo_presencia}}"
+                            InputLabelProps={{ shrink: true }}
+                            sx={fieldLabelSx}
+                          />
+                          <TextField
+                            label="Nota"
+                            size="small"
+                            multiline
+                            minRows={2}
+                            value={constanciasConfig.templates[section.key].nota}
+                            onChange={(e) => updateTemplateField(section.key, 'nota', e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            sx={fieldLabelSx}
+                          />
+                          <TextField
+                            label="Lugar de emision"
+                            size="small"
+                            value={constanciasConfig.templates[section.key].lugarEmision}
+                            onChange={(e) => updateTemplateField(section.key, 'lugarEmision', e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            sx={fieldLabelSx}
+                          />
+                          <TextField
+                            label="Cierre"
+                            size="small"
+                            multiline
+                            minRows={2}
+                            value={constanciasConfig.templates[section.key].cierre}
+                            onChange={(e) => updateTemplateField(section.key, 'cierre', e.target.value)}
+                            helperText="Este texto se imprime al final de la pagina en tamano pequeño."
+                            InputLabelProps={{ shrink: true }}
+                            sx={fieldLabelSx}
+                          />
+                        </Box>
+                      </>
+                    )}
                   </AccordionDetails>
                 </Accordion>
               ))}

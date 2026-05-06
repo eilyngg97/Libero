@@ -52,6 +52,7 @@ function Constancias() {
   const [eventoHoraDesde, setEventoHoraDesde] = useState('');
   const [eventoHoraHasta, setEventoHoraHasta] = useState('');
   const [eventoMotivo, setEventoMotivo] = useState('amistoso');
+  const [asistenciaTiempo, setAsistenciaTiempo] = useState('pasado');
   const alumnosOptions = React.useMemo(() => (Array.isArray(alumnos) ? alumnos : []), [alumnos]);
   const alumnosListadoValue = React.useMemo(
     () => (Array.isArray(selectedAlumnosListado) ? selectedAlumnosListado : []),
@@ -179,6 +180,7 @@ function Constancias() {
       setEventoHoraDesde('');
       setEventoHoraHasta('');
       setEventoMotivo('amistoso');
+      setAsistenciaTiempo('pasado');
     }
   }, [tipo]);
 
@@ -200,6 +202,7 @@ function Constancias() {
           eventoHoraDesde: tipo === 'asistencia' ? eventoHoraDesde : '',
           eventoHoraHasta: tipo === 'asistencia' ? eventoHoraHasta : '',
           eventoMotivo: tipo === 'asistencia' ? eventoMotivo : '',
+          asistenciaTiempo: tipo === 'asistencia' ? asistenciaTiempo : 'pasado',
           diasEntrenamiento: tipo === 'horario_entrenamiento' ? diasEntrenamiento : [],
           horaInicio: tipo === 'horario_entrenamiento' ? horaInicioEntrenamiento : '',
           horaFin: tipo === 'horario_entrenamiento' ? horaFinEntrenamiento : ''
@@ -411,7 +414,19 @@ function Constancias() {
                   InputLabelProps={{ shrink: true }}
                   sx={inputSx}
                 />
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                <FormControl fullWidth margin="normal" sx={inputSx}>
+                  <InputLabel id="asistencia-tiempo-label">Tiempo verbal</InputLabel>
+                  <Select
+                    labelId="asistencia-tiempo-label"
+                    value={asistenciaTiempo}
+                    label="Tiempo verbal"
+                    onChange={(e) => setAsistenciaTiempo(e.target.value)}
+                  >
+                    <MenuItem value="pasado">Estuvo presente</MenuItem>
+                    <MenuItem value="futuro">Estara presente</MenuItem>
+                  </Select>
+                </FormControl>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, mt: 1 }}>
                   <TextField
                     fullWidth
                     label="Hora desde"

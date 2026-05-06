@@ -43,6 +43,29 @@ const DEFAULT_CONFIG = {
     },
     pie_direccion: '',
     pie_lema: '',
+    retiro_personalizado: {
+      habilitado: false,
+      incluir_logo_academia: false,
+      institucion_nombre: '',
+      subtitulo: '',
+      logos: [],
+      firmante: {
+        nombre: '',
+        cedula: '',
+        telefono: '',
+        cargo: ''
+      },
+      pie_direccion: '',
+      pie_lema: '',
+      template: {
+        titulo: 'CARTA DE RETIRO',
+        destinatario: 'A QUIEN PUEDA INTERESAR',
+        cuerpo: '',
+        nota: '',
+        cierre: 'Constancia que se hace a petición de la parte interesada.',
+        lugarEmision: 'Barquisimeto'
+      }
+    },
     templates: {
       simple: {
         titulo: 'CONSTANCIA',
@@ -155,17 +178,22 @@ function normalizeLogosList(logos, maxItems = 3) {
 
 function normalizeTemplatePayload(template = {}, fallback = {}) {
   return {
-    titulo: cleanValue(template.titulo || fallback.titulo),
-    destinatario: cleanValue(template.destinatario || fallback.destinatario),
-    cuerpo: cleanValue(template.cuerpo || fallback.cuerpo),
-    nota: cleanValue(template.nota || fallback.nota),
-    cierre: cleanValue(template.cierre || fallback.cierre),
-    lugarEmision: cleanValue(template.lugarEmision || fallback.lugarEmision)
+    titulo: cleanValue(template?.titulo ?? fallback?.titulo),
+    destinatario: cleanValue(template?.destinatario ?? fallback?.destinatario),
+    cuerpo: cleanValue(template?.cuerpo ?? fallback?.cuerpo),
+    nota: cleanValue(template?.nota ?? fallback?.nota),
+    cierre: cleanValue(template?.cierre ?? fallback?.cierre),
+    lugarEmision: cleanValue(template?.lugarEmision ?? fallback?.lugarEmision)
   };
 }
 
 function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG.constancias) {
   const root = constancias && typeof constancias === 'object' ? constancias : {};
+  const retiroRoot = root?.retiro_personalizado && typeof root.retiro_personalizado === 'object'
+    ? root.retiro_personalizado
+    : {};
+  const retiroFallback = fallback?.retiro_personalizado || DEFAULT_CONFIG.constancias.retiro_personalizado;
+
   return {
     institucion_nombre: cleanValue(root.institucion_nombre || fallback.institucion_nombre),
     subtitulo: cleanValue(root.subtitulo || fallback.subtitulo),
@@ -178,6 +206,22 @@ function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG
     },
     pie_direccion: cleanValue(root.pie_direccion || fallback.pie_direccion),
     pie_lema: cleanValue(root.pie_lema || fallback.pie_lema),
+    retiro_personalizado: {
+      habilitado: Boolean(retiroRoot.habilitado),
+      incluir_logo_academia: Boolean(retiroRoot.incluir_logo_academia),
+      institucion_nombre: cleanValue(retiroRoot.institucion_nombre || retiroFallback.institucion_nombre),
+      subtitulo: cleanValue(retiroRoot.subtitulo || retiroFallback.subtitulo),
+      logos: normalizeLogosList(retiroRoot.logos),
+      firmante: {
+        nombre: cleanValue(retiroRoot?.firmante?.nombre || retiroFallback?.firmante?.nombre),
+        cedula: cleanValue(retiroRoot?.firmante?.cedula || retiroFallback?.firmante?.cedula),
+        telefono: cleanValue(retiroRoot?.firmante?.telefono || retiroFallback?.firmante?.telefono),
+        cargo: cleanValue(retiroRoot?.firmante?.cargo || retiroFallback?.firmante?.cargo)
+      },
+      pie_direccion: cleanValue(retiroRoot.pie_direccion || retiroFallback.pie_direccion),
+      pie_lema: cleanValue(retiroRoot.pie_lema || retiroFallback.pie_lema),
+      template: normalizeTemplatePayload(retiroRoot.template, retiroFallback.template)
+    },
     templates: {
       simple: normalizeTemplatePayload(root?.templates?.simple, fallback?.templates?.simple),
       retiro: normalizeTemplatePayload(root?.templates?.retiro, fallback?.templates?.retiro),
@@ -299,6 +343,21 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
       firmante: {
         ...existingConstancias.firmante,
         ...(root.constancias.firmante || {})
+      },
+      retiro_personalizado: {
+        ...existingConstancias.retiro_personalizado,
+        ...(root.constancias.retiro_personalizado || {}),
+        logos: root?.constancias?.retiro_personalizado?.logos !== undefined
+          ? root.constancias.retiro_personalizado.logos
+          : existingConstancias.retiro_personalizado.logos,
+        firmante: {
+          ...existingConstancias.retiro_personalizado.firmante,
+          ...(root?.constancias?.retiro_personalizado?.firmante || {})
+        },
+        template: {
+          ...existingConstancias.retiro_personalizado.template,
+          ...(root?.constancias?.retiro_personalizado?.template || {})
+        }
       },
       templates: {
         ...existingConstancias.templates,
@@ -589,6 +648,49 @@ exports.subirLogosConstancias = async (req, res) => {
     });
   } catch (err) {
     return res.status(400).json({ error: 'No se pudieron subir los logos de constancias.', detalle: err.message });
+  }
+};
+
+exports.subirLogosConstanciaRetiro = async (req, res) => {
+  try {
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'Debes adjuntar al menos una imagen en el campo logos.' });
+    }
+
+    const TenantConfig = await getTenantConfigModel(req);
+    const config = await TenantConfig.findOne({ key: 'default' }).lean();
+    const existentes = normalizeLogosList(config?.constancias?.retiro_personalizado?.logos || [], Number.POSITIVE_INFINITY);
+    const nuevos = normalizeLogosList(files.map((file) => buildBrandingLogoUrl(req, file)), Number.POSITIVE_INFINITY);
+    const fusionadosSinRecorte = normalizeLogosList([...existentes, ...nuevos], Number.POSITIVE_INFINITY);
+
+    if (fusionadosSinRecorte.length > 3) {
+      return res.status(400).json({ error: 'Solo se permiten hasta 3 logos para la constancia de retiro personalizada.' });
+    }
+
+    const fusionados = normalizeLogosList(fusionadosSinRecorte, 3);
+
+    await TenantConfig.findOneAndUpdate(
+      { key: 'default' },
+      {
+        $set: {
+          'constancias.retiro_personalizado.logos': fusionados,
+          updated_by: req.user?.id
+        }
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true
+      }
+    ).lean();
+
+    return res.status(200).json({
+      message: 'Logos de retiro personalizados actualizados con exito.',
+      logos: fusionados
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudieron subir los logos de retiro personalizados.', detalle: err.message });
   }
 };
 

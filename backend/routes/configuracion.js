@@ -56,6 +56,7 @@ router.put('/', authMiddleware, rolMiddleware('admin'), configuracionController.
 router.patch('/', authMiddleware, rolMiddleware('admin'), configuracionController.patchConfiguracionAdmin);
 router.post('/logo', authMiddleware, rolMiddleware('admin'), uploadLogo.single('logo'), configuracionController.subirLogoAcademia);
 router.post('/constancias/logos', authMiddleware, rolMiddleware('admin'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstancias);
+router.post('/constancias/retiro/logos', authMiddleware, rolMiddleware('admin'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstanciaRetiro);
 router.patch('/cambiar-clave', authMiddleware, configuracionController.cambiarClaveUsuario);
 
 module.exports = router;

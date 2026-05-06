@@ -42,7 +42,7 @@ const DEFAULT_TEMPLATES = {
   asistencia: {
     titulo: 'CONSTANCIA DE ASISTENCIA',
     destinatario: 'A QUIEN PUEDA INTERESAR',
-    cuerpo: 'En mi caracter de {{firmante_cargo}} de dicha entidad, hago constar que {{asistencia_persona_label}} {{asistencia_nombre}}, portador(a) de la cedula de identidad N° {{asistencia_cedula}}, estuvo presente el dia {{asistencia_dia_evento}}, con el fin de {{asistencia_motivo_evento}}, el cual se llevo a cabo desde las {{asistencia_hora_desde}} hasta las {{asistencia_hora_hasta}}.',
+    cuerpo: 'En mi caracter de {{firmante_cargo}} de dicha entidad, hago constar que {{asistencia_persona_label}} {{asistencia_nombre}}, portador(a) de la cedula de identidad N° {{asistencia_cedula}}, {{asistencia_verbo_presencia}} presente el dia {{asistencia_dia_evento}}, con el fin de {{asistencia_motivo_evento}}, el cual se llevo a cabo desde las {{asistencia_hora_desde}} hasta las {{asistencia_hora_hasta}}.',
     nota: '',
     cierre: 'Sin mas nada que hacer referencia y agradeciendo de antemano la mayor colaboracion que puedan prestar para con nuestro atleta.',
     lugarEmision: 'Barquisimeto'
@@ -54,17 +54,34 @@ const DEFAULT_CONSTANCIAS_CONFIG = {
   subtitulo: '',
   logos: [],
   firmante: {
-    nombre: 'Direccion de la academia',
+    nombre: '',
     cedula: '',
     telefono: '',
-    cargo: 'Director'
+    cargo: ''
   },
   pie_direccion: '',
   pie_lema: '',
-  templates: DEFAULT_TEMPLATES
+  templates: DEFAULT_TEMPLATES,
+  retiro_personalizado: {
+    habilitado: false,
+    incluir_logo_academia: false,
+    institucion_nombre: 'ESCUELA DE VOLEIBOL',
+    subtitulo: '',
+    logos: [],
+    firmante: {
+      nombre: '',
+      cedula: '',
+      telefono: '',
+      cargo: ''
+    },
+    pie_direccion: '',
+    pie_lema: '',
+    template: { ...DEFAULT_TEMPLATES.retiro }
+  }
 };
 
 const ESTATUS_CON_DEUDA = new Set(['pendiente', 'abono', 'en revision', 'retrasado', 'insolvente']);
+const CUERPO_PRIMERA_LINEA_SANGRIA = 24;
 
 async function getTenantConstanciaModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -86,12 +103,12 @@ function normalizarTipoConstancia(tipo) {
 
 function normalizeTemplate(template = {}, fallback = {}) {
   return {
-    titulo: String(template?.titulo || fallback?.titulo || '').trim(),
-    destinatario: String(template?.destinatario || fallback?.destinatario || '').trim(),
-    cuerpo: String(template?.cuerpo || fallback?.cuerpo || '').trim(),
-    nota: String(template?.nota || fallback?.nota || '').trim(),
-    cierre: String(template?.cierre || fallback?.cierre || '').trim(),
-    lugarEmision: String(template?.lugarEmision || fallback?.lugarEmision || '').trim()
+    titulo: String(template?.titulo ?? fallback?.titulo ?? '').trim(),
+    destinatario: String(template?.destinatario ?? fallback?.destinatario ?? '').trim(),
+    cuerpo: String(template?.cuerpo ?? fallback?.cuerpo ?? '').trim(),
+    nota: String(template?.nota ?? fallback?.nota ?? '').trim(),
+    cierre: String(template?.cierre ?? fallback?.cierre ?? '').trim(),
+    lugarEmision: String(template?.lugarEmision ?? fallback?.lugarEmision ?? '').trim()
   };
 }
 
@@ -99,6 +116,12 @@ function normalizeConstanciasConfig(raw = {}) {
   const cfg = raw && typeof raw === 'object' ? raw : {};
   const logos = Array.isArray(cfg.logos)
     ? Array.from(new Set(cfg.logos.map((item) => String(item || '').trim()).filter(Boolean))).slice(0, 3)
+    : [];
+  const retiroCfg = cfg?.retiro_personalizado && typeof cfg.retiro_personalizado === 'object'
+    ? cfg.retiro_personalizado
+    : {};
+  const retiroLogos = Array.isArray(retiroCfg.logos)
+    ? Array.from(new Set(retiroCfg.logos.map((item) => String(item || '').trim()).filter(Boolean))).slice(0, 3)
     : [];
 
   return {
@@ -119,6 +142,22 @@ function normalizeConstanciasConfig(raw = {}) {
       horario_entrenamiento: normalizeTemplate(cfg?.templates?.horario_entrenamiento, DEFAULT_TEMPLATES.horario_entrenamiento),
       listado_alumnos: normalizeTemplate(cfg?.templates?.listado_alumnos, DEFAULT_TEMPLATES.listado_alumnos),
       asistencia: normalizeTemplate(cfg?.templates?.asistencia, DEFAULT_TEMPLATES.asistencia)
+    },
+    retiro_personalizado: {
+      habilitado: Boolean(retiroCfg?.habilitado),
+      incluir_logo_academia: Boolean(retiroCfg?.incluir_logo_academia),
+      institucion_nombre: String(retiroCfg?.institucion_nombre || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.institucion_nombre).trim(),
+      subtitulo: String(retiroCfg?.subtitulo || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.subtitulo).trim(),
+      logos: retiroLogos,
+      firmante: {
+        nombre: String(retiroCfg?.firmante?.nombre || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.firmante.nombre).trim(),
+        cedula: String(retiroCfg?.firmante?.cedula || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.firmante.cedula).trim(),
+        telefono: String(retiroCfg?.firmante?.telefono || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.firmante.telefono).trim(),
+        cargo: String(retiroCfg?.firmante?.cargo || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.firmante.cargo).trim()
+      },
+      pie_direccion: String(retiroCfg?.pie_direccion || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.pie_direccion).trim(),
+      pie_lema: String(retiroCfg?.pie_lema || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.pie_lema).trim(),
+      template: normalizeTemplate(retiroCfg?.template, DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.template)
     }
   };
 }
@@ -128,6 +167,19 @@ function formatFechaEvento(fechaRaw) {
   const parts = value.split('-');
   if (parts.length !== 3) return value || '-';
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+function formatFechaAlumno(fechaRaw) {
+  if (!fechaRaw) return '-';
+  const date = new Date(fechaRaw);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  return new Intl.DateTimeFormat('es-VE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'America/Caracas'
+  }).format(date);
 }
 
 function formatHoraAmPm(horaRaw) {
@@ -177,6 +229,9 @@ function normalizarAsistenciaDesdeRequest(reqBody = {}, alumno = {}, constancias
 
   const cedulaRaw = asistenciaPara === 'representante' ? String(representante?.cedula || '').trim() : String(alumno?.cedula || '').trim();
   const cedulaPersona = cedulaRaw ? `V-${cedulaRaw}` : 'SIN CEDULA';
+  const tiempoVerbal = String(reqBody?.asistenciaTiempo || 'pasado').trim().toLowerCase() === 'futuro'
+    ? 'futuro'
+    : 'pasado';
 
   return {
     ok: true,
@@ -188,9 +243,23 @@ function normalizarAsistenciaDesdeRequest(reqBody = {}, alumno = {}, constancias
       asistencia_hora_desde: horaDesdeFmt,
       asistencia_hora_hasta: horaHastaFmt,
       asistencia_motivo_evento: String(reqBody?.eventoMotivo || '').trim() || 'actividad deportiva',
+      asistencia_tiempo: tiempoVerbal,
+      asistencia_verbo_presencia: tiempoVerbal === 'futuro' ? 'estara' : 'estuvo',
       firmante_cargo: String(constanciasCfg?.firmante?.cargo || 'PRESIDENTE').trim() || 'PRESIDENTE'
     }
   };
+}
+
+function ajustarTiempoAsistenciaEnCuerpo(cuerpo = '', variables = {}) {
+  const texto = String(cuerpo || '');
+  const tiempo = String(variables?.asistencia_tiempo || '').trim().toLowerCase();
+  if (tiempo !== 'pasado' && tiempo !== 'futuro') return texto;
+
+  if (tiempo === 'futuro') {
+    return texto.replace(/estuvo\s+presente/gi, 'estara presente');
+  }
+
+  return texto.replace(/estara\s+presente/gi, 'estuvo presente');
 }
 
 function construirTextoFecha(fechaEmision) {
@@ -281,76 +350,130 @@ async function getAcademiaBranding(req) {
   }
 }
 
-function renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName = '') {
+function renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName = '', options = {}) {
   const left = doc.page.margins.left;
   const logoY = 28;
   const logoBoxSize = 70;
-  const textX = left;
-  const textWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const topSideLogos = Array.isArray(options?.topSideLogos)
+    ? options.topSideLogos.filter(Boolean).slice(0, 2)
+    : [];
+  const sideGap = 12;
+  const hasTopSideLogos = topSideLogos.length === 2;
+  const textX = hasTopSideLogos ? left + logoBoxSize + sideGap : left;
+  const textWidth = hasTopSideLogos
+    ? doc.page.width - doc.page.margins.left - doc.page.margins.right - ((logoBoxSize + sideGap) * 2)
+    : doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const fallbackLogoPath = path.join(__dirname, '../assets/logo.png');
-  const logoPath = academiaLogoPath || fallbackLogoPath;
+  const shouldUseFallbackLogo = options?.useFallbackLogo !== false;
+  const logoPath = academiaLogoPath || (shouldUseFallbackLogo ? fallbackLogoPath : null);
+  const showSedeLine = options?.showSedeLine !== false;
+  const titleFontSize = Number(options?.titleFontSize) > 0 ? Number(options.titleFontSize) : 15;
+  const subtitleFontSize = Number(options?.subtitleFontSize) > 0 ? Number(options.subtitleFontSize) : 12;
+  const sedeFontSize = Number(options?.sedeFontSize) > 0 ? Number(options.sedeFontSize) : 11;
 
   let logoRenderTop = logoY;
   let logoRenderHeight = logoBoxSize;
+  const topSideLogoBottoms = [];
 
-  const drawLogoInBox = (filePath) => {
+  const drawLogoInTargetBox = (filePath, boxX, boxY, boxSize) => {
     const image = doc.openImage(filePath);
     const sourceWidth = Number(image?.width || 0);
     const sourceHeight = Number(image?.height || 0);
     if (sourceWidth <= 0 || sourceHeight <= 0) {
-      doc.image(filePath, left, logoY, { width: logoBoxSize, height: logoBoxSize });
-      logoRenderTop = logoY;
-      logoRenderHeight = logoBoxSize;
-      return;
+      doc.image(filePath, boxX, boxY, { width: boxSize, height: boxSize });
+      return { top: boxY, height: boxSize };
     }
 
-    const scale = Math.min(logoBoxSize / sourceWidth, logoBoxSize / sourceHeight);
+    const scale = Math.min(boxSize / sourceWidth, boxSize / sourceHeight);
     const renderWidth = sourceWidth * scale;
     const renderHeight = sourceHeight * scale;
-    const renderX = left + (logoBoxSize - renderWidth) / 2;
-    const renderY = logoY + (logoBoxSize - renderHeight) / 2;
+    const renderX = boxX + (boxSize - renderWidth) / 2;
+    const renderY = boxY + (boxSize - renderHeight) / 2;
 
     doc.image(filePath, renderX, renderY, { width: renderWidth, height: renderHeight });
-    logoRenderTop = renderY;
-    logoRenderHeight = renderHeight;
+    return { top: renderY, height: renderHeight };
   };
 
-  try {
-    drawLogoInBox(logoPath);
-  } catch (_) {
+  if (hasTopSideLogos) {
+    const rightX = doc.page.width - doc.page.margins.right - logoBoxSize;
+    topSideLogos.forEach((logoFilePath, index) => {
+      const x = index === 0 ? left : rightX;
+      try {
+        const rendered = drawLogoInTargetBox(logoFilePath, x, logoY, logoBoxSize);
+        topSideLogoBottoms.push(rendered.top + rendered.height);
+      } catch (_) {
+        // Continuar si algun logo superior no se puede dibujar.
+      }
+    });
+  }
+
+  const drawLogoInBox = (filePath) => {
+    const rendered = drawLogoInTargetBox(filePath, left, logoY, logoBoxSize);
+    logoRenderTop = rendered.top;
+    logoRenderHeight = rendered.height;
+  };
+
+  if (logoPath) {
     try {
-      drawLogoInBox(fallbackLogoPath);
+      drawLogoInBox(logoPath);
     } catch (_) {
-      // Continuar sin logo.
+      if (shouldUseFallbackLogo) {
+        try {
+          drawLogoInBox(fallbackLogoPath);
+        } catch (_) {
+          // Continuar sin logo.
+        }
+      }
     }
   }
 
   const tituloInstitucional = String(constanciasCfg.institucion_nombre || 'ESCUELA DE VOLEIBOL').trim();
-  const tituloConAcademia = academyName ? `${tituloInstitucional} ${academyName}` : tituloInstitucional;
-  const sedeTexto = String(sedeNombre || '-').trim().toUpperCase();
+  const sedeTexto = showSedeLine ? String(sedeNombre || '-').trim().toUpperCase() : '';
   const hasSubtitulo = !!constanciasCfg.subtitulo;
 
-  const lineHeightTitle = 16;
-  const lineHeightSubtitulo = 13;
-  const lineHeightSede = 12;
   const gapBetweenLines = 2;
-  const textBlockHeight = hasSubtitulo
-    ? lineHeightTitle + gapBetweenLines + lineHeightSubtitulo + gapBetweenLines + lineHeightSede
-    : lineHeightTitle + gapBetweenLines + lineHeightSede;
-  const textStartY = logoRenderTop + Math.max(0, (logoRenderHeight - textBlockHeight) / 2);
+  const titleHeight = doc.font('Helvetica-Bold').fontSize(titleFontSize).heightOfString(tituloInstitucional, {
+    width: textWidth,
+    align: 'center'
+  });
+  const subtitleHeight = hasSubtitulo
+    ? doc.font('Helvetica').fontSize(subtitleFontSize).heightOfString(String(constanciasCfg.subtitulo || ''), {
+      width: textWidth,
+      align: 'center'
+    })
+    : 0;
+  const sedeHeight = showSedeLine
+    ? doc.font('Helvetica').fontSize(sedeFontSize).heightOfString(`SEDE "${sedeTexto}"`, {
+      width: textWidth,
+      align: 'center'
+    })
+    : 0;
+  const textBlockHeight = showSedeLine
+    ? (hasSubtitulo
+      ? titleHeight + gapBetweenLines + subtitleHeight + gapBetweenLines + sedeHeight
+      : titleHeight + gapBetweenLines + sedeHeight)
+    : (hasSubtitulo
+      ? titleHeight + gapBetweenLines + subtitleHeight
+      : titleHeight);
+  const textStartY = hasTopSideLogos
+    ? logoY + Math.max(0, (logoBoxSize - textBlockHeight) / 2)
+    : logoRenderTop + Math.max(0, (logoRenderHeight - textBlockHeight) / 2);
 
-  doc.font('Helvetica-Bold').fontSize(15).text(tituloConAcademia, textX, textStartY, { width: textWidth, align: 'center' });
+  doc.font('Helvetica-Bold').fontSize(titleFontSize).text(tituloInstitucional, textX, textStartY, { width: textWidth, align: 'center' });
 
   let nextTextY = doc.y + 1;
   if (constanciasCfg.subtitulo) {
-    doc.font('Helvetica').fontSize(12).text(constanciasCfg.subtitulo, textX, nextTextY, { width: textWidth, align: 'center' });
+    doc.font('Helvetica').fontSize(subtitleFontSize).text(constanciasCfg.subtitulo, textX, nextTextY, { width: textWidth, align: 'center' });
     nextTextY = doc.y + 1;
   }
 
-  doc.font('Helvetica').fontSize(11).text(`SEDE "${sedeTexto}"`, textX, nextTextY, { width: textWidth, align: 'center' });
+  if (showSedeLine) {
+    doc.font('Helvetica').fontSize(sedeFontSize).text(`SEDE "${sedeTexto}"`, textX, nextTextY, { width: textWidth, align: 'center' });
+  }
 
+  const topSideLogosBottom = topSideLogoBottoms.length ? Math.max(...topSideLogoBottoms) : 0;
   doc.x = left;
-  doc.y = Math.max(doc.y, logoY + logoBoxSize) + 12;
+  doc.y = Math.max(doc.y, logoY + logoBoxSize, topSideLogosBottom) + 12;
 }
 
 function ensureSpace(doc, requiredHeight = 120) {
@@ -455,6 +578,8 @@ function getFooterLogosTopY(doc, logoPaths = [], espacioInferior = 0) {
 
 function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opciones = {}) {
   const cierreTexto = String(opciones?.cierreTexto || '').trim();
+  const mostrarBloqueLiga = Boolean(opciones?.mostrarBloqueLiga);
+  const layoutRetiroAislado = mostrarBloqueLiga;
   const tieneLogos = Array.isArray(logosInstitucionales) && logosInstitucionales.length > 0;
   const gapBloqueVsLogos = 20;
   const anchoTexto = doc.page.width - doc.page.margins.left - doc.page.margins.right;
@@ -466,7 +591,8 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
     + (firmante.telefono ? 1 : 0)
     + (firmante.cargo ? 1 : 0);
   const lineasPie = (constanciasCfg.pie_direccion ? 1 : 0) + (constanciasCfg.pie_lema ? 1 : 0);
-  const alturaFirmaYPie = 14 + (lineasFirmante * 13) + (lineasPie > 0 ? 18 + lineasPie * 11 : 0);
+  const alturaBloqueLiga = mostrarBloqueLiga ? 54 : 0;
+  const alturaFirmaYPie = 14 + (lineasFirmante * 13) + (lineasPie > 0 ? 18 + lineasPie * 11 : 0) + alturaBloqueLiga;
 
   const alturaCierre = cierreTexto
     ? doc.font('Helvetica').fontSize(8.5).heightOfString(cierreTexto, {
@@ -488,6 +614,21 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
     }
 
     doc.y = Math.max(doc.y, inicioObjetivoBloqueY);
+  } else if (layoutRetiroAislado) {
+    // En retiro aislado se aproxima el bloque hacia abajo para reducir vacio visual,
+    // manteniendo separacion minima respecto al cuerpo y evitando salto de pagina.
+    const limiteY = doc.page.height - doc.page.margins.bottom;
+    const espacioNecesario = alturaEstimadaBloque + espacioReservadoInferior + 8;
+    if (doc.y + espacioNecesario > limiteY) {
+      doc.addPage();
+    }
+
+    const separacionMinimaDesdeCuerpo = 12;
+    const retiroBottomSafeY = doc.page.height - doc.page.margins.bottom - espacioReservadoInferior - 42;
+    const inicioAncladoAbajo = retiroBottomSafeY - alturaEstimadaBloque;
+    const inicioObjetivoBloqueY = Math.max(doc.y + separacionMinimaDesdeCuerpo, inicioAncladoAbajo);
+
+    doc.y = inicioObjetivoBloqueY;
   } else {
     const bottomSafeY = doc.page.height - doc.page.margins.bottom - espacioReservadoInferior - 8;
     let inicioObjetivoBloqueY = bottomSafeY - alturaEstimadaBloque;
@@ -500,14 +641,25 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
 
   doc.font('Helvetica').fontSize(10.5);
   doc.text('_________________________', { align: 'center' });
-  doc.moveDown(0.5);
+  doc.moveDown(layoutRetiroAislado ? 0.12 : 0.5);
   doc.text(constanciasCfg.firmante.nombre || 'Direccion de la academia', { align: 'center' });
   if (constanciasCfg.firmante.cedula) doc.text(constanciasCfg.firmante.cedula, { align: 'center' });
   if (constanciasCfg.firmante.telefono) doc.text(constanciasCfg.firmante.telefono, { align: 'center' });
   if (constanciasCfg.firmante.cargo) doc.text(constanciasCfg.firmante.cargo, { align: 'center' });
 
+  if (mostrarBloqueLiga) {
+    doc.moveDown(1.72);
+    doc.font('Helvetica').fontSize(10.5).text('Recibido por el personal de la liga: ______________________', {
+      align: 'center'
+    });
+    doc.moveDown(0.35);
+    doc.font('Helvetica').fontSize(10.5).text('Fecha: ____________________________________________', {
+      align: 'center'
+    });
+  }
+
   if (constanciasCfg.pie_direccion || constanciasCfg.pie_lema) {
-    doc.moveDown(1.1);
+    doc.moveDown(layoutRetiroAislado ? 2.5 : 1.1);
     if (constanciasCfg.pie_direccion) {
       doc.fontSize(8.5).text(constanciasCfg.pie_direccion, { align: 'center' });
     }
@@ -584,8 +736,25 @@ exports.generarConstancia = async (req, res) => {
     const academiaBranding = await getAcademiaBranding(req);
     const academiaLogoPath = academiaBranding.logoPath;
     const academyName = academiaBranding.academyName;
-    const logosInstitucionales = mapLogoUrlsToLocalPaths(constanciasCfg.logos).filter((logoPath) => logoPath !== academiaLogoPath);
-    const template = constanciasCfg.templates[tipoConstancia] || DEFAULT_TEMPLATES.simple;
+    let constanciaLayoutCfg = constanciasCfg;
+    let logoAcademiaActivo = academiaLogoPath;
+    let logosInstitucionales = mapLogoUrlsToLocalPaths(constanciasCfg.logos).filter((logoPath) => logoPath !== logoAcademiaActivo);
+    let template = constanciasCfg.templates[tipoConstancia] || DEFAULT_TEMPLATES.simple;
+
+    if (tipoConstancia === 'retiro' && constanciasCfg?.retiro_personalizado?.habilitado) {
+      const retiroCfg = constanciasCfg.retiro_personalizado || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado;
+      constanciaLayoutCfg = {
+        institucion_nombre: retiroCfg.institucion_nombre,
+        subtitulo: retiroCfg.subtitulo,
+        firmante: retiroCfg.firmante,
+        pie_direccion: retiroCfg.pie_direccion,
+        pie_lema: retiroCfg.pie_lema
+      };
+      logoAcademiaActivo = retiroCfg.incluir_logo_academia ? academiaLogoPath : null;
+      logosInstitucionales = mapLogoUrlsToLocalPaths(retiroCfg.logos).filter((logoPath) => logoPath !== logoAcademiaActivo);
+      template = retiroCfg.template || DEFAULT_TEMPLATES.retiro;
+    }
+
     const fechaTexto = construirTextoFecha(fechaEmision);
 
     if (tipoConstancia === 'listado_alumnos') {
@@ -652,7 +821,8 @@ exports.generarConstancia = async (req, res) => {
 
       doc.fontSize(11).text(renderTemplate(template.cuerpo, variables), {
         align: 'justify',
-        lineGap: 3
+        lineGap: 3,
+        indent: CUERPO_PRIMERA_LINEA_SANGRIA
       });
 
       doc.moveDown(0.8);
@@ -701,6 +871,8 @@ exports.generarConstancia = async (req, res) => {
       alumno_apellido: String(alumno?.apellidos || '').toUpperCase(),
       alumno_nombre_completo: `${String(alumno?.nombres || '').toUpperCase()} ${String(alumno?.apellidos || '').toUpperCase()}`.trim(),
       alumno_cedula: alumno?.cedula ? `V-${String(alumno.cedula).trim()}` : 'SIN CEDULA',
+      alumno_fecha_nacimiento: formatFechaAlumno(alumno?.fecha_nacimiento),
+      alumno_fecha_ingreso_academia: formatFechaAlumno(alumno?.fecha_inscripcion),
       alumno_categoria: String(alumno?.categoria || '-').trim(),
       sede_nombre: String(alumno?.sede?.nombre || '-').trim(),
       fecha_emision_texto: fechaTexto || 'en fecha actual',
@@ -709,7 +881,33 @@ exports.generarConstancia = async (req, res) => {
     };
 
     const doc = createPdfResponseDocument(res);
-    renderEncabezadoConstancia(doc, constanciasCfg, variables.sede_nombre, academiaLogoPath, academyName);
+    const retiroAisladoSinLogoPrincipal = tipoConstancia === 'retiro'
+      && constanciasCfg?.retiro_personalizado?.habilitado
+      && !constanciasCfg?.retiro_personalizado?.incluir_logo_academia;
+    const esRetiroAislado = tipoConstancia === 'retiro' && constanciasCfg?.retiro_personalizado?.habilitado;
+    const aplicaNotaYCierre = !esRetiroAislado;
+    const logosRetiroEncabezado = esRetiroAislado ? logosInstitucionales.slice(0, 2) : [];
+    const logosPie = esRetiroAislado ? [] : logosInstitucionales;
+
+    renderEncabezadoConstancia(
+      doc,
+      constanciaLayoutCfg,
+      variables.sede_nombre,
+      logoAcademiaActivo,
+      academyName,
+      {
+        useFallbackLogo: !retiroAisladoSinLogoPrincipal,
+        topSideLogos: logosRetiroEncabezado,
+        showSedeLine: !esRetiroAislado,
+        titleFontSize: esRetiroAislado ? 12.5 : 15,
+        subtitleFontSize: esRetiroAislado ? 10.5 : 12,
+        sedeFontSize: esRetiroAislado ? 10 : 11
+      }
+    );
+
+    if (esRetiroAislado) {
+      doc.moveDown(0.80);
+    }
 
     doc.fontSize(14).text(template.titulo || 'CONSTANCIA', { align: 'center' });
     doc.moveDown(0.8);
@@ -718,12 +916,18 @@ exports.generarConstancia = async (req, res) => {
       doc.moveDown(1.2);
     }
 
-    doc.fontSize(11).text(renderTemplate(template.cuerpo, variables), {
+    let cuerpoTexto = renderTemplate(template.cuerpo, variables);
+    if (tipoConstancia === 'asistencia') {
+      cuerpoTexto = ajustarTiempoAsistenciaEnCuerpo(cuerpoTexto, variables);
+    }
+
+    doc.fontSize(11).text(cuerpoTexto, {
       align: 'justify',
-      lineGap: 3
+      lineGap: 3,
+      indent: CUERPO_PRIMERA_LINEA_SANGRIA
     });
 
-    if (template.nota) {
+    if (aplicaNotaYCierre && template.nota) {
       doc.moveDown(0.8);
       doc.fontSize(10.5).text(`NOTA: ${renderTemplate(template.nota, variables)}`, {
         align: 'justify',
@@ -731,17 +935,20 @@ exports.generarConstancia = async (req, res) => {
       });
     }
 
-    const lugar = template.lugarEmision || constanciasCfg.templates?.simple?.lugarEmision || 'Barquisimeto';
+    const lugar = template.lugarEmision || DEFAULT_TEMPLATES.simple.lugarEmision || 'Barquisimeto';
     const fechaLinea = fechaTexto ? `En ${lugar}, ${fechaTexto}.` : '';
     if (fechaLinea) {
-      doc.moveDown(template.nota ? 1.0 : 0.9);
+      doc.moveDown(aplicaNotaYCierre && template.nota ? 1.0 : 0.9);
       doc.font('Helvetica-Oblique').fontSize(10).text(fechaLinea, { align: 'left' });
       doc.font('Helvetica');
     }
 
-    const cierreTexto = renderTemplate(template.cierre, variables);
+    const cierreTexto = aplicaNotaYCierre ? renderTemplate(template.cierre, variables) : '';
 
-    renderFirmaYPie(doc, constanciasCfg, logosInstitucionales, { cierreTexto });
+    renderFirmaYPie(doc, constanciaLayoutCfg, logosPie, {
+      cierreTexto,
+      mostrarBloqueLiga: esRetiroAislado
+    });
     renderCierreFinal(doc, cierreTexto);
 
     doc.end();

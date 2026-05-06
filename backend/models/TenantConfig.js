@@ -32,6 +32,30 @@ const ConstanciaTemplateSchema = new mongoose.Schema({
   lugarEmision: { type: String, default: '' }
 }, { _id: false });
 
+const RetiroPersonalizadoSchema = new mongoose.Schema({
+  habilitado: { type: Boolean, default: false },
+  incluir_logo_academia: { type: Boolean, default: false },
+  institucion_nombre: { type: String, default: '' },
+  subtitulo: { type: String, default: '' },
+  logos: {
+    type: [{ type: String }],
+    default: [],
+    validate: {
+      validator: (arr) => Array.isArray(arr) && arr.length <= 3,
+      message: 'Solo se permiten hasta 3 logos en retiro personalizado.'
+    }
+  },
+  firmante: {
+    nombre: { type: String, default: '' },
+    cedula: { type: String, default: '' },
+    telefono: { type: String, default: '' },
+    cargo: { type: String, default: '' }
+  },
+  pie_direccion: { type: String, default: '' },
+  pie_lema: { type: String, default: '' },
+  template: { type: ConstanciaTemplateSchema, default: () => ({}) }
+}, { _id: false });
+
 const ConstanciasSchema = new mongoose.Schema({
   institucion_nombre: { type: String, default: '' },
   subtitulo: { type: String, default: '' },
@@ -57,7 +81,8 @@ const ConstanciasSchema = new mongoose.Schema({
     horario_entrenamiento: { type: ConstanciaTemplateSchema, default: () => ({}) },
     listado_alumnos: { type: ConstanciaTemplateSchema, default: () => ({}) },
     asistencia: { type: ConstanciaTemplateSchema, default: () => ({}) }
-  }
+  },
+  retiro_personalizado: { type: RetiroPersonalizadoSchema, default: () => ({}) }
 }, { _id: false });
 
 const TenantConfigSchema = new mongoose.Schema({
