@@ -44,6 +44,11 @@ const esMensualidadDeBecado = (mensualidad) => {
 	return String(mensualidad?.estatus || '').toLowerCase() === 'becado';
 };
 
+const esMensualidadEditable = (mensualidad) => {
+	const estatus = String(mensualidad?.estatus || '').toLowerCase();
+	return ['pendiente', 'insolvente', 'exonerado', 'retrasado'].includes(estatus);
+};
+
 const obtenerDiaLimitePersonalizado = (mensualidad) => {
 	const valor = Number(mensualidad?.id_alumno?.dia_limite_personalizado);
 	if (!Number.isInteger(valor) || valor < 1 || valor > 31) return null;
@@ -77,6 +82,7 @@ function Mensualidades() {
 	const [pagosDetalle, setPagosDetalle] = useState([]);
 	const [mensualidadDetalle, setMensualidadDetalle] = useState(null);
 	const [successMessage, setSuccessMessage] = useState('');
+	const [errorMessage, setErrorMessage] = useState('');
 	const [comprobanteDialogOpen, setComprobanteDialogOpen] = useState(false);
 	const [comprobanteUrl, setComprobanteUrl] = useState('');
 	const [comprobanteTipo, setComprobanteTipo] = useState('');
@@ -105,6 +111,7 @@ function Mensualidades() {
 	const [mensualidadAEditar, setMensualidadAEditar] = useState(null);
 	const [editarMontoEsperado, setEditarMontoEsperado] = useState('');
 	const [editarEstatus, setEditarEstatus] = useState('sin_cambio');
+	const [editarNota, setEditarNota] = useState('');
 	const [guardandoEdicionMensualidad, setGuardandoEdicionMensualidad] = useState(false);
 	const [modalExportExcelOpen, setModalExportExcelOpen] = useState(false);
 	const [opcionesExportExcel, setOpcionesExportExcel] = useState({
@@ -459,6 +466,7 @@ function Mensualidades() {
 		setMensualidadAEditar(mensualidad);
 		setEditarMontoEsperado(Number(mensualidad?.monto_esperado || 0).toFixed(2));
 		setEditarEstatus('sin_cambio');
+		setEditarNota('');
 		setModalEditarMensualidadOpen(true);
 	};
 
@@ -468,18 +476,28 @@ function Mensualidades() {
 		setMensualidadAEditar(null);
 		setEditarMontoEsperado('');
 		setEditarEstatus('sin_cambio');
+		setEditarNota('');
 	};
 
 	const guardarEdicionMensualidad = async () => {
 		if (!mensualidadAEditar?._id || guardandoEdicionMensualidad) return;
 
 		const montoNumerico = Number(editarMontoEsperado);
+		const notaNormalizada = String(editarNota || '').trim();
 		if (!Number.isFinite(montoNumerico) || montoNumerico < 0) {
-			alert('Ingresa un monto esperado válido.');
+			setErrorMessage('Ingresa un monto esperado válido.');
 			return;
 		}
 
-		const payload = { monto_esperado: Number(montoNumerico.toFixed(2)) };
+		if (!notaNormalizada) {
+			setErrorMessage('Debes escribir una nota con el motivo del cambio.');
+			return;
+		}
+
+		const payload = {
+			monto_esperado: Number(montoNumerico.toFixed(2)),
+			nota: notaNormalizada
+		};
 		if (editarEstatus === 'exonerado') {
 			payload.estatus = 'Exonerado';
 		}
@@ -501,13 +519,14 @@ function Mensualidades() {
 			setMensualidadAEditar(null);
 			setEditarMontoEsperado('');
 			setEditarEstatus('sin_cambio');
+			setEditarNota('');
 			await cargarMensualidades();
 			if (mensualidadDetalle?._id === mensualidadAEditar._id) {
 				await actualizarDetalleMensualidad({ ...mensualidadDetalle, ...data?.mensualidad }, true);
 			}
 			setSuccessMessage(data?.message || 'Mensualidad actualizada correctamente');
 		} catch (err) {
-			alert(err.message || 'No se pudo editar la mensualidad');
+			setErrorMessage(err.message || 'No se pudo editar la mensualidad');
 		} finally {
 			setGuardandoEdicionMensualidad(false);
 		}
@@ -729,11 +748,12 @@ function Mensualidades() {
 		const recargoRaw = Number(mensualidad?.recargo_aplicado_usd);
 
 		const recargoAplicado = Number.isFinite(recargoRaw) ? Math.max(0, recargoRaw) : 0;
-		const totalConRecargo = Number.isFinite(montoConRecargoRaw)
+		const montoEsperado = Number.isFinite(montoEsperadoRaw) ? montoEsperadoRaw : null;
+		const totalConRecargo = (Number.isFinite(montoConRecargoRaw) && montoConRecargoRaw > 0)
 			? montoConRecargoRaw
-			: (Number.isFinite(montoEsperadoRaw) ? montoEsperadoRaw : null);
+			: montoEsperado;
 
-		const montoSinRecargo = Number.isFinite(montoSinRecargoRaw)
+		const montoSinRecargo = (Number.isFinite(montoSinRecargoRaw) && montoSinRecargoRaw > 0)
 			? montoSinRecargoRaw
 			: (Number.isFinite(totalConRecargo) ? Math.max(0, totalConRecargo - recargoAplicado) : null);
 
@@ -1077,6 +1097,12 @@ function Mensualidades() {
 
 	const mensualidadesPaginadas = mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina);
 	const desgloseRecargoDetalle = obtenerDesgloseRecargo(mensualidadDetalle);
+	const historialNotasDetalle = (Array.isArray(mensualidadDetalle?.historial_ediciones)
+		? mensualidadDetalle.historial_ediciones
+		: [])
+		.filter((item) => String(item?.nota || '').trim().length > 0)
+		.slice()
+		.sort((a, b) => new Date(b?.fecha || 0).getTime() - new Date(a?.fecha || 0).getTime());
 	const fechaRecargoAplicadoTexto = mensualidadDetalle?.fecha_aplicacion_recargo
 		? formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)
 		: 'No aplicado';
@@ -1105,6 +1131,7 @@ function Mensualidades() {
 						disabled={!sedeSeleccionada?._id || !filtroMes}
 						sx={{
 							width: { xs: '100%', sm: 'auto' },
+							borderRadius: '10px',
 							fontWeight: 700,
 							color: '#475569',
 							borderColor: '#94a3b8',
@@ -1122,7 +1149,7 @@ function Mensualidades() {
 					variant="contained"
 					onClick={() => setModalExportExcelOpen(true)}
 					disabled={(mensualidadesBD || []).length === 0}
-					sx={{ width: { xs: '100%', sm: 'auto' } }}
+					sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: '10px' }}
 				>
 					Exportar Excel
 				</Button>
@@ -1227,7 +1254,7 @@ function Mensualidades() {
 										</span>
 									</Tooltip>
 								)}
-								{esAdmin && !esMensualidadDeBecado(m) && (
+								{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
 									<Tooltip title="Editar mensualidad">
 										<IconButton onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
 											<EditIcon fontSize="small" />
@@ -1241,13 +1268,11 @@ function Mensualidades() {
 										</IconButton>
 									</Tooltip>
 								)}
-								{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-									<Tooltip title="Ver detalle">
-										<IconButton onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
-											<VisibilityIcon fontSize="small" />
-										</IconButton>
-									</Tooltip>
-								)}
+								<Tooltip title="Ver detalle">
+									<IconButton onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
+										<VisibilityIcon fontSize="small" />
+									</IconButton>
+								</Tooltip>
 								{esAdmin && (
 									<Tooltip title="Eliminar mensualidad">
 										<IconButton
@@ -1293,7 +1318,6 @@ function Mensualidades() {
 							<TableRow sx={{ backgroundColor: '#f8fafc' }}>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
-								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ETIQUETAS</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
@@ -1336,7 +1360,6 @@ function Mensualidades() {
 									<TableCell>
 										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 									</TableCell>
-									<TableCell>{renderEtiquetasAlumno(m.id_alumno)}</TableCell>
 									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
 									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
@@ -1368,7 +1391,7 @@ function Mensualidades() {
 													</span>
 												</Tooltip>
 											)}
-											{esAdmin && !esMensualidadDeBecado(m) && (
+											{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
 												<Tooltip title="Editar mensualidad">
 													<IconButton size="small" onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
 														<EditIcon fontSize="small" />
@@ -1382,13 +1405,11 @@ function Mensualidades() {
 													</IconButton>
 												</Tooltip>
 											)}
-											{['pagado', 'en revision', 'exonerado', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-												<Tooltip title="Ver detalle">
-														<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
-														<VisibilityIcon fontSize="small" />
-													</IconButton>
-												</Tooltip>
-											)}
+											<Tooltip title="Ver detalle">
+												<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
+													<VisibilityIcon fontSize="small" />
+												</IconButton>
+											</Tooltip>
 											{esAdmin && (
 												<Tooltip title="Eliminar mensualidad">
 													<IconButton
@@ -1525,7 +1546,7 @@ function Mensualidades() {
 												onClick={() => handleVerComprobante(detallePago.comprobante_url)}
 												sx={{ mt: 0.35, px: 0, color: '#ff8a00', fontWeight: 900, textTransform: 'none', fontSize: { xs: 14, sm: 16 } }}
 											>
-												Ver Archivo Digital
+												Ver comprobante
 											</Button>
 										) : (
 											<Typography sx={{ mt: 0.7, color: '#9ca3af', fontWeight: 700 }}>Sin comprobante</Typography>
@@ -1693,6 +1714,78 @@ function Mensualidades() {
 						</Box>
 					)}
 
+					{historialNotasDetalle.length > 0 && (
+						<Box sx={{ mt: 3.25 }}>
+							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+									<HistoryRoundedIcon sx={{ color: '#8ea0bc', fontSize: 19 }} />
+									<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.15 }}>
+										Historial de notas
+									</Typography>
+								</Box>
+								<Chip label={`${historialNotasDetalle.length} total`} size="small" sx={{ bgcolor: '#d9e4f7', color: '#4b6ca7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }} />
+							</Box>
+
+							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+								{historialNotasDetalle.map((item, idx) => {
+									const actor = String(item?.actor_nombre || '').trim() || 'Usuario';
+									const rol = String(item?.actor_rol || '').trim();
+									const accion = String(item?.accion || '').trim() || 'edicion_manual';
+									const fechaItem = item?.fecha ? formatFechaBonita(item.fecha) : '-';
+									const anteriorMonto = Number(item?.anterior?.monto_esperado);
+									const nuevoMonto = Number(item?.nuevo?.monto_esperado);
+									const anteriorEstatus = item?.anterior?.estatus || '-';
+									const nuevoEstatus = item?.nuevo?.estatus || '-';
+
+									return (
+										<Box
+											key={item?._id || `${accion}-${idx}`}
+											sx={{
+												bgcolor: '#ffffff',
+												border: '1px solid #e8ebf2',
+												borderRadius: 2,
+												borderLeft: '4px solid #d6c7ff',
+												px: 1.7,
+												py: 1.2
+											}}
+										>
+											<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+												<Typography sx={{ fontWeight: 800, color: '#0b2a57' }}>
+													{actor}{rol ? ` (${rol})` : ''}
+												</Typography>
+												<Typography sx={{ color: '#64748b', fontSize: 12 }}>{fechaItem}</Typography>
+											</Box>
+											<Typography sx={{ mt: 0.5, color: '#334155', fontSize: 13 }}>
+												{String(item?.nota || '').trim()}
+											</Typography>
+											<Box sx={{ mt: 0.75, display: 'flex', gap: 0.7, flexWrap: 'wrap', alignItems: 'center' }}>
+												<Chip
+													size="small"
+													label={`Acción: ${accion}`}
+													sx={{ bgcolor: '#eef2ff', color: '#3730a3', fontWeight: 700 }}
+												/>
+												{Number.isFinite(anteriorMonto) && Number.isFinite(nuevoMonto) && (
+													<Chip
+														size="small"
+														label={`Monto: $${formatMoney(anteriorMonto)} - $${formatMoney(nuevoMonto)}`}
+														sx={{ bgcolor: '#ecfeff', color: '#0f766e', fontWeight: 700 }}
+													/>
+												)}
+												{(anteriorEstatus || nuevoEstatus) && (
+													<Chip
+														size="small"
+														label={`Estatus: ${anteriorEstatus} - ${nuevoEstatus}`}
+														sx={{ bgcolor: '#f1f5f9', color: '#334155', fontWeight: 700 }}
+													/>
+												)}
+											</Box>
+										</Box>
+									);
+								})}
+							</Box>
+						</Box>
+					)}
+
 					{pagosDetalle.length > 0 && (
 						<Box sx={{ mt: 3.25 }}>
 							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
@@ -1789,9 +1882,6 @@ function Mensualidades() {
 							Confirmar
 						</Button>
 					)}
-					<Button onClick={() => setModalDetalle(false)} variant="text" sx={{ color: '#516b94', fontWeight: 800 }}>
-						Volver
-					</Button>
 				</DialogActions>
 			</Dialog>
 			<Dialog open={comprobanteDialogOpen} onClose={() => setComprobanteDialogOpen(false)} maxWidth="md" fullWidth>
@@ -1888,8 +1978,19 @@ function Mensualidades() {
 						<MenuItem value="sin_cambio">Sin cambio</MenuItem>
 						<MenuItem value="exonerado">Exonerado</MenuItem>
 					</TextField>
+					<TextField
+						label="Nota del cambio"
+						fullWidth
+						margin="normal"
+						multiline
+						minRows={3}
+						value={editarNota}
+						onChange={(e) => setEditarNota(e.target.value)}
+						helperText="Especifica el motivo del ajuste. Esta nota quedará guardada en la traza de la mensualidad."
+						required
+					/>
 					<Alert severity="info" sx={{ mt: 1 }}>
-						Si la mensualidad tiene pagos, al exonerarla ese monto se trasladará a saldo a favor del alumno.
+						Este cambio solo afecta la mensualidad seleccionada y quedará registrado en el historial con la nota indicada.
 					</Alert>
 				</DialogContent>
 				<DialogActions>
@@ -2038,6 +2139,16 @@ function Mensualidades() {
 			>
 				<Alert onClose={() => setSuccessMessage('')} severity="success" sx={{ width: '100%' }}>
 					{successMessage}
+				</Alert>
+			</Snackbar>
+			<Snackbar
+				open={!!errorMessage}
+				autoHideDuration={3500}
+				onClose={() => setErrorMessage('')}
+				anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+			>
+				<Alert onClose={() => setErrorMessage('')} severity="error" sx={{ width: '100%' }}>
+					{errorMessage}
 				</Alert>
 			</Snackbar>
 			<Dialog open={modalAjusteSede} onClose={() => !aplicandoAjuste && resetAjusteSedeForm()} maxWidth="sm" fullWidth>

@@ -28,7 +28,29 @@ const MensualidadSchema = new mongoose.Schema({
   referencia: { type: String },
   comprobante_url: { type: String },
   fecha_vencimiento: { type: Date, required: true },
-  estatus: { type: String, enum: ['Pendiente', 'Pagado', 'Retrasado', 'Insolvente', 'Exonerado', 'En revision', 'Abono', 'Exento por reposo', 'Becado'], default: 'Pendiente' }
+  estatus: { type: String, enum: ['Pendiente', 'Pagado', 'Retrasado', 'Insolvente', 'Exonerado', 'En revision', 'Abono', 'Exento por reposo', 'Becado'], default: 'Pendiente' },
+  historial_ediciones: [{
+    fecha: { type: Date, default: Date.now },
+    accion: { type: String, default: 'edicion_manual' },
+    nota: { type: String, default: '' },
+    actor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    actor_nombre: { type: String, default: '' },
+    actor_rol: { type: String, default: '' },
+    anterior: {
+      monto_esperado: { type: Number },
+      estatus: { type: String },
+      ajuste_extraordinario: { type: Number },
+      ajuste_descripcion: { type: String },
+      saldo_a_favor_generado: { type: Number }
+    },
+    nuevo: {
+      monto_esperado: { type: Number },
+      estatus: { type: String },
+      ajuste_extraordinario: { type: Number },
+      ajuste_descripcion: { type: String },
+      saldo_a_favor_generado: { type: Number }
+    }
+  }]
 }, { timestamps: true });
 
 MensualidadSchema.index({ id_alumno: 1, mes: 1, anio: 1 }, { unique: true });

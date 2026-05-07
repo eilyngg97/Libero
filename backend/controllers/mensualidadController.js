@@ -94,6 +94,37 @@ function normalizarMontoOpcional(valor) {
   return redondearMonto(numero);
 }
 
+function normalizarNotaEdicion(valor) {
+  return String(valor || '').trim();
+}
+
+function construirSnapshotEdicionMensualidad(mensualidad) {
+  return {
+    monto_esperado: redondearMonto(mensualidad?.monto_esperado || 0),
+    estatus: String(mensualidad?.estatus || ''),
+    ajuste_extraordinario: redondearMonto(mensualidad?.ajuste_extraordinario || 0),
+    ajuste_descripcion: String(mensualidad?.ajuste_descripcion || ''),
+    saldo_a_favor_generado: redondearMonto(mensualidad?.saldo_a_favor_generado || 0)
+  };
+}
+
+function registrarHistorialEdicionMensualidad(mensualidad, req, { accion, nota, anterior, nuevo }) {
+  mensualidad.historial_ediciones = Array.isArray(mensualidad.historial_ediciones)
+    ? mensualidad.historial_ediciones
+    : [];
+
+  mensualidad.historial_ediciones.push({
+    fecha: new Date(),
+    accion: accion || 'edicion_manual',
+    nota,
+    actor_id: req.user?.id || undefined,
+    actor_nombre: req.user?.nombre || req.user?.email || '',
+    actor_rol: req.user?.rol || '',
+    anterior,
+    nuevo
+  });
+}
+
 function normalizarFechaOpcional(valor) {
   if (!valor) return undefined;
   const fecha = new Date(valor);
@@ -582,7 +613,8 @@ async function recalcularMensualidadPorPagos(
     actorRol = 'admin',
     estatusAnterior = null,
     preservarPagadoSinPagos = false,
-    preservarInsolventeSinPagosCuandoMontoCero = false
+    preservarInsolventeSinPagosCuandoMontoCero = false,
+    omitirRecargoAutomatico = false
   } = {}
 ) {
   const {
@@ -590,10 +622,12 @@ async function recalcularMensualidadPorPagos(
     Alumno: AlumnoModel
   } = resolveMensualidadModels(models);
 
-  await aplicarRecargoMensualidadSegunConfig(mensualidad, {
-    models,
-    persistir: false
-  });
+  if (!omitirRecargoAutomatico) {
+    await aplicarRecargoMensualidadSegunConfig(mensualidad, {
+      models,
+      persistir: false
+    });
+  }
 
   const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const tienePagosRegistrados = pagos.length > 0;
@@ -606,7 +640,8 @@ async function recalcularMensualidadPorPagos(
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
 
   if (deltaSaldo !== 0) {
-    const alumnoDoc = await AlumnoModel.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
+    const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
+    const alumnoDoc = await AlumnoModel.findById(alumnoId).select('saldo_a_favor_mensualidades');
     if (alumnoDoc) {
       const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
       const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
@@ -615,8 +650,9 @@ async function recalcularMensualidadPorPagos(
         throw new Error('El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.');
       }
 
-      alumnoDoc.saldo_a_favor_mensualidades = saldoResultante;
-      await alumnoDoc.save();
+      await AlumnoModel.findByIdAndUpdate(alumnoId, {
+        $set: { saldo_a_favor_mensualidades: saldoResultante }
+      });
     }
   }
 
@@ -1439,9 +1475,11 @@ exports.editarMensualidadIndividual = async (req, res) => {
 
     const montoEsperadoInput = req.body?.monto_esperado;
     const estatusInput = req.body?.estatus;
+    const notaEdicion = normalizarNotaEdicion(req.body?.nota);
 
     const montoEsperadoNormalizado = normalizarMontoOpcional(montoEsperadoInput);
     const estatusNormalizado = typeof estatusInput === 'string' ? estatusInput.trim().toLowerCase() : '';
+    const snapshotAnterior = construirSnapshotEdicionMensualidad(mensualidad);
 
     if (
       montoEsperadoInput !== undefined &&
@@ -1457,6 +1495,10 @@ exports.editarMensualidadIndividual = async (req, res) => {
       !estatusNormalizado
     ) {
       return res.status(400).json({ error: 'Debes enviar monto_esperado o estatus para editar' });
+    }
+
+    if (!notaEdicion) {
+      return res.status(400).json({ error: 'Debes indicar una nota con el motivo del cambio' });
     }
 
     if (montoEsperadoNormalizado !== undefined) {
@@ -1490,7 +1532,8 @@ exports.editarMensualidadIndividual = async (req, res) => {
       const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
 
       if (deltaSaldo !== 0) {
-        const alumnoDoc = await TenantAlumno.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
+        const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
+        const alumnoDoc = await TenantAlumno.findById(alumnoId).select('saldo_a_favor_mensualidades');
         if (alumnoDoc) {
           const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
           const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
@@ -1499,8 +1542,9 @@ exports.editarMensualidadIndividual = async (req, res) => {
               error: 'No se puede exonerar porque el saldo a favor previo de esta mensualidad ya fue consumido.'
             });
           }
-          alumnoDoc.saldo_a_favor_mensualidades = saldoResultante;
-          await alumnoDoc.save();
+          await TenantAlumno.findByIdAndUpdate(alumnoId, {
+            $set: { saldo_a_favor_mensualidades: saldoResultante }
+          });
         }
       }
 
@@ -1519,6 +1563,12 @@ exports.editarMensualidadIndividual = async (req, res) => {
       mensualidad.estatus = 'Exonerado';
       mensualidad.ajuste_descripcion = 'Exoneracion manual individual de mensualidad';
       mensualidad.ajuste_fecha = new Date();
+      registrarHistorialEdicionMensualidad(mensualidad, req, {
+        accion: 'exoneracion_manual',
+        nota: notaEdicion,
+        anterior: snapshotAnterior,
+        nuevo: construirSnapshotEdicionMensualidad(mensualidad)
+      });
       await mensualidad.save();
 
       return res.json({
@@ -1537,8 +1587,17 @@ exports.editarMensualidadIndividual = async (req, res) => {
       actorRol: req.user?.rol || 'admin',
       estatusAnterior: mensualidad.estatus,
       preservarPagadoSinPagos: true,
-      preservarInsolventeSinPagosCuandoMontoCero: true
+      preservarInsolventeSinPagosCuandoMontoCero: true,
+      omitirRecargoAutomatico: montoEsperadoNormalizado !== undefined
     });
+
+    registrarHistorialEdicionMensualidad(mensualidad, req, {
+      accion: 'edicion_manual',
+      nota: notaEdicion,
+      anterior: snapshotAnterior,
+      nuevo: construirSnapshotEdicionMensualidad(mensualidad)
+    });
+    await mensualidad.save();
 
     return res.json({
       message: 'Mensualidad actualizada correctamente',
