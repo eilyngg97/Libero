@@ -28,6 +28,24 @@ function normalizarMontoBs(value) {
   return Number(value);
 }
 
+function construirRegistradoPor(req) {
+  const rol = String(req?.user?.rol || '').trim().toLowerCase();
+  const nombre = String(
+    req?.user?.nombre
+    || req?.user?.usuario
+    || req?.user?.email
+    || req?.user?.correo
+    || ''
+  ).trim();
+
+  return {
+    id_usuario: req?.user?.id || undefined,
+    nombre,
+    rol: rol || 'desconocido',
+    origen: rol === 'admin' ? 'admin_portal' : (rol ? 'usuario_portal' : 'desconocido')
+  };
+}
+
 function enriquecerPagoConMontoEsperado(pago, mensualidad) {
   const pagoPlano = typeof pago?.toObject === 'function' ? pago.toObject() : { ...pago };
   const montoEsperadoPagoUsd = Number(pagoPlano?.monto_esperado_usd);
@@ -260,7 +278,8 @@ exports.registrarPago = async (req, res) => {
       fecha_pago,
       metodo_pago,
       referencia,
-      comprobante_url
+      comprobante_url,
+      registrado_por: construirRegistradoPor(req)
     });
 
     const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, tenantModels);

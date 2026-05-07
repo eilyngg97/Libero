@@ -52,6 +52,12 @@ function formatTipoMensualidad(tipo) {
   return tipo;
 }
 
+function formatMontoMensualidadPersonalizada(valor) {
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return '-';
+  return `$${numero.toFixed(2)} USD`;
+}
+
 function formatTipoMovimiento(tipo) {
   const key = String(tipo || '').toUpperCase();
   if (key === 'BAJA') return 'Baja';
@@ -185,7 +191,14 @@ function AlumnoDetalle() {
     { icon: <PersonIcon sx={{ fontSize: 16 }} />, label: "Sexo", value: alumno.sexo || "-" },
     { icon: <BadgeIcon sx={{ fontSize: 16 }} />, label: "Cedula", value: alumno.cedula || "-" },
     { icon: <SportsVolleyballIcon sx={{ fontSize: 16 }} />, label: "Nro de franela", value: alumno.numero_franela || "-" },
-    { icon: <ShowChartIcon sx={{ fontSize: 16 }} />, label: "Tipo de mensualidad", value: formatTipoMensualidad(alumno.tipo_mensualidad) }
+    { icon: <ShowChartIcon sx={{ fontSize: 16 }} />, label: "Tipo de mensualidad", value: formatTipoMensualidad(alumno.tipo_mensualidad) },
+    ...(String(alumno.tipo_mensualidad || '').toLowerCase() === 'monto_personalizado'
+      ? [{
+          icon: <ShowChartIcon sx={{ fontSize: 16 }} />,
+          label: "Monto mensual personalizado",
+          value: formatMontoMensualidadPersonalizada(alumno.monto_personalizado_valor)
+        }]
+      : [])
   ];
   const contactItems = [
     { icon: <HomeIcon sx={{ fontSize: 16 }} />, label: "Domicilio", value: alumno.domicilio || "-" },

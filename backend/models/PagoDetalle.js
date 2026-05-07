@@ -18,7 +18,13 @@ const PagoDetalleSchema = new mongoose.Schema({
   fecha_pago: { type: Date, required: true },
   metodo_pago: { type: String, required: true },
   referencia: { type: String },
-  comprobante_url: { type: String }
+  comprobante_url: { type: String },
+  registrado_por: {
+    id_usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    nombre: { type: String, default: '' },
+    rol: { type: String, default: '' },
+    origen: { type: String, default: '' }
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('PagoDetalle', PagoDetalleSchema);

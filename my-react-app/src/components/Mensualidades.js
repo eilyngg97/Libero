@@ -107,6 +107,8 @@ function Mensualidades() {
 	const [confirmarEliminarMensualidadOpen, setConfirmarEliminarMensualidadOpen] = useState(false);
 	const [mensualidadAEliminar, setMensualidadAEliminar] = useState(null);
 	const [eliminandoMensualidadId, setEliminandoMensualidadId] = useState('');
+	const [confirmarPagoOpen, setConfirmarPagoOpen] = useState(false);
+	const [confirmandoMensualidad, setConfirmandoMensualidad] = useState(false);
 	const [modalEditarMensualidadOpen, setModalEditarMensualidadOpen] = useState(false);
 	const [mensualidadAEditar, setMensualidadAEditar] = useState(null);
 	const [editarMontoEsperado, setEditarMontoEsperado] = useState('');
@@ -332,12 +334,12 @@ function Mensualidades() {
 	};
 
 	// Cargar mensualidades de la sede y mes actual o mes filtrado
-		React.useEffect(() => {
-			async function fetchMensualidades() {
-				await cargarMensualidades();
-			}
-			fetchMensualidades();
-		}, [cargarMensualidades]);
+	React.useEffect(() => {
+		async function fetchMensualidades() {
+			await cargarMensualidades();
+		}
+		fetchMensualidades();
+	}, [cargarMensualidades]);
 
 	// Filtros
 	React.useEffect(() => {
@@ -402,18 +404,27 @@ function Mensualidades() {
 	const confirmarMensualidad = async () => {
 		if (!mensualidadDetalle?._id) return;
 		try {
+			setConfirmandoMensualidad(true);
 			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}/confirmar`, {
 				method: 'PATCH',
 				headers: getAuthHeaders()
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'Error al confirmar mensualidad');
+			setConfirmarPagoOpen(false);
 			setModalDetalle(false);
 			await cargarMensualidades();
 			setSuccessMessage('Pago confirmado con exito');
 		} catch (err) {
-			alert(err.message || 'Error al confirmar mensualidad');
+			setErrorMessage(err.message || 'Error al confirmar mensualidad');
+		} finally {
+			setConfirmandoMensualidad(false);
 		}
+	};
+
+	const solicitarConfirmarMensualidad = () => {
+		if (!mensualidadDetalle?._id || confirmandoMensualidad) return;
+		setConfirmarPagoOpen(true);
 	};
 
 	const copiarReferencia = async (texto) => {
@@ -436,7 +447,7 @@ function Mensualidades() {
 		setComprobanteUrl(finalUrl);
 		setComprobanteDialogOpen(true);
 	};
-		// Paginación
+	// Paginación
 	const [pagina, setPagina] = useState(0);
 	const [filasPorPagina, setFilasPorPagina] = useState(10);
 
@@ -584,7 +595,7 @@ function Mensualidades() {
 			setEliminandoPagoId('');
 		}
 	};
-	
+
 	const registrarPago = async () => {
 		if (guardandoPago) return;
 		// Validar numero de digitos de referencia
@@ -737,6 +748,13 @@ function Mensualidades() {
 			return `$${montoUsd}`;
 		}
 		return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
+	};
+
+	const formatRegistradoPorPago = (pago) => {
+		const origenRaw = String(pago?.registrado_por?.origen || '').trim().toLowerCase();
+		if (origenRaw === 'admin_portal') return 'Portal admin';
+		if (origenRaw === 'usuario_portal') return 'Portal usuario';
+		return 'No disponible';
 	};
 
 	const obtenerDesgloseRecargo = (mensualidad) => {
@@ -1115,12 +1133,12 @@ function Mensualidades() {
 			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
 				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
-					{[...Array(12)].map((_, i) => <MenuItem key={i+1} value={i+1}>{meses[i]}</MenuItem>)}
+					{[...Array(12)].map((_, i) => <MenuItem key={i + 1} value={i + 1}>{meses[i]}</MenuItem>)}
 				</TextField>
 				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
 				<TextField select label="Estado" value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
-					{['Pendiente','Pagado','Insolvente', 'Exonerado', 'Becado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
+					{['Pendiente', 'Pagado', 'Insolvente', 'Exonerado', 'Becado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
 			</Box>
 			<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', mb: 2, mt: 2 }}>
@@ -1165,127 +1183,127 @@ function Mensualidades() {
 						const estadoAlumno = obtenerEstadoAlumnoVisual(m.id_alumno);
 
 						return (
-						<Paper key={m._id} sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)', minWidth: 0, overflow: 'hidden' }}>
-							<Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, mb: 1, minWidth: 0 }}>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
-									<Tooltip title={`Alumno ${estadoAlumno.label}`}>
-										<Box
+							<Paper key={m._id} sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)', minWidth: 0, overflow: 'hidden' }}>
+								<Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, mb: 1, minWidth: 0 }}>
+									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
+										<Tooltip title={`Alumno ${estadoAlumno.label}`}>
+											<Box
+												sx={{
+													width: 10,
+													height: 10,
+													borderRadius: '50%',
+													bgcolor: estadoAlumno.color,
+													border: `2px solid ${estadoAlumno.borderColor}`,
+													flexShrink: 0
+												}}
+											/>
+										</Tooltip>
+										<Avatar sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+											{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
+										</Avatar>
+										<Typography
 											sx={{
-												width: 10,
-												height: 10,
-												borderRadius: '50%',
-												bgcolor: estadoAlumno.color,
-												border: `2px solid ${estadoAlumno.borderColor}`,
-												flexShrink: 0
+												fontWeight: 700,
+												color: '#1f2937',
+												fontSize: 14,
+												minWidth: 0,
+												flex: 1,
+												display: '-webkit-box',
+												WebkitLineClamp: 2,
+												WebkitBoxOrient: 'vertical',
+												whiteSpace: 'normal',
+												overflow: 'hidden',
+												textOverflow: 'ellipsis'
 											}}
-										/>
-									</Tooltip>
-									<Avatar sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
-										{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
-									</Avatar>
-									<Typography
-										sx={{
-											fontWeight: 700,
-											color: '#1f2937',
-											fontSize: 14,
-											minWidth: 0,
-											flex: 1,
-											display: '-webkit-box',
-											WebkitLineClamp: 2,
-											WebkitBoxOrient: 'vertical',
-											whiteSpace: 'normal',
-											overflow: 'hidden',
-											textOverflow: 'ellipsis'
-										}}
-									>
-										{m.id_alumno ? `${m.id_alumno.nombres} ${m.id_alumno.apellidos}` : '-'}
-									</Typography>
+										>
+											{m.id_alumno ? `${m.id_alumno.nombres} ${m.id_alumno.apellidos}` : '-'}
+										</Typography>
+									</Box>
+									<Box sx={{ flexShrink: 0, maxWidth: '42%' }}>
+										{renderEstatusChip(m.estatus)}
+									</Box>
 								</Box>
-								<Box sx={{ flexShrink: 0, maxWidth: '42%' }}>
-									{renderEstatusChip(m.estatus)}
-								</Box>
-							</Box>
-							<Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
-								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Etiquetas:</b></Typography>
-									{renderEtiquetasAlumno(m.id_alumno)}
-								</Box>
-								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
-								<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
-								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
-								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha recargo:</b></Typography>
-									{(() => {
-										const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(m);
-										if (!diaLimitePersonalizado) {
+								<Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Categoría:</b> {m.id_alumno?.categoria || '-'}</Typography>
+									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+										<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Etiquetas:</b></Typography>
+										{renderEtiquetasAlumno(m.id_alumno)}
+									</Box>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
+									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
+									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+										<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha recargo:</b></Typography>
+										{(() => {
+											const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(m);
+											if (!diaLimitePersonalizado) {
+												return (
+													<Chip
+														size="small"
+														label="Global"
+														sx={{ height: 22, bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700, fontSize: 11 }}
+													/>
+												);
+											}
+
 											return (
 												<Chip
 													size="small"
-													label="Global"
-													sx={{ height: 22, bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700, fontSize: 11 }}
+													label={`Personalizado: dia ${diaLimitePersonalizado}`}
+													sx={{ height: 22, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }}
 												/>
 											);
-										}
-
-										return (
-											<Chip
-												size="small"
-												label={`Personalizado: dia ${diaLimitePersonalizado}`}
-												sx={{ height: 22, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }}
-											/>
-										);
-									})()}
+										})()}
+									</Box>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 								</Box>
-								<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
-							</Box>
-							<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
-								{esAdmin && !esMensualidadDeBecado(m) && (
-									<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
-										<span>
-											<IconButton
+								<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
+									<Tooltip title="Ver detalle">
+										<IconButton onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
+											<VisibilityIcon fontSize="small" />
+										</IconButton>
+									</Tooltip>
+									{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
+										<Tooltip title="Editar mensualidad">
+											<IconButton onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
+												<EditIcon fontSize="small" />
+											</IconButton>
+										</Tooltip>
+									)}
+									{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+										<Tooltip title="Registrar pago">
+											<IconButton onClick={() => handlePago(m)} sx={actionIconButtonSx}>
+												<PaidIcon fontSize="small" />
+											</IconButton>
+										</Tooltip>
+									)}
+									{esAdmin && !esMensualidadDeBecado(m) && (
+										<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
+											<span>
+												<IconButton
 													onClick={() => solicitarAdelantoMensualidad(m)}
-												disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
+													disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
+													sx={actionIconButtonSx}
+												>
+													<PaymentsIcon fontSize="small" />
+												</IconButton>
+											</span>
+										</Tooltip>
+									)}
+									{esAdmin && (
+										<Tooltip title="Eliminar mensualidad">
+											<IconButton
+												onClick={() => solicitarEliminarMensualidad(m)}
+												disabled={eliminandoMensualidadId === m._id}
 												sx={actionIconButtonSx}
 											>
-												<PaymentsIcon fontSize="small" />
+												<DeleteOutlineIcon fontSize="small" />
 											</IconButton>
-										</span>
-									</Tooltip>
-								)}
-								{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
-									<Tooltip title="Editar mensualidad">
-										<IconButton onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
-											<EditIcon fontSize="small" />
-										</IconButton>
-									</Tooltip>
-								)}
-								{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-									<Tooltip title="Registrar pago">
-										<IconButton onClick={() => handlePago(m)} sx={actionIconButtonSx}>
-											<PaidIcon fontSize="small" />
-										</IconButton>
-									</Tooltip>
-								)}
-								<Tooltip title="Ver detalle">
-									<IconButton onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
-										<VisibilityIcon fontSize="small" />
-									</IconButton>
-								</Tooltip>
-								{esAdmin && (
-									<Tooltip title="Eliminar mensualidad">
-										<IconButton
-											onClick={() => solicitarEliminarMensualidad(m)}
-											disabled={eliminandoMensualidadId === m._id}
-											sx={actionIconButtonSx}
-										>
-											<DeleteOutlineIcon fontSize="small" />
-										</IconButton>
-									</Tooltip>
-								)}
-							</Box>
-						</Paper>
+										</Tooltip>
+									)}
+								</Box>
+							</Paper>
 						);
 					})}
 					<Paper sx={{ borderRadius: 3, border: '1px solid #eef0f3' }}>
@@ -1333,98 +1351,98 @@ function Mensualidades() {
 								const estadoAlumno = obtenerEstadoAlumnoVisual(m.id_alumno);
 
 								return (
-								<TableRow
-									key={m._id}
-									sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}
-								>
-									<TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>
-										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-											<Tooltip title={`Alumno ${estadoAlumno.label}`}>
-												<Box
-													sx={{
-														width: 9,
-														height: 9,
-														borderRadius: '50%',
-														bgcolor: estadoAlumno.color,
-														border: `2px solid ${estadoAlumno.borderColor}`,
-														flexShrink: 0
-													}}
-												/>
-											</Tooltip>
-											<Avatar sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
-												{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
-											</Avatar>
-											{m.id_alumno ? m.id_alumno.nombres + ' ' + m.id_alumno.apellidos : ''}
-										</Box>
-									</TableCell>
-									<TableCell>
-										<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
-									</TableCell>
-									<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
-									<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
-									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
-									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
-									<TableCell>
-										{(() => {
-											const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(m);
-											if (!diaLimitePersonalizado) {
-												return <Chip size="small" label="Global" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700, fontSize: 11 }} />;
-											}
-											return <Chip size="small" label={`Dia ${diaLimitePersonalizado}`} sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }} />;
-										})()}
-									</TableCell>
-									<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
-									<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
-									<TableCell>
-										<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
-														{esAdmin && !esMensualidadDeBecado(m) && (
-												<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
-													<span>
+									<TableRow
+										key={m._id}
+										sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}
+									>
+										<TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>
+											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+												<Tooltip title={`Alumno ${estadoAlumno.label}`}>
+													<Box
+														sx={{
+															width: 9,
+															height: 9,
+															borderRadius: '50%',
+															bgcolor: estadoAlumno.color,
+															border: `2px solid ${estadoAlumno.borderColor}`,
+															flexShrink: 0
+														}}
+													/>
+												</Tooltip>
+												<Avatar sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+													{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
+												</Avatar>
+												{m.id_alumno ? m.id_alumno.nombres + ' ' + m.id_alumno.apellidos : ''}
+											</Box>
+										</TableCell>
+										<TableCell>
+											<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
+										</TableCell>
+										<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
+										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
+										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
+										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
+										<TableCell>
+											{(() => {
+												const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(m);
+												if (!diaLimitePersonalizado) {
+													return <Chip size="small" label="Global" sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700, fontSize: 11 }} />;
+												}
+												return <Chip size="small" label={`Dia ${diaLimitePersonalizado}`} sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }} />;
+											})()}
+										</TableCell>
+										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
+										<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
+										<TableCell>
+											<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
+												<Tooltip title="Ver detalle">
+													<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
+														<VisibilityIcon fontSize="small" />
+													</IconButton>
+												</Tooltip>
+												{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
+													<Tooltip title="Editar mensualidad">
+														<IconButton size="small" onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
+															<EditIcon fontSize="small" />
+														</IconButton>
+													</Tooltip>
+												)}
+												{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+													<Tooltip title="Registrar pago">
+														<IconButton size="small" onClick={() => handlePago(m)} sx={actionIconButtonSx}>
+															<PaidIcon fontSize="small" />
+														</IconButton>
+													</Tooltip>
+												)}
+												{esAdmin && !esMensualidadDeBecado(m) && (
+													<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
+														<span>
+															<IconButton
+																size="small"
+																onClick={() => solicitarAdelantoMensualidad(m)}
+																disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
+																sx={actionIconButtonSx}
+															>
+																<PaymentsIcon fontSize="small" />
+															</IconButton>
+														</span>
+													</Tooltip>
+												)}
+												{esAdmin && (
+													<Tooltip title="Eliminar mensualidad">
 														<IconButton
 															size="small"
-																		onClick={() => solicitarAdelantoMensualidad(m)}
-															disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
-																sx={actionIconButtonSx}
-														>
-															<PaymentsIcon fontSize="small" />
-														</IconButton>
-													</span>
-												</Tooltip>
-											)}
-											{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
-												<Tooltip title="Editar mensualidad">
-													<IconButton size="small" onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
-														<EditIcon fontSize="small" />
-													</IconButton>
-												</Tooltip>
-											)}
-											{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
-												<Tooltip title="Registrar pago">
-														<IconButton size="small" onClick={() => handlePago(m)} sx={actionIconButtonSx}>
-														<PaidIcon fontSize="small" />
-													</IconButton>
-												</Tooltip>
-											)}
-											<Tooltip title="Ver detalle">
-												<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
-													<VisibilityIcon fontSize="small" />
-												</IconButton>
-											</Tooltip>
-											{esAdmin && (
-												<Tooltip title="Eliminar mensualidad">
-													<IconButton
-														size="small"
-														onClick={() => solicitarEliminarMensualidad(m)}
-														disabled={eliminandoMensualidadId === m._id}
+															onClick={() => solicitarEliminarMensualidad(m)}
+															disabled={eliminandoMensualidadId === m._id}
 															sx={actionIconButtonSx}
-													>
-														<DeleteOutlineIcon fontSize="small" />
-													</IconButton>
-												</Tooltip>
-											)}
-										</Box>
-									</TableCell>
-								</TableRow>
+														>
+															<DeleteOutlineIcon fontSize="small" />
+														</IconButton>
+													</Tooltip>
+												)}
+											</Box>
+										</TableCell>
+									</TableRow>
 								);
 							})}
 						</TableBody>
@@ -1537,6 +1555,13 @@ function Mensualidades() {
 										</Box>
 									</Box>
 
+									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Registrado por</Typography>
+										<Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
+											{formatRegistradoPorPago(detallePago)}
+										</Typography>
+									</Box>
+
 									<Box>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Comprobante</Typography>
 										{detallePago.comprobante_url ? (
@@ -1586,6 +1611,7 @@ function Mensualidades() {
 								bgcolor: '#ffffff',
 								border: '1px solid #e8ebf2',
 								borderRadius: 2,
+								borderLeft: '4px solid #d6c7ff',
 								p: { xs: 1.5, sm: 2 }
 							}}
 						>
@@ -1647,72 +1673,72 @@ function Mensualidades() {
 						|| (mensualidadDetalle?.monto_reingreso !== undefined && mensualidadDetalle?.monto_reingreso !== null)
 						|| (mensualidadDetalle?.monto_mensualidad_reingreso !== undefined && mensualidadDetalle?.monto_mensualidad_reingreso !== null)
 						|| (mensualidadDetalle?.monto_equivalente_bs !== undefined && mensualidadDetalle?.monto_equivalente_bs !== null)) && (
-						<Box
-							sx={{
-								mt: 2,
-								bgcolor: '#ffffff',
-								border: '1px solid #e8ebf2',
-								borderRadius: 2,
-								p: { xs: 1.5, sm: 2 }
-							}}
-						>
-							<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800, mb: 1.2 }}>
-								Resumen de pagos
-							</Typography>
-							<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.2 }}>
-								{mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null && (
-									<Box>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-											Monto de inscripcion
-										</Typography>
-										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-											{`$${formatMoney(mensualidadDetalle?.monto_inscripcion)} USD`}
-										</Typography>
-									</Box>
-								)}
-								{mensualidadDetalle?.monto_primera_mensualidad !== undefined && mensualidadDetalle?.monto_primera_mensualidad !== null && (
-									<Box>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-											Monto de primera mensualidad
-										</Typography>
-										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-											{`$${formatMoney(mensualidadDetalle?.monto_primera_mensualidad)} USD`}
-										</Typography>
-									</Box>
-								)}
-								{mensualidadDetalle?.monto_reingreso !== undefined && mensualidadDetalle?.monto_reingreso !== null && (
-									<Box>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-											Monto de reingreso
-										</Typography>
-										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-											{`$${formatMoney(mensualidadDetalle?.monto_reingreso)} USD`}
-										</Typography>
-									</Box>
-								)}
-								{mensualidadDetalle?.monto_mensualidad_reingreso !== undefined && mensualidadDetalle?.monto_mensualidad_reingreso !== null && (
-									<Box>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-											Monto de mensualidad de reingreso
-										</Typography>
-										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-											{`$${formatMoney(mensualidadDetalle?.monto_mensualidad_reingreso)} USD`}
-										</Typography>
-									</Box>
-								)}
-								{mensualidadDetalle?.monto_equivalente_bs !== undefined && mensualidadDetalle?.monto_equivalente_bs !== null && (
-									<Box>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-											Equivalente total en Bs
-										</Typography>
-										<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-											{`Bs ${formatMoney(mensualidadDetalle?.monto_equivalente_bs)}`}
-										</Typography>
-									</Box>
-								)}
+							<Box
+								sx={{
+									mt: 2,
+									bgcolor: '#ffffff',
+									border: '1px solid #e8ebf2',
+									borderRadius: 2,
+									p: { xs: 1.5, sm: 2 }
+								}}
+							>
+								<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800, mb: 1.2 }}>
+									Resumen de pagos
+								</Typography>
+								<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.2 }}>
+									{mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null && (
+										<Box>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+												Monto de inscripcion
+											</Typography>
+											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+												{`$${formatMoney(mensualidadDetalle?.monto_inscripcion)} USD`}
+											</Typography>
+										</Box>
+									)}
+									{mensualidadDetalle?.monto_primera_mensualidad !== undefined && mensualidadDetalle?.monto_primera_mensualidad !== null && (
+										<Box>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+												Monto de primera mensualidad
+											</Typography>
+											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+												{`$${formatMoney(mensualidadDetalle?.monto_primera_mensualidad)} USD`}
+											</Typography>
+										</Box>
+									)}
+									{mensualidadDetalle?.monto_reingreso !== undefined && mensualidadDetalle?.monto_reingreso !== null && (
+										<Box>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+												Monto de reingreso
+											</Typography>
+											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+												{`$${formatMoney(mensualidadDetalle?.monto_reingreso)} USD`}
+											</Typography>
+										</Box>
+									)}
+									{mensualidadDetalle?.monto_mensualidad_reingreso !== undefined && mensualidadDetalle?.monto_mensualidad_reingreso !== null && (
+										<Box>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+												Monto de mensualidad de reingreso
+											</Typography>
+											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+												{`$${formatMoney(mensualidadDetalle?.monto_mensualidad_reingreso)} USD`}
+											</Typography>
+										</Box>
+									)}
+									{mensualidadDetalle?.monto_equivalente_bs !== undefined && mensualidadDetalle?.monto_equivalente_bs !== null && (
+										<Box>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+												Equivalente total en Bs
+											</Typography>
+											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+												{`Bs ${formatMoney(mensualidadDetalle?.monto_equivalente_bs)}`}
+											</Typography>
+										</Box>
+									)}
+								</Box>
 							</Box>
-						</Box>
-					)}
+						)}
 
 					{historialNotasDetalle.length > 0 && (
 						<Box sx={{ mt: 3.25 }}>
@@ -1852,6 +1878,9 @@ function Mensualidades() {
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
 											<Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
+											<Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.35, fontSize: 12 }}>
+												Registrado por: {formatRegistradoPorPago(pago)}
+											</Typography>
 										</Box>
 										<Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
 											{pago.comprobante_url && (
@@ -1875,37 +1904,63 @@ function Mensualidades() {
 				<DialogActions sx={{ px: 3, pb: 2.25, bgcolor: '#f3f5fb', justifyContent: 'space-between' }}>
 					{(mensualidadDetalle?.estatus || '').toLowerCase() === 'en revision' && (
 						<Button
-							onClick={confirmarMensualidad}
+							onClick={solicitarConfirmarMensualidad}
 							variant="contained"
-							sx={{ bgcolor: '#0f8a35', color: '#fff', boxShadow: 'none', '&:hover': { bgcolor: '#0d7a2f', boxShadow: 'none' }, borderRadius: 999, px: 2.2, fontWeight: 800 }}
+							sx={{ bgcolor: '#0e1334', color: '#fff', boxShadow: 'none', '&:hover': { bgcolor: '#0b102b', boxShadow: 'none' }, borderRadius: 999, px: 2.2, fontWeight: 800 }}
 						>
 							Confirmar
 						</Button>
 					)}
 				</DialogActions>
 			</Dialog>
+			<Dialog
+				open={confirmarPagoOpen}
+				onClose={() => !confirmandoMensualidad && setConfirmarPagoOpen(false)}
+				maxWidth="xs"
+				fullWidth
+			>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Confirmar pago</DialogTitle>
+				<DialogContent>
+					<Typography sx={{ color: '#334155' }}>
+						¿Estas seguro de confirmar este pago?
+					</Typography>
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={() => setConfirmarPagoOpen(false)} disabled={confirmandoMensualidad}>
+						Cancelar
+					</Button>
+					<Button
+						variant="contained"
+						onClick={confirmarMensualidad}
+						disabled={confirmandoMensualidad}
+						sx={{ bgcolor: '#0e1334', color: '#fff', '&:hover': { bgcolor: '#0b102b' }, boxShadow: 'none' }}
+					>
+						{confirmandoMensualidad ? 'Confirmando...' : 'Si, confirmar'}
+					</Button>
+				</DialogActions>
+			</Dialog>
 			<Dialog open={comprobanteDialogOpen} onClose={() => setComprobanteDialogOpen(false)} maxWidth="md" fullWidth>
-								<DialogTitle>Comprobante</DialogTitle>
-								<DialogContent>
-									{comprobanteUrl ? (
-										<Box sx={{ display: 'flex', justifyContent: 'center' }}>
-											{comprobanteTipo === 'pdf' ? (
-												<iframe
-													src={comprobanteUrl}
-													title="Comprobante"
-													style={{ width: '100%', height: '70vh', border: 'none' }}
-												/>
-											) : (
-												<img src={comprobanteUrl} alt="Comprobante" style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8 }} />
-											)}
-										</Box>
-									) : (
-										<Typography>No hay comprobante disponible.</Typography>
-									)}
-								</DialogContent>
-								<DialogActions>
-									<Button onClick={() => setComprobanteDialogOpen(false)}>Cerrar</Button>
-								</DialogActions>
+				<DialogTitle>Comprobante</DialogTitle>
+				<DialogContent>
+					{comprobanteUrl ? (
+						<Box sx={{ display: 'flex', justifyContent: 'center' }}>
+							{comprobanteTipo === 'pdf' ? (
+								<iframe
+									src={comprobanteUrl}
+									title="Comprobante"
+									style={{ width: '100%', height: '70vh', border: 'none' }}
+								/>
+							) : (
+								<img src={comprobanteUrl} alt="Comprobante" style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8 }} />
+							)}
+						</Box>
+					) : (
+						<Typography>No hay comprobante disponible.</Typography>
+					)}
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={() => setComprobanteDialogOpen(false)}>Cerrar</Button>
+				</DialogActions>
 			</Dialog>
 			<Dialog
 				open={modalExportExcelOpen}
@@ -2216,7 +2271,7 @@ function Mensualidades() {
 							sx={{ mt: 1.5 }}
 						>
 							Impacto estimado: {previewAjuste.mensualidades_actualizables || 0} actualizables, {previewAjuste.mensualidades_omitidas || 0} omitidas.
-							 {previewAjuste.mensualidades_no_compatibles > 0 && ` ${previewAjuste.mensualidades_no_compatibles} no compatibles con este monto.`}
+							{previewAjuste.mensualidades_no_compatibles > 0 && ` ${previewAjuste.mensualidades_no_compatibles} no compatibles con este monto.`}
 						</Alert>
 					)}
 				</DialogContent>

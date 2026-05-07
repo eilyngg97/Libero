@@ -9,7 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Chip, Box, MenuItem, Select, FormControl, InputLabel, Checkbox } from '@mui/material';
+import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Box, MenuItem, Select, FormControl, InputLabel, Checkbox } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -19,7 +19,6 @@ import ReplayIcon from '@mui/icons-material/Replay';
 import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { exportToExcel } from '../utils/exportExcel';
 import jsPDF from 'jspdf';
@@ -60,6 +59,10 @@ function obtenerTipoMensualidadKey(alumno) {
 function obtenerEstadoAlumno(alumno) {
   if (alumno?.dado_de_baja || alumno?.activo === false) return 'Baja';
   return alumno?.estado || 'Activo';
+}
+
+function esAlumnoActivo(alumno) {
+  return !(alumno?.dado_de_baja || alumno?.activo === false);
 }
 
 function obtenerDiaLimitePersonalizado(alumno) {
@@ -105,15 +108,16 @@ function parseFechaLocal(fecha) {
 }
 
 function TablaAlumnos() {
-      // Estados para filtros
-      const [filtroNombreApellido, setFiltroNombreApellido] = useState('');
-      const [filtroFechaNacimientoDesde, setFiltroFechaNacimientoDesde] = useState('');
-      const [filtroFechaNacimientoHasta, setFiltroFechaNacimientoHasta] = useState('');
-      const [filtroSexo, setFiltroSexo] = useState('');
-      const [filtroCategoria, setFiltroCategoria] = useState([]);
-      const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
-      const [filtroEstado, setFiltroEstado] = useState('');
-      const [mostrarFiltrosMobile, setMostrarFiltrosMobile] = useState(false);
+  // Estados para filtros
+  const [filtroNombreApellido, setFiltroNombreApellido] = useState('');
+  const [filtroFechaNacimientoDesde, setFiltroFechaNacimientoDesde] = useState('');
+  const [filtroFechaNacimientoHasta, setFiltroFechaNacimientoHasta] = useState('');
+  const [filtroSexo, setFiltroSexo] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
+  const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
+  const [filtroPagoCuotas, setFiltroPagoCuotas] = useState('');
+  const [mostrarFiltrosMobile, setMostrarFiltrosMobile] = useState(false);
     // Formatear fecha a DD/MM/YYYY (corrige desfase por zona horaria)
     const formatFecha = (fecha) => {
       if (!fecha) return '';
@@ -514,6 +518,7 @@ function TablaAlumnos() {
 
   const handleChangeRowsPerPage = (event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
+    setFiltroPagoCuotas('');
     setPage(0);
   };
 
@@ -525,6 +530,7 @@ function TablaAlumnos() {
     setFiltroCategoria([]);
     setFiltroTipoMensualidad('');
     setFiltroEstado('');
+    setFiltroPagoCuotas('');
     setPage(0);
   };
 
@@ -557,7 +563,13 @@ function TablaAlumnos() {
     const estadoAlumno = String(obtenerEstadoAlumno(a)).toLowerCase();
     const estadoMatch = filtroEstado === '' || estadoAlumno === filtroEstado.toLowerCase();
 
-    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch;
+    const pagoCuotasMatch =
+      filtroPagoCuotas === ''
+        ? true
+        : filtroPagoCuotas === 'si'
+          ? a.habilitar_pago_cuotas === true
+          : !a.habilitar_pago_cuotas;
+    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch;
   });
   const alumnosPaginados = alumnosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
@@ -780,7 +792,30 @@ function TablaAlumnos() {
             <MenuItem value="Baja">Baja</MenuItem>
           </TextField>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>PAGO EN CUOTAS</Typography>
+          <TextField
+            select
+            size="small"
+            value={filtroPagoCuotas}
+            onChange={e => setFiltroPagoCuotas(e.target.value)}
+            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
+          >
+            <MenuItem value="">Todos</MenuItem>
+            <MenuItem value="si">Habilitado</MenuItem>
+            <MenuItem value="no">No habilitado</MenuItem>
+          </TextField>
+        </Box>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 1,
+            flexWrap: 'wrap',
+            gridColumn: { xs: '1 / -1', md: '-2 / -1' }
+          }}
+        >
           <Button
             variant="outlined"
             size="small"
@@ -818,8 +853,27 @@ function TablaAlumnos() {
                   overflowWrap: 'break-word'
                 }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, mb: 1.2, minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.2, minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0, flex: 1 }}>
+                  <Tooltip
+                    title={esAlumnoActivo(alumno)
+                      ? 'Alumno activo'
+                      : `Motivo: ${alumno.motivo_baja?.trim() || 'No especificado'}`}
+                    arrow
+                  >
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        bgcolor: esAlumnoActivo(alumno) ? '#16a34a' : '#dc2626',
+                        boxShadow: esAlumnoActivo(alumno)
+                          ? '0 0 0 3px rgba(22, 163, 74, 0.14)'
+                          : '0 0 0 3px rgba(220, 38, 38, 0.14)',
+                        flexShrink: 0
+                      }}
+                    />
+                  </Tooltip>
                   <Avatar
                     src={mediaUrl(alumno.foto) || ''}
                     alt={alumno.nombres}
@@ -836,22 +890,6 @@ function TablaAlumnos() {
                     </Typography>
                   </Box>
                 </Box>
-                <Tooltip
-                  title={alumno.dado_de_baja || alumno.activo === false ? `Motivo: ${alumno.motivo_baja?.trim() || 'No especificado'}` : ''}
-                  arrow
-                >
-                  <span>
-                    <Chip
-                      label={alumno.dado_de_baja || alumno.activo === false ? 'Retirado' : (alumno.estado || '-')}
-                      size="small"
-                      sx={{
-                        bgcolor: alumno.dado_de_baja || alumno.activo === false ? '#fee2e2' : '#eef2ff',
-                        color: alumno.dado_de_baja || alumno.activo === false ? '#b91c1c' : '#2563eb',
-                        fontWeight: 700
-                      }}
-                    />
-                  </span>
-                </Tooltip>
               </Box>
 
               <Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
@@ -864,16 +902,6 @@ function TablaAlumnos() {
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Tipo de mensualidad:</strong> {obtenerTipoMensualidad(alumno)}
                 </Typography>
-                {obtenerDiaLimitePersonalizado(alumno) && (
-                  <Box sx={{ mt: 0.35 }}>
-                    <Chip
-                      icon={<CalendarMonthIcon sx={{ fontSize: 16 }} />}
-                      label={`Pago extendido: dia ${obtenerDiaLimitePersonalizado(alumno)}`}
-                      size="small"
-                      sx={{ bgcolor: '#ecfeff', color: '#0f766e', fontWeight: 700 }}
-                    />
-                  </Box>
-                )}
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Representante:</strong> {alumno.representante && typeof alumno.representante === 'object'
                     ? `${alumno.representante.nombres} ${alumno.representante.apellidos}`
@@ -912,11 +940,6 @@ function TablaAlumnos() {
                     </IconButton>
                   </Tooltip>
                 )}
-                <Tooltip title="Eliminar">
-                  <IconButton aria-label="eliminar" size="small" sx={{ color: '#64748b', bgcolor: '#fff1f2' }} onClick={() => setDeleteId(alumno._id)}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
                 <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
                   <IconButton
                     aria-label="gestionar reposos"
@@ -928,6 +951,11 @@ function TablaAlumnos() {
                     onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
                   >
                     <LocalHospitalIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Eliminar">
+                  <IconButton aria-label="eliminar" size="small" sx={{ color: '#64748b', bgcolor: '#fff1f2' }} onClick={() => setDeleteId(alumno._id)}>
+                    <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 {alumno.foto_cedula && (
@@ -998,7 +1026,6 @@ function TablaAlumnos() {
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEXO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORÍA</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>TIPO DE MENSUALIDAD</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
@@ -1010,6 +1037,25 @@ function TablaAlumnos() {
                 >
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Tooltip
+                        title={esAlumnoActivo(alumno)
+                          ? 'Alumno activo'
+                          : `Motivo: ${alumno.motivo_baja?.trim() || 'No especificado'}`}
+                        arrow
+                      >
+                        <Box
+                          sx={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            bgcolor: esAlumnoActivo(alumno) ? '#16a34a' : '#dc2626',
+                            boxShadow: esAlumnoActivo(alumno)
+                              ? '0 0 0 3px rgba(22, 163, 74, 0.14)'
+                              : '0 0 0 3px rgba(220, 38, 38, 0.14)',
+                            flexShrink: 0
+                          }}
+                        />
+                      </Tooltip>
                       <Avatar
                         src={mediaUrl(alumno.foto) || ''}
                         alt={alumno.nombres}
@@ -1024,14 +1070,7 @@ function TablaAlumnos() {
                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
                           Fecha Nac: {formatFecha(alumno.fecha_nacimiento) || '-'}
                         </Typography>
-                        {obtenerDiaLimitePersonalizado(alumno) && (
-                          <Chip
-                            icon={<CalendarMonthIcon sx={{ fontSize: 14 }} />}
-                            label={`Pago extendido: dia ${obtenerDiaLimitePersonalizado(alumno)}`}
-                            size="small"
-                            sx={{ mt: 0.8, bgcolor: '#ecfeff', color: '#0f766e', fontWeight: 700 }}
-                          />
-                        )}
+                        {/* Eliminado chip de pago extendido en mobile */}
                       </Box>
                     </Box>
                   </TableCell>
@@ -1040,24 +1079,6 @@ function TablaAlumnos() {
                   <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{alumno.categoria || '-'}</TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
                     {obtenerTipoMensualidad(alumno)}
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip
-                      title={alumno.dado_de_baja || alumno.activo === false ? `Motivo: ${alumno.motivo_baja?.trim() || 'No especificado'}` : ''}
-                      arrow
-                    >
-                      <span>
-                        <Chip
-                          label={alumno.dado_de_baja || alumno.activo === false ? 'Retirado' : (alumno.estado || '-')}
-                          size="small"
-                          sx={{
-                            bgcolor: alumno.dado_de_baja || alumno.activo === false ? '#fee2e2' : '#eef2ff',
-                            color: alumno.dado_de_baja || alumno.activo === false ? '#b91c1c' : '#2563eb',
-                            fontWeight: 700
-                          }}
-                        />
-                      </span>
-                    </Tooltip>
                   </TableCell>
                   <TableCell>
                     <Tooltip title="Ver detalles">
@@ -1087,11 +1108,6 @@ function TablaAlumnos() {
                         </IconButton>
                       </Tooltip>
                     )}
-                    <Tooltip title="Eliminar">
-                      <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8' }} onClick={() => setDeleteId(alumno._id)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
                     <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
                       <IconButton
                         aria-label="gestionar reposos"
@@ -1103,6 +1119,11 @@ function TablaAlumnos() {
                         onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
                       >
                         <LocalHospitalIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Eliminar">
+                      <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8' }} onClick={() => setDeleteId(alumno._id)}>
+                        <DeleteIcon />
                       </IconButton>
                     </Tooltip>
                     {alumno.foto_cedula && (
@@ -1436,10 +1457,7 @@ function TablaAlumnos() {
               mb: 2
             }}
           >
-            <Chip label={`Total filas: ${importPreviewData?.totalFilas || 0}`} sx={{ justifyContent: 'flex-start' }} />
-            <Chip label={`Se crearan: ${importPreviewData?.creados || 0}`} color="success" sx={{ justifyContent: 'flex-start' }} />
-            <Chip label={`Omitidos: ${importPreviewData?.omitidos || 0}`} color="warning" sx={{ justifyContent: 'flex-start' }} />
-            <Chip label={`Errores: ${importPreviewData?.conError || 0}`} color="error" sx={{ justifyContent: 'flex-start' }} />
+            {/* Chips de resumen de importación eliminados */}
           </Box>
 
           <Typography sx={{ fontWeight: 700, mb: 1 }}>Registros a crear</Typography>
