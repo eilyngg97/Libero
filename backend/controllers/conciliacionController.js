@@ -308,38 +308,19 @@ function parseTxtRows(fileBuffer) {
     throw new Error('No se encontro encabezado en TXT (se esperaba Referencia y Monto/Credito)');
   }
 
-  const headerLine = nonEmptyRawLines[headerIndex];
-  const headerNormalized = normalizarTexto(headerLine);
-
-  const fechaStart = Math.max(0, headerNormalized.indexOf('fecha'));
-  const referenciaStart = headerNormalized.indexOf('referencia');
-  const descripcionStart = headerNormalized.indexOf('descripcion') >= 0
-    ? headerNormalized.indexOf('descripcion')
-    : (headerNormalized.indexOf('detalle') >= 0 ? headerNormalized.indexOf('detalle') : -1);
-  const montoIdxCandidate = headerNormalized.indexOf('monto');
-  const creditoIdxCandidate = headerNormalized.indexOf('credito');
-  const creditoAccIdxCandidate = headerNormalized.indexOf('crédito');
-  const montoStart = montoIdxCandidate >= 0 ? montoIdxCandidate : (creditoIdxCandidate >= 0 ? creditoIdxCandidate : creditoAccIdxCandidate);
-  const saldoStart = headerNormalized.indexOf('saldo');
-
-  if (referenciaStart < 0 || montoStart < 0) {
-    throw new Error('No se encontraron columnas requeridas en TXT: Referencia y Monto/Credito');
-  }
-
   const parsedRows = [];
   const transactionLineRegex = /^\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/;
+  const fullTxRegex = /^\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(\d{4,})\s+(.+?)\s+([+-]?\d[\d.,]*)\s+([+-]?\d[\d.,]*)\s*$/;
+  const txWithoutSaldoRegex = /^\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(\d{4,})\s+(.+?)\s+([+-]?\d[\d.,]*)\s*$/;
 
   nonEmptyRawLines.slice(headerIndex + 1).forEach((line, idx) => {
     if (!transactionLineRegex.test(line)) return;
 
-    const fechaRaw = line.slice(fechaStart, referenciaStart).trim();
-    const referenciaRaw = line.slice(referenciaStart, descripcionStart > referenciaStart ? descripcionStart : montoStart).trim();
-    const descripcionRaw = descripcionStart > referenciaStart
-      ? line.slice(descripcionStart, montoStart).trim()
-      : '';
-    const montoRaw = saldoStart > montoStart
-      ? line.slice(montoStart, saldoStart).trim()
-      : line.slice(montoStart).trim();
+    // Parseo robusto para estados de cuenta con columnas separadas por espacios variables.
+    const match = line.match(fullTxRegex) || line.match(txWithoutSaldoRegex);
+    if (!match) return;
+
+    const [, fechaRaw, referenciaRaw, descripcionRaw, montoRaw] = match;
 
     const referencia = normalizarReferencia(referenciaRaw);
     const montoBs = parseMonto(montoRaw);
