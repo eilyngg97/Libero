@@ -866,8 +866,7 @@ function AlumnoEditar({ locationState }) {
           </div>
           )}
         </fieldset>
-            {form.sinRepresentante !== true && (
-              <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+            <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <legend>Datos del Representante</legend>
                 <div className="form-row">
                   <TextField id="outlined-basic-rep-nombres" label="Nombres del representante *" name="rep_nombres" variant="outlined" value={form.rep_nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
@@ -912,7 +911,6 @@ function AlumnoEditar({ locationState }) {
                   <TextField id="outlined-basic-rep-direccion" label="Dirección del representante" name="rep_direccion" variant="outlined" value={form.rep_direccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
                 </div>
               </fieldset>
-            )}
             <button type="submit" disabled={loading} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
               {loading ? 'Guardando...' : 'Guardar cambios'}
             </button>

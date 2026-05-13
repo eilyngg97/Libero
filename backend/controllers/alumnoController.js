@@ -1812,63 +1812,113 @@ exports.updateAlumno = async (req, res) => {
     delete updateData.rep_direccion;
 
     if (hayCambiosRepresentante) {
-      const representanteObjetivoId = updateData.representante !== undefined
+      let representanteObjetivoId = updateData.representante !== undefined
         ? updateData.representante
         : alumnoActual.representante;
 
-      if (!representanteObjetivoId) {
-        return res.status(400).json({ error: 'No se puede actualizar datos de representante porque el alumno no tiene representante asociado.' });
+      let representanteActual = null;
+      if (representanteObjetivoId) {
+        representanteActual = await TenantRepresentante.findById(representanteObjetivoId);
+        if (!representanteActual) {
+          return res.status(404).json({ error: 'Representante no encontrado para actualizar sus datos.' });
+        }
       }
 
-      const representanteActual = await TenantRepresentante.findById(representanteObjetivoId);
-      if (!representanteActual) {
-        return res.status(404).json({ error: 'Representante no encontrado para actualizar sus datos.' });
-      }
-
-      const cedulaAnteriorRepresentante = String(representanteActual.cedula || '').trim();
+      const cedulaAnteriorRepresentante = representanteActual
+        ? String(representanteActual.cedula || '').trim()
+        : '';
       const cedulaNuevaRepresentante = repCedulaInput !== undefined ? repCedulaInput : cedulaAnteriorRepresentante;
-      const nombresNuevosRepresentante = repNombresInput !== undefined ? repNombresInput : String(representanteActual.nombres || '').trim();
-      const apellidosNuevosRepresentante = repApellidosInput !== undefined ? repApellidosInput : String(representanteActual.apellidos || '').trim();
+      const nombresNuevosRepresentante = repNombresInput !== undefined
+        ? repNombresInput
+        : String(representanteActual?.nombres || '').trim();
+      const apellidosNuevosRepresentante = repApellidosInput !== undefined
+        ? repApellidosInput
+        : String(representanteActual?.apellidos || '').trim();
 
       if (!cedulaNuevaRepresentante || !nombresNuevosRepresentante || !apellidosNuevosRepresentante) {
         return res.status(400).json({ error: 'Nombre, apellido y cedula del representante son obligatorios.' });
       }
 
-      if (cedulaNuevaRepresentante !== cedulaAnteriorRepresentante) {
-        const representanteDuplicado = await TenantRepresentante.findOne({
-          cedula: cedulaNuevaRepresentante,
-          _id: { $ne: representanteActual._id }
-        }).select('_id');
-
-        if (representanteDuplicado) {
-          return res.status(409).json({ error: 'Ya existe otro representante con esa cedula.' });
+      if (!representanteActual) {
+        const representanteExistente = await TenantRepresentante.findOne({ cedula: cedulaNuevaRepresentante });
+        if (representanteExistente) {
+          representanteActual = representanteExistente;
+        } else {
+          representanteActual = new TenantRepresentante({
+            nombres: nombresNuevosRepresentante,
+            apellidos: apellidosNuevosRepresentante,
+            cedula: cedulaNuevaRepresentante,
+            telefono: repTelefonoInput || undefined,
+            fecha_nacimiento: repFechaNacimientoInput || undefined,
+            correo: repCorreoInput || undefined,
+            direccion: repDireccionInput || undefined
+          });
         }
-      }
 
-      representanteActual.nombres = nombresNuevosRepresentante;
-      representanteActual.apellidos = apellidosNuevosRepresentante;
-      representanteActual.cedula = cedulaNuevaRepresentante;
-      if (repTelefonoInput !== undefined) {
-        representanteActual.telefono = repTelefonoInput;
+        if (!representanteActual.usuario && alumnoActual.usuario) {
+          representanteActual.usuario = alumnoActual.usuario;
+        }
+
+        const cedulaAnteriorParaCredenciales = alumnoActual.usuario
+          ? String(alumnoActual.cedula || '').trim()
+          : cedulaAnteriorRepresentante;
+
+        await sincronizarUsuarioPortalRepresentante({
+          representante: representanteActual,
+          cedulaAnterior: cedulaAnteriorParaCredenciales,
+          cedulaNueva: cedulaNuevaRepresentante,
+          nombres: nombresNuevosRepresentante,
+          apellidos: apellidosNuevosRepresentante,
+          UserModel: TenantUser
+        });
+
+        if (repTelefonoInput !== undefined) representanteActual.telefono = repTelefonoInput;
+        if (repFechaNacimientoInput !== undefined) representanteActual.fecha_nacimiento = repFechaNacimientoInput;
+        if (repCorreoInput !== undefined) representanteActual.correo = repCorreoInput;
+        if (repDireccionInput !== undefined) representanteActual.direccion = repDireccionInput;
+
+        await representanteActual.save();
+        updateData.representante = representanteActual._id;
+        updateData.sinRepresentante = false;
+      } else {
+        if (cedulaNuevaRepresentante !== cedulaAnteriorRepresentante) {
+          const representanteDuplicado = await TenantRepresentante.findOne({
+            cedula: cedulaNuevaRepresentante,
+            _id: { $ne: representanteActual._id }
+          }).select('_id');
+
+          if (representanteDuplicado) {
+            return res.status(409).json({ error: 'Ya existe otro representante con esa cedula.' });
+          }
+        }
+
+        representanteActual.nombres = nombresNuevosRepresentante;
+        representanteActual.apellidos = apellidosNuevosRepresentante;
+        representanteActual.cedula = cedulaNuevaRepresentante;
+        if (repTelefonoInput !== undefined) {
+          representanteActual.telefono = repTelefonoInput;
+        }
+        if (repFechaNacimientoInput !== undefined) {
+          representanteActual.fecha_nacimiento = repFechaNacimientoInput;
+        }
+        if (repCorreoInput !== undefined) {
+          representanteActual.correo = repCorreoInput;
+        }
+        if (repDireccionInput !== undefined) {
+          representanteActual.direccion = repDireccionInput;
+        }
+
+        await sincronizarUsuarioPortalRepresentante({
+          representante: representanteActual,
+          cedulaAnterior: cedulaAnteriorRepresentante,
+          cedulaNueva: cedulaNuevaRepresentante,
+          nombres: nombresNuevosRepresentante,
+          apellidos: apellidosNuevosRepresentante,
+          UserModel: TenantUser
+        });
+        await representanteActual.save();
+        updateData.sinRepresentante = false;
       }
-      if (repFechaNacimientoInput !== undefined) {
-        representanteActual.fecha_nacimiento = repFechaNacimientoInput;
-      }
-      if (repCorreoInput !== undefined) {
-        representanteActual.correo = repCorreoInput;
-      }
-      if (repDireccionInput !== undefined) {
-        representanteActual.direccion = repDireccionInput;
-      }
-      await sincronizarUsuarioPortalRepresentante({
-        representante: representanteActual,
-        cedulaAnterior: cedulaAnteriorRepresentante,
-        cedulaNueva: cedulaNuevaRepresentante,
-        nombres: nombresNuevosRepresentante,
-        apellidos: apellidosNuevosRepresentante,
-        UserModel: TenantUser
-      });
-      await representanteActual.save();
     }
 
     if (req.body.cedula !== undefined) {
