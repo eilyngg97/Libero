@@ -270,6 +270,7 @@ app.use('/api/constancias', require('./routes/constancias'));
 app.use('/api/cumpleaneros', require('./routes/cumpleaneros'));
 app.use('/api/configuracion', require('./routes/configuracion'));
 app.use('/api/uniformes', require('./routes/uniformes'));
+app.use('/api/recaudos', require('./routes/recaudos'));
 app.use('/api/aspirantes', require('./routes/aspirantes'));
 app.use('/api/landing', require('./routes/landing'));
 app.use('/api/entrenadores', require('./routes/entrenadores'));

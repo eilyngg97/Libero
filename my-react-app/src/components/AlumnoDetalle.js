@@ -35,6 +35,21 @@ function calcularEdad(fechaNacimiento) {
 
 function formatFecha(fecha) {
   if (!fecha) return "-";
+  // Si viene en formato YYYY-MM-DD, tratar como local para evitar desfase
+  if (typeof fecha === 'string') {
+    // YYYY-MM-DD
+    const soloFecha = fecha.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (soloFecha) {
+      const [, anio, mes, dia] = soloFecha;
+      return `${dia}/${mes}/${anio}`;
+    }
+    // YYYY-MM-DDTHH:mm:ss(.sss)Z (ISO UTC)
+    const isoFecha = fecha.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+    if (isoFecha) {
+      const [, anio, mes, dia] = isoFecha;
+      return `${dia}/${mes}/${anio}`;
+    }
+  }
   const date = new Date(fecha);
   if (Number.isNaN(date.getTime())) return "-";
   const dia = String(date.getDate()).padStart(2, '0');

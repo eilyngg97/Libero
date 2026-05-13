@@ -17,6 +17,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import DescriptionIcon from '@mui/icons-material/Description';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
@@ -48,6 +49,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
     options.push(
       { text: 'Sedes', icon: <LocationCityIcon />, path: '/sedes' },
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
+      { text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
       {
         text: 'Configuraciones',
@@ -70,6 +72,11 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       );
     }
   }
+
+  if (rol === 'usuario') {
+    options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
+  }
+
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });
   return options;
 }
@@ -80,7 +87,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
-  const [openConfiguraciones, setOpenConfiguraciones] = useState(true);
+  const [openConfiguraciones, setOpenConfiguraciones] = useState(false);
 
   const drawerWidth = collapsed ? 64 : 220;
 
