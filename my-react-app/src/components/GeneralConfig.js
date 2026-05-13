@@ -11,8 +11,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
-  InputAdornment,
   Paper,
   Snackbar,
   Switch,
@@ -22,9 +20,6 @@ import {
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
-import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
-import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
-import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import { mediaUrl } from '../utils/mediaUrl';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
@@ -188,20 +183,9 @@ function GeneralConfig() {
   const [constanciasConfig, setConstanciasConfig] = useState(EMPTY_CONSTANCIAS_CONFIG);
   const [expandedTemplate, setExpandedTemplate] = useState(TEMPLATE_SECTIONS[0].key);
   const [expandedRetiroSubAccordion, setExpandedRetiroSubAccordion] = useState('global');
-  const [cambiandoClave, setCambiandoClave] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({
-    clave_actual: '',
-    clave_nueva: '',
-    confirmar_clave_nueva: ''
-  });
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [showPasswords, setShowPasswords] = useState({
-    actual: false,
-    nueva: false,
-    confirmar: false
-  });
   const logoInputRef = useRef(null);
   const logosConstanciasInputRef = useRef(null);
   const logosRetiroInputRef = useRef(null);
@@ -390,10 +374,6 @@ function GeneralConfig() {
     setDragLogoActive(false);
     const file = event.dataTransfer.files?.[0];
     onSelectLogoFile(file);
-  };
-
-  const togglePasswordVisibility = (key) => {
-    setShowPasswords((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const updateConstanciasField = (field, value) => {
@@ -672,41 +652,6 @@ function GeneralConfig() {
       setError(err.message || 'No se pudo subir el logo de la academia.');
     } finally {
       setSubiendoLogo(false);
-    }
-  };
-
-  const cambiarClave = async () => {
-    const payload = {
-      clave_actual: String(passwordForm.clave_actual || '').trim(),
-      clave_nueva: String(passwordForm.clave_nueva || '').trim(),
-      confirmar_clave_nueva: String(passwordForm.confirmar_clave_nueva || '').trim()
-    };
-
-    if (!payload.clave_actual || !payload.clave_nueva || !payload.confirmar_clave_nueva) {
-      setError('Completa los campos para cambiar la clave.');
-      return;
-    }
-
-    try {
-      setCambiandoClave(true);
-      setError('');
-      const res = await fetch(`${apiBase}/api/configuracion/cambiar-clave`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || data?.detalle || 'No se pudo cambiar la clave.');
-
-      setPasswordForm({ clave_actual: '', clave_nueva: '', confirmar_clave_nueva: '' });
-      setSuccessMessage(data?.message || 'Clave actualizada correctamente.');
-    } catch (err) {
-      setError(err.message || 'No se pudo cambiar la clave.');
-    } finally {
-      setCambiandoClave(false);
     }
   };
 
@@ -1399,87 +1344,6 @@ function GeneralConfig() {
             </Box>
           </>
         )}
-      </Paper>
-
-      <Paper sx={sectionCardSx}>
-        <Box sx={sectionHeaderSx}>
-          <Box sx={sectionIconWrapSx}>
-            <SecurityOutlinedIcon sx={{ fontSize: 22 }} />
-          </Box>
-          <Box>
-            <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Seguridad de usuario</Typography>
-            <Typography sx={{ color: '#637086', fontSize: 13 }}>
-              Cambia la clave de tu usuario para proteger el acceso a la academia.
-            </Typography>
-          </Box>
-        </Box>
-
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.5, mb: 2.4 }}>
-          <TextField
-            label="Clave actual"
-            type={showPasswords.actual ? 'text' : 'password'}
-            size="small"
-            value={passwordForm.clave_actual}
-            onChange={(e) => setPasswordForm((prev) => ({ ...prev, clave_actual: e.target.value }))}
-            InputLabelProps={{ shrink: true }}
-            sx={fieldLabelSx}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => togglePasswordVisibility('actual')} edge="end" sx={{ color: '#b4bdc9' }}>
-                    {showPasswords.actual ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-                  </IconButton>
-                </InputAdornment>
-              )
-            }}
-          />
-          <TextField
-            label="Nueva clave"
-            type={showPasswords.nueva ? 'text' : 'password'}
-            size="small"
-            value={passwordForm.clave_nueva}
-            onChange={(e) => setPasswordForm((prev) => ({ ...prev, clave_nueva: e.target.value }))}
-            InputLabelProps={{ shrink: true }}
-            sx={fieldLabelSx}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => togglePasswordVisibility('nueva')} edge="end" sx={{ color: '#b4bdc9' }}>
-                    {showPasswords.nueva ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-                  </IconButton>
-                </InputAdornment>
-              )
-            }}
-          />
-          <TextField
-            label="Confirmar nueva clave"
-            type={showPasswords.confirmar ? 'text' : 'password'}
-            size="small"
-            value={passwordForm.confirmar_clave_nueva}
-            onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmar_clave_nueva: e.target.value }))}
-            InputLabelProps={{ shrink: true }}
-            sx={fieldLabelSx}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => togglePasswordVisibility('confirmar')} edge="end" sx={{ color: '#b4bdc9' }}>
-                    {showPasswords.confirmar ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-                  </IconButton>
-                </InputAdornment>
-              )
-            }}
-          />
-        </Box>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              onClick={cambiarClave}
-              disabled={cambiandoClave}
-              sx={orangeButtonSx}
-            >
-              {cambiandoClave ? 'Actualizando clave...' : 'Cambiar clave'}
-            </Button>
-        </Box>
       </Paper>
 
       <Dialog

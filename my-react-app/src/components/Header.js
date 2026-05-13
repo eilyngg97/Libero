@@ -9,6 +9,7 @@ import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 
@@ -22,7 +23,7 @@ function Header({ titulo, onMenuClick }) {
   } catch (e) {
     usuario = null;
   }
-  console.log('usuario localStorage:', usuario);
+  const esAdmin = String(usuario?.rol || '').toLowerCase() === 'admin';
 
   const userInitials = String(usuario?.nombre || 'Usuario')
     .trim()
@@ -37,6 +38,11 @@ function Header({ titulo, onMenuClick }) {
   };
   const handleMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleGoToProfile = () => {
+    setAnchorEl(null);
+    navigate('/mi-perfil');
   };
 
   const handleLogout = () => {
@@ -78,6 +84,12 @@ function Header({ titulo, onMenuClick }) {
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             PaperProps={{ sx: { mt: 1, minWidth: 140 } }}
           >
+            {esAdmin && (
+              <MenuItem onClick={handleGoToProfile} sx={{ gap: 1 }}>
+                <PersonOutlineIcon fontSize="small" />
+                Mi perfil
+              </MenuItem>
+            )}
             <MenuItem onClick={handleLogout}>Cerrar sesión</MenuItem>
           </Menu>
         </Box>
