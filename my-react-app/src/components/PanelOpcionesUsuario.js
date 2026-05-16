@@ -11,7 +11,7 @@ import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { mediaUrl } from '../utils/mediaUrl';
-import TerminosPendientesAlert from './TerminosPendientesAlert';
+import TerminosPendientesAlert from './TerminosPendientesAlert.js';
 
 function PanelOpcionesUsuario() {
    const location = useLocation();

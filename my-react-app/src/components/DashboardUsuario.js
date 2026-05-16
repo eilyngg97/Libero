@@ -3,7 +3,7 @@ import { Button, Card, CardActions, CardContent, Typography, Avatar, Grid, Box }
 import { useNavigate } from 'react-router-dom';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { mediaUrl } from '../utils/mediaUrl';
-import TerminosPendientesAlert from './TerminosPendientesAlert';
+import TerminosPendientesAlert from './TerminosPendientesAlert.js';
 
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
