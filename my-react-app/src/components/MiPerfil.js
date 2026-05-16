@@ -17,6 +17,8 @@ import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import SupportAgentOutlinedIcon from '@mui/icons-material/SupportAgentOutlined';
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import EastIcon from '@mui/icons-material/East';
 import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 
@@ -275,320 +277,303 @@ function MiPerfil() {
   };
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', px: { xs: 0, md: 0 }, pb: 2 }}>
-      <Typography sx={{ fontSize: { xs: 24, md: 30 }, fontWeight: 900, color: '#0f172a', mb: 0.5 }}>
-        Mi perfil
-      </Typography>
-      <Typography sx={{ color: '#475569', mb: 2.5 }}>
-        Revisa los datos de tu cuenta y actualiza tu clave de acceso.
-      </Typography>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-      )}
-      {successMessage && (
-        <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>
-      )}
-
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 8fr) minmax(0, 4fr)' }, gap: 2.2, mb: 2.2, alignItems: 'stretch' }}>
-        <Paper sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: '0 10px 24px rgba(15, 23, 42, 0.06)' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Avatar sx={{ width: 56, height: 56, bgcolor: '#0f172a', color: '#fff', fontWeight: 800 }}>
-              {userInitials}
-            </Avatar>
-            <Box>
-              <Typography sx={{ fontWeight: 800, color: '#0f172a', lineHeight: 1.2 }}>
-                {usuario?.nombre || 'Usuario'}
-              </Typography>
-              <Typography sx={{ color: '#64748b', fontSize: 14 }}>
-                Rol: {usuario?.rol || '-'}
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5 }}>
-            <TextField
-              label="Nombre"
-              size="small"
-              value={usuario?.nombre || ''}
-              disabled
-            />
-            <TextField
-              label="Correo"
-              size="small"
-              value={usuario?.email || ''}
-              disabled
-            />
-          </Box>
-        </Paper>
-
-        <Paper sx={{ p: 2.2, borderRadius: 3, border: '1px solid #dbe5f4', background: 'linear-gradient(145deg, #f8fbff 0%, #eef6ff 100%)' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1, mb: 1.3 }}>
-            <Box sx={{ width: 34, height: 34, borderRadius: '10px', backgroundColor: '#dbeafe', color: '#1d4ed8', display: 'grid', placeItems: 'center' }}>
-              <Groups2OutlinedIcon sx={{ fontSize: 20 }} />
-            </Box>
-            <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>Total de alumnos</Typography>
-          </Box>
-
-          <Typography sx={{ fontSize: 34, lineHeight: 1.05, fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em' }}>
-            {cargandoTotalAlumnos ? '...' : totalAlumnos}
-          </Typography>
-          <Typography sx={{ mt: 0.7, color: '#475569', fontSize: 13 }}>
-            Alumnos activos registrados en la academia.
-          </Typography>
-          {!!totalAlumnosError && (
-            <Typography sx={{ mt: 0.7, color: '#b91c1c', fontSize: 12, fontWeight: 600 }}>
-              {totalAlumnosError}
-            </Typography>
-          )}
-        </Paper>
-      </Box>
-
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 8fr) minmax(0, 4fr)' }, gap: 2.2, alignItems: 'start', mb: 2.2 }}>
-        <Paper sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: '0 10px 24px rgba(15, 23, 42, 0.06)', overflow: 'hidden' }}>
-          <Tabs
-            value={seccionActiva}
-            onChange={(_, value) => setSeccionActiva(value)}
-            variant="fullWidth"
-            TabIndicatorProps={{ style: { height: 3, backgroundColor: '#0f172a' } }}
-            sx={{
-              minHeight: 52,
-              bgcolor: '#f8fafc',
-              '& .MuiTab-root': {
-                minHeight: 52,
-                textTransform: 'none',
-                fontWeight: 700,
-                color: '#64748b'
-              },
-              '& .Mui-selected': {
-                color: '#0f172a'
-              }
-            }}
-          >
-            <Tab
-              value="facturacion"
-              label="Facturacion"
-              icon={<ReceiptLongOutlinedIcon fontSize="small" />}
-              iconPosition="start"
-            />
-            <Tab
-              value="seguridad"
-              label="Seguridad"
-              icon={<SecurityOutlinedIcon fontSize="small" />}
-              iconPosition="start"
-            />
-          </Tabs>
-        </Paper>
-
-        <Box sx={{ display: { xs: 'none', md: 'block' } }} />
-      </Box>
-
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 8fr) minmax(0, 4fr)' }, gap: 2.2, alignItems: 'start' }}>
-        <Box>
-          {seccionActiva === 'facturacion' && (
-          <Paper sx={{ overflow: 'hidden', borderRadius: 3, border: '1px solid #d7c1b2', boxShadow: `0 14px 30px ${solvenciaAccent.ring}` }}>
-            <Box sx={{ height: 7, background: solvenciaAccent.bar }} />
-            <Box sx={{ px: 2.2, py: 1.8, backgroundColor: '#10163d', color: '#fff' }}>
-              <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.85 }}>
-                Suscripción actual
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, mt: 0.45 }}>
+    <Box sx={{ maxWidth: 1200, mx: 'auto', px: { xs: 2, md: 3 }, py: { xs: 2, md: 4 } }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '10fr 2fr' }, gap: 3, alignItems: 'start' }}>
+        
+        {/* LEFT COLUMN - BIG CARD */}
+        <Paper sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', overflow: 'hidden' }}>
+          
+          {/* HEADER SECTION */}
+          <Box sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0' }}>
+             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Avatar sx={{ width: 64, height: 64, bgcolor: '#0f172a', color: '#fff', fontSize: 24, fontWeight: 800 }}>
+                  {userInitials}
+                </Avatar>
                 <Box>
-                  <Typography sx={{ fontSize: 24, fontWeight: 900, lineHeight: 1.1 }}>
-                    {cargandoPerfilAcademia ? 'Cargando...' : resumenAcademia.plan || 'Plan no configurado'}
+                  <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 20, lineHeight: 1.2 }}>
+                    {usuario?.nombre || 'Administrador'}
                   </Typography>
-                  <Box sx={{ mt: 0.8, display: 'inline-flex' }}>
-                    <Chip
-                      label={solvenciaLabel.toUpperCase()}
-                      size="small"
-                      sx={{
-                        height: 28,
-                        fontWeight: 900,
-                        letterSpacing: '0.08em',
-                        textTransform: 'uppercase',
-                        color: solvenciaAccent.chipText,
-                        backgroundColor: solvenciaAccent.chipBg,
-                        border: `1px solid ${solvenciaAccent.bar}`,
-                        boxShadow: `0 8px 18px ${solvenciaAccent.ring}`,
-                        '& .MuiChip-label': {
-                          px: 1.1,
-                          fontSize: 11,
-                        }
-                      }}
-                    />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                    <Chip label={(usuario?.rol || 'ADMIN').toUpperCase()} size="small" sx={{ height: 20, fontSize: 11, fontWeight: 800, bgcolor: '#f1f5f9', color: '#0f172a', borderRadius: 1 }} />
+                    <Typography sx={{ color: '#64748b', fontSize: 13, ml: 1 }}>
+                      {usuario?.email || 'admin@dux.com'}
+                    </Typography>
                   </Box>
                 </Box>
-                <Box sx={{ width: 34, height: 34, borderRadius: '999px', border: '1px solid rgba(255,255,255,0.35)', display: 'grid', placeItems: 'center', opacity: 0.95, flexShrink: 0 }}>
-                  <ReceiptLongOutlinedIcon sx={{ fontSize: 18 }} />
+             </Box>
+             <Button variant="outlined" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', color: '#475569', borderRadius: 2 }}>
+               Editar perfil
+             </Button>
+          </Box>
+
+          {/* TABS SECTION */}
+          <Box sx={{ px: 3, borderBottom: '1px solid #e2e8f0' }}>
+             <Tabs
+              value={seccionActiva}
+              onChange={(_, value) => setSeccionActiva(value)}
+              TabIndicatorProps={{ style: { height: 3, backgroundColor: '#0f172a' } }}
+              sx={{
+                minHeight: 48,
+                '& .MuiTab-root': {
+                  minHeight: 48,
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  color: '#64748b',
+                  px: 1,
+                  mr: 3
+                },
+                '& .Mui-selected': {
+                  color: '#0f172a'
+                }
+              }}
+            >
+              <Tab
+                value="facturacion"
+                label="Facturación"
+                icon={<ReceiptLongOutlinedIcon fontSize="small" sx={{ mr: 0.5, mb: '0 !important' }} />}
+                iconPosition="start"
+              />
+              <Tab
+                value="seguridad"
+                label="Seguridad"
+                icon={<SecurityOutlinedIcon fontSize="small" sx={{ mr: 0.5, mb: '0 !important' }} />}
+                iconPosition="start"
+              />
+            </Tabs>
+          </Box>
+
+          {/* CONTENT SECTION */}
+          <Box sx={{ p: 3 }}>
+            {seccionActiva === 'facturacion' && (
+              <Box>
+                {/* DARK SUBSCRIPTION CARD */}
+                <Box sx={{ bgcolor: '#0f172a', background: 'linear-gradient(to right, #0f172a, #1e1b4b)', color: '#fff', borderRadius: 3, p: 3, position: 'relative', overflow: 'hidden' }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', color: '#94a3b8', textTransform: 'uppercase', mb: 1.5 }}>
+                      Suscripción actual
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+                       <Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                            <Typography sx={{ fontSize: 32, fontWeight: 900 }}>
+                              {cargandoPerfilAcademia ? '...' : (resumenAcademia.plan || 'Plan Pro')}
+                            </Typography>
+                            <Chip 
+                              label={solvenciaLabel.toUpperCase()} 
+                              size="small"
+                              sx={{
+                                height: 26, fontSize: 11, fontWeight: 800, bgcolor: solvenciaAccent.chipBg, color: solvenciaAccent.chipText, borderRadius: 2
+                              }}
+                            />
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: '#cbd5e1', fontSize: 14, fontWeight: 600 }}>
+                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography sx={{ fontWeight: 600 }}>$</Typography>
+                                <Typography>{cargandoPerfilAcademia ? '...' : `${resumenAcademia.costoPlan || '49.99'} USD / mes`}</Typography>
+                             </Box>
+                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography component="span" sx={{ fontSize: 15, mr: 0.5 }}>🗓</Typography>
+                                <Typography>Próximo cobro: {cargandoPerfilAcademia ? '...' : formatDateValue(resumenAcademia.proximoPago)}</Typography>
+                             </Box>
+                          </Box>
+                       </Box>
+
+                       <Button variant="outlined" sx={{ textTransform: 'none', fontWeight: 700, borderColor: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: 2, '&:hover': { borderColor: 'rgba(255,255,255,0.4)', bgcolor: 'rgba(255,255,255,0.05)' } }}>
+                         Cambiar plan
+                       </Button>
+                    </Box>
+                </Box>
+
+                {/* DATOS DE PAGO SECTION */}
+                <Box sx={{ mt: 4 }}>
+                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                      <Typography component="span" sx={{ fontSize: 18 }}>🏦</Typography>
+                      <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 16 }}>Datos para el pago</Typography>
+                   </Box>
+                   <Typography sx={{ color: '#64748b', fontSize: 14, mb: 3 }}>
+                     Realiza el depósito o transferencia a esta cuenta.
+                   </Typography>
+
+                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
+                      {/* BANCAMIGA BOX */}
+                      <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                         <Box>
+                            <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', mb: 0.5, letterSpacing: '0.05em' }}>BANCO</Typography>
+                            <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>BANCAMIGA</Typography>
+                         </Box>
+                         <Button size="small" sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
+                           <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> Copiar
+                         </Button>
+                      </Box>
+                      {/* CEDULA BOX */}
+                      <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                         <Box>
+                            <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', mb: 0.5, letterSpacing: '0.05em' }}>CÉDULA</Typography>
+                            <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>25894044</Typography>
+                         </Box>
+                         <Button size="small" sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
+                           <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> Copiar
+                         </Button>
+                      </Box>
+                      {/* TELEFONO BOX */}
+                      <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                         <Box>
+                            <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', mb: 0.5, letterSpacing: '0.05em' }}>TELÉFONO</Typography>
+                            <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>0412-5163627</Typography>
+                         </Box>
+                         <Button size="small" sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
+                           <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> Copiar
+                         </Button>
+                      </Box>
+                   </Box>
+
+                   {/* INSTRUCCIONES BOX */}
+                   <Box sx={{ p: 2.5, borderRadius: 3, border: '1px dashed #cbd5e1', bgcolor: '#f8fafc' }}>
+                      <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 14, mb: 0.5 }}>
+                        Una vez realizado el pago...
+                      </Typography>
+                      <Typography sx={{ color: '#475569', fontSize: 14, mb: 2 }}>
+                        Envíanos el comprobante por cualquiera de estos canales para validar tu pago y mantener tu academia activa.
+                      </Typography>
+
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
+                         <Button variant="contained" sx={{ bgcolor: '#22c55e', '&:hover': { bgcolor: '#16a34a' }, textTransform: 'none', fontWeight: 700, borderRadius: 2, boxShadow: 'none', px: 2, py: 1 }}>
+                           <WhatsAppIcon sx={{ mr: 1, fontSize: 18 }} />
+                           WhatsApp soporte: 0412-5163627
+                         </Button>
+                         <Button variant="outlined" sx={{ textTransform: 'none', fontWeight: 700, color: '#475569', borderColor: '#e2e8f0', bgcolor: '#fff', borderRadius: 2, px: 2, py: 1, '&:hover':{bgcolor:'#f8fafc'} }}>
+                           <EmailOutlinedIcon sx={{ mr: 1, fontSize: 18, color: '#64748b' }} />
+                           apexsistema2026@gmail.com
+                         </Button>
+                      </Box>
+                   </Box>
+
                 </Box>
               </Box>
-            </Box>
+            )}
 
-            <Box sx={{ px: 2.2, py: 2, backgroundColor: '#fff' }}>
-              {perfilAcademiaError && (
-                <Alert severity="warning" sx={{ mb: 2 }}>{perfilAcademiaError}</Alert>
-              )}
-
-              <Box sx={{ display: 'grid', gap: 1.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1.5 }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 700 }}>Costo mensual</Typography>
-                  <Typography sx={{ color: '#1f2937', fontSize: 18, fontWeight: 900 }}>
-                    {cargandoPerfilAcademia ? '...' : formatUsd(resumenAcademia.costoPlan)}
-                  </Typography>
+            {seccionActiva === 'seguridad' && (
+              <Box>
+                <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Seguridad de usuario</Typography>
+                <Typography sx={{ color: '#637086', fontSize: 14, mb: 3 }}>Cambia tu clave para proteger el acceso a la academia.</Typography>
+                
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
+                   <TextField
+                    label="Clave actual"
+                    type={showPasswords.actual ? 'text' : 'password'}
+                    size="small"
+                    value={passwordForm.clave_actual}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, clave_actual: e.target.value }))}
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={() => togglePasswordVisibility('actual')} edge="end">
+                            {showPasswords.actual ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
+                          </IconButton>
+                        </InputAdornment>
+                      )
+                    }}
+                  />
+                  <TextField
+                    label="Nueva clave"
+                    type={showPasswords.nueva ? 'text' : 'password'}
+                    size="small"
+                    value={passwordForm.clave_nueva}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, clave_nueva: e.target.value }))}
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={() => togglePasswordVisibility('nueva')} edge="end">
+                            {showPasswords.nueva ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
+                          </IconButton>
+                        </InputAdornment>
+                      )
+                    }}
+                  />
+                  <TextField
+                    label="Confirmar nueva clave"
+                    type={showPasswords.confirmar ? 'text' : 'password'}
+                    size="small"
+                    value={passwordForm.confirmar_clave_nueva}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmar_clave_nueva: e.target.value }))}
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={() => togglePasswordVisibility('confirmar')} edge="end">
+                            {showPasswords.confirmar ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
+                          </IconButton>
+                        </InputAdornment>
+                      )
+                    }}
+                  />
                 </Box>
-
-                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1.5 }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 700 }}>Siguiente cobro</Typography>
-                  <Typography sx={{ color: '#1f2937', fontSize: 16, fontWeight: 800 }}>
-                    {cargandoPerfilAcademia ? '...' : formatDateValue(resumenAcademia.proximoPago)}
-                  </Typography>
-                </Box>
-              </Box>
-
-              <Divider sx={{ my: 2, borderColor: '#edd7cb' }} />
-
-              <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: '#8a5a45', textTransform: 'uppercase', mb: 1.4 }}>
-                Datos del pago
-              </Typography>
-
-              <Box sx={{ display: 'grid', gap: 1.2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 700 }}>BANCO</Typography>
-                  <Typography sx={{ color: '#1f2937', fontSize: 14, fontWeight: 800, textAlign: 'right' }}>
-                    BANCAMIGA
-                  </Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 700 }}>CEDULA</Typography>
-                  <Typography sx={{ color: '#1f2937', fontSize: 14, fontWeight: 700, textAlign: 'right' }}>
-                    25894044
-                  </Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 700 }}>TELEFONO</Typography>
-                  <Typography sx={{ color: '#1f2937', fontSize: 14, fontWeight: 700, textAlign: 'right' }}>
-                    0412-5163627
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mt: 0.4, borderTop: '1px solid #edd7cb', pt: 1.4 }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 700, mb: 0.6 }}>Instrucciones</Typography>
-                  <Typography sx={{ color: '#4a4f55', fontSize: 14, fontWeight: 600, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
-                    {resumenAcademia.pagos?.deposito_usd?.instrucciones || 'Una vez realizado el pago, por favor envíanos el comprobante a nuestro correo/whatsapp de soporte para validar tu pago y mantener tu academia activa.'}
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Paper>
-          )}
-
-          {seccionActiva === 'seguridad' && (
-          <Paper sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: '0 10px 24px rgba(15, 23, 42, 0.06)' }}>
-            <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>
-              Seguridad de usuario
-            </Typography>
-            <Typography sx={{ color: '#637086', fontSize: 13, mb: 2 }}>
-              Cambia tu clave para proteger el acceso a la academia.
-            </Typography>
-
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.5, mb: 2 }}>
-              <TextField
-                label="Clave actual"
-                type={showPasswords.actual ? 'text' : 'password'}
-                size="small"
-                value={passwordForm.clave_actual}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, clave_actual: e.target.value }))}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton size="small" onClick={() => togglePasswordVisibility('actual')} edge="end" sx={{ color: '#64748b' }}>
-                        {showPasswords.actual ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-                      </IconButton>
-                    </InputAdornment>
-                  )
-                }}
-              />
-              <TextField
-                label="Nueva clave"
-                type={showPasswords.nueva ? 'text' : 'password'}
-                size="small"
-                value={passwordForm.clave_nueva}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, clave_nueva: e.target.value }))}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton size="small" onClick={() => togglePasswordVisibility('nueva')} edge="end" sx={{ color: '#64748b' }}>
-                        {showPasswords.nueva ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-                      </IconButton>
-                    </InputAdornment>
-                  )
-                }}
-              />
-              <TextField
-                label="Confirmar nueva clave"
-                type={showPasswords.confirmar ? 'text' : 'password'}
-                size="small"
-                value={passwordForm.confirmar_clave_nueva}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmar_clave_nueva: e.target.value }))}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton size="small" onClick={() => togglePasswordVisibility('confirmar')} edge="end" sx={{ color: '#64748b' }}>
-                        {showPasswords.confirmar ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-                      </IconButton>
-                    </InputAdornment>
-                  )
-                }}
-              />
-            </Box>
-
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                variant="contained"
-                onClick={cambiarClave}
-                disabled={cambiandoClave}
-                sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#0f172a', '&:hover': { bgcolor: '#111b31' } }}
-              >
-                {cambiandoClave ? 'Actualizando clave...' : 'Cambiar clave'}
-              </Button>
-            </Box>
-          </Paper>
-          )}
-        </Box>
-
-        <Box sx={{ display: 'grid', gap: 1.6 }}>
-          <Paper sx={{ p: 2.2, borderRadius: 3, border: '1px solid #f0c8bb', background: '#f8f7f8' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1, mb: 1.2 }}>
-              <SupportAgentOutlinedIcon sx={{ fontSize: 20, color: '#10163d' }} />
-              <Typography sx={{ fontWeight: 800, color: '#1f2937' }}>
-                Necesitas ayuda?
-              </Typography>
-            </Box>
-            <Typography sx={{ color: '#6b7280', fontSize: 15, lineHeight: 1.45, mb: 1.2 }}>
-              Nuestro equipo de soporte especializado está disponible para resolver tus dudas técnicas o de facturación.
-            </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Button
-                  variant="text"
-                  onClick={() => { window.location.href = 'mailto:apexsistema2026@gmail.com?subject=Soporte%20Apex%20-%20Facturacion'; }}
-                  sx={{
-                    p: 0,
-                    minWidth: 0,
-                    textTransform: 'none',
-                    fontWeight: 800,
-                    color: '#10163d',
-                    '&:hover': { backgroundColor: 'transparent', color: '#10163d' }
-                  }}
-                  endIcon={<EastIcon />}
-                >
-                  Soporte
+                <Button variant="contained" onClick={cambiarClave} disabled={cambiandoClave} sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#0f172a', borderRadius: 2 }}>
+                   {cambiandoClave ? 'Actualizando...' : 'Cambiar clave'}
                 </Button>
-                <Typography sx={{ color: '#10163d', fontWeight: 700, fontSize: 14, userSelect: 'all', ml: 1 }}>
-                  apexsistema2026@gmail.com
-                </Typography>
               </Box>
+            )}
+          </Box>
+        </Paper>
+
+        {/* RIGHT COLUMN - TWO CARDS */}
+        <Box sx={{ display: 'grid', gap: 3 }}>
+          {/* TOTAL ALUMNOS CARD */}
+          <Paper sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', p: 3, pb: 0, display: 'flex', flexDirection: 'column' }}>
+             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+                <Box sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                   <Groups2OutlinedIcon sx={{ color: '#0f172a', fontSize: 20 }} />
+                </Box>
+                <Typography sx={{ fontWeight: 700, color: '#334155', fontSize: 13 }}>
+                  Total de alumnos
+                </Typography>
+             </Box>
+             
+             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                <Typography sx={{ fontSize: 44, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>
+                  {cargandoTotalAlumnos ? '...' : totalAlumnos}
+                </Typography>
+             </Box>
+             <Typography sx={{ color: '#64748b', fontSize: 12, mb: 2 }}>
+                Alumnos activos registrados en la academia
+             </Typography>
+             
+             {/* Fake chart placeholder matches mockup visual */}
+             <Box sx={{ position: 'relative', height: 40, mt: 'auto', mx: -3 }}>
+                <svg viewBox="0 0 100 20" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
+                   <defs>
+                     <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+                       <stop offset="0%" stopColor="#cbd5e1" stopOpacity="0.4" />
+                       <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+                     </linearGradient>
+                   </defs>
+                   <path d="M 0,20 L 0,16 Q 10,15 20,16 Q 30,13 40,14 Q 50,11 60,12 L 80,7 L 90,8 L 100,5 L 100,20 Z" fill="url(#grad)" />
+                   <path d="M 0,16 Q 10,15 20,16 Q 30,13 40,14 Q 50,11 60,12 L 80,7 L 90,8 L 100,5" fill="none" stroke="#334155" strokeWidth="1" strokeLinejoin="round" />
+                </svg>
+             </Box>
+          </Paper>
+
+          {/* SOPORTE CARD */}
+          <Paper sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', p: 3 }}>
+             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                <Typography sx={{ fontSize: 18, color: '#d97706' }}>❓</Typography>
+                <Typography sx={{ fontWeight: 700, color: '#334155', fontSize: 13 }}>
+                  ¿Necesitas ayuda?
+                </Typography>
+             </Box>
+             <Typography sx={{ color: '#475569', fontSize: 13, lineHeight: 1.5, mb: 3 }}>
+               Nuestro equipo de soporte está disponible para resolver tus dudas técnicas o de facturación.
+             </Typography>
+
+             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Button variant="outlined" sx={{ textTransform: 'none', justifyContent: 'flex-start', color: '#0f172a', borderColor: '#f1f5f9', borderRadius: 2, fontWeight: 700, py: 1, px: 2, bgcolor: '#fafafa', '&:hover': { bgcolor: '#f1f5f9', borderColor: '#e2e8f0' } }}>
+                 <EmailOutlinedIcon sx={{ mr: 1.5, fontSize: 16, color: '#64748b' }} />
+                   <Typography sx={{fontSize: 13, fontWeight: 700}}>apexsistema2026@gmail.com</Typography>
+                </Button>
+                <Button variant="outlined" sx={{ textTransform: 'none', justifyContent: 'flex-start', color: '#0f172a', borderColor: '#f1f5f9', borderRadius: 2, fontWeight: 700, py: 1, px: 2, bgcolor: '#fafafa', '&:hover': { bgcolor: '#f1f5f9', borderColor: '#e2e8f0' } }}>
+                 <WhatsAppIcon sx={{ mr: 1.5, fontSize: 16, color: '#22c55e' }} />
+                   <Typography sx={{fontSize: 13, fontWeight: 700}}>WhatsApp soporte: 0412-5163627</Typography>
+                </Button>
+             </Box>
           </Paper>
         </Box>
       </Box>
