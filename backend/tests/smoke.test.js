@@ -592,6 +592,75 @@ describe('Backend smoke tests', () => {
     );
   });
 
+  test('PUT /api/alumnos/:id recalcula mensualidades exonerado y becado al cambiar monto personalizado', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    Alumno.findById.mockReturnValueOnce({
+      select: jest.fn().mockResolvedValue({
+        _id: 'a1',
+        categoria: 'SUB10',
+        numero_franela: null,
+        nombres: 'Diego',
+        apellidos: 'Rojas',
+        cedula: '12345678',
+        usuario: null,
+        representante: null
+      })
+    });
+
+    Alumno.findByIdAndUpdate.mockResolvedValue({
+      _id: 'a1',
+      tipo_mensualidad: 'monto_personalizado',
+      monto_personalizado_valor: 150
+    });
+
+    const mensualidadExonerada = {
+      _id: 'm-ex',
+      id_alumno: { _id: 'a1', tipo_mensualidad: 'monto_personalizado' },
+      estatus: 'Exonerado',
+      fecha_vencimiento: new Date('2026-05-20T00:00:00.000Z'),
+      credito_aplicado: 0,
+      ajuste_extraordinario: 0,
+      recargo_aplicado_usd: 0,
+      monto_esperado: 100,
+      saldo_a_favor_generado: 0,
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadBecada = {
+      _id: 'm-be',
+      id_alumno: { _id: 'a1', tipo_mensualidad: 'monto_personalizado' },
+      estatus: 'Becado',
+      fecha_vencimiento: new Date('2026-05-20T00:00:00.000Z'),
+      credito_aplicado: 0,
+      ajuste_extraordinario: 0,
+      recargo_aplicado_usd: 0,
+      monto_esperado: 100,
+      saldo_a_favor_generado: 0,
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    Mensualidad.find.mockResolvedValue([mensualidadExonerada, mensualidadBecada]);
+    PagoDetalle.find.mockResolvedValue([]);
+
+    const response = await request(app)
+      .put('/api/alumnos/a1')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        tipo_mensualidad: 'monto_personalizado',
+        monto_personalizado_valor: 150
+      });
+
+    expect(response.status).toBe(200);
+    expect(Mensualidad.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id_alumno: 'a1'
+      })
+    );
+    expect(mensualidadExonerada.monto_esperado).toBe(150);
+    expect(mensualidadBecada.monto_esperado).toBe(150);
+  });
+
   test('POST /api/mensualidades/primera pagado crea pago detalle automatico', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 

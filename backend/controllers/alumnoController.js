@@ -2155,10 +2155,19 @@ exports.updateAlumno = async (req, res) => {
         Sede: TenantSede
       });
 
-      const mensualidadesPendientes = await TenantMensualidad.find({
-        id_alumno: alumno._id,
-        estatus: { $in: ['Pendiente', 'Insolvente', 'Retrasado'] }
+      const mensualidadesAlumno = await TenantMensualidad.find({
+        id_alumno: alumno._id
       });
+      const estatusRecalculables = new Set([
+        'pendiente',
+        'insolvente',
+        'retrasado',
+        'exonerado',
+        'becado'
+      ]);
+      const mensualidadesPendientes = mensualidadesAlumno.filter((mensualidad) =>
+        estatusRecalculables.has(normalizarEstatusTexto(mensualidad?.estatus))
+      );
 
       for (const mensualidad of mensualidadesPendientes) {
         const creditoAplicado = redondearMonto(mensualidad.credito_aplicado || 0);
