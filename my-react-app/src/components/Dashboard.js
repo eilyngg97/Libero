@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
-import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList } from 'recharts';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import CakeIcon from '@mui/icons-material/Cake';
@@ -14,7 +14,7 @@ import { exportToExcel } from '../utils/exportExcel';
 import { mediaUrl } from '../utils/mediaUrl';
 
 function Dashboard() {
-  const chartFillColors = ['#0B0F2A', '#d92b73'];
+  const chartFillColors = ['#e64b9b', '#f28a3f', '#8b72e8', '#40b8ce'];
   const mesActual = new Date().getMonth() + 1;
   const apiBase = process.env.REACT_APP_API_URL || '';
   const { setSedeSeleccionada } = useSede();
@@ -30,6 +30,7 @@ function Dashboard() {
   const [dolaresLoading, setDolaresLoading] = useState(false);
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [nuevosAlumnosMes, setNuevosAlumnosMes] = useState(0);
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActual);
   const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(mesActual);
   const [mesRevisionSeleccionado, setMesRevisionSeleccionado] = useState(mesActual);
@@ -145,6 +146,40 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     };
     fetchAlumnosCount();
   }, []);
+
+  useEffect(() => {
+    const fetchNuevosAlumnosMes = async () => {
+      try {
+        const res = await fetchConSesion(`${apiBase}/api/alumnos`);
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data)) {
+          setNuevosAlumnosMes(0);
+          return;
+        }
+
+        const ahora = new Date();
+        const mesActualLocal = ahora.getMonth();
+        const anioActualLocal = ahora.getFullYear();
+
+        const total = data.reduce((acc, alumno) => {
+          if (alumno?.activo === false) return acc;
+          const fechaCreacion = alumno?.createdAt ? new Date(alumno.createdAt) : null;
+          if (!fechaCreacion || Number.isNaN(fechaCreacion.getTime())) return acc;
+          if (fechaCreacion.getMonth() === mesActualLocal && fechaCreacion.getFullYear() === anioActualLocal) {
+            return acc + 1;
+          }
+          return acc;
+        }, 0);
+
+        setNuevosAlumnosMes(total);
+      } catch {
+        setNuevosAlumnosMes(0);
+      }
+    };
+
+    fetchNuevosAlumnosMes();
+  }, [apiBase]);
+
   useEffect(() => {
     const fetchResumenMensualidades = async () => {
       setResumenLoading(true);
@@ -248,6 +283,11 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
+  };
+
+  const formatMontoBarra = (value) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '$0';
+    return `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
   const formatFechaNacimiento = (iso) => {
@@ -431,62 +471,73 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     .sort((a, b) => b.enRevision - a.enRevision);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
+  const totalAlumnos = Object.values(alumnosPorSede).reduce((acc, val) => acc + (Number(val) || 0), 0);
+  const totalIngresosMes = (dolaresPagadosPorSede.sedes || []).reduce(
+    (acc, sede) => acc + Number(sede.monto_pagado || 0),
+    0
+  );
+  const variacionAlumnosReal = `+${nuevosAlumnosMes} este mes`;
 
   return (
     <div className="dashboard-container">
       <div className="dashboard-header-row">
-          <h2>Bienvenido al Dashboard</h2>
-        <div className="dashboard-card small-card kpi-card kpi-students">
-          <div className="kpi-content">
-            <div className="kpi-icon-wrap">
-              <GroupIcon className="kpi-icon" />
-            </div>
-            <div className="kpi-copy">
-              <h3 className="kpi-title">Total de alumnos</h3>
-              <div className="kpi-value">
-                {Object.values(alumnosPorSede).reduce((acc, val) => acc + (Number(val) || 0), 0)}
-              </div>
-              <div className="kpi-subtext">
-                Total en la academia
-              </div>
-            </div>
-          </div>
+        <div className="dashboard-header-copy">
+          <h2>Bienvenido, Admin</h2>
+          <p>Resumen de la actividad en tu academia · Mayo {new Date().getFullYear()}</p>
         </div>
-        <div className="dashboard-card small-card kpi-card kpi-dollar">
-          <div className="kpi-content">
-            <div className="kpi-icon-wrap">
-              <AttachMoneyIcon className="kpi-icon" />
-            </div>
-            <div className="kpi-copy">
-              <h3 className="kpi-title">Tasa del dólar BCV</h3>
-              {dolarLoading && <div className="kpi-state">Cargando...</div>}
-              {dolarError && <div className="kpi-state kpi-state-error">No disponible</div>}
-              {!dolarLoading && !dolarError && (
-                <>
-                  <div className="kpi-value">
-                    {formatDolar(dolar?.promedio)}
-                  </div>
-                  <div className="kpi-subtext">
-                    Actualizado: {formatFecha(dolar?.fechaActualizacion)}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div>
         <button
-            type="button"
-            className="dashboard-export-btn"
-            onClick={handleExportExcel}
-            disabled={exportLoading}
-          >
-            {exportLoading ? 'Exportando...' : 'Exportar nomina completa'}
-          </button>
+          type="button"
+          className="dashboard-export-btn"
+          onClick={handleExportExcel}
+          disabled={exportLoading}
+        >
+          {exportLoading ? 'Exportando...' : 'Exportar nómina completa'}
+        </button>
       </div>
       <div className="dashboard-quick-access">
         <div className="dashboard-left">
+          <div className="dashboard-kpis-inline-row">
+            <div className="dashboard-kpi-inline-card">
+              <div className="dashboard-kpi-inline-top">
+                <div className="dashboard-kpi-inline-icon dashboard-kpi-inline-icon-blue">
+                  <GroupIcon sx={{ fontSize: 16 }} />
+                </div>
+                <span className="dashboard-kpi-inline-change">{variacionAlumnosReal}</span>
+              </div>
+              <div className="dashboard-kpi-inline-label">Total de alumnos</div>
+              <div className="dashboard-kpi-inline-value">{totalAlumnos}</div>
+              <div className="dashboard-kpi-inline-sub">Activos en la academia</div>
+            </div>
+
+            <div className="dashboard-kpi-inline-card">
+              <div className="dashboard-kpi-inline-top">
+                <div className="dashboard-kpi-inline-icon dashboard-kpi-inline-icon-green">
+                  <AttachMoneyIcon sx={{ fontSize: 16 }} />
+                </div>
+              </div>
+              <div className="dashboard-kpi-inline-label">Tasa del dólar BCV</div>
+              {dolarLoading && <div className="dashboard-kpi-inline-loading">Cargando...</div>}
+              {dolarError && <div className="dashboard-kpi-inline-loading">No disponible</div>}
+              {!dolarLoading && !dolarError && (
+                <>
+                  <div className="dashboard-kpi-inline-value">Bs. {formatDolar(dolar?.promedio)}</div>
+                  <div className="dashboard-kpi-inline-sub">Actualizado hoy, 00:00</div>
+                </>
+              )}
+            </div>
+
+            <div className="dashboard-kpi-inline-card">
+              <div className="dashboard-kpi-inline-top">
+                <div className="dashboard-kpi-inline-icon dashboard-kpi-inline-icon-orange">
+                  <AttachMoneyIcon sx={{ fontSize: 16 }} />
+                </div>
+              </div>
+              <div className="dashboard-kpi-inline-label">Ingresos del mes</div>
+              <div className="dashboard-kpi-inline-value">${formatMontoBarra(totalIngresosMes).replace('$', '')}</div>
+              <div className="dashboard-kpi-inline-sub">USD recaudados en mayo</div>
+            </div>
+          </div>
+
           <div className="dashboard-top-grid">
             <div className="dashboard-card sedes-panel sedes-panel-card sedes-panel-compact">
               <div className="sedes-header">
@@ -519,7 +570,13 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
             <div className="dashboard-card pagos-sede-panel">
               <div className="pagos-sede-header">
-                <h3>Dólares pagados por sede</h3>
+                <div className="pagos-sede-title-wrap">
+                  <div className="pagos-sede-title-icon">$</div>
+                  <div className="pagos-sede-title-block">
+                    <h3>Dólares pagados por sede</h3>
+                    <span className="pagos-sede-subtitle">Comparativa de ingresos por ubicación</span>
+                  </div>
+                </div>
                 <select
                   className="pagos-sede-anio-select"
                   value={mesGraficaSeleccionado}
@@ -546,16 +603,27 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                         sedeNombre: sede.sedeNombre,
                         monto_pagado: Number(sede.monto_pagado || 0)
                       }))}
-                      margin={{ top: 8, right: 12, left: 8, bottom: 32 }}
+                      margin={{ top: 26, right: 12, left: 8, bottom: 32 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <XAxis dataKey="sedeNombre" tick={{ fontSize: 11, fill: '#64748b' }} angle={-15} textAnchor="end" interval={0} height={60} />
-                      <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: '#64748b' }}
+                        domain={[0, (dataMax) => Math.max(10, Math.ceil(Number(dataMax || 0) * 1.15))]}
+                      />
                       <Tooltip
                         formatter={(value) => [`$${formatMoney(value)}`, 'Pagado']}
                         labelFormatter={(label) => `Sede: ${label}`}
                       />
                       <Bar dataKey="monto_pagado" radius={[6, 6, 0, 0]}>
+                        <LabelList
+                          dataKey="monto_pagado"
+                          position="top"
+                          formatter={formatMontoBarra}
+                          fill="#374151"
+                          fontSize={12}
+                          fontWeight={700}
+                        />
                         {dolaresPagadosPorSede.sedes.map((_, index) => (
                           <Cell key={`bar-fill-${index}`} fill={chartFillColors[index % chartFillColors.length]} />
                         ))}
@@ -686,7 +754,10 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 ))}
               </div>
             )}
-            <span className="revision-total-badge">Total {totalEnRevision}</span>
+            <div className="revision-total-row">
+              <span className="revision-total-label">Total en revisión:</span>
+              <span className="revision-total-badge">{totalEnRevision}</span>
+            </div>
             <button
               type="button"
               className="revision-cta-btn"

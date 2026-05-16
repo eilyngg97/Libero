@@ -12,6 +12,7 @@ const TenantConfig = require('../models/TenantConfig');
 const LandingAtletaFoto = require('../models/LandingAtletaFoto');
 const Entrenador = require('../models/Entrenador');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
+const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
 
 const modelSchemaMap = {
   User: User.schema,
@@ -27,7 +28,8 @@ const modelSchemaMap = {
   TenantConfig: TenantConfig.schema,
   LandingAtletaFoto: LandingAtletaFoto.schema,
   Entrenador: Entrenador.schema,
-  HistorialEstadoAlumno: HistorialEstadoAlumno.schema
+  HistorialEstadoAlumno: HistorialEstadoAlumno.schema,
+  ConstanciaSolicitud: ConstanciaSolicitud.schema
 };
 
 function getTenantModel(connection, modelName) {

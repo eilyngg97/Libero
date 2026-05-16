@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Button, TextField, MenuItem, Select, InputLabel, FormControl, CircularProgress, Typography, Paper, Autocomplete, Chip } from '@mui/material';
+import { Box, Button, TextField, MenuItem, Select, InputLabel, FormControl, CircularProgress, Typography, Paper, Autocomplete, Chip, Alert, Divider } from '@mui/material';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useLocation } from 'react-router-dom';
@@ -61,6 +61,11 @@ function Constancias() {
   const [eventoHoraHasta, setEventoHoraHasta] = useState('');
   const [eventoMotivo, setEventoMotivo] = useState('amistoso');
   const [asistenciaTiempo, setAsistenciaTiempo] = useState('pasado');
+  const [tenantId, setTenantId] = useState('');
+  const [solicitudes, setSolicitudes] = useState([]);
+  const [loadingSolicitudes, setLoadingSolicitudes] = useState(false);
+  const [requestSuccess, setRequestSuccess] = useState('');
+  const [requestError, setRequestError] = useState('');
   const alumnosOptions = React.useMemo(() => (Array.isArray(alumnos) ? alumnos : []), [alumnos]);
   const alumnosListadoValue = React.useMemo(
     () => (Array.isArray(selectedAlumnosListado) ? selectedAlumnosListado : []),
@@ -79,7 +84,40 @@ function Constancias() {
   React.useEffect(() => {
     const rolLS = localStorage.getItem('rol');
     if (rolLS) setRol(rolLS);
+    const tenantIdLS = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
+    setTenantId(tenantIdLS);
   }, []);
+
+  const token = localStorage.getItem('token');
+  const isEsportaUserRequestMode = rol === 'usuario' && tenantId === 'esporta';
+
+  const fetchMisSolicitudes = React.useCallback(async () => {
+    if (!isEsportaUserRequestMode || !alumnoId) {
+      setSolicitudes([]);
+      return;
+    }
+
+    try {
+      setLoadingSolicitudes(true);
+      const params = new URLSearchParams();
+      params.set('alumnoId', alumnoId);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/constancias/solicitudes/mias?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || 'No se pudieron cargar tus solicitudes.');
+      setSolicitudes(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setRequestError(err.message || 'No se pudieron cargar tus solicitudes.');
+      setSolicitudes([]);
+    } finally {
+      setLoadingSolicitudes(false);
+    }
+  }, [alumnoId, isEsportaUserRequestMode, token]);
+
+  React.useEffect(() => {
+    fetchMisSolicitudes();
+  }, [fetchMisSolicitudes]);
 
   React.useEffect(() => {
     if (rol === 'admin') {
@@ -198,37 +236,69 @@ function Constancias() {
     e.preventDefault();
     setLoading(true);
     setPdfUrl(null);
+    setRequestSuccess('');
+    setRequestError('');
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/constancias`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          alumnoId: tipo === 'listado_alumnos' ? (selectedAlumnosListado[0]?._id || '') : alumnoId,
-          alumnoIds: tipo === 'listado_alumnos' ? selectedAlumnosListado.map((alumno) => alumno._id) : [],
-          tipo,
-          fechaEmision,
-          asistenciaPara: tipo === 'asistencia' ? asistenciaPara : 'atleta',
-          eventoFecha: tipo === 'asistencia' ? eventoFecha : '',
-          eventoHoraDesde: tipo === 'asistencia' ? eventoHoraDesde : '',
-          eventoHoraHasta: tipo === 'asistencia' ? eventoHoraHasta : '',
-          eventoMotivo: tipo === 'asistencia' ? eventoMotivo : '',
-          asistenciaTiempo: tipo === 'asistencia' ? asistenciaTiempo : 'pasado',
-          diasEntrenamiento: tipo === 'horario_entrenamiento' ? diasEntrenamiento : [],
-          horaInicio: tipo === 'horario_entrenamiento' ? horaInicioEntrenamiento : '',
-          horaFin: tipo === 'horario_entrenamiento' ? horaFinEntrenamiento : ''
-        })
-      });
-      if (!res.ok) {
+      const bodyPayload = {
+        alumnoId: tipo === 'listado_alumnos' ? (selectedAlumnosListado[0]?._id || '') : alumnoId,
+        alumnoIds: tipo === 'listado_alumnos' ? selectedAlumnosListado.map((alumno) => alumno._id) : [],
+        tipo,
+        fechaEmision,
+        asistenciaPara: tipo === 'asistencia' ? asistenciaPara : 'atleta',
+        eventoFecha: tipo === 'asistencia' ? eventoFecha : '',
+        eventoHoraDesde: tipo === 'asistencia' ? eventoHoraDesde : '',
+        eventoHoraHasta: tipo === 'asistencia' ? eventoHoraHasta : '',
+        eventoMotivo: tipo === 'asistencia' ? eventoMotivo : '',
+        asistenciaTiempo: tipo === 'asistencia' ? asistenciaTiempo : 'pasado',
+        diasEntrenamiento: tipo === 'horario_entrenamiento' ? diasEntrenamiento : [],
+        horaInicio: tipo === 'horario_entrenamiento' ? horaInicioEntrenamiento : '',
+        horaFin: tipo === 'horario_entrenamiento' ? horaFinEntrenamiento : ''
+      };
+
+      if (isEsportaUserRequestMode) {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/constancias/solicitudes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(bodyPayload)
+        });
         const payload = await res.json().catch(() => ({}));
-        throw new Error(payload?.error || payload?.detalle || 'Error generando constancia');
+        if (!res.ok) {
+          throw new Error(payload?.error || payload?.detalle || 'Error enviando solicitud de constancia');
+        }
+        setRequestSuccess('Solicitud enviada al administrador. Te notificaremos cuando esté lista.');
+        await fetchMisSolicitudes();
+      } else {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/constancias`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(bodyPayload)
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload?.error || payload?.detalle || 'Error generando constancia');
+        }
+        const blob = await res.blob();
+        setPdfUrl(URL.createObjectURL(blob));
       }
-      const blob = await res.blob();
-      setPdfUrl(URL.createObjectURL(blob));
     } catch (err) {
-      alert(err.message);
+      setRequestError(err.message || 'No se pudo procesar la solicitud.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const estadoSolicitudLabel = (estado = '') => {
+    if (estado === 'pendiente') return 'Pendiente';
+    if (estado === 'en_revision') return 'En revision';
+    if (estado === 'completada') return 'Completada';
+    if (estado === 'rechazada') return 'Rechazada';
+    return estado || '-';
   };
 
   return (
@@ -254,6 +324,21 @@ function Constancias() {
             </Typography>
           </Box>
           <form onSubmit={handleSubmit}>
+            {isEsportaUserRequestMode && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                En Esporta, los usuarios no descargan constancias directamente. Aqui puedes armarla y enviarla como solicitud al administrador.
+              </Alert>
+            )}
+            {requestSuccess && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {requestSuccess}
+              </Alert>
+            )}
+            {requestError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {requestError}
+              </Alert>
+            )}
             {rol === 'admin' ? (
               <FormControl fullWidth margin="normal">
                 {tipo === 'listado_alumnos' ? (
@@ -346,12 +431,7 @@ function Constancias() {
                   />
                 )}
               </FormControl>
-            ) : (
-              <Box my={2}>
-                <Typography variant="subtitle1"><b>Alumno:</b> {selectedAlumno ? `${selectedAlumno.nombres} ${selectedAlumno.apellidos}` : ''}</Typography>
-                <Typography variant="subtitle2"><b>Cédula:</b> {selectedAlumno ? selectedAlumno.cedula : ''}</Typography>
-              </Box>
-            )}
+            ) : null}
             {selectedAlumno && tipo !== 'listado_alumnos' && (
               <Box my={2} p={2} bgcolor="#f8fafc" borderRadius={2} border="1px solid #e2e8f0">
                 <Typography variant="subtitle1"><b>Nombre:</b> {selectedAlumno.nombres} {selectedAlumno.apellidos}</Typography>
@@ -541,15 +621,66 @@ function Constancias() {
                 fullWidth
                 sx={{ bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' }, fontWeight: 700, borderRadius: 2, py: 1.2 }}
               >
-                {loading ? <CircularProgress size={24} color="inherit" /> : 'Generar PDF'}
+                {loading ? <CircularProgress size={24} color="inherit" /> : (isEsportaUserRequestMode ? 'Enviar solicitud' : 'Generar PDF')}
               </Button>
             </Box>
             <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: '#94a3b8', mt: 1 }}>
-              Una vez generado, puede descargarlo o visualizarlo en el siguiente recuadro.
+              {isEsportaUserRequestMode
+                ? 'Tu solicitud se enviara al administrador con todos los datos editables de la constancia.'
+                : 'Una vez generado, puede descargarlo o visualizarlo en el siguiente recuadro.'}
             </Typography>
           </form>
         </Paper>
-        {pdfUrl && (
+        {isEsportaUserRequestMode && (
+          <Paper
+            elevation={0}
+            sx={{
+              mt: 2,
+              p: { xs: 2, md: 2.5 },
+              borderRadius: 3,
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)'
+            }}
+          >
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0f172a', mb: 1 }}>
+              Mis solicitudes recientes
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#64748b', mb: 1.5 }}>
+              Revisa aqui el estado de las ultimas solicitudes enviadas al administrador.
+            </Typography>
+            <Divider sx={{ mb: 1.5 }} />
+            {loadingSolicitudes ? (
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Cargando solicitudes...</Typography>
+            ) : solicitudes.length === 0 ? (
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Aun no tienes solicitudes registradas.</Typography>
+            ) : (
+              <Box sx={{ display: 'grid', gap: 1 }}>
+                {solicitudes.slice(0, 6).map((solicitud) => (
+                  <Paper key={solicitud._id} elevation={0} sx={{ p: 1.2, border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 700 }}>
+                        {tipos.find((item) => item.value === solicitud.tipo)?.label || solicitud.tipo}
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={estadoSolicitudLabel(solicitud.estado)}
+                        sx={{
+                          bgcolor: solicitud.estado === 'completada' ? '#dcfce7' : solicitud.estado === 'rechazada' ? '#fee2e2' : '#e2e8f0',
+                          color: solicitud.estado === 'completada' ? '#166534' : solicitud.estado === 'rechazada' ? '#b91c1c' : '#334155',
+                          fontWeight: 700
+                        }}
+                      />
+                    </Box>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                      Solicitud creada: {new Date(solicitud.createdAt).toLocaleString('es-VE')}
+                    </Typography>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </Paper>
+        )}
+        {pdfUrl && !isEsportaUserRequestMode && (
           <Paper
             elevation={0}
             sx={{
