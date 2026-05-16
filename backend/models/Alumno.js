@@ -43,6 +43,15 @@ const AlumnoSchema = new mongoose.Schema({
   tipo_mensualidad: { type: String, enum: ['monto_sede', 'monto_personalizado', 'beca_completa'], default: 'monto_sede' },
   monto_personalizado_valor: { type: Number },
   sinRepresentante: { type: Boolean, default: false },
+  requisitos_recaudos_estado: {
+    type: [{
+      requisito: { type: String, trim: true, required: true },
+      cumplido: { type: Boolean, default: false },
+      updated_at: { type: Date },
+      updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }],
+    default: []
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Alumno', AlumnoSchema);

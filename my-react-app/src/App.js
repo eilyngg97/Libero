@@ -34,6 +34,7 @@ import ConciliacionBancaria from './components/ConciliacionBancaria';
 import Estadisticas from './components/Estadisticas';
 import MiPerfil from './components/MiPerfil';
 import Recaudos from './components/Recaudos';
+import TerminosCondiciones from './components/TerminosCondiciones';
 
 import { SedeProvider, useSede } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
@@ -386,6 +387,7 @@ function App() {
                           <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
                           <Route path="recaudos" element={<ProtectedRoute allowedRoles={adminAndUser}><Recaudos /></ProtectedRoute>} />
+                          <Route path="terminos-condiciones" element={<ProtectedRoute allowedRoles={adminAndUser}><TerminosCondiciones /></ProtectedRoute>} />
                         </Routes>
                       </main>
                     </div>

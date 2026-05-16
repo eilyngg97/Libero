@@ -2,11 +2,15 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button, TextField, Typography, Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle } from '@mui/material';
 import { OPCIONES_MENSUALIDAD } from './Alumnos';
+import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useSede } from '../context/SedeContext';
 import { mediaUrl } from '../utils/mediaUrl';
 import { getCategoriaPorFechaNacimiento, CATEGORIAS_DISPONIBLES } from '../utils/categoria';
 import './Alumnos.css';
+import { Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+
 const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado'];
 const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
@@ -27,6 +31,7 @@ function AlumnoEditar({ locationState }) {
     dia_limite_personalizado: '',
     etiquetas: [],
   });
+  const [requisitosBaseAcademia, setRequisitosBaseAcademia] = useState([]);
   const [preview, setPreview] = useState(null);
   const [previewCedula, setPreviewCedula] = useState(null);
   const [fotoFile, setFotoFile] = useState(null);
@@ -386,7 +391,7 @@ function AlumnoEditar({ locationState }) {
           try {
             const errText = await res.text();
             if (errText) errorMsg = errText;
-          } catch {}
+          } catch { }
         }
         throw new Error(errorMsg);
       }
@@ -402,8 +407,34 @@ function AlumnoEditar({ locationState }) {
     }
   };
 
+  // Traer requisitos base de la academia seleccionada
+  useEffect(() => {
+    const fetchRequisitosAcademia = async () => {
+      try {
+        const url = `${process.env.REACT_APP_API_URL}/api/recaudos/requisitos`;
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        if (!res.ok) throw new Error('No se pudo obtener requisitos de la academia');
+        const data = await res.json();
+        console.log('Requisitos base de la academia:', data?.requisitos);
+        setRequisitosBaseAcademia(Array.isArray(data?.requisitos) ? data.requisitos : []);
+      } catch (err) {
+        setRequisitosBaseAcademia([]);
+      }
+    };
+    fetchRequisitosAcademia();
+  }, [token]);
+
   if (loading) return <Typography>Cargando...</Typography>;
   if (error) return <Typography color="error">{error}</Typography>;
+
+  // Combina los requisitos base con los del alumno
+  const estadoAlumno = form.requisitos_recaudos_estado || [];
+  const checklist = requisitosBaseAcademia.map(nombre => {
+    const estado = estadoAlumno.find(r => r.requisito === nombre);
+    return { nombre, cumplido: estado ? estado.cumplido : false };
+  });
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', py: { xs: 2, md: 3 } }}>
@@ -530,6 +561,25 @@ function AlumnoEditar({ locationState }) {
               </Box>
             </Paper>
 
+            {localStorage.getItem('rol') === 'usuario' && (
+              <Accordion
+                sx={{
+                  borderRadius: 1,
+                  boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)',
+                  mb: 2,
+                  '&:before': { display: 'none' },
+                  overflow: 'hidden'
+                }}
+              >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography sx={{ fontWeight: 600, color: '#94a3b8', letterSpacing: '0.04em' }}>Requisitos de la Academia</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <RequisitosCard checklist={checklist} />
+                </AccordionDetails>
+              </Accordion>
+            )}
+
             {localStorage.getItem('rol') === 'admin' && (
               <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -613,304 +663,311 @@ function AlumnoEditar({ locationState }) {
             }}
           >
             <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
-          <legend>Datos del Alumno</legend>
-          <div className="form-row">
-            <TextField
-              id="outlined-basic-fecha-inscripcion"
-              label="Fecha de inscripción *"
-              name="fecha_inscripcion"
-              type="date"
-              variant="outlined"
-              value={form.fecha_inscripcion || ''}
-              onChange={handleChange}
-              fullWidth
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              sx={{ my: 1 }}
-              disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
-            />
-            <TextField
-              id="outlined-basic-fecha-inicio-cobro"
-              label="Fecha de inicio de cobro *"
-              name="fecha_inicio_cobro"
-              type="date"
-              variant="outlined"
-              value={form.fecha_inicio_cobro || ''}
-              onChange={handleChange}
-              fullWidth
-              size="small"
-              InputLabelProps={{ shrink: true }}
-              sx={{ my: 1 }}
-              disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
-            />
-          </div>
-          <div className="form-row">
-            <TextField id="outlined-basic-fecha-nacimiento" label="Fecha de nacimiento" name="fecha_nacimiento" type="date" variant="outlined" value={form.fecha_nacimiento || ''} onChange={handleChange} fullWidth size="small" InputLabelProps={{ shrink: true }} sx={{ my: 1 }} />
-            <FormControl fullWidth size="small" sx={{ my: 1 }}>
-              <InputLabel id="sexo-editar-label">Sexo *</InputLabel>
-              <Select
-                labelId="sexo-editar-label"
-                id="select-sexo-editar"
-                name="sexo"
-                value={form.sexo || ''}
-                label="Sexo *"
-                onChange={handleChange}
-              >
-                <MenuItem value=""><em>Seleccionar</em></MenuItem>
-                {SEXOS.map((sexo) => (
-                  <MenuItem key={sexo} value={sexo}>{sexo}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </div>
-          
-          <div className="form-row">
-            <TextField id="outlined-basic-nombres" label="Nombres *" name="nombres" variant="outlined" value={form.nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-            <TextField id="outlined-basic-apellidos" label="Apellidos *" name="apellidos" variant="outlined" value={form.apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-          </div>
-
-          <div className="form-row">
-            <FormControl fullWidth size="small" sx={{ my: 1 }}>
-              <InputLabel id="categoria-editar-label">{esAdmin ? 'Categoría' : 'Categoría asignada'}</InputLabel>
-              <Select
-                labelId="categoria-editar-label"
-                id="select-categoria-editar"
-                name="categoria"
-                value={form.categoria || categoria || ''}
-                label={esAdmin ? 'Categoría' : 'Categoría asignada'}
-                onChange={handleChange}
-                disabled={!esAdmin}
-              >
-                {CATEGORIAS_DISPONIBLES.map((cat) => (
-                  <MenuItem key={cat} value={cat}>{cat}</MenuItem>
-                ))}
-                {!!(form.categoria || categoria) && !CATEGORIAS_DISPONIBLES.includes(form.categoria || categoria) && (
-                  <MenuItem value={form.categoria || categoria}>{form.categoria || categoria}</MenuItem>
-                )}
-              </Select>
-              <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
-                {esAdmin ? 'Se asigna automáticamente, pero puedes ajustarla.' : 'Se asigna automáticamente'}
-              </Typography>
-            </FormControl>
-            <FormControl fullWidth size="small" sx={{ my: 1 }}>
-              <InputLabel id="division-editar-label">División</InputLabel>
-              <Select
-                labelId="division-editar-label"
-                id="select-division-editar"
-                name="division"
-                value={form.division || ''}
-                label="División"
-                onChange={handleChange}
-                disabled={!esAdmin}
-              >
-                <MenuItem value=""><em>Seleccionar</em></MenuItem>
-                {DIVISIONES.map((division) => (
-                  <MenuItem key={division} value={division}>{division}</MenuItem>
-                ))}
-              </Select>
-              <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
-                Solo administrador puede editar este campo.
-              </Typography>
-            </FormControl>
-          </div>
-          
-          <div className="form-row">
-            <TextField
-              id="outlined-basic-numero-franela"
-              label="Nro de franela"
-              name="numero_franela"
-              select
-              variant="outlined"
-              value={form.numero_franela || ''}
-              onChange={handleChange}
-              fullWidth
-              size="small"
-              sx={{ my: 1 }}
-              disabled={!categoria || numeroFranelaCheckLoading}
-              error={numeroFranelaDuplicado}
-              helperText={
-                numeroFranelaDuplicado
-                  ? numeroFranelaCheckMsg
-                  : (numeroFranelaCheckLoading
-                    ? 'Verificando disponibilidad por categoria...'
-                    : (!categoria
-                      ? 'Selecciona fecha de nacimiento para definir categoria'
-                      : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
-              }
-            >
-              <MenuItem value=""><em>Sin asignar</em></MenuItem>
-              {numerosFranelaDisponibles.map((nro) => (
-                <MenuItem key={nro} value={String(nro)}>{nro}</MenuItem>
-              ))}
-            </TextField>
-            <TextField id="outlined-basic-cedula" label="Cédula" name="cedula" variant="outlined" value={form.cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-          </div>
-          <div className="form-row">
-            <FormControl fullWidth sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}>
-              <InputLabel id="monto-personalizado-label">Tipo de monto mensualidad</InputLabel>
-              <Select
-                labelId="monto-personalizado-label"
-                id="select-monto-personalizado"
-                name="tipo_mensualidad"
-                value={form.tipo_mensualidad || 'monto_sede'}
-                label="Tipo de monto mensualidad"
-                onChange={handleChange}
-              >
-                {OPCIONES_MENSUALIDAD.map(op => (
-                  <MenuItem key={op.id} value={op.id}>{op.label}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <FormControl fullWidth required style={{ minWidth: 180, marginRight: 8 }} sx={{ my: 1 }}>
-                              <InputLabel id="sede-label">Sede *</InputLabel>
-                <Select
-                  labelId="sede-label"
-                  id="sede"
-                  name="sede"
-                  value={form.sede?.nombre || ''}
-                  label="Sede"
-                  disabled
-                  renderValue={(value) => typeof value === 'object' ? value.nombre : value}
-                >
-                  {form.sede?.nombre && <MenuItem value={form.sede.nombre}>{form.sede.nombre}</MenuItem>}
-                </Select>
-            </FormControl>
-          </div>
-          {form.tipo_mensualidad === 'monto_personalizado' && (
-            <div className="form-row">
-              <TextField
-                id="input-monto-personalizado"
-                label="Monto personalizado"
-                name="monto_personalizado_valor"
-                type="number"
-                variant="outlined"
-                value={form.monto_personalizado_valor || ''}
-                onChange={handleChange}
-                fullWidth
-                size="small"
-                sx={{ mt: 1 }}
-                disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
-              />
-              <Box sx={{ my: 1 }} />
-            </div>
-          )}
-          {debeMostrarAvisoRecalculoMensualidades && (
-            <Alert severity="info" sx={{ mt: 1, mb: 1.5, borderRadius: 2 }}>
-              Al guardar, se recalcularan las mensualidades del alumno que esten en Pendiente, Insolvente o Retrasado usando la configuracion de monto actual.
-            </Alert>
-          )}
-          <div className="form-row">
-            <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-            <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-          </div>
-          <div className="form-row">
-            <TextField id="outlined-basic-peso" label="Peso" name="peso" variant="outlined" value={form.peso || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
-            <TextField id="outlined-basic-talla" label="Talla" name="talla" variant="outlined" value={form.talla || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
-          </div>
-          <div className="form-row">
-            <TextField id="outlined-basic-proyeccion" label="Proyección" name="proyeccion" variant="outlined" value={form.proyeccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'} />
-            <TextField id="outlined-basic-alcance" label="Alcance" name="alcance" variant="outlined" value={form.alcance || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
-          </div>
-          <div className="form-row">
-            <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
-            <FormControl fullWidth size="small" sx={{ my: 1 }}>
-              <InputLabel id="tipo-sangre-label">Tipo de sangre</InputLabel>
-              <Select
-                labelId="tipo-sangre-label"
-                id="select-tipo-sangre"
-                name="tipo_sangre"
-                value={form.tipo_sangre || ''}
-                label="Tipo de sangre"
-                onChange={handleChange}
-              >
-                <MenuItem value=""><em>Seleccionar</em></MenuItem>
-                {TIPOS_SANGRE.map((tipo) => (
-                  <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
-                ))}
-                {form.tipo_sangre && !TIPOS_SANGRE.includes(form.tipo_sangre) && (
-                  <MenuItem value={form.tipo_sangre}>{form.tipo_sangre}</MenuItem>
-                )}
-              </Select>
-            </FormControl>
-          </div>
-          <div className="form-row">
-           <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-            <TextField id="outlined-basic-alergias" label="Alergias" name="alergias" variant="outlined" value={form.alergias || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
-          </div>
-          {localStorage.getItem('rol') === 'admin' && (
-          <div className="form-row">
-            <TextField id="outlined-basic-observaciones" label="Observaciones" name="observaciones" variant="outlined" value={form.observaciones || ''} onChange={handleChange} fullWidth size="small" multiline minRows={2} sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}/>
-            <Autocomplete
-              multiple
-              freeSolo
-              options={[]}
-              value={form.etiquetas || []}
-              onChange={(event, newValue) => {
-                setForm(prev => ({ ...prev, etiquetas: newValue }));
-              }}
-              disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
-              sx={{ width: '100%' }}
-              renderInput={(params) => (
+              <legend>Datos del Alumno</legend>
+              <div className="form-row">
                 <TextField
-                  {...params}
-                  label="Etiquetas"
-                  placeholder="Escribe y presiona Enter"
+                  id="outlined-basic-fecha-inscripcion"
+                  label="Fecha de inscripción *"
+                  name="fecha_inscripcion"
+                  type="date"
                   variant="outlined"
+                  value={form.fecha_inscripcion || ''}
+                  onChange={handleChange}
                   fullWidth
                   size="small"
-                  multiline
-                  sx={{ my: 2 }}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ my: 1 }}
+                  disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
                 />
-              )}
-            />
-          </div>
-          )}
-        </fieldset>
-            <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
-                <legend>Datos del Representante</legend>
+                <TextField
+                  id="outlined-basic-fecha-inicio-cobro"
+                  label="Fecha de inicio de cobro *"
+                  name="fecha_inicio_cobro"
+                  type="date"
+                  variant="outlined"
+                  value={form.fecha_inicio_cobro || ''}
+                  onChange={handleChange}
+                  fullWidth
+                  size="small"
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ my: 1 }}
+                  disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                />
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-fecha-nacimiento" label="Fecha de nacimiento" name="fecha_nacimiento" type="date" variant="outlined" value={form.fecha_nacimiento || ''} onChange={handleChange} fullWidth size="small" InputLabelProps={{ shrink: true }} sx={{ my: 1 }} />
+                <FormControl fullWidth size="small" sx={{ my: 1 }}>
+                  <InputLabel id="sexo-editar-label">Sexo *</InputLabel>
+                  <Select
+                    labelId="sexo-editar-label"
+                    id="select-sexo-editar"
+                    name="sexo"
+                    value={form.sexo || ''}
+                    label="Sexo *"
+                    onChange={handleChange}
+                  >
+                    <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                    {SEXOS.map((sexo) => (
+                      <MenuItem key={sexo} value={sexo}>{sexo}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </div>
+
+              <div className="form-row">
+                <TextField id="outlined-basic-nombres" label="Nombres *" name="nombres" variant="outlined" value={form.nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <TextField id="outlined-basic-apellidos" label="Apellidos *" name="apellidos" variant="outlined" value={form.apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+              </div>
+
+              <div className="form-row">
+                <FormControl fullWidth size="small" sx={{ my: 1 }}>
+                  <InputLabel id="categoria-editar-label">{esAdmin ? 'Categoría' : 'Categoría asignada'}</InputLabel>
+                  <Select
+                    labelId="categoria-editar-label"
+                    id="select-categoria-editar"
+                    name="categoria"
+                    value={form.categoria || categoria || ''}
+                    label={esAdmin ? 'Categoría' : 'Categoría asignada'}
+                    onChange={handleChange}
+                    disabled={!esAdmin}
+                  >
+                    {CATEGORIAS_DISPONIBLES.map((cat) => (
+                      <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                    ))}
+                    {!!(form.categoria || categoria) && !CATEGORIAS_DISPONIBLES.includes(form.categoria || categoria) && (
+                      <MenuItem value={form.categoria || categoria}>{form.categoria || categoria}</MenuItem>
+                    )}
+                  </Select>
+                  <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
+                    {esAdmin ? 'Se asigna automáticamente, pero puedes ajustarla.' : 'Se asigna automáticamente'}
+                  </Typography>
+                </FormControl>
+                <FormControl fullWidth size="small" sx={{ my: 1 }}>
+                  <InputLabel id="division-editar-label">División</InputLabel>
+                  <Select
+                    labelId="division-editar-label"
+                    id="select-division-editar"
+                    name="division"
+                    value={form.division || ''}
+                    label="División"
+                    onChange={handleChange}
+                    disabled={!esAdmin}
+                  >
+                    <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                    {DIVISIONES.map((division) => (
+                      <MenuItem key={division} value={division}>{division}</MenuItem>
+                    ))}
+                  </Select>
+                  <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
+                    Solo administrador puede editar este campo.
+                  </Typography>
+                </FormControl>
+              </div>
+
+              <div className="form-row">
+                <TextField
+                  id="outlined-basic-numero-franela"
+                  label="Nro de franela"
+                  name="numero_franela"
+                  select
+                  variant="outlined"
+                  value={form.numero_franela || ''}
+                  onChange={handleChange}
+                  fullWidth
+                  size="small"
+                  sx={{ my: 1 }}
+                  disabled={!categoria || numeroFranelaCheckLoading}
+                  error={numeroFranelaDuplicado}
+                  helperText={
+                    numeroFranelaDuplicado
+                      ? numeroFranelaCheckMsg
+                      : (numeroFranelaCheckLoading
+                        ? 'Verificando disponibilidad por categoria...'
+                        : (!categoria
+                          ? 'Selecciona fecha de nacimiento para definir categoria'
+                          : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
+                  }
+                >
+                  <MenuItem value=""><em>Sin asignar</em></MenuItem>
+                  {numerosFranelaDisponibles.map((nro) => (
+                    <MenuItem key={nro} value={String(nro)}>{nro}</MenuItem>
+                  ))}
+                </TextField>
+                <TextField id="outlined-basic-cedula" label="Cédula" name="cedula" variant="outlined" value={form.cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+              </div>
+              <div className="form-row">
+                <FormControl fullWidth sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                >
+                  <InputLabel id="monto-personalizado-label">Tipo de monto mensualidad</InputLabel>
+                  <Select
+                    labelId="monto-personalizado-label"
+                    id="select-monto-personalizado"
+                    name="tipo_mensualidad"
+                    value={form.tipo_mensualidad || 'monto_sede'}
+                    label="Tipo de monto mensualidad"
+                    onChange={handleChange}
+                  >
+                    {OPCIONES_MENSUALIDAD.map(op => (
+                      <MenuItem key={op.id} value={op.id}>{op.label}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth required style={{ minWidth: 180, marginRight: 8 }} sx={{ my: 1 }}>
+                  <InputLabel id="sede-label">Sede *</InputLabel>
+                  <Select
+                    labelId="sede-label"
+                    id="sede"
+                    name="sede"
+                    value={form.sede?.nombre || ''}
+                    label="Sede"
+                    disabled
+                    renderValue={(value) => typeof value === 'object' ? value.nombre : value}
+                  >
+                    {form.sede?.nombre && <MenuItem value={form.sede.nombre}>{form.sede.nombre}</MenuItem>}
+                  </Select>
+                </FormControl>
+              </div>
+              {form.tipo_mensualidad === 'monto_personalizado' && (
                 <div className="form-row">
-                  <TextField id="outlined-basic-rep-nombres" label="Nombres del representante *" name="rep_nombres" variant="outlined" value={form.rep_nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-                  <TextField id="outlined-basic-rep-apellidos" label="Apellidos del representante *" name="rep_apellidos" variant="outlined" value={form.rep_apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-                </div>
-                <div className="form-row">
-                  <TextField id="outlined-basic-rep-cedula" label="Cédula del representante *" name="rep_cedula" variant="outlined" value={form.rep_cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
                   <TextField
-                    id="outlined-basic-rep-fecha-nacimiento"
-                    label="Fecha de nacimiento del representante"
-                    name="rep_fecha_nacimiento"
-                    type="date"
+                    id="input-monto-personalizado"
+                    label="Monto personalizado"
+                    name="monto_personalizado_valor"
+                    type="number"
                     variant="outlined"
-                    value={form.rep_fecha_nacimiento || ''}
+                    value={form.monto_personalizado_valor || ''}
                     onChange={handleChange}
                     fullWidth
                     size="small"
-                    InputLabelProps={{ shrink: true }}
-                    sx={{ my: 1 }}
+                    sx={{ mt: 1 }}
+                    disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                  />
+                  <Box sx={{ my: 1 }} />
+                </div>
+              )}
+              {debeMostrarAvisoRecalculoMensualidades && (
+                <Alert severity="info" sx={{ mt: 1, mb: 1.5, borderRadius: 2 }}>
+                  Al guardar, se recalcularan las mensualidades del alumno que esten en Pendiente, Insolvente o Retrasado usando la configuracion de monto actual.
+                </Alert>
+              )}
+              <div className="form-row">
+                <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-peso" label="Peso" name="peso" variant="outlined" value={form.peso || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                />
+                <TextField id="outlined-basic-talla" label="Talla" name="talla" variant="outlined" value={form.talla || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                />
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-proyeccion" label="Proyección" name="proyeccion" variant="outlined" value={form.proyeccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                />
+                <TextField id="outlined-basic-alcance" label="Alcance" name="alcance" variant="outlined" value={form.alcance || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                />
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-envergadura" label="Envergadura" name="envergadura" variant="outlined" value={form.envergadura || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                />
+                <FormControl fullWidth size="small" sx={{ my: 1 }}>
+                  <InputLabel id="tipo-sangre-label">Tipo de sangre</InputLabel>
+                  <Select
+                    labelId="tipo-sangre-label"
+                    id="select-tipo-sangre"
+                    name="tipo_sangre"
+                    value={form.tipo_sangre || ''}
+                    label="Tipo de sangre"
+                    onChange={handleChange}
+                  >
+                    <MenuItem value=""><em>Seleccionar</em></MenuItem>
+                    {TIPOS_SANGRE.map((tipo) => (
+                      <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
+                    ))}
+                    {form.tipo_sangre && !TIPOS_SANGRE.includes(form.tipo_sangre) && (
+                      <MenuItem value={form.tipo_sangre}>{form.tipo_sangre}</MenuItem>
+                    )}
+                  </Select>
+                </FormControl>
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <TextField id="outlined-basic-alergias" label="Alergias" name="alergias" variant="outlined" value={form.alergias || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+              </div>
+              {localStorage.getItem('rol') === 'admin' && (
+                <div className="form-row">
+                  <TextField id="outlined-basic-observaciones" label="Observaciones" name="observaciones" variant="outlined" value={form.observaciones || ''} onChange={handleChange} fullWidth size="small" multiline minRows={2} sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                  />
+                  <Autocomplete
+                    multiple
+                    freeSolo
+                    options={[]}
+                    value={form.etiquetas || []}
+                    onChange={(event, newValue) => {
+                      setForm(prev => ({ ...prev, etiquetas: newValue }));
+                    }}
+                    disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                    sx={{ width: '100%' }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Etiquetas"
+                        placeholder="Escribe y presiona Enter"
+                        variant="outlined"
+                        fullWidth
+                        size="small"
+                        multiline
+                        sx={{ my: 2 }}
+                      />
+                    )}
                   />
                 </div>
-                <div className="form-row">
-                  <TextField id="outlined-basic-rep-telefono" label="Teléfono del representante" name="rep_telefono" type="tel" variant="outlined" value={form.rep_telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-                  <FormControl fullWidth size="small" sx={{ my: 1 }}>
-                    <InputLabel id="select-parentesco-editar-label">Parentesco *</InputLabel>
-                    <Select
-                      labelId="select-parentesco-editar-label"
-                      id="select-parentesco-editar"
-                      name="parentesco"
-                      value={form.parentesco || ''}
-                      label="Parentesco *"
-                      onChange={handleChange}
-                    >
-                      {PARENTESCOS.map((op) => (
-                        <MenuItem key={op} value={op}>{op}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </div>
-                <div className="form-row">
-                  <TextField id="outlined-basic-rep-correo" label="Correo del representante" name="rep_correo" type="email" variant="outlined" value={form.rep_correo || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-                  <TextField id="outlined-basic-rep-direccion" label="Dirección del representante" name="rep_direccion" variant="outlined" value={form.rep_direccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-                </div>
-              </fieldset>
+              )}
+            </fieldset>
+            <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+              <legend>Datos del Representante</legend>
+              <div className="form-row">
+                <TextField id="outlined-basic-rep-nombres" label="Nombres del representante *" name="rep_nombres" variant="outlined" value={form.rep_nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <TextField id="outlined-basic-rep-apellidos" label="Apellidos del representante *" name="rep_apellidos" variant="outlined" value={form.rep_apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-rep-cedula" label="Cédula del representante *" name="rep_cedula" variant="outlined" value={form.rep_cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <TextField
+                  id="outlined-basic-rep-fecha-nacimiento"
+                  label="Fecha de nacimiento del representante"
+                  name="rep_fecha_nacimiento"
+                  type="date"
+                  variant="outlined"
+                  value={form.rep_fecha_nacimiento || ''}
+                  onChange={handleChange}
+                  fullWidth
+                  size="small"
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ my: 1 }}
+                />
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-rep-telefono" label="Teléfono del representante" name="rep_telefono" type="tel" variant="outlined" value={form.rep_telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <FormControl fullWidth size="small" sx={{ my: 1 }}>
+                  <InputLabel id="select-parentesco-editar-label">Parentesco *</InputLabel>
+                  <Select
+                    labelId="select-parentesco-editar-label"
+                    id="select-parentesco-editar"
+                    name="parentesco"
+                    value={form.parentesco || ''}
+                    label="Parentesco *"
+                    onChange={handleChange}
+                  >
+                    {PARENTESCOS.map((op) => (
+                      <MenuItem key={op} value={op}>{op}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-rep-correo" label="Correo del representante" name="rep_correo" type="email" variant="outlined" value={form.rep_correo || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <TextField id="outlined-basic-rep-direccion" label="Dirección del representante" name="rep_direccion" variant="outlined" value={form.rep_direccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+              </div>
+            </fieldset>
             <button type="submit" disabled={loading} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
               {loading ? 'Guardando...' : 'Guardar cambios'}
             </button>
@@ -921,5 +978,26 @@ function AlumnoEditar({ locationState }) {
     </Box>
   );
 }
+
+const RequisitosCard = ({ checklist }) => {
+  if (!checklist || checklist.length === 0) {
+    return <Typography>No hay requisitos configurados para esta academia.</Typography>;
+  }
+
+  return (
+    <List>
+      {checklist.map((item, index) => (
+        <ListItem key={index}>
+          {item.cumplido ? (
+            <CheckCircleIcon style={{ color: 'green', marginRight: 8 }} />
+          ) : (
+            <CancelIcon style={{ color: 'red', marginRight: 8 }} />
+          )}
+          <ListItemText primary={item.nombre} />
+        </ListItem>
+      ))}
+    </List>
+  );
+};
 
 export default AlumnoEditar;

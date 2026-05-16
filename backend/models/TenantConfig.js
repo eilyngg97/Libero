@@ -90,6 +90,10 @@ const TenantConfigSchema = new mongoose.Schema({
   pagos: { type: PagosSchema, default: () => ({}) },
   cobro: { type: CobroSchema, default: () => ({}) },
   constancias: { type: ConstanciasSchema, default: () => ({}) },
+  requisitos_recaudos: {
+    type: [{ type: String, trim: true }],
+    default: []
+  },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 

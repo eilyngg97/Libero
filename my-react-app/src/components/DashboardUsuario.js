@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardActions, Button, Typography, Avatar, Grid, Box } from '@mui/material';
+import { Button, Card, CardActions, CardContent, Typography, Avatar, Grid, Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { mediaUrl } from '../utils/mediaUrl';
+import TerminosPendientesAlert from './TerminosPendientesAlert';
 
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
   const [resumenPagos, setResumenPagos] = useState({});
   const navigate = useNavigate();
+  const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
 
   const formatMonto = (monto) => {
     const montoNum = Number(monto);
@@ -100,10 +102,13 @@ function DashboardUsuario() {
       }
     };
     fetchAlumnos();
-  }, []);
-  
+  }, [apiBase]);
+
+
   return (
     <>
+      <TerminosPendientesAlert sx={{ mb: 2, mt: 1 }} />
+
       <Box sx={{ mb: 2, mt: 1 }}>
         <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a' }}>
           Selecciona un Alumno
@@ -162,8 +167,7 @@ function DashboardUsuario() {
                             <Typography
                               variant="caption"
                               sx={{
-                                bgcolor: '#e5e7eb',
-                                border: '1px solid #d1d5db',
+                                bgcolor: '#ecedef',
                                 px: 0.85,
                                 py: 0.2,
                                 borderRadius: 999,
@@ -171,13 +175,12 @@ function DashboardUsuario() {
                                 fontWeight: 600
                               }}
                             >
-                              Categoria: {alumno.categoria || '-'}
+                              CATEGORIA: {alumno.categoria || '-'}
                             </Typography>
                             <Typography
                               variant="caption"
                               sx={{
-                                bgcolor: '#e5e7eb',
-                                border: '1px solid #d1d5db',
+                                bgcolor: '#ecedef',
                                 px: 0.85,
                                 py: 0.2,
                                 borderRadius: 999,
@@ -185,7 +188,7 @@ function DashboardUsuario() {
                                 fontWeight: 600
                               }}
                             >
-                              Sede: {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : alumno.sede || '-'}
+                              SEDE: {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : alumno.sede || '-'}
                             </Typography>
                           </Box>
                         </Box>
@@ -195,8 +198,7 @@ function DashboardUsuario() {
                         sx={{
                           borderRadius: 1.5,
                           p: 1.25,
-                          bgcolor: '#e5e7eb',
-                          border: '1px solid #d1d5db'
+                          bgcolor: '#ecedef',
                         }}
                       >
                         <Typography

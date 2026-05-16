@@ -18,6 +18,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import DescriptionIcon from '@mui/icons-material/Description';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import GavelIcon from '@mui/icons-material/Gavel';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
@@ -50,6 +51,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       { text: 'Sedes', icon: <LocationCityIcon />, path: '/sedes' },
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
       { text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' },
+      { text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' },
       { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
       {
         text: 'Configuraciones',
@@ -75,6 +77,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
 
   if (rol === 'usuario') {
     options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
+    options.push({ text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' });
   }
 
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });

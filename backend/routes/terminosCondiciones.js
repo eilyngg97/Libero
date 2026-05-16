@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 const router = express.Router();
-const recaudoController = require('../controllers/recaudoController');
+const terminoCondicionController = require('../controllers/terminoCondicionController');
 const { authMiddleware, rolMiddleware } = require('../middleware/auth');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
@@ -15,7 +15,7 @@ function resolveTenantId(req) {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const tenantId = resolveTenantId(req);
-    const uploadDir = path.join(__dirname, '..', 'uploads', tenantId, 'recaudos');
+    const uploadDir = path.join(__dirname, '..', 'uploads', tenantId, 'terminos-condiciones');
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
@@ -27,14 +27,7 @@ const storage = multer.diskStorage({
 });
 
 const allowedMimeTypes = new Set([
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/jpg',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  'application/pdf'
 ]);
 
 const upload = multer({
@@ -45,7 +38,7 @@ const upload = multer({
       cb(null, true);
       return;
     }
-    cb(new Error('Formato de archivo no permitido'));
+    cb(new Error('Formato de archivo no permitido. Solo se permite PDF'));
   }
 });
 
@@ -61,9 +54,7 @@ function uploadArchivo(req, res, next) {
   });
 }
 
-router.get('/', authMiddleware, rolMiddleware('admin', 'usuario'), recaudoController.listarRecaudos);
-router.get('/requisitos', authMiddleware, rolMiddleware('admin', 'usuario'), recaudoController.listarRequisitosRecaudos);
-router.put('/requisitos', authMiddleware, rolMiddleware('admin'), recaudoController.actualizarRequisitosRecaudos);
+router.get('/', authMiddleware, rolMiddleware('admin', 'usuario'), terminoCondicionController.listarTerminos);
 
 router.post(
   '/',
@@ -73,13 +64,15 @@ router.post(
   (req, res, next) => {
     if (req.file) {
       const tenantId = resolveTenantId(req);
-      req.file.publicUrl = `/uploads/${tenantId}/recaudos/${req.file.filename}`;
+      req.file.publicUrl = `/uploads/${tenantId}/terminos-condiciones/${req.file.filename}`;
     }
     return next();
   },
-  recaudoController.crearRecaudo
+  terminoCondicionController.crearTermino
 );
 
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), recaudoController.eliminarRecaudo);
+router.post('/aceptar', authMiddleware, rolMiddleware('usuario'), terminoCondicionController.aceptarTerminoVigente);
+router.get('/:id/aceptaciones', authMiddleware, rolMiddleware('admin'), terminoCondicionController.listarEstadoAceptacionesTermino);
+router.delete('/:id', authMiddleware, rolMiddleware('admin'), terminoCondicionController.eliminarTermino);
 
 module.exports = router;

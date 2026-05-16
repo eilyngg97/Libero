@@ -11,6 +11,7 @@ import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { mediaUrl } from '../utils/mediaUrl';
+import TerminosPendientesAlert from './TerminosPendientesAlert';
 
 function PanelOpcionesUsuario() {
    const location = useLocation();
@@ -293,6 +294,8 @@ function PanelOpcionesUsuario() {
 
   return (
     <Box sx={{ p: 2 }}>
+        <TerminosPendientesAlert sx={{ mb: 2, borderRadius: 2 }} />
+
         <Box sx={{ mb: 2 }}>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>
             Bienvenido de nuevo, {alumno?.nombres || 'Jugador'}

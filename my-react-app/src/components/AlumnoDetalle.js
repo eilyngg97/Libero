@@ -16,7 +16,8 @@ import SportsVolleyballIcon from "@mui/icons-material/SportsVolleyball";
 import PersonIcon from "@mui/icons-material/Person";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import { useParams, useNavigate } from "react-router-dom";
-import { Button, Typography, Paper, Avatar, Dialog, DialogTitle, DialogContent, Box, IconButton } from "@mui/material";
+import { Button, Typography, Paper, Avatar, Dialog, DialogTitle, DialogContent, Box, IconButton, Checkbox, FormControlLabel, CircularProgress, Collapse } from "@mui/material";
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
 import Grid from "@mui/material/Grid";
 import { mediaUrl } from '../utils/mediaUrl';
@@ -101,6 +102,7 @@ function calcularIMC(peso, talla) {
 }
 
 function AlumnoDetalle() {
+  const [requisitosOpen, setRequisitosOpen] = useState(true);
   const { id } = useParams();
   const navigate = useNavigate();
   const [alumno, setAlumno] = useState(null);
@@ -113,6 +115,15 @@ function AlumnoDetalle() {
   const [historialEstados, setHistorialEstados] = useState([]);
   const [historialLoading, setHistorialLoading] = useState(false);
   const [historialError, setHistorialError] = useState(null);
+  const [rol, setRol] = useState('');
+  const [requisitosChecklist, setRequisitosChecklist] = useState([]);
+  const [requisitosSaving, setRequisitosSaving] = useState('');
+  const [requisitosError, setRequisitosError] = useState('');
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   const fetchHistorialEstados = async () => {
     setHistorialLoading(true);
@@ -140,22 +151,29 @@ function AlumnoDetalle() {
   };
 
   useEffect(() => {
+    const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+    setRol(rolLs);
+
     const fetchAlumno = async () => {
       setLoading(true);
+      setRequisitosError('');
       try {
         const res = await fetch(
-          `${process.env.REACT_APP_API_URL}/api/alumnos/${id}`
+          `${process.env.REACT_APP_API_URL}/api/alumnos/${id}`,
+          { headers: getAuthHeaders() }
         );
         if (!res.ok) throw new Error("Error al obtener alumno");
         const data = await res.json();
         setAlumno(data);
+        setRequisitosChecklist(Array.isArray(data?.requisitos_checklist) ? data.requisitos_checklist : []);
         setError(null);
         console.log("Alumno obtenido:", data);
         // Si el representante es solo un id, consultarlo
         if (data.representante && typeof data.representante === "string") {
           console.log("Buscando representante con ID:", data.representante);
           const repRes = await fetch(
-            `${process.env.REACT_APP_API_URL}/api/representantes/${data.representante}`
+            `${process.env.REACT_APP_API_URL}/api/representantes/${data.representante}`,
+            { headers: getAuthHeaders() }
           );
           if (repRes.ok) {
             const repData = await repRes.json();
@@ -176,6 +194,39 @@ function AlumnoDetalle() {
     fetchAlumno();
   }, [id]);
 
+  const handleToggleRequisito = async (requisito, checked) => {
+    if (!id || !requisito) return;
+    if (rol !== 'admin') return;
+
+    const prev = requisitosChecklist;
+    setRequisitosError('');
+    setRequisitosSaving(requisito);
+    setRequisitosChecklist((current) => current.map((item) => (
+      item.requisito === requisito ? { ...item, cumplido: checked } : item
+    )));
+
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/requisitos-recaudos`, {
+        method: 'PATCH',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ requisito, cumplido: checked })
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || 'No se pudo actualizar el requisito');
+      }
+    } catch (err) {
+      setRequisitosChecklist(prev);
+      setRequisitosError(err.message || 'No se pudo actualizar el requisito');
+    } finally {
+      setRequisitosSaving('');
+    }
+  };
+
   if (loading) return <Typography>Cargando...</Typography>;
   if (error) return <Typography color="error">{error}</Typography>;
   if (!alumno) return null;
@@ -189,6 +240,8 @@ function AlumnoDetalle() {
   const observacionesTexto = alumno.observaciones?.trim() || 'Sin observaciones registradas';
   const etiquetas = Array.isArray(alumno.etiquetas) ? alumno.etiquetas : [];
   const diaLimitePersonalizado = obtenerDiaLimitePersonalizado(alumno);
+  const requisitosTotal = requisitosChecklist.length;
+  const requisitosCumplidos = requisitosChecklist.filter((item) => Boolean(item?.cumplido)).length;
   const getSiNoChipSx = (enabled) => ({
     width: 46,
     fontWeight: 700,
@@ -232,9 +285,9 @@ function AlumnoDetalle() {
           boxSizing: 'border-box'
         }}
       >
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '340px 1fr' }, gap: { xs: 1.25, sm: 2, md: 3 }, width: '100%', minWidth: 0, justifyItems: { xs: 'center', md: 'stretch' } }}>
-          <Box sx={{ position: { md: 'sticky' }, top: 24, alignSelf: 'start', display: 'flex', flexDirection: 'column', gap: 2, width: '100%', maxWidth: { xs: 420, md: 'none' }, mx: { xs: 'auto', md: 0 } }}>
-            <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '340px 1fr' }, gap: { xs: 1.25, sm: 2, md: 3 }, width: '100%', minWidth: 0, justifyItems: { xs: 'center', md: 'stretch' }, alignItems: { md: 'stretch' } }}>
+          <Box sx={{ position: { md: 'sticky' }, top: 24, alignSelf: { xs: 'start', md: 'stretch' }, display: 'flex', flexDirection: 'column', gap: 2, width: '100%', maxWidth: { xs: 420, md: 'none' }, mx: { xs: 'auto', md: 0 }, height: { md: '100%' } }}>
+            <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)', height: { md: '100%' }, display: 'flex', flexDirection: 'column' }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 1.5 }}>
                 <Avatar
                   src={mediaUrl(alumno.foto) || ""}
@@ -496,6 +549,95 @@ function AlumnoDetalle() {
                   </Paper>
                 </Grid>
               </Grid>
+            </Paper>
+
+            <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>Checklist de requisitos</Typography>
+                  <Chip
+                    size="small"
+                    label={`${requisitosCumplidos}/${requisitosTotal}`}
+                    sx={{ bgcolor: '#ffedd5', color: '#9a3412', fontWeight: 800 }}
+                  />
+                </Box>
+                <IconButton
+                  size="small"
+                  onClick={() => setRequisitosOpen((prev) => !prev)}
+                  sx={{
+                    transform: requisitosOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s',
+                    ml: 1
+                  }}
+                  aria-label={requisitosOpen ? 'Ocultar checklist' : 'Mostrar checklist'}
+                >
+                  <ExpandMoreIcon />
+                </IconButton>
+              </Box>
+
+              <Collapse in={requisitosOpen} timeout="auto" unmountOnExit>
+                {requisitosError ? (
+                  <Typography sx={{ fontSize: 12, color: '#b91c1c', mb: 1 }}>
+                    {requisitosError}
+                  </Typography>
+                ) : null}
+
+                {requisitosTotal === 0 ? (
+                  <Typography sx={{ fontSize: 13, color: '#64748b' }}>
+                    No hay requisitos configurados para esta academia.
+                  </Typography>
+                ) : (
+                  <Box sx={{ display: 'grid', gap: 0.6 }}>
+                    {requisitosChecklist.map((item) => {
+                      const requisito = String(item?.requisito || '').trim();
+                      const checked = Boolean(item?.cumplido);
+                      const loadingItem = requisitosSaving === requisito;
+
+                      return (
+                        <Box
+                          key={requisito}
+                          sx={{
+                            border: '1px solid #e2e8f0',
+                            borderRadius: 2,
+                            px: 1.1,
+                            py: 0.35,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1,
+                            bgcolor: checked ? '#f0fdf4' : '#ffffff'
+                          }}
+                        >
+                          <FormControlLabel
+                            control={(
+                              <Checkbox
+                                checked={checked}
+                                onChange={(event) => handleToggleRequisito(requisito, event.target.checked)}
+                                disabled={rol !== 'admin' || loadingItem}
+                                sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#16a34a' } }}
+                              />
+                            )}
+                            label={
+                              <Typography sx={{ fontSize: 13, color: '#334155', fontWeight: 600 }}>
+                                {requisito}
+                              </Typography>
+                            }
+                            sx={{ m: 0, flex: 1 }}
+                          />
+
+                          {loadingItem ? <CircularProgress size={14} /> : null}
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                )}
+
+                {rol !== 'admin' ? (
+                  <Typography sx={{ mt: 1, fontSize: 12, color: '#94a3b8' }}>
+                    Solo administradores pueden marcar requisitos.
+                  </Typography>
+                ) : null}
+              </Collapse>
             </Paper>
 
             {alumno.sinRepresentante !== true && (

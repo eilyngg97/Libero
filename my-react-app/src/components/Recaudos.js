@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -85,6 +86,9 @@ function Recaudos() {
   const [eliminandoId, setEliminandoId] = useState('');
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [recaudoAEliminar, setRecaudoAEliminar] = useState(null);
+  const [requisitosCatalogo, setRequisitosCatalogo] = useState([]);
+  const [requisitoInput, setRequisitoInput] = useState('');
+  const [guardandoRequisitos, setGuardandoRequisitos] = useState(false);
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
@@ -139,11 +143,80 @@ function Recaudos() {
     }
   }, [apiBase, getAuthHeaders]);
 
+  const cargarRequisitos = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/recaudos/requisitos`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || 'No se pudo cargar el catalogo de requisitos');
+      }
+
+      const payload = await res.json();
+      setRequisitosCatalogo(Array.isArray(payload?.requisitos) ? payload.requisitos : []);
+    } catch (err) {
+      setError(err.message || 'No se pudo cargar el catalogo de requisitos');
+      setRequisitosCatalogo([]);
+    }
+  }, [apiBase, getAuthHeaders]);
+
   useEffect(() => {
     const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
     setRol(rolLs);
     cargarRecaudos();
-  }, [cargarRecaudos]);
+    if (rolLs === 'admin') {
+      cargarRequisitos();
+    }
+  }, [cargarRecaudos, cargarRequisitos]);
+
+  const agregarRequisito = () => {
+    const requisito = String(requisitoInput || '').trim();
+    if (!requisito) return;
+
+    const yaExiste = requisitosCatalogo.some((item) => String(item || '').trim().toLowerCase() === requisito.toLowerCase());
+    if (yaExiste) {
+      setRequisitoInput('');
+      return;
+    }
+
+    setRequisitosCatalogo((prev) => [...prev, requisito]);
+    setRequisitoInput('');
+  };
+
+  const eliminarRequisitoLocal = (requisito) => {
+    const target = String(requisito || '').trim().toLowerCase();
+    setRequisitosCatalogo((prev) => prev.filter((item) => String(item || '').trim().toLowerCase() !== target));
+  };
+
+  const guardarRequisitos = async () => {
+    try {
+      setGuardandoRequisitos(true);
+      setError('');
+
+      const res = await fetch(`${apiBase}/api/recaudos/requisitos`, {
+        method: 'PUT',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ requisitos: requisitosCatalogo })
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || 'No se pudo guardar el catalogo de requisitos');
+      }
+
+      const payload = await res.json().catch(() => ({}));
+      setRequisitosCatalogo(Array.isArray(payload?.requisitos) ? payload.requisitos : []);
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el catalogo de requisitos');
+    } finally {
+      setGuardandoRequisitos(false);
+    }
+  };
 
   const abrirPreview = async (item) => {
     setPreviewItem(item);
@@ -333,6 +406,16 @@ function Recaudos() {
     color: '#64748b',
     '&:hover': { color: '#475569', backgroundColor: 'rgba(100, 116, 139, 0.08)' }
   };
+  const primarySaveButtonSx = {
+    bgcolor: '#1e293b',
+    '&:hover': {
+      bgcolor: '#233653'
+    },
+    height: 40,
+    fontSize: 14,
+    textTransform: 'none',
+    fontWeight: 700
+  };
   const canSubmitRecaudo = Boolean(archivo) && String(titulo || '').trim().length > 0;
   const previewSrc = previewItem && isPdfFile(previewItem)
     ? (isMobile
@@ -468,10 +551,83 @@ function Recaudos() {
               ) : null}
 
               <Box sx={{ gridColumn: { xs: '1 / -1', md: '1 / -1' }, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Button type="submit" variant="contained" disabled={subiendo || !canSubmitRecaudo} sx={{ ml: 'auto' }}>
+                <Button type="submit" variant="contained" disabled={subiendo || !canSubmitRecaudo} sx={{ ...primarySaveButtonSx, ml: 'auto' }}>
                   {subiendo ? 'Subiendo...' : 'Guardar recaudo'}
                 </Button>
               </Box>
+            </Box>
+          </Paper>
+        ) : null}
+
+        {esAdmin ? (
+          <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
+            <Typography variant="subtitle1" sx={{ color: '#0f172a', fontWeight: 700, mb: 1 }}>
+              Requisitos por academia
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#64748b', mb: 1.5 }}>
+              Agrega etiquetas de requisitos que se controlaran por atleta en el detalle del alumno.
+            </Typography>
+
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Nuevo requisito"
+                value={requisitoInput}
+                onChange={(e) => setRequisitoInput(e.target.value)}
+                placeholder="Ej: Partida de nacimiento"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    agregarRequisito();
+                  }
+                }}
+              />
+              <Button
+                variant="outlined"
+                onClick={agregarRequisito}
+                sx={{
+                  minWidth: { xs: '100%', sm: 140 },
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  color: '#1e293b',
+                  borderColor: '#1e293b',
+                  '&:hover': {
+                    borderColor: '#1e293b',
+                    backgroundColor: 'rgba(30, 41, 59, 0.04)'
+                  }
+                }}
+              >
+                Agregar
+              </Button>
+            </Stack>
+
+            <Box sx={{ mt: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {requisitosCatalogo.length === 0 ? (
+                <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                  No hay requisitos cargados.
+                </Typography>
+              ) : (
+                requisitosCatalogo.map((item) => (
+                  <Chip
+                    key={item}
+                    label={item}
+                    onDelete={() => eliminarRequisitoLocal(item)}
+                    sx={{ bgcolor: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontWeight: 700 }}
+                  />
+                ))
+              )}
+            </Box>
+
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                variant="contained"
+                onClick={guardarRequisitos}
+                disabled={guardandoRequisitos}
+                sx={primarySaveButtonSx}
+              >
+                {guardandoRequisitos ? 'Guardando...' : 'Guardar requisitos'}
+              </Button>
             </Box>
           </Paper>
         ) : null}

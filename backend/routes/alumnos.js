@@ -70,6 +70,7 @@ router.delete('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), 
 router.put('/asignar-categorias', authMiddleware, rolMiddleware('admin'), alumnoController.asignarCategoriasMasivamente);
 
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
+router.patch('/:id/requisitos-recaudos', authMiddleware, rolMiddleware('admin'), alumnoController.actualizarEstadoRequisitoRecaudoAlumno);
 router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.updateAlumno);
 router.patch('/:id/baja', authMiddleware, rolMiddleware('admin'), alumnoController.darDeBajaAlumno);
 router.patch('/:id/reactivar', authMiddleware, rolMiddleware('admin'), upload.single('comprobante'), alumnoController.reactivarAlumno);

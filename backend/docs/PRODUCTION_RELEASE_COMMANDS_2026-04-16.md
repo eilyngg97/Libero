@@ -8,12 +8,27 @@ Proceso backend: PM2 con nombre backend
 Si prefieres una sola corrida automatizada, usa el script:
 - backend/docs/PRODUCTION_RELEASE_ONE_SHOT_2026-04-16.sh
 
+Si solo necesitas liberar frontend en forma segura, usa:
+- backend/docs/PRODUCTION_FRONTEND_RELEASE_SAFE_2026-05-15.sh
+
 Ejemplo de ejecucion en la VPS:
 ```bash
 export RELEASE_REF="main"
 export APP_ROOT="${APP_ROOT:-$(find /root /home /var/www /opt -maxdepth 4 -type d -name .git 2>/dev/null | sed 's#/.git$##' | grep '/Libero$' | head -n 1)}"
 bash "$APP_ROOT/backend/docs/PRODUCTION_RELEASE_ONE_SHOT_2026-04-16.sh"
 ```
+
+Ejemplo frontend-only en la VPS:
+```bash
+export TARGET_HOST="libero.com.ve"
+export APP_ROOT="${APP_ROOT:-$(find /root /home /var/www /opt -maxdepth 4 -type d -name .git 2>/dev/null | sed 's#/.git$##' | grep '/Libero$' | head -n 1)}"
+bash "$APP_ROOT/backend/docs/PRODUCTION_FRONTEND_RELEASE_SAFE_2026-05-15.sh"
+```
+
+Nota:
+- El script frontend fuerza Node de `my-react-app/.nvmrc` (18.20.8 actualmente) antes de `npm ci` y `npm run build`.
+- Si `REACT_APP_API_URL` esta fijo en `my-react-app/.env.production`, el script falla por defecto para evitar romper multi-tenant por host.
+- Si necesitas permitir API absoluta de forma intencional, exporta `ALLOW_ABSOLUTE_API_URL=1`.
 
 ## Variables a definir antes de ejecutar
 - RELEASE_REF: commit, tag o branch exacto a liberar

@@ -73,13 +73,15 @@ async function getTenantAlumnoReadModels(req) {
   const TenantAlumno = getTenantModel(connection, 'Alumno');
   const TenantReposo = getTenantModel(connection, 'Reposo');
   const TenantHistorialEstadoAlumno = getTenantModel(connection, 'HistorialEstadoAlumno');
+  const TenantConfig = getTenantModel(connection, 'TenantConfig');
 
   return {
     Alumno: TenantAlumno,
     Representante: TenantRepresentante,
     Sede: TenantSede,
     Reposo: TenantReposo,
-    HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+    HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
+    TenantConfig
   };
 }
 
@@ -104,6 +106,10 @@ function buildUploadUrl(req, file, folder) {
   if (!file || !file.filename) return null;
   const tenantId = resolveRequestTenantId(req);
   return `/uploads/${tenantId}/${folder}/${file.filename}`;
+}
+
+function sanitizeRequisitoLabel(value = '') {
+  return String(value || '').trim();
 }
 
 const CATEGORIA_CANONICA_POR_ALIAS = new Map([
@@ -1728,12 +1734,122 @@ exports.createAlumno = async (req, res) => {
 // Obtener un alumno por ID
 exports.getAlumnoById = async (req, res) => {
   try {
-    const { Alumno: TenantAlumno } = await getTenantAlumnoReadModels(req);
+    const { Alumno: TenantAlumno, TenantConfig } = await getTenantAlumnoReadModels(req);
     const alumno = await TenantAlumno.findById(req.params.id).populate('representante').populate('sede');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
-    res.json(alumno);
+
+    const config = await TenantConfig.findOne().select('requisitos_recaudos').lean();
+    const requisitosCatalogo = Array.isArray(config?.requisitos_recaudos)
+      ? config.requisitos_recaudos.map((item) => sanitizeRequisitoLabel(item)).filter(Boolean)
+      : [];
+
+    const estadoRaw = Array.isArray(alumno.requisitos_recaudos_estado)
+      ? alumno.requisitos_recaudos_estado
+      : [];
+
+    const estadoMap = new Map();
+    estadoRaw.forEach((item) => {
+      const requisito = sanitizeRequisitoLabel(item?.requisito);
+      if (!requisito || estadoMap.has(requisito)) return;
+      estadoMap.set(requisito, {
+        requisito,
+        cumplido: Boolean(item?.cumplido),
+        updated_at: item?.updated_at || null,
+        updated_by: item?.updated_by || null
+      });
+    });
+
+    const checklist = requisitosCatalogo.map((requisito) => {
+      const estado = estadoMap.get(requisito);
+      return {
+        requisito,
+        cumplido: Boolean(estado?.cumplido),
+        updated_at: estado?.updated_at || null,
+        updated_by: estado?.updated_by || null
+      };
+    });
+
+    const alumnoObj = alumno.toObject();
+    alumnoObj.requisitos_catalogo = requisitosCatalogo;
+    alumnoObj.requisitos_checklist = checklist;
+
+    res.json(alumnoObj);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener alumno' });
+  }
+};
+
+exports.actualizarEstadoRequisitoRecaudoAlumno = async (req, res) => {
+  try {
+    const {
+      Alumno: TenantAlumno,
+      TenantConfig
+    } = await getTenantAlumnoWriteModels(req);
+
+    const requisito = sanitizeRequisitoLabel(req.body?.requisito);
+    if (!requisito) {
+      return res.status(400).json({ error: 'El requisito es obligatorio' });
+    }
+
+    const cumplido = Boolean(req.body?.cumplido);
+
+    const [alumno, config] = await Promise.all([
+      TenantAlumno.findById(req.params.id),
+      TenantConfig.findOne().select('requisitos_recaudos')
+    ]);
+
+    if (!alumno) {
+      return res.status(404).json({ error: 'Alumno no encontrado' });
+    }
+
+    const requisitosCatalogo = Array.isArray(config?.requisitos_recaudos)
+      ? config.requisitos_recaudos.map((item) => sanitizeRequisitoLabel(item)).filter(Boolean)
+      : [];
+
+    if (!requisitosCatalogo.includes(requisito)) {
+      return res.status(400).json({ error: 'El requisito no pertenece al catalogo de la academia' });
+    }
+
+    const estado = Array.isArray(alumno.requisitos_recaudos_estado)
+      ? alumno.requisitos_recaudos_estado
+      : [];
+
+    const idx = estado.findIndex((item) => sanitizeRequisitoLabel(item?.requisito) === requisito);
+    const payload = {
+      requisito,
+      cumplido,
+      updated_at: new Date(),
+      updated_by: req.user?.id || null
+    };
+
+    if (idx >= 0) {
+      estado[idx] = { ...estado[idx], ...payload };
+    } else {
+      estado.push(payload);
+    }
+
+    alumno.requisitos_recaudos_estado = estado;
+    await alumno.save();
+
+    return res.json({
+      message: 'Estado del requisito actualizado',
+      requisito,
+      cumplido,
+      requisitos_recaudos_estado: alumno.requisitos_recaudos_estado
+    });
+  } catch (err) {
+    console.error('[actualizarEstadoRequisitoRecaudoAlumno] Error:', err);
+    // Log extra info útil para depuración
+    try {
+      console.error('Request body:', req.body);
+      console.error('Request params:', req.params);
+      if (typeof req.user !== 'undefined') {
+        console.error('Request user:', req.user);
+      }
+    } catch (logErr) {
+      console.error('Error al loguear info extra:', logErr);
+    }
+    return res.status(500).json({ error: 'Error al actualizar requisito del alumno', detalle: err.message });
   }
 };
 
