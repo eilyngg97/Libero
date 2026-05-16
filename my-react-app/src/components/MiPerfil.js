@@ -301,9 +301,6 @@ function MiPerfil() {
                   </Box>
                 </Box>
              </Box>
-             <Button variant="outlined" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', color: '#475569', borderRadius: 2 }}>
-               Editar perfil
-             </Button>
           </Box>
 
           {/* TABS SECTION */}
@@ -377,10 +374,6 @@ function MiPerfil() {
                              </Box>
                           </Box>
                        </Box>
-
-                       <Button variant="outlined" sx={{ textTransform: 'none', fontWeight: 700, borderColor: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: 2, '&:hover': { borderColor: 'rgba(255,255,255,0.4)', bgcolor: 'rgba(255,255,255,0.05)' } }}>
-                         Cambiar plan
-                       </Button>
                     </Box>
                 </Box>
 
