@@ -33,7 +33,7 @@ function PanelOpcionesUsuario() {
   const token = localStorage.getItem('token');
   const tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
   const esUsuarioEsporta = tenantId === 'esporta';
-  const sizeTarjetaOpciones = { xs: 12, sm: 6, md: 4 };
+  const sizeTarjetaOpciones = { xs: 12, sm: 6, md: 6 };
   const saldoAFavorActual = Number(alumno?.saldo_a_favor_mensualidades) || 0;
 
   const handleRespuestaJuego = async (torneoId, partidoId, estado) => {

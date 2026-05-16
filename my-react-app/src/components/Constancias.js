@@ -635,10 +635,8 @@ function Constancias() {
           <Paper
             elevation={0}
             sx={{
-              mt: 2,
               p: { xs: 2, md: 2.5 },
               borderRadius: 3,
-              border: '1px solid #e2e8f0',
               boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)'
             }}
           >
