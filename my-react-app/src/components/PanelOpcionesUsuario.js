@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Divider, Alert } from '@mui/material';
+import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Alert } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -33,10 +33,8 @@ function PanelOpcionesUsuario() {
   const sede = location.state?.sede;
   const token = localStorage.getItem('token');
   const tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
-  const ocultarConstancias = tenantId === 'esporta';
-  const sizeTarjetaOpciones = ocultarConstancias
-    ? { xs: 12, sm: 6, md: 4 }
-    : { xs: 12, sm: 6, md: 6 };
+  const esUsuarioEsporta = tenantId === 'esporta';
+  const sizeTarjetaOpciones = { xs: 12, sm: 6, md: 6 };
   const saldoAFavorActual = Number(alumno?.saldo_a_favor_mensualidades) || 0;
 
   const handleRespuestaJuego = async (torneoId, partidoId, estado) => {
@@ -443,7 +441,6 @@ function PanelOpcionesUsuario() {
                   />
                 </Box>
               </Grid>
-              {!ocultarConstancias && (
               <Grid item size={sizeTarjetaOpciones}>
                 <Box sx={{
                   borderRadius: 3,
@@ -467,8 +464,12 @@ function PanelOpcionesUsuario() {
                   <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 1 }}>
                     <DescriptionIcon sx={{ fontSize: 32, color: 'white' }} />
                   </IconButton>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Constancias</Typography>
-                  <Typography variant="body2">Solicita y gestiona constancias</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                    {esUsuarioEsporta ? 'Solicitar constancia' : 'Constancias'}
+                  </Typography>
+                  <Typography variant="body2">
+                    {esUsuarioEsporta ? 'Arma tus datos y envia solicitud al admin' : 'Solicita y gestiona constancias'}
+                  </Typography>
                   <DescriptionIcon
                     className="bg-icon"
                     sx={{
@@ -482,7 +483,6 @@ function PanelOpcionesUsuario() {
                   />
                 </Box>
               </Grid>
-              )}
               <Grid item size={sizeTarjetaOpciones}>
                 <Box sx={{
                   borderRadius: 3,

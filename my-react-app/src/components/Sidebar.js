@@ -73,6 +73,12 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
         { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' }
       );
     }
+
+    if (tenantId === 'esporta') {
+      options.push(
+        { text: 'Solicitudes constancias', icon: <DescriptionIcon />, path: '/solicitudes-constancias' }
+      );
+    }
   }
 
   if (rol === 'usuario') {

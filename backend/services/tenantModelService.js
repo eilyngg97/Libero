@@ -15,6 +15,7 @@ const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
 const Recaudo = require('../models/Recaudo');
 const TerminoCondicion = require('../models/TerminoCondicion');
 const TerminoAceptacion = require('../models/TerminoAceptacion');
+const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
 
 const modelSchemaMap = {
   User: User.schema,
@@ -33,7 +34,8 @@ const modelSchemaMap = {
   HistorialEstadoAlumno: HistorialEstadoAlumno.schema,
   Recaudo: Recaudo.schema,
   TerminoCondicion: TerminoCondicion.schema,
-  TerminoAceptacion: TerminoAceptacion.schema
+  TerminoAceptacion: TerminoAceptacion.schema,
+  ConstanciaSolicitud: ConstanciaSolicitud.schema
 };
 
 function getTenantModel(connection, modelName) {
