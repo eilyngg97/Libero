@@ -78,6 +78,12 @@ function obtenerSexoAlumno(alumno) {
   return '-';
 }
 
+function obtenerNombreCompletoAlumno(alumno) {
+  const apellidos = String(alumno?.apellidos || '').trim();
+  const nombres = String(alumno?.nombres || '').trim();
+  return `${apellidos} ${nombres}`.trim();
+}
+
 const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
 const PREVIEW_PAGE_SIZE = 20;
 
@@ -571,6 +577,17 @@ function TablaAlumnos() {
           : !a.habilitar_pago_cuotas;
     return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch;
   });
+  alumnosFiltrados = [...alumnosFiltrados].sort((a, b) => {
+    const apellidoA = String(a?.apellidos || '').trim();
+    const apellidoB = String(b?.apellidos || '').trim();
+    const nombreA = String(a?.nombres || '').trim();
+    const nombreB = String(b?.nombres || '').trim();
+
+    const cmpApellido = apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
+    if (cmpApellido !== 0) return cmpApellido;
+
+    return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
+  });
   const alumnosPaginados = alumnosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   const previewCreados = importPreviewData?.detalle?.creados || [];
@@ -883,7 +900,7 @@ function TablaAlumnos() {
                   </Avatar>
                   <Box sx={{ minWidth: 0 }}>
                     <Typography sx={{ fontWeight: 700, color: '#0f172a', lineHeight: 1.15 }} noWrap>
-                      {alumno.nombres} {alumno.apellidos}
+                      {obtenerNombreCompletoAlumno(alumno)}
                     </Typography>
                     <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
                       Edad: {calcularEdad(alumno.fecha_nacimiento) || '-'}
@@ -1065,7 +1082,7 @@ function TablaAlumnos() {
                       </Avatar>
                       <Box>
                         <Typography sx={{ fontWeight: 700, color: '#0f172a', lineHeight: 1.1 }}>
-                          {alumno.nombres} {alumno.apellidos}
+                          {obtenerNombreCompletoAlumno(alumno)}
                         </Typography>
                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
                           Fecha Nac: {formatFecha(alumno.fecha_nacimiento) || '-'}
