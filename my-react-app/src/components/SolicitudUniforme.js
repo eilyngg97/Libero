@@ -36,6 +36,7 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import { useDolar } from '../context/DolarContext';
+import { mediaUrl } from '../utils/mediaUrl';
 
 const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
 const METODO_PAGO_DEFAULT = '';
@@ -150,6 +151,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [numerosFranelaDisponibles, setNumerosFranelaDisponibles] = useState([]);
   const [numeroFranelaLoading, setNumeroFranelaLoading] = useState(false);
   const [numeroFranelaError, setNumeroFranelaError] = useState('');
+  const [mostrarImagenesPrenda, setMostrarImagenesPrenda] = useState(false);
 
   const tasaBCV = Number(dolar?.promedio) || 0;
   const token = localStorage.getItem('token');
@@ -217,6 +219,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   useEffect(() => {
     fetchPedidos();
   }, [fetchPedidos]);
+
+  useEffect(() => {
+    setMostrarImagenesPrenda(false);
+  }, [prenda]);
 
   useEffect(() => {
     if (!pagoDialogOpen) return;
@@ -660,7 +666,40 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     >
                       <MenuItem value=""><em>Seleccione</em></MenuItem>
                       {prendas.map((item) => (
-                        <MenuItem key={item._id} value={item.prenda}>{item.prenda} - ${formatMoney(item.precio)}</MenuItem>
+                        <MenuItem key={item._id} value={item.prenda}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
+                            {item.fotos?.[0] ? (
+                              <Box
+                                component="img"
+                                src={mediaUrl(item.fotos[0])}
+                                alt={item.prenda}
+                                sx={{
+                                  width: 34,
+                                  height: 34,
+                                  borderRadius: 1.5,
+                                  objectFit: 'cover',
+                                  border: '1px solid #dbe3ef',
+                                  flexShrink: 0,
+                                  backgroundColor: '#fff'
+                                }}
+                              />
+                            ) : (
+                              <Box
+                                sx={{
+                                  width: 34,
+                                  height: 34,
+                                  borderRadius: 1.5,
+                                  border: '1px dashed #cbd5e1',
+                                  flexShrink: 0,
+                                  backgroundColor: '#f8fafc'
+                                }}
+                              />
+                            )}
+                            <Typography sx={{ fontSize: 14, color: '#0f172a', whiteSpace: 'normal', lineHeight: 1.25 }}>
+                              {item.prenda} - ${formatMoney(item.precio)}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -761,6 +800,36 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         </Typography>
                       </FormControl>
                     )}
+                  </Grid>
+                )}
+                {Array.isArray(prendaSeleccionada?.fotos) && prendaSeleccionada.fotos.length > 0 && (
+                  <Grid item size={{ xs: 12 }}>
+                    <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+                      <Button
+                        type="button"
+                        variant="outlined"
+                        onClick={() => setMostrarImagenesPrenda(true)}
+                        sx={{
+                          border: '2px solid #cbd5e1',
+                          borderRadius: '10px',
+                          fontWeight: 700,
+                          color: '#64748b',
+                          px: 2.5,
+                          py: 1,
+                          textTransform: 'none',
+                          boxShadow: 'none',
+                          minWidth: 0,
+                          transition: 'border-color 0.2s',
+                          '&:hover': {
+                            borderColor: '#94a3b8',
+                            bgcolor: '#f8fafc',
+                            color: '#334155'
+                          }
+                        }}
+                      >
+                        Imágenes de la prenda
+                      </Button>
+                    </Box>
                   </Grid>
                 )}
               </Grid>
@@ -1024,6 +1093,47 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
             Confirmar
           </Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={mostrarImagenesPrenda}
+        onClose={() => setMostrarImagenesPrenda(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pr: 6 }}>
+          Imagen{prendaSeleccionada?.fotos?.length > 1 ? 'es' : ''} de la prenda
+          <IconButton
+            aria-label="cerrar imagenes de la prenda"
+            onClick={() => setMostrarImagenesPrenda(false)}
+            size="small"
+            sx={{ position: 'absolute', right: 14, top: 14, color: '#64748b' }}
+          >
+            <CloseIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 2, bgcolor: '#f8fafc' }}>
+          <Box sx={{ display: 'flex', gap: 1.25, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {(prendaSeleccionada?.fotos || []).map((foto, index) => (
+              <Box
+                key={`${prendaSeleccionada?._id || prendaSeleccionada?.prenda || 'prenda'}-dialog-foto-${index}`}
+                component="img"
+                src={mediaUrl(foto)}
+                alt={`${prendaSeleccionada?.prenda || 'Prenda'} ${index + 1}`}
+                sx={{
+                  width: { xs: '100%', sm: 'calc(50% - 10px)' },
+                  maxWidth: 360,
+                  height: { xs: 220, sm: 280 },
+                  objectFit: 'contain',
+                  borderRadius: 2,
+                  border: '1px solid #dbe3ef',
+                  backgroundColor: '#fff'
+                }}
+              />
+            ))}
+          </Box>
+        </DialogContent>
       </Dialog>
 
       <Dialog
