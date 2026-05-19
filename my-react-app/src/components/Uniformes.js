@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -26,8 +26,11 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
+import { mediaUrl } from '../utils/mediaUrl';
 
 
 const API_URL = `${process.env.REACT_APP_API_URL}/api/uniformes`;
@@ -37,7 +40,8 @@ const initialForm = {
   precio: '',
   lleva_personalizacion_nombre: false,
   lleva_numero_franela: false,
-  franela_representante: false
+  franela_representante: false,
+  fotos: []
 };
 
 const modalInputSx = {
@@ -53,6 +57,71 @@ const modalInputSx = {
   }
 };
 
+const MAX_IMAGE_WIDTH = 1280;
+const MAX_IMAGE_HEIGHT = 1280;
+const TARGET_IMAGE_QUALITY = 0.78;
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('No se pudo procesar la imagen seleccionada.'));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+async function optimizeImage(file) {
+  if (!(file instanceof File) || !String(file.type || '').toLowerCase().startsWith('image/')) {
+    throw new Error('Archivo invalido.');
+  }
+
+  const image = await loadImageFromFile(file);
+  const ratio = Math.min(MAX_IMAGE_WIDTH / image.width, MAX_IMAGE_HEIGHT / image.height, 1);
+  const targetWidth = Math.max(1, Math.round(image.width * ratio));
+  const targetHeight = Math.max(1, Math.round(image.height * ratio));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('No se pudo comprimir la imagen.');
+  }
+
+  context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (result) => {
+        if (!result) {
+          reject(new Error('No se pudo generar la imagen optimizada.'));
+          return;
+        }
+        resolve(result);
+      },
+      'image/webp',
+      TARGET_IMAGE_QUALITY
+    );
+  });
+
+  const optimizedName = `${String(file.name || 'uniforme').replace(/\.[^/.]+$/, '')}.webp`;
+  return new File([blob], optimizedName, {
+    type: 'image/webp',
+    lastModified: Date.now()
+  });
+}
+
 export default function Uniformes() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -60,11 +129,15 @@ export default function Uniformes() {
   const [open, setOpen] = useState(false);
   const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
   const [uniformeAEliminar, setUniformeAEliminar] = useState(null);
+  const [previewImage, setPreviewImage] = useState({ open: false, src: '', title: '', isObjectUrl: false });
   const [deletingId, setDeletingId] = useState('');
   const [form, setForm] = useState(initialForm);
+  const [fotosNuevas, setFotosNuevas] = useState([]);
+  const [dragActive, setDragActive] = useState(false);
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
+  const fileInputRef = useRef(null);
   const token = localStorage.getItem('token');
 
   // Obtener uniformes del backend
@@ -103,11 +176,14 @@ export default function Uniformes() {
         precio: u.precio,
         lleva_personalizacion_nombre: Boolean(u.lleva_personalizacion_nombre),
         lleva_numero_franela: Boolean(u.lleva_numero_franela),
-        franela_representante: Boolean(u.franela_representante)
+        franela_representante: Boolean(u.franela_representante),
+        fotos: Array.isArray(u.fotos) ? u.fotos.slice(0, 2) : []
       });
+      setFotosNuevas([]);
       setEditId(id);
     } else {
       setForm(initialForm);
+      setFotosNuevas([]);
       setEditId(null);
     }
     setOpen(true);
@@ -116,6 +192,7 @@ export default function Uniformes() {
   const handleClose = () => {
     setOpen(false);
     setForm(initialForm);
+    setFotosNuevas([]);
     setEditId(null);
   };
 
@@ -124,17 +201,112 @@ export default function Uniformes() {
     setForm({ ...form, [name]: type === 'checkbox' ? checked : value });
   };
 
+  const totalFotosSeleccionadas = (form.fotos?.length || 0) + fotosNuevas.length;
+
+  const agregarFotos = async (archivos = []) => {
+    const imagenes = archivos.filter((archivo) => String(archivo?.type || '').toLowerCase().startsWith('image/'));
+    if (!imagenes.length) return;
+
+    const espaciosDisponibles = Math.max(0, 2 - totalFotosSeleccionadas);
+    if (espaciosDisponibles <= 0) {
+      setAlert({ open: true, message: 'Solo puedes cargar hasta 2 fotos por prenda.', severity: 'error' });
+      return;
+    }
+
+    const imagenesAAgregar = imagenes.slice(0, espaciosDisponibles);
+    if (imagenesAAgregar.length < imagenes.length) {
+      setAlert({ open: true, message: 'Solo puedes cargar hasta 2 fotos por prenda.', severity: 'error' });
+    }
+
+    const optimizadas = [];
+    for (const imagen of imagenesAAgregar) {
+      try {
+        const imagenOptimizada = await optimizeImage(imagen);
+        optimizadas.push(imagenOptimizada);
+      } catch {
+        optimizadas.push(imagen);
+      }
+    }
+
+    setFotosNuevas((prev) => [...prev, ...optimizadas]);
+  };
+
+  const handleFotosChange = async (e) => {
+    const archivos = Array.from(e.target.files || []);
+    if (!archivos.length) return;
+    await agregarFotos(archivos);
+    e.target.value = '';
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+  };
+
+  const handleDrop = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+    const archivos = Array.from(event.dataTransfer?.files || []);
+    if (!archivos.length) return;
+    await agregarFotos(archivos);
+  };
+
+  const abrirVistaImagen = (src, title, isObjectUrl = false) => {
+    if (!src) return;
+    setPreviewImage({ open: true, src, title: title || 'Imagen de prenda', isObjectUrl });
+  };
+
+  const cerrarVistaImagen = () => {
+    setPreviewImage((prev) => {
+      if (prev.isObjectUrl && prev.src) {
+        URL.revokeObjectURL(prev.src);
+      }
+      return { open: false, src: '', title: '', isObjectUrl: false };
+    });
+  };
+
+  const removerFotoExistente = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      fotos: (prev.fotos || []).filter((_, fotoIndex) => fotoIndex !== index)
+    }));
+  };
+
+  const removerFotoNueva = (index) => {
+    setFotosNuevas((prev) => prev.filter((_, fotoIndex) => fotoIndex !== index));
+  };
+
   const handleSave = async () => {
     if (!token || !form.prenda || !form.precio) return;
     try {
+      if (totalFotosSeleccionadas > 2) {
+        throw new Error('Solo puedes guardar hasta 2 fotos por prenda.');
+      }
+
+      const formData = new FormData();
+      formData.append('prenda', form.prenda);
+      formData.append('precio', form.precio);
+      formData.append('lleva_personalizacion_nombre', String(Boolean(form.lleva_personalizacion_nombre)));
+      formData.append('lleva_numero_franela', String(Boolean(form.lleva_numero_franela)));
+      formData.append('franela_representante', String(Boolean(form.franela_representante)));
+      formData.append('fotos_existentes', JSON.stringify(Array.isArray(form.fotos) ? form.fotos : []));
+      fotosNuevas.forEach((foto) => formData.append('fotos', foto));
+
       if (editId) {
         const res = await fetch(`${API_URL}/${editId}`, {
           method: 'PUT',
           headers: {
-            'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify(form)
+          body: formData
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || 'Error al actualizar uniforme');
@@ -143,10 +315,9 @@ export default function Uniformes() {
         const res = await fetch(API_URL, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify(form)
+          body: formData
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || 'Error al crear uniforme');
@@ -243,6 +414,19 @@ export default function Uniformes() {
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Número de franela:</b> {uniforme.lleva_numero_franela ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Franela representante:</b> {uniforme.franela_representante ? 'Si' : 'No'}</Typography>
               </Box>
+              {Array.isArray(uniforme.fotos) && uniforme.fotos.length > 0 && (
+                <Box sx={{ display: 'flex', gap: 1, mt: 1.25, flexWrap: 'wrap' }}>
+                  {uniforme.fotos.map((foto, index) => (
+                    <Box
+                      key={`${uniforme._id}-foto-${index}`}
+                      component="img"
+                      src={mediaUrl(foto)}
+                      alt={`${uniforme.prenda} ${index + 1}`}
+                      sx={{ width: 72, height: 72, borderRadius: 2, objectFit: 'cover', border: '1px solid #e2e8f0' }}
+                    />
+                  ))}
+                </Box>
+              )}
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
                 <IconButton onClick={() => handleOpen(uniforme._id)} disabled={!token}>
                   <EditIcon />
@@ -446,6 +630,145 @@ export default function Uniformes() {
             )}
             label="Franela de representante"
           />
+          <Box sx={{ mt: 1.5 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155', mb: 0.75 }}>
+              Fotos de la prenda ({totalFotosSeleccionadas}/2)
+            </Typography>
+            <Box
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              sx={{
+                border: '1px dashed',
+                borderColor: dragActive ? '#f97316' : '#cbd5f0',
+                borderRadius: 2,
+                p: 2,
+                textAlign: 'center',
+                backgroundColor: dragActive ? '#fff7ed' : '#f8fafc',
+                display: 'block',
+                cursor: !token || totalFotosSeleccionadas >= 2 ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: !token || totalFotosSeleccionadas >= 2 ? 0.7 : 1
+              }}
+            >
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  backgroundColor: '#fff2e7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mx: 'auto',
+                  mb: 1
+                }}
+              >
+                <CloudUploadIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
+              </Box>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                Arrastra y suelta la foto aqui o haz clic para adjuntar
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                JPG, PNG, WEBP (MAX. 2 fotos)
+              </Typography>
+              <input
+                ref={fileInputRef}
+                hidden
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFotosChange}
+                disabled={!token || totalFotosSeleccionadas >= 2}
+              />
+            </Box>
+            <Typography sx={{ mt: 0.75, fontSize: 12, color: '#64748b' }}>
+              Puedes guardar una o dos fotos. Se optimizan automáticamente para ahorrar espacio en servidor.
+            </Typography>
+
+            {((form.fotos?.length || 0) > 0 || fotosNuevas.length > 0) && (
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.25 }}>
+                {(form.fotos || []).map((foto, index) => (
+                  <Box key={`existente-${index}`} sx={{ position: 'relative' }}>
+                    <Box
+                      component="img"
+                      src={mediaUrl(foto)}
+                      alt={`Foto existente ${index + 1}`}
+                      onClick={() => abrirVistaImagen(mediaUrl(foto), `Foto prenda`)}
+                      sx={{ width: 86, height: 86, borderRadius: 2, objectFit: 'cover', border: '1px solid #e2e8f0', cursor: 'zoom-in' }}
+                    />
+                    <IconButton
+                      size="small"
+                      onClick={() => removerFotoExistente(index)}
+                      aria-label="quitar foto existente"
+                      sx={{ position: 'absolute', top: -8, right: -8, bgcolor: '#fff', border: '1px solid #e2e8f0' }}
+                    >
+                      <CloseIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Box>
+                ))}
+                {fotosNuevas.map((foto, index) => (
+                  <Box key={`nueva-${index}`} sx={{ position: 'relative' }}>
+                    <Box
+                      component="img"
+                      src={URL.createObjectURL(foto)}
+                      alt={`Foto nueva ${index + 1}`}
+                      onClick={() => abrirVistaImagen(URL.createObjectURL(foto), `Foto nueva ${index + 1}`, true)}
+                      sx={{ width: 86, height: 86, borderRadius: 2, objectFit: 'cover', border: '1px solid #e2e8f0', cursor: 'zoom-in' }}
+                    />
+                    <IconButton
+                      size="small"
+                      onClick={() => removerFotoNueva(index)}
+                      aria-label="quitar foto nueva"
+                      sx={{ position: 'absolute', top: -8, right: -8, bgcolor: '#fff', border: '1px solid #e2e8f0' }}
+                    >
+                      <CloseIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {fotosNuevas.length > 0 && (
+              <Box sx={{ mt: 1.25, display: 'grid', gap: 0.75 }}>
+                {fotosNuevas.map((foto, index) => (
+                  <Box
+                    key={`archivo-nuevo-${index}`}
+                    sx={{
+                      px: 1.25,
+                      py: 0.8,
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 1.5,
+                      bgcolor: '#ffffff',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 1
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                      <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
+                      <Typography
+                        sx={{
+                          color: '#475569',
+                          fontSize: 12,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}
+                      >
+                        {foto.name}
+                      </Typography>
+                    </Box>
+                    <IconButton size="small" onClick={() => removerFotoNueva(index)}>
+                      <CloseIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
         </DialogContent>
         <DialogActions sx={{ px: 2.5, pb: 2.2, pt: 1, gap: 1.25, justifyContent: 'space-between' }}>
           <Button
@@ -478,6 +801,59 @@ export default function Uniformes() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog
+        open={previewImage.open}
+        onClose={cerrarVistaImagen}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2.5, overflow: 'hidden', m: 0 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pr: 6 }}>
+          {previewImage.title || 'Imagen de prenda'}
+          <IconButton
+            aria-label="cerrar vista de imagen"
+            onClick={cerrarVistaImagen}
+            size="small"
+            sx={{ position: 'absolute', right: 14, top: 14, color: '#64748b' }}
+          >
+            <CloseIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent
+          sx={{
+            p: 0,
+            bgcolor: '#f8fafc',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: { xs: 260, sm: 340, md: 420 },
+            height: { xs: '50vw', sm: '55vh', md: '65vh' },
+            maxHeight: { xs: '60vw', sm: '65vh', md: '75vh' },
+            overflow: 'hidden'
+          }}
+        >
+          {previewImage.src ? (
+            <Box
+              component="img"
+              src={previewImage.src}
+              alt={previewImage.title || 'Imagen de prenda'}
+              sx={{
+                width: 'auto',
+                height: '100%',
+                maxWidth: '98%',
+                maxHeight: '98%',
+                objectFit: 'contain',
+                borderRadius: 1.5,
+                border: '1px solid #dbe3ef',
+                bgcolor: '#fff',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.07)'
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
       <Snackbar
         open={alert.open}
         autoHideDuration={3500}
