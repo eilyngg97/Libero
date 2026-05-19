@@ -345,9 +345,31 @@ function Mensualidades() {
 	React.useEffect(() => {
 		let filtradas = mensualidadesBD;
 		if (filtroMes) filtradas = filtradas.filter(m => m.mes === Number(filtroMes) || m.mes === filtroMes);
-		if (filtroAlumno) filtradas = filtradas.filter(m => (m.id_alumno && m.id_alumno.nombres && m.id_alumno.apellidos ? (m.id_alumno.nombres + ' ' + m.id_alumno.apellidos).toLowerCase() : '').includes(filtroAlumno.toLowerCase()));
+		if (filtroAlumno) {
+			const filtroTexto = String(filtroAlumno || '').toLowerCase().trim();
+			filtradas = filtradas.filter((m) => {
+				const nombres = String(m?.id_alumno?.nombres || '').toLowerCase().trim();
+				const apellidos = String(m?.id_alumno?.apellidos || '').toLowerCase().trim();
+				const formatoApellidoNombre = `${apellidos} ${nombres}`.trim();
+				const formatoNombreApellido = `${nombres} ${apellidos}`.trim();
+				return formatoApellidoNombre.includes(filtroTexto) || formatoNombreApellido.includes(filtroTexto);
+			});
+		}
 		if (filtroEstado) filtradas = filtradas.filter(m => m.estatus && m.estatus.toLowerCase() === filtroEstado.toLowerCase());
-		setMensualidades(filtradas);
+
+		const filtradasOrdenadas = [...filtradas].sort((a, b) => {
+			const apellidoA = String(a?.id_alumno?.apellidos || '').trim();
+			const apellidoB = String(b?.id_alumno?.apellidos || '').trim();
+			const nombreA = String(a?.id_alumno?.nombres || '').trim();
+			const nombreB = String(b?.id_alumno?.nombres || '').trim();
+
+			const cmpApellido = apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
+			if (cmpApellido !== 0) return cmpApellido;
+
+			return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
+		});
+
+		setMensualidades(filtradasOrdenadas);
 	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD]);
 
 	// Registro de pago rápido
@@ -942,7 +964,7 @@ function Mensualidades() {
 	const obtenerNombreAlumnoMensualidad = (mensualidad) => {
 		const alumno = mensualidad?.id_alumno;
 		if (!alumno) return '-';
-		const nombre = `${alumno?.nombres || ''} ${alumno?.apellidos || ''}`.trim();
+		const nombre = `${alumno?.apellidos || ''} ${alumno?.nombres || ''}`.trim();
 		return nombre || '-';
 	};
 
@@ -1216,7 +1238,7 @@ function Mensualidades() {
 												textOverflow: 'ellipsis'
 											}}
 										>
-											{m.id_alumno ? `${m.id_alumno.nombres} ${m.id_alumno.apellidos}` : '-'}
+											{obtenerNombreAlumnoMensualidad(m)}
 										</Typography>
 									</Box>
 									<Box sx={{ flexShrink: 0, maxWidth: '42%' }}>
@@ -1372,7 +1394,7 @@ function Mensualidades() {
 												<Avatar sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 													{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 												</Avatar>
-												{m.id_alumno ? m.id_alumno.nombres + ' ' + m.id_alumno.apellidos : ''}
+												{obtenerNombreAlumnoMensualidad(m)}
 											</Box>
 										</TableCell>
 										<TableCell>
@@ -1481,7 +1503,7 @@ function Mensualidades() {
 						</Typography>
 						{mensualidadDetalle?.id_alumno && (
 							<Typography sx={{ color: '#516b94', fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: { xs: 160, sm: 260 } }}>
-								{`${mensualidadDetalle.id_alumno.nombres || ''} ${mensualidadDetalle.id_alumno.apellidos || ''}`.trim()}
+								{obtenerNombreAlumnoMensualidad(mensualidadDetalle)}
 							</Typography>
 						)}
 					</Box>

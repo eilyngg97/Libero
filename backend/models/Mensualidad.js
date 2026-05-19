@@ -22,6 +22,7 @@ const MensualidadSchema = new mongoose.Schema({
   monto_reingreso: { type: Number },
   monto_mensualidad_reingreso: { type: Number },
   tipo_registro_inicial: { type: String, enum: ['inscripcion', 'reingreso'] },
+  es_inscripcion: { type: Boolean, default: false },
   monto_equivalente_bs: { type: Number },
   fecha_pago: { type: Date },
   metodo_pago: { type: String },

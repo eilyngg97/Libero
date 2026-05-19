@@ -301,7 +301,7 @@ async function obtenerAlumnoParaRecargo(mensualidad, models = {}) {
   const alumnoId = alumnoPopulate?._id || alumnoPopulate || mensualidad?.id_alumno;
   if (!alumnoId) return null;
   return AlumnoModel.findById(alumnoId)
-    .select('tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado')
+    .select('tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado fecha_inicio_cobro fecha_inscripcion')
     .lean();
 }
 
@@ -337,6 +337,32 @@ async function aplicarRecargoMensualidadSegunConfig(
 
   const configCobro = cobroConfig || await obtenerConfigCobro(models);
   const alumno = await obtenerAlumnoParaRecargo(mensualidad, models);
+
+  // Regla de negocio: la mensualidad inicial de inscripción no lleva recargo.
+  if (mensualidad.es_inscripcion) {
+    return {
+      aplicado: false,
+      configCobro,
+      fechaRecargo: null
+    };
+  }
+
+  const periodoInicialAlumno = obtenerPeriodoInicioCobroAlumno(alumno, {
+    mes: mensualidad?.mes,
+    anio: mensualidad?.anio
+  });
+  const esPrimerPeriodoAlumno =
+    Number(mensualidad?.mes) === Number(periodoInicialAlumno?.mes) &&
+    Number(mensualidad?.anio) === Number(periodoInicialAlumno?.anio);
+
+  if (esPrimerPeriodoAlumno) {
+    return {
+      aplicado: false,
+      configCobro,
+      fechaRecargo: null
+    };
+  }
+
   const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
   const esBecado = esTipoMensualidadBecaCompleta(alumno?.tipo_mensualidad);
   const estatusActual = String(mensualidad.estatus || '').toLowerCase();
@@ -443,7 +469,8 @@ async function crearMensualidadParaPeriodo(
     fechaVencimientoManual,
     crearPagoSiPagado = false,
     referenciaPago = 'primera-mensualidad',
-    metadataInscripcion
+    metadataInscripcion,
+    esInscripcion = false
   } = {}
 ) {
   const {
@@ -496,16 +523,20 @@ async function crearMensualidadParaPeriodo(
     monto = credito.montoEsperado;
   }
 
-  const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
-  const fechaRecargo = obtenerFechaRecargoAlumnoPeriodo(periodo.mes, periodo.anio, configCobro, alumno);
-  const snapshotRecargo = calcularSnapshotRecargo({
-    montoSinRecargo: monto,
-    recargoUsd: configCobro?.recargo_usd,
-    aplicaRecargo:
+  let aplicaRecargo = false;
+  if (!esInscripcion) {
+    const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
+    const fechaRecargo = obtenerFechaRecargoAlumnoPeriodo(periodo.mes, periodo.anio, configCobro, alumno);
+    aplicaRecargo =
       aplicaRecargoAlumno &&
       !esTipoMensualidadBecaCompleta(alumno?.tipo_mensualidad) &&
       monto > 0 &&
-      new Date() >= fechaRecargo
+      new Date() >= fechaRecargo;
+  }
+  const snapshotRecargo = calcularSnapshotRecargo({
+    montoSinRecargo: monto,
+    recargoUsd: configCobro?.recargo_usd,
+    aplicaRecargo
   });
 
   const mensualidad = await MensualidadModel.create({
@@ -524,6 +555,7 @@ async function crearMensualidadParaPeriodo(
     monto_esperado: snapshotRecargo.montoEsperado,
     fecha_vencimiento: fechaVencimiento,
     estatus,
+    ...(esInscripcion ? { es_inscripcion: true } : {}),
     ...(metadataInscripcion && {
       monto_inscripcion: metadataInscripcion.montoInscripcion,
       monto_primera_mensualidad: metadataInscripcion.montoPrimeraMensualidad,
@@ -598,7 +630,8 @@ async function generarMensualidadesPendientesAlumno(
         fechaVencimientoManual: esPeriodoOverride ? overridePeriodoActual.fechaVencimientoManual : undefined,
         metadataInscripcion: esPeriodoOverride ? overridePeriodoActual.metadataInscripcion : undefined,
         crearPagoSiPagado: esPeriodoOverride ? crearPagoSiPagado : false,
-        referenciaPago
+        referenciaPago,
+        esInscripcion: periodos.indexOf(periodo) === 0 // Solo la primera mensualidad del alumno nuevo
       })
     );
   }
