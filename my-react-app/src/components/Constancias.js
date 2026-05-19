@@ -326,7 +326,7 @@ function Constancias() {
           <form onSubmit={handleSubmit}>
             {isEsportaUserRequestMode && (
               <Alert severity="info" sx={{ mb: 2 }}>
-                En Esporta, los usuarios no descargan constancias directamente. Aqui puedes armarla y enviarla como solicitud al administrador.
+                Aqui puedes armar y enviar tu constancia como solicitud al administrador.
               </Alert>
             )}
             {requestSuccess && (
