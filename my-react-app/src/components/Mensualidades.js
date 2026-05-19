@@ -358,15 +358,15 @@ function Mensualidades() {
 		if (filtroEstado) filtradas = filtradas.filter(m => m.estatus && m.estatus.toLowerCase() === filtroEstado.toLowerCase());
 
 		const filtradasOrdenadas = [...filtradas].sort((a, b) => {
-			const apellidoA = String(a?.id_alumno?.apellidos || '').trim();
-			const apellidoB = String(b?.id_alumno?.apellidos || '').trim();
 			const nombreA = String(a?.id_alumno?.nombres || '').trim();
 			const nombreB = String(b?.id_alumno?.nombres || '').trim();
+			const apellidoA = String(a?.id_alumno?.apellidos || '').trim();
+			const apellidoB = String(b?.id_alumno?.apellidos || '').trim();
 
-			const cmpApellido = apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
-			if (cmpApellido !== 0) return cmpApellido;
+			const cmpNombre = nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
+			if (cmpNombre !== 0) return cmpNombre;
 
-			return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
+			return apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
 		});
 
 		setMensualidades(filtradasOrdenadas);
@@ -964,7 +964,7 @@ function Mensualidades() {
 	const obtenerNombreAlumnoMensualidad = (mensualidad) => {
 		const alumno = mensualidad?.id_alumno;
 		if (!alumno) return '-';
-		const nombre = `${alumno?.apellidos || ''} ${alumno?.nombres || ''}`.trim();
+		const nombre = `${alumno?.nombres || ''} ${alumno?.apellidos || ''}`.trim();
 		return nombre || '-';
 	};
 

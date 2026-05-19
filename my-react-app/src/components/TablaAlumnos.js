@@ -79,9 +79,9 @@ function obtenerSexoAlumno(alumno) {
 }
 
 function obtenerNombreCompletoAlumno(alumno) {
-  const apellidos = String(alumno?.apellidos || '').trim();
   const nombres = String(alumno?.nombres || '').trim();
-  return `${apellidos} ${nombres}`.trim();
+  const apellidos = String(alumno?.apellidos || '').trim();
+  return `${nombres} ${apellidos}`.trim();
 }
 
 const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
@@ -578,15 +578,15 @@ function TablaAlumnos() {
     return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch;
   });
   alumnosFiltrados = [...alumnosFiltrados].sort((a, b) => {
-    const apellidoA = String(a?.apellidos || '').trim();
-    const apellidoB = String(b?.apellidos || '').trim();
     const nombreA = String(a?.nombres || '').trim();
     const nombreB = String(b?.nombres || '').trim();
+    const apellidoA = String(a?.apellidos || '').trim();
+    const apellidoB = String(b?.apellidos || '').trim();
 
-    const cmpApellido = apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
-    if (cmpApellido !== 0) return cmpApellido;
+    const cmpNombre = nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
+    if (cmpNombre !== 0) return cmpNombre;
 
-    return nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
+    return apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
   });
   const alumnosPaginados = alumnosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
