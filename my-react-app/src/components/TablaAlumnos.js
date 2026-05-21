@@ -653,6 +653,7 @@ function TablaAlumnos() {
           >
             Excel
           </Button>
+          {/* Botón de importación oculto temporalmente por requerimiento
           <Button
             variant="outlined"
             sx={{ borderColor: '#e2e8f0', color: '#2563eb', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
@@ -662,6 +663,7 @@ function TablaAlumnos() {
           >
             {importLoading || importPreviewLoading ? 'Importando...' : 'Importar Excel'}
           </Button>
+          */}
           <Button
             variant="outlined"
             sx={{ borderColor: '#e2e8f0', color: '#ef4444', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
