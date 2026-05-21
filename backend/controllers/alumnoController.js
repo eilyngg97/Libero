@@ -60,8 +60,8 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { generarMensualidadesPendientesAlumno } = require('./mensualidadController');
 
-const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 4, 1, 12, 0, 0));
-const IMPORT_FIXED_PERIODO_COBRO = { mes: 5, anio: 2026 };
+const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 5, 1, 12, 0, 0));
+const IMPORT_FIXED_PERIODO_COBRO = { mes: 6, anio: 2026 };
 
 async function getTenantAlumnoReadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -294,7 +294,14 @@ function parseExcelDateInput(value) {
   if (value === null || value === undefined || value === '') return null;
 
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value;
+    return new Date(Date.UTC(
+      value.getFullYear(),
+      value.getMonth(),
+      value.getDate(),
+      12,
+      0,
+      0
+    ));
   }
 
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -1409,6 +1416,19 @@ exports.importarAlumnosExcel = async (req, res) => {
           } else {
             alumnoData.sinRepresentante = false;
           }
+        } else if (!dryRun && row.cedula) {
+          let userAlumno = await TenantUser.findOne({ email: row.cedula });
+          if (!userAlumno) {
+            const passwordAlumno = await bcrypt.hash(row.cedula, 10);
+            userAlumno = new TenantUser({
+              nombre: `${row.nombres} ${row.apellidos}`.trim(),
+              email: row.cedula,
+              password: passwordAlumno,
+              rol: 'usuario'
+            });
+            await userAlumno.save();
+          }
+          alumnoData.usuario = userAlumno._id;
         }
 
         if (row.categoria) {
@@ -1458,7 +1478,7 @@ exports.importarAlumnosExcel = async (req, res) => {
             });
           } catch (errMensualidad) {
             await alumno.deleteOne().catch(() => {});
-            throw new Error(`No se pudo crear mensualidad inicial de mayo 2026: ${errMensualidad.message}`);
+            throw new Error(`No se pudo crear mensualidad inicial de junio 2026: ${errMensualidad.message}`);
           }
 
           created.push({
