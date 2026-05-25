@@ -15,6 +15,8 @@ const PagoDetalleSchema = new mongoose.Schema({
   monto_pagado_bs: { type: Number },
   monto_esperado_usd: { type: Number },
   monto_esperado_bs: { type: Number },
+  nota: { type: String, default: '' },
+  solicita_revision_recargo: { type: Boolean, default: false },
   fecha_pago: { type: Date, required: true },
   metodo_pago: { type: String, required: true },
   referencia: { type: String },

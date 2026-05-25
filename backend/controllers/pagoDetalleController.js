@@ -28,6 +28,16 @@ function normalizarMontoBs(value) {
   return Number(value);
 }
 
+function normalizarNotaPago(value) {
+  return String(value || '').trim().slice(0, 500);
+}
+
+function normalizarBooleano(value) {
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return false;
+}
+
 function construirRegistradoPor(req) {
   const rol = String(req?.user?.rol || '').trim().toLowerCase();
   const nombre = String(
@@ -253,7 +263,9 @@ exports.registrarPago = async (req, res) => {
       monto_esperado_bs,
       fecha_pago,
       metodo_pago,
-      referencia
+      referencia,
+      nota,
+      solicita_revision_recargo
     } = req.body;
     const comprobante_url = req.file
       ? `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`
@@ -275,6 +287,8 @@ exports.registrarPago = async (req, res) => {
       monto_pagado_bs: montoBs,
       monto_esperado_usd: Number.isFinite(montoEsperadoUsd) ? redondearMonto(montoEsperadoUsd) : undefined,
       monto_esperado_bs: montoEsperadoBs !== null ? redondearMonto(montoEsperadoBs) : undefined,
+      nota: normalizarNotaPago(nota),
+      solicita_revision_recargo: normalizarBooleano(solicita_revision_recargo),
       fecha_pago,
       metodo_pago,
       referencia,
@@ -306,6 +320,8 @@ exports.editarPago = async (req, res) => {
       fecha_pago,
       metodo_pago,
       referencia,
+      nota,
+      solicita_revision_recargo,
       eliminar_comprobante
     } = req.body;
     const pago = await TenantPagoDetalle.findById(req.params.id_pago);
@@ -341,6 +357,12 @@ exports.editarPago = async (req, res) => {
     pago.fecha_pago = fecha_pago;
     pago.metodo_pago = metodo_pago;
     pago.referencia = referencia;
+    if (nota !== undefined) {
+      pago.nota = normalizarNotaPago(nota);
+    }
+    if (solicita_revision_recargo !== undefined) {
+      pago.solicita_revision_recargo = normalizarBooleano(solicita_revision_recargo);
+    }
 
     if (req.file) {
       pago.comprobante_url = `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`;

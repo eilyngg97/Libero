@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip, Checkbox, FormGroup, FormControlLabel } from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -71,6 +70,8 @@ function Mensualidades() {
 	const [comprobante, setComprobante] = useState(null);
 	const [metodoPago, setMetodoPago] = useState(metodosPago[0]);
 	const [referencia, setReferencia] = useState('');
+	const [notaPago, setNotaPago] = useState('');
+	const [solicitaRevisionRecargo, setSolicitaRevisionRecargo] = useState(false);
 	const [errorRef, setErrorRef] = useState('');
 	const [montoPago, setMontoPago] = useState('');
 	const [pagosPreviosTotal, setPagosPreviosTotal] = useState(0);
@@ -109,6 +110,19 @@ function Mensualidades() {
 	const [eliminandoMensualidadId, setEliminandoMensualidadId] = useState('');
 	const [confirmarPagoOpen, setConfirmarPagoOpen] = useState(false);
 	const [confirmandoMensualidad, setConfirmandoMensualidad] = useState(false);
+	const [corrigiendoRecargo, setCorrigiendoRecargo] = useState(false);
+	const [ultimoPagoDraft, setUltimoPagoDraft] = useState({
+		metodo_pago: metodosPago[0],
+		fecha_pago: getLocalInputDate(),
+		monto_pagado_bs: '',
+		monto_esperado_bs: '',
+		referencia: '',
+		nota: '',
+		solicita_revision_recargo: false
+	});
+	const [guardandoUltimoPagoInline, setGuardandoUltimoPagoInline] = useState(false);
+	const [editandoUltimoPagoInline, setEditandoUltimoPagoInline] = useState(false);
+	const [ultimoPagoComprobante, setUltimoPagoComprobante] = useState(null);
 	const [modalEditarMensualidadOpen, setModalEditarMensualidadOpen] = useState(false);
 	const [mensualidadAEditar, setMensualidadAEditar] = useState(null);
 	const [editarMontoEsperado, setEditarMontoEsperado] = useState('');
@@ -135,6 +149,8 @@ function Mensualidades() {
 		setQuitarComprobanteActual(false);
 		setMetodoPago(metodosPago[0]);
 		setReferencia('');
+		setNotaPago('');
+		setSolicitaRevisionRecargo(false);
 		setErrorRef('');
 		setMontoPago('');
 		setPagosPreviosTotal(0);
@@ -291,6 +307,8 @@ function Mensualidades() {
 		setErrorRef('');
 		setMetodoPago(normalizeMetodoPago(pagoEditar?.metodo_pago));
 		setReferencia(pagoEditar?.referencia ? String(pagoEditar.referencia) : '');
+		setNotaPago(pagoEditar?.nota ? String(pagoEditar.nota) : '');
+		setSolicitaRevisionRecargo(Boolean(pagoEditar?.solicita_revision_recargo));
 		setFechaPago(getInputDateFromApi(pagoEditar?.fecha_pago));
 		setModalPago(true);
 		setPagosLoading(true);
@@ -449,12 +467,197 @@ function Mensualidades() {
 		setConfirmarPagoOpen(true);
 	};
 
-	const copiarReferencia = async (texto) => {
-		if (!texto) return;
+	const cargarUltimoPagoDraft = React.useCallback(() => {
+		if (!detallePago?._id) return;
+
+		const montoBsPago = Number(detallePago?.monto_pagado_bs);
+		const montoUsdPago = Number(detallePago?.monto_pagado);
+		const tasaDesdePago = (Number.isFinite(montoBsPago) && montoBsPago > 0 && Number.isFinite(montoUsdPago) && montoUsdPago > 0)
+			? (montoBsPago / montoUsdPago)
+			: 0;
+		const tasaFallback = Number(tasaPagoHistorica || dolar?.promedio || 0);
+		const tasaInicial = tasaDesdePago > 0 ? tasaDesdePago : (Number.isFinite(tasaFallback) && tasaFallback > 0 ? tasaFallback : 0);
+		const montoEsperadoVigenteUsd = Number(mensualidadDetalle?.monto_esperado);
+		const esperadoBsInicial = (Number.isFinite(montoEsperadoVigenteUsd) && montoEsperadoVigenteUsd >= 0 && tasaInicial > 0)
+			? Number((montoEsperadoVigenteUsd * tasaInicial).toFixed(2))
+			: (Number.isFinite(Number(detallePago?.monto_esperado_bs))
+				? Number(detallePago?.monto_esperado_bs)
+				: '');
+
+		setUltimoPagoDraft({
+			metodo_pago: normalizeMetodoPago(detallePago?.metodo_pago),
+			fecha_pago: getInputDateFromApi(detallePago?.fecha_pago),
+			monto_pagado_bs: Number.isFinite(Number(detallePago?.monto_pagado_bs))
+				? Number(detallePago?.monto_pagado_bs)
+				: '',
+			monto_esperado_bs: esperadoBsInicial,
+			referencia: detallePago?.referencia ? String(detallePago.referencia) : '',
+			nota: detallePago?.nota ? String(detallePago.nota) : '',
+			solicita_revision_recargo: Boolean(detallePago?.solicita_revision_recargo)
+		});
+		setUltimoPagoComprobante(null);
+	}, [
+		detallePago?._id,
+		detallePago?.metodo_pago,
+		detallePago?.fecha_pago,
+		detallePago?.monto_pagado_bs,
+		detallePago?.monto_pagado,
+		detallePago?.monto_esperado_bs,
+		detallePago?.referencia,
+		detallePago?.nota,
+		detallePago?.solicita_revision_recargo,
+		mensualidadDetalle?.monto_esperado,
+		tasaPagoHistorica,
+		dolar?.promedio
+	]);
+
+	React.useEffect(() => {
+		if (!detallePago?._id || guardandoUltimoPagoInline) return;
+		cargarUltimoPagoDraft();
+		setEditandoUltimoPagoInline(false);
+	}, [
+		detallePago?._id,
+		detallePago?.updatedAt,
+		detallePago?.fecha_pago,
+		detallePago?.metodo_pago,
+		detallePago?.monto_pagado,
+		detallePago?.monto_pagado_bs,
+		detallePago?.monto_esperado_bs,
+		detallePago?.referencia,
+		detallePago?.nota,
+		detallePago?.solicita_revision_recargo,
+		mensualidadDetalle?.monto_esperado,
+		guardandoUltimoPagoInline,
+		cargarUltimoPagoDraft,
+		tasaPagoHistorica,
+		dolar?.promedio
+	]);
+
+	const guardarUltimoPagoInline = async () => {
+		if (!detallePago?._id || guardandoUltimoPagoInline || !editandoUltimoPagoInline) return;
+
+		const montoPagadoBs = Number(ultimoPagoDraft?.monto_pagado_bs);
+		if (!Number.isFinite(montoPagadoBs) || montoPagadoBs <= 0) {
+			setErrorMessage('Ingresa un monto pagado en Bs valido.');
+			return;
+		}
+
+		const montoEsperadoBs = Number(ultimoPagoDraft?.monto_esperado_bs);
+		if (!Number.isFinite(montoEsperadoBs) || montoEsperadoBs < 0) {
+			setErrorMessage('Ingresa un monto esperado en Bs valido.');
+			return;
+		}
+
+		const metodoNormalizado = normalizeMetodoPago(ultimoPagoDraft?.metodo_pago);
+		const referenciaNormalizada = String(ultimoPagoDraft?.referencia || '').trim();
+		if (metodoRequiereReferencia(metodoNormalizado) && referenciaNormalizada.length < 6) {
+			setErrorMessage('Debes ingresar al menos 6 digitos en la referencia.');
+			return;
+		}
+
+		const montoBsPagoActual = Number(detallePago?.monto_pagado_bs);
+		const montoUsdPagoActual = Number(detallePago?.monto_pagado);
+		const tasaDesdePago = (Number.isFinite(montoBsPagoActual) && montoBsPagoActual > 0 && Number.isFinite(montoUsdPagoActual) && montoUsdPagoActual > 0)
+			? (montoBsPagoActual / montoUsdPagoActual)
+			: 0;
+		const tasaFallbackActual = Number(tasaPagoHistorica || dolar?.promedio || 0);
+		const tasaParaBs = tasaDesdePago > 0 ? tasaDesdePago : (Number.isFinite(tasaFallbackActual) ? tasaFallbackActual : 0);
+		if (!Number.isFinite(tasaParaBs) || tasaParaBs <= 0) {
+			setErrorMessage('No se pudo determinar una tasa valida para convertir a USD.');
+			return;
+		}
+
+		const montoPagadoUsd = Number((montoPagadoBs / tasaParaBs).toFixed(2));
+		const montoEsperadoUsd = Number((montoEsperadoBs / tasaParaBs).toFixed(2));
+
 		try {
-			await navigator.clipboard.writeText(texto);
-		} catch {
-			// no-op
+			setGuardandoUltimoPagoInline(true);
+			const formData = new FormData();
+			formData.append('monto_pagado', montoPagadoUsd);
+			formData.append('monto_pagado_bs', Number(montoPagadoBs.toFixed(2)));
+			formData.append('monto_esperado_usd', montoEsperadoUsd);
+			formData.append('monto_esperado_bs', Number(montoEsperadoBs.toFixed(2)));
+			formData.append('fecha_pago', ultimoPagoDraft?.fecha_pago || getLocalInputDate());
+			formData.append('metodo_pago', metodoNormalizado);
+			formData.append('referencia', metodoRequiereReferencia(metodoNormalizado) ? referenciaNormalizada : '');
+			formData.append('nota', String(ultimoPagoDraft?.nota || '').trim());
+			formData.append('solicita_revision_recargo', ultimoPagoDraft?.solicita_revision_recargo ? 'true' : 'false');
+			if (ultimoPagoComprobante) {
+				formData.append('comprobante', ultimoPagoComprobante);
+			}
+
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${detallePago._id}`, {
+				method: 'PATCH',
+				headers: getAuthHeaders(),
+				body: formData
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo actualizar el pago');
+
+			if (mensualidadDetalle?._id) {
+				const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}`, {
+					method: 'PATCH',
+					headers: {
+						...getAuthHeaders(),
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						monto_esperado: montoEsperadoUsd,
+						nota: 'Ajuste de monto esperado desde detalle de ultimo pago (en Bs)'
+					})
+				});
+				const dataMens = await resMens.json();
+				if (!resMens.ok) throw new Error(dataMens?.error || 'No se pudo actualizar el monto esperado de la mensualidad');
+			}
+
+			await cargarMensualidades();
+			await actualizarDetalleMensualidad(mensualidadDetalle, true);
+			setEditandoUltimoPagoInline(false);
+			setUltimoPagoComprobante(null);
+			setSuccessMessage('Pago actualizado correctamente');
+		} catch (err) {
+			setErrorMessage(err.message || 'No se pudo actualizar el pago');
+		} finally {
+			setGuardandoUltimoPagoInline(false);
+		}
+	};
+
+	const corregirRecargoDesdeDetalle = async () => {
+		if (!mensualidadDetalle?._id || corrigiendoRecargo) return;
+
+		const montoBaseSinRecargo = Number(mensualidadDetalle?.monto_sin_recargo_usd);
+		if (!Number.isFinite(montoBaseSinRecargo) || montoBaseSinRecargo < 0) {
+			setErrorMessage('No hay un monto base valido para retirar el recargo.');
+			return;
+		}
+
+		try {
+			setCorrigiendoRecargo(true);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}`, {
+				method: 'PATCH',
+				headers: {
+					...getAuthHeaders(),
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					monto_esperado: Number(montoBaseSinRecargo.toFixed(2)),
+					nota: 'Correccion administrativa de recargo desde pago detalle'
+				})
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo retirar el recargo');
+
+			await cargarMensualidades();
+			await actualizarDetalleMensualidad({
+				...mensualidadDetalle,
+				...data?.mensualidad,
+				monto_esperado: Number(montoBaseSinRecargo.toFixed(2))
+			}, true);
+			setSuccessMessage('Recargo retirado y mensualidad recalculada correctamente');
+		} catch (err) {
+			setErrorMessage(err.message || 'No se pudo retirar el recargo');
+		} finally {
+			setCorrigiendoRecargo(false);
 		}
 	};
 
@@ -676,6 +879,8 @@ function Mensualidades() {
 			} else {
 				formData.append('referencia', '');
 			}
+			formData.append('nota', String(notaPago || '').trim());
+			formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
 			if (comprobante) {
 				formData.append('comprobante', comprobante);
 			}
@@ -742,7 +947,25 @@ function Mensualidades() {
 		return `${formatMoney(montoBs / montoUsd)} Bs/USD`;
 	};
 
-	const formatMontoEsperadoPago = (pago, fallbackMontoUsd = null) => {
+	const formatMontoEsperadoPago = (pago, fallbackMontoUsd = null, preferirMontoActual = false) => {
+		if (preferirMontoActual) {
+			const montoActualUsd = Number(fallbackMontoUsd);
+			if (Number.isFinite(montoActualUsd) && montoActualUsd >= 0) {
+				const montoPagoUsd = Number(pago?.monto_pagado);
+				const montoPagoBs = Number(pago?.monto_pagado_bs);
+				const tasaAplicada = (Number.isFinite(montoPagoUsd) && montoPagoUsd > 0 && Number.isFinite(montoPagoBs) && montoPagoBs > 0)
+					? (montoPagoBs / montoPagoUsd)
+					: null;
+
+				if (Number.isFinite(tasaAplicada) && tasaAplicada > 0) {
+					const montoActualBs = montoActualUsd * tasaAplicada;
+					return `Bs ${formatMoney(montoActualBs)} / $${formatMoney(montoActualUsd)} USD`;
+				}
+
+				return `$${formatMoney(montoActualUsd)} USD`;
+			}
+		}
+
 		const montoBs = Number(pago?.monto_esperado_bs);
 		const montoUsd = Number.isFinite(Number(pago?.monto_esperado_usd))
 			? Number(pago?.monto_esperado_usd)
@@ -767,9 +990,9 @@ function Mensualidades() {
 		const montoUsd = formatMoney(pago?.monto_pagado);
 		const montoBs = pago?.monto_pagado_bs;
 		if (montoBs === null || montoBs === undefined || Number.isNaN(Number(montoBs))) {
-			return `$${montoUsd}`;
+			return `$${montoUsd} USD`;
 		}
-		return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
+		return `Bs ${formatMoney(montoBs)} / $${montoUsd} USD`;
 	};
 
 	const formatRegistradoPorPago = (pago) => {
@@ -1148,6 +1371,62 @@ function Mensualidades() {
 		: 'No aplicado';
 	const diaRecargoPersonalizadoDetalle = obtenerDiaLimitePersonalizado(mensualidadDetalle);
 	const formatMontoCorto = (value) => `$${formatMoney(value)}`;
+	const tasaDetallePago = (() => {
+		const montoBsPago = Number(detallePago?.monto_pagado_bs);
+		const montoUsdPago = Number(detallePago?.monto_pagado);
+		if (Number.isFinite(montoBsPago) && montoBsPago > 0 && Number.isFinite(montoUsdPago) && montoUsdPago > 0) {
+			return montoBsPago / montoUsdPago;
+		}
+		const tasaFallback = Number(tasaPagoActiva);
+		return Number.isFinite(tasaFallback) && tasaFallback > 0 ? tasaFallback : null;
+	})();
+	const ultimoPagoMontoPagadoUsdDraft = (() => {
+		const montoBs = Number(ultimoPagoDraft?.monto_pagado_bs);
+		if (!Number.isFinite(montoBs) || montoBs <= 0 || !Number.isFinite(tasaDetallePago) || tasaDetallePago <= 0) return null;
+		return montoBs / tasaDetallePago;
+	})();
+	const ultimoPagoMontoEsperadoUsdDraft = (() => {
+		const montoBs = Number(ultimoPagoDraft?.monto_esperado_bs);
+		if (!Number.isFinite(montoBs) || montoBs < 0 || !Number.isFinite(tasaDetallePago) || tasaDetallePago <= 0) return null;
+		return montoBs / tasaDetallePago;
+	})();
+	const inlineEditableFieldSx = {
+		mt: 0.65,
+		minWidth: 180,
+		'& .MuiOutlinedInput-root': {
+			bgcolor: 'transparent',
+			borderRadius: 0,
+			fontSize: 15,
+			fontWeight: 700,
+			color: '#0f172a',
+			borderBottom: '1px solid #cbd5e1',
+			transition: 'border-color 0.16s ease, border-bottom-width 0.16s ease',
+			'& fieldset': {
+				border: 'none'
+			},
+			'&:hover': {
+				borderBottomColor: '#94a3b8'
+			},
+			'&.Mui-focused': {
+				borderBottom: '2px solid #64748b'
+			},
+			'&.Mui-focused fieldset': {
+				border: 'none'
+			}
+		},
+		'& .MuiInputBase-input': {
+			py: 0.85,
+			px: 0
+		}
+	};
+	const inlineEditableMultilineSx = {
+		...inlineEditableFieldSx,
+		minWidth: 220,
+		'& .MuiInputBase-inputMultiline': {
+			py: 0.7,
+			px: 0
+		}
+	};
 
 	return (
 		<div>
@@ -1492,9 +1771,17 @@ function Mensualidades() {
 			<Dialog
 				open={modalDetalle}
 				onClose={() => setModalDetalle(false)}
-				maxWidth="md"
+				maxWidth={false}
 				fullWidth
-				PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+				PaperProps={{
+					sx: {
+						borderRadius: 3,
+						overflow: 'hidden',
+						width: { xs: 'calc(100% - 16px)', sm: 'calc(100% - 32px)', md: 'calc(100% - 48px)' },
+						maxWidth: '1400px',
+						m: { xs: 1, sm: 2, md: 3 }
+					}
+				}}
 			>
 				<DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 17, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
@@ -1512,52 +1799,138 @@ function Mensualidades() {
 					</IconButton>
 				</DialogTitle>
 				<DialogContent sx={{ bgcolor: '#f3f5fb', pt: 2.5, pb: 2.5 }}>
-					{detallePago ? (
-						<>
-							<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-								<Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
-								<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
-							</Box>
+					<Box
+						sx={{
+							display: 'grid',
+							gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.55fr) minmax(300px, 1fr)' },
+							gap: { xs: 2, md: 2.5 },
+							alignItems: 'start'
+						}}
+					>
+						<Box>
+							{detallePago ? (
+								<>
+									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+											<Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
+											<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
+										</Box>
+										<Button
+											variant={editandoUltimoPagoInline ? 'outlined' : 'contained'}
+											startIcon={<EditIcon fontSize="small" />}
+											onClick={() => {
+												if (editandoUltimoPagoInline) {
+													cargarUltimoPagoDraft();
+													setEditandoUltimoPagoInline(false);
+													setUltimoPagoComprobante(null);
+													return;
+												}
+												setEditandoUltimoPagoInline(true);
+											}}
+											disabled={guardandoUltimoPagoInline}
+											sx={{
+												borderRadius: 999,
+												px: 2,
+												minWidth: 108,
+												textTransform: 'none',
+												fontWeight: 800,
+												bgcolor: editandoUltimoPagoInline ? 'transparent' : '#0b2a57',
+												color: editandoUltimoPagoInline ? '#0b2a57' : '#ffffff',
+												borderColor: '#93a7c7',
+												'&:hover': {
+													bgcolor: editandoUltimoPagoInline ? '#eff6ff' : '#103469'
+												}
+											}}
+										>
+											{editandoUltimoPagoInline ? 'Cancelar' : 'Editar'}
+										</Button>
+									</Box>
 
-							<Box
-								sx={{
-									position: 'relative',
-									bgcolor: '#ffffff',
-									borderRadius: 2.5,
-									border: '1px solid #e7eaf2',
-									p: { xs: 2, sm: 3 },
-									'&::before': {
-										content: '""',
-										position: 'absolute',
-										top: 0,
-										left: 0,
-										right: 0,
-										height: 7,
-										borderTopLeftRadius: 10,
-										borderTopRightRadius: 10,
-										background: 'linear-gradient(90deg, #ff8a00 0%, #8a4b00 100%)'
-									}
-								}}
-							>
-								<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, columnGap: 4.5, rowGap: 2.25, pt: 1.75 }}>
+									<Box
+										sx={{
+											position: 'relative',
+											bgcolor: '#ffffff',
+											borderRadius: 2.5,
+											border: '1px solid #e7eaf2',
+											p: { xs: 2, sm: 3 },
+											minHeight: { md: 560 },
+											'&::before': {
+												content: '""',
+												position: 'absolute',
+												top: 0,
+												left: 0,
+												right: 0,
+												height: 7,
+												borderTopLeftRadius: 10,
+												borderTopRightRadius: 10,
+												background: 'linear-gradient(90deg, #ff8a00 0%, #8a4b00 100%)'
+											}
+										}}
+									>
+										<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, columnGap: 4.5, rowGap: 2.25, pt: 1.75 }}>
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Metodo de pago</Typography>
-										<Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{detallePago.metodo_pago || '-'}</Typography>
+										<TextField
+											select
+											size="small"
+											sx={inlineEditableFieldSx}
+											disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+											value={ultimoPagoDraft.metodo_pago}
+											onChange={(e) => setUltimoPagoDraft((prev) => ({
+												...prev,
+												metodo_pago: normalizeMetodoPago(e.target.value),
+												referencia: metodoRequiereReferencia(e.target.value) ? prev.referencia : ''
+											}))}
+										>
+											{metodosPago.map((m) => (
+												<MenuItem key={m} value={m}>{m}</MenuItem>
+											))}
+										</TextField>
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
-										<Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoConBs(detallePago)}</Typography>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado (Bs)</Typography>
+										<TextField
+											type="number"
+											size="small"
+											sx={inlineEditableFieldSx}
+											disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+											inputProps={{ min: 0, step: '0.01' }}
+											value={ultimoPagoDraft.monto_pagado_bs}
+											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, monto_pagado_bs: e.target.value }))}
+										/>
+										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+											Equivalente USD: {ultimoPagoMontoPagadoUsdDraft !== null ? `$${formatMoney(ultimoPagoMontoPagadoUsdDraft)} USD` : '-'}
+										</Typography>
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado</Typography>
-										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatMontoEsperadoPago(detallePago, mensualidadDetalle?.monto_esperado)}</Typography>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado (Bs)</Typography>
+										<TextField
+											type="number"
+											size="small"
+											sx={inlineEditableFieldSx}
+											disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+											inputProps={{ min: 0, step: '0.01' }}
+											value={ultimoPagoDraft.monto_esperado_bs}
+											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, monto_esperado_bs: e.target.value }))}
+										/>
+										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+											Equivalente USD: {ultimoPagoMontoEsperadoUsdDraft !== null ? `$${formatMoney(ultimoPagoMontoEsperadoUsdDraft)} USD` : '-'}
+										</Typography>
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
-										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFechaBonita(detallePago.fecha_pago)}</Typography>
+										<TextField
+											type="date"
+											size="small"
+											sx={inlineEditableFieldSx}
+											disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+											InputLabelProps={{ shrink: true }}
+											value={ultimoPagoDraft.fecha_pago}
+											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, fecha_pago: e.target.value }))}
+										/>
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
@@ -1567,14 +1940,18 @@ function Mensualidades() {
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Referencia</Typography>
-										<Box sx={{ mt: 0.7, display: 'flex', alignItems: 'center', gap: 0.4 }}>
-											<Typography sx={{ fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#4c6690', lineHeight: 1.12 }}>{detallePago.referencia || '-'}</Typography>
-											{detallePago.referencia && (
-												<IconButton size="small" onClick={() => copiarReferencia(detallePago.referencia)} sx={{ color: '#95a2b6' }}>
-													<ContentCopyIcon fontSize="inherit" />
-												</IconButton>
-											)}
-										</Box>
+										{metodoRequiereReferencia(ultimoPagoDraft.metodo_pago) ? (
+											<TextField
+												size="small"
+												sx={inlineEditableFieldSx}
+												disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+												value={ultimoPagoDraft.referencia}
+												onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, referencia: e.target.value.replace(/[^0-9]/g, '') }))}
+												inputProps={{ minLength: 6 }}
+											/>
+										) : (
+											<Typography sx={{ mt: 0.7, color: '#64748b', fontWeight: 700 }}>No aplica para este metodo</Typography>
+										)}
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
@@ -1582,6 +1959,19 @@ function Mensualidades() {
 										<Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
 											{formatRegistradoPorPago(detallePago)}
 										</Typography>
+									</Box>
+
+									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Nota</Typography>
+										<TextField
+											multiline
+											minRows={2}
+											size="small"
+											sx={inlineEditableMultilineSx}
+											disabled
+											value={ultimoPagoDraft.nota}
+											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, nota: e.target.value.slice(0, 500) }))}
+										/>
 									</Box>
 
 									<Box>
@@ -1598,97 +1988,227 @@ function Mensualidades() {
 										) : (
 											<Typography sx={{ mt: 0.7, color: '#9ca3af', fontWeight: 700 }}>Sin comprobante</Typography>
 										)}
+										{editandoUltimoPagoInline && (
+											<>
+												<Box
+													component="label"
+													sx={{
+														mt: 0.9,
+														display: 'inline-flex',
+														alignItems: 'center',
+														gap: 0.8,
+														cursor: guardandoUltimoPagoInline ? 'not-allowed' : 'pointer',
+														color: '#0b2a57',
+														fontWeight: 800,
+														fontSize: 13
+													}}
+												>
+													<InsertDriveFileIcon fontSize="small" />
+													Subir nuevo comprobante
+													<input
+														type="file"
+														hidden
+														disabled={guardandoUltimoPagoInline}
+														onChange={(e) => setUltimoPagoComprobante(e.target.files?.[0] || null)}
+													/>
+												</Box>
+												{ultimoPagoComprobante && (
+													<Box sx={{ mt: 0.55, display: 'flex', alignItems: 'center', gap: 0.7 }}>
+														<Typography sx={{ color: '#475569', fontSize: 12, fontWeight: 700, maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+															{ultimoPagoComprobante.name}
+														</Typography>
+														<IconButton
+															size="small"
+															onClick={() => setUltimoPagoComprobante(null)}
+															disabled={guardandoUltimoPagoInline}
+															sx={{ p: 0.25 }}
+														>
+															<CloseIcon fontSize="small" sx={{ color: '#94a3b8', fontSize: 15 }} />
+														</IconButton>
+													</Box>
+												)}
+											</>
+										)}
 									</Box>
 
-									<Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { md: '2 / 3' }, justifySelf: { md: 'end' } }}>
+									<Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', lg: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { lg: '2 / 3' }, justifySelf: { lg: 'end' } }}>
 										<Button
 											variant="contained"
-											startIcon={<EditIcon fontSize="small" />}
-											onClick={() => handleEditarPago(detallePago)}
-											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#e5edf8', color: '#1165a4', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#d8e5f6', boxShadow: 'none' } }}
+											onClick={guardarUltimoPagoInline}
+											disabled={guardandoUltimoPagoInline || !editandoUltimoPagoInline}
+											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#dcfce7', color: '#166534', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#bbf7d0', boxShadow: 'none' } }}
 										>
-											Editar
+											{guardandoUltimoPagoInline ? 'Guardando...' : 'Guardar cambios'}
 										</Button>
 										<Button
 											variant="contained"
 											startIcon={<DeleteOutlineIcon fontSize="small" />}
 											onClick={() => solicitarEliminarPago(detallePago)}
-											disabled={eliminandoPagoId === detallePago._id}
+											disabled={eliminandoPagoId === detallePago._id || guardandoUltimoPagoInline}
 											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
 										>
 											{eliminandoPagoId === detallePago._id ? 'Eliminando...' : 'Eliminar'}
 										</Button>
 									</Box>
-								</Box>
-							</Box>
-						</>
-					) : (
-						<Typography sx={{ color: '#334155' }}>No hay información de pago registrada.</Typography>
-					)}
+									</Box>
+									</Box>
+								</>
+							) : (
+								<Typography sx={{ color: '#334155' }}>No hay información de pago registrada.</Typography>
+							)}
+						</Box>
 
-					{desgloseRecargoDetalle && (
-						<Box
-							sx={{
-								mt: 2,
-								bgcolor: '#ffffff',
-								border: '1px solid #e8ebf2',
-								borderRadius: 2,
-								borderLeft: '4px solid #d6c7ff',
-								p: { xs: 1.5, sm: 2 }
-							}}
-						>
-							<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800, mb: 1.2 }}>
-								Desglose de recargo
-							</Typography>
-							<Box sx={{ mb: 1.2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-								<Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 700 }}>
-									Regla usada:
-								</Typography>
-								{diaRecargoPersonalizadoDetalle ? (
-									<Chip
-										size="small"
-										label={`Personalizado: dia ${diaRecargoPersonalizadoDetalle}`}
-										sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }}
-									/>
-								) : (
-									<Chip
-										size="small"
-										label="Global"
-										sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }}
-									/>
+						{(desgloseRecargoDetalle || historialNotasDetalle.length > 0) && (
+							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: { xs: 0, md: '56px' } }}>
+								{desgloseRecargoDetalle && (
+									<Box
+										sx={{
+											bgcolor: '#ffffff',
+											border: '1px solid #e8ebf2',
+											borderRadius: 2,
+											borderLeft: '4px solid #d6c7ff',
+											p: { xs: 1.5, sm: 2 }
+										}}
+									>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800, mb: 1.2 }}>
+											Desglose de recargo
+										</Typography>
+										<Box sx={{ mb: 1.2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+											<Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 700 }}>
+												Regla usada:
+											</Typography>
+											{diaRecargoPersonalizadoDetalle ? (
+												<Chip
+													size="small"
+													label={`Personalizado: dia ${diaRecargoPersonalizadoDetalle}`}
+													sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }}
+												/>
+											) : (
+												<Chip
+													size="small"
+													label="Global"
+													sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }}
+												/>
+											)}
+										</Box>
+										<Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 700, mb: 1.2 }}>
+											Fecha aplicada: {fechaRecargoAplicadoTexto}
+										</Typography>
+										<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr', md: '1fr' }, gap: 1.2 }}>
+											<Box>
+												<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+													Monto base (sin recargo)
+												</Typography>
+												<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+													{`$${formatMoney(desgloseRecargoDetalle.montoSinRecargo)} USD`}
+												</Typography>
+											</Box>
+											<Box>
+												<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+													Recargo aplicado
+												</Typography>
+												<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+													{`$${formatMoney(desgloseRecargoDetalle.recargoAplicado)} USD`}
+												</Typography>
+											</Box>
+											<Box>
+												<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+													Total con recargo
+												</Typography>
+												<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
+													{`$${formatMoney(desgloseRecargoDetalle.totalConRecargo)} USD`}
+												</Typography>
+											</Box>
+										</Box>
+										{esAdmin && Number(desgloseRecargoDetalle.recargoAplicado || 0) > 0 && (
+											<Box sx={{ mt: 1.4, display: 'flex', justifyContent: 'flex-end' }}>
+												<Button
+													variant="outlined"
+													onClick={corregirRecargoDesdeDetalle}
+													disabled={corrigiendoRecargo}
+													sx={{ borderRadius: 999, fontWeight: 800 }}
+												>
+													{corrigiendoRecargo ? 'Corrigiendo...' : 'Retirar recargo'}
+												</Button>
+											</Box>
+										)}
+									</Box>
+								)}
+
+								{historialNotasDetalle.length > 0 && (
+									<Box>
+										<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
+											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+												<HistoryRoundedIcon sx={{ color: '#8ea0bc', fontSize: 19 }} />
+												<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.15 }}>
+													Historial de notas
+												</Typography>
+											</Box>
+											<Chip label={`${historialNotasDetalle.length} total`} size="small" sx={{ bgcolor: '#d9e4f7', color: '#4b6ca7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }} />
+										</Box>
+
+										<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+											{historialNotasDetalle.map((item, idx) => {
+												const actor = String(item?.actor_nombre || '').trim() || 'Usuario';
+												const rol = String(item?.actor_rol || '').trim();
+												const accion = String(item?.accion || '').trim() || 'edicion_manual';
+												const fechaItem = item?.fecha ? formatFechaBonita(item.fecha) : '-';
+												const anteriorMonto = Number(item?.anterior?.monto_esperado);
+												const nuevoMonto = Number(item?.nuevo?.monto_esperado);
+												const anteriorEstatus = item?.anterior?.estatus || '-';
+												const nuevoEstatus = item?.nuevo?.estatus || '-';
+
+												return (
+													<Box
+														key={item?._id || `${accion}-${idx}`}
+														sx={{
+															bgcolor: '#ffffff',
+															border: '1px solid #e8ebf2',
+															borderRadius: 2,
+															borderLeft: '4px solid #d6c7ff',
+															px: 1.7,
+															py: 1.2
+														}}
+													>
+														<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+															<Typography sx={{ fontWeight: 800, color: '#0b2a57' }}>
+																{actor}{rol ? ` (${rol})` : ''}
+															</Typography>
+															<Typography sx={{ color: '#64748b', fontSize: 12 }}>{fechaItem}</Typography>
+														</Box>
+														<Typography sx={{ mt: 0.5, color: '#334155', fontSize: 13 }}>
+															{String(item?.nota || '').trim()}
+														</Typography>
+														<Box sx={{ mt: 0.75, display: 'flex', gap: 0.7, flexWrap: 'wrap', alignItems: 'center' }}>
+															<Chip
+																size="small"
+																label={`Acción: ${accion}`}
+																sx={{ bgcolor: '#eef2ff', color: '#3730a3', fontWeight: 700 }}
+															/>
+															{Number.isFinite(anteriorMonto) && Number.isFinite(nuevoMonto) && (
+																<Chip
+																	size="small"
+																	label={`Monto: $${formatMoney(anteriorMonto)} - $${formatMoney(nuevoMonto)}`}
+																	sx={{ bgcolor: '#ecfeff', color: '#0f766e', fontWeight: 700 }}
+																/>
+															)}
+															{(anteriorEstatus || nuevoEstatus) && (
+																<Chip
+																	size="small"
+																	label={`Estatus: ${anteriorEstatus} - ${nuevoEstatus}`}
+																	sx={{ bgcolor: '#f1f5f9', color: '#334155', fontWeight: 700 }}
+																/>
+															)}
+														</Box>
+													</Box>
+												);
+											})}
+										</Box>
+									</Box>
 								)}
 							</Box>
-							<Typography sx={{ fontSize: 12, color: '#475569', fontWeight: 700, mb: 1.2 }}>
-								Fecha aplicada: {fechaRecargoAplicadoTexto}
-							</Typography>
-							<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1.2 }}>
-								<Box>
-									<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-										Monto base (sin recargo)
-									</Typography>
-									<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-										{`$${formatMoney(desgloseRecargoDetalle.montoSinRecargo)} USD`}
-									</Typography>
-								</Box>
-								<Box>
-									<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-										Recargo aplicado
-									</Typography>
-									<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-										{`$${formatMoney(desgloseRecargoDetalle.recargoAplicado)} USD`}
-									</Typography>
-								</Box>
-								<Box>
-									<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-										Total con recargo
-									</Typography>
-									<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-										{`$${formatMoney(desgloseRecargoDetalle.totalConRecargo)} USD`}
-									</Typography>
-								</Box>
-							</Box>
-						</Box>
-					)}
+						)}
+					</Box>
 
 					{((mensualidadDetalle?.monto_inscripcion !== undefined && mensualidadDetalle?.monto_inscripcion !== null)
 						|| (mensualidadDetalle?.monto_primera_mensualidad !== undefined && mensualidadDetalle?.monto_primera_mensualidad !== null)
@@ -1761,79 +2281,6 @@ function Mensualidades() {
 								</Box>
 							</Box>
 						)}
-
-					{historialNotasDetalle.length > 0 && (
-						<Box sx={{ mt: 3.25 }}>
-							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
-								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-									<HistoryRoundedIcon sx={{ color: '#8ea0bc', fontSize: 19 }} />
-									<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.15 }}>
-										Historial de notas
-									</Typography>
-								</Box>
-								<Chip label={`${historialNotasDetalle.length} total`} size="small" sx={{ bgcolor: '#d9e4f7', color: '#4b6ca7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }} />
-							</Box>
-
-							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-								{historialNotasDetalle.map((item, idx) => {
-									const actor = String(item?.actor_nombre || '').trim() || 'Usuario';
-									const rol = String(item?.actor_rol || '').trim();
-									const accion = String(item?.accion || '').trim() || 'edicion_manual';
-									const fechaItem = item?.fecha ? formatFechaBonita(item.fecha) : '-';
-									const anteriorMonto = Number(item?.anterior?.monto_esperado);
-									const nuevoMonto = Number(item?.nuevo?.monto_esperado);
-									const anteriorEstatus = item?.anterior?.estatus || '-';
-									const nuevoEstatus = item?.nuevo?.estatus || '-';
-
-									return (
-										<Box
-											key={item?._id || `${accion}-${idx}`}
-											sx={{
-												bgcolor: '#ffffff',
-												border: '1px solid #e8ebf2',
-												borderRadius: 2,
-												borderLeft: '4px solid #d6c7ff',
-												px: 1.7,
-												py: 1.2
-											}}
-										>
-											<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-												<Typography sx={{ fontWeight: 800, color: '#0b2a57' }}>
-													{actor}{rol ? ` (${rol})` : ''}
-												</Typography>
-												<Typography sx={{ color: '#64748b', fontSize: 12 }}>{fechaItem}</Typography>
-											</Box>
-											<Typography sx={{ mt: 0.5, color: '#334155', fontSize: 13 }}>
-												{String(item?.nota || '').trim()}
-											</Typography>
-											<Box sx={{ mt: 0.75, display: 'flex', gap: 0.7, flexWrap: 'wrap', alignItems: 'center' }}>
-												<Chip
-													size="small"
-													label={`Acción: ${accion}`}
-													sx={{ bgcolor: '#eef2ff', color: '#3730a3', fontWeight: 700 }}
-												/>
-												{Number.isFinite(anteriorMonto) && Number.isFinite(nuevoMonto) && (
-													<Chip
-														size="small"
-														label={`Monto: $${formatMoney(anteriorMonto)} - $${formatMoney(nuevoMonto)}`}
-														sx={{ bgcolor: '#ecfeff', color: '#0f766e', fontWeight: 700 }}
-													/>
-												)}
-												{(anteriorEstatus || nuevoEstatus) && (
-													<Chip
-														size="small"
-														label={`Estatus: ${anteriorEstatus} - ${nuevoEstatus}`}
-														sx={{ bgcolor: '#f1f5f9', color: '#334155', fontWeight: 700 }}
-													/>
-												)}
-											</Box>
-										</Box>
-									);
-								})}
-							</Box>
-						</Box>
-					)}
-
 					{pagosDetalle.length > 0 && (
 						<Box sx={{ mt: 3.25 }}>
 							<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
@@ -1858,7 +2305,7 @@ function Mensualidades() {
 											px: 1.7,
 											py: 1.2,
 											display: 'grid',
-											gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr 1fr 1fr auto' },
+											gridTemplateColumns: { xs: '1fr', md: '1.05fr 1.15fr 0.85fr 0.85fr 1fr minmax(140px, 0.8fr) auto' },
 											alignItems: 'center',
 											gap: 1.3
 										}}
@@ -1870,9 +2317,9 @@ function Mensualidades() {
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Monto</Typography>
 											<Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoConBs(pago)}</Typography>
-											{formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado) !== '-' && (
+											{formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado, true) !== '-' && (
 												<Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
-													Esperado: {formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado)}
+													Esperado: {formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado, true)}
 												</Typography>
 											)}
 											{desgloseRecargoDetalle && (
@@ -1904,7 +2351,31 @@ function Mensualidades() {
 												Registrado por: {formatRegistradoPorPago(pago)}
 											</Typography>
 										</Box>
-										<Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
+										<Box>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Nota</Typography>
+											<Typography
+												sx={{
+													color: '#334155',
+													fontWeight: 700,
+													mt: 0.25,
+													overflow: 'hidden',
+													textOverflow: 'ellipsis',
+													whiteSpace: 'nowrap',
+													maxWidth: { xs: '100%', md: 180 }
+												}}
+												title={String(pago.nota || '').trim() || '-'}
+											>
+												{String(pago.nota || '').trim() || '-'}
+											</Typography>
+											{pago.solicita_revision_recargo && (
+												<Chip
+													size="small"
+													label="Solicita revision"
+													sx={{ mt: 0.6, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }}
+												/>
+											)}
+										</Box>
+										<Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'nowrap', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
 											{pago.comprobante_url && (
 												<IconButton size="small" onClick={() => handleVerComprobante(pago.comprobante_url)} sx={{ bgcolor: '#f3f4f6', '&:hover': { bgcolor: '#e9edf3' } }}>
 													<InsertDriveFileIcon fontSize="small" sx={{ color: '#4b5563' }} />
@@ -1923,7 +2394,7 @@ function Mensualidades() {
 						</Box>
 					)}
 				</DialogContent>
-				<DialogActions sx={{ px: 3, pb: 2.25, bgcolor: '#f3f5fb', justifyContent: 'space-between' }}>
+				<DialogActions sx={{ px: 3, pb: 2.25, bgcolor: '#f3f5fb', justifyContent: 'flex-end' }}>
 					{(mensualidadDetalle?.estatus || '').toLowerCase() === 'en revision' && (
 						<Button
 							onClick={solicitarConfirmarMensualidad}
@@ -2472,6 +2943,30 @@ function Mensualidades() {
 							error={!!errorRef}
 							helperText={errorRef}
 						/>
+					)}
+					<TextField
+						label="Nota para administración (opcional)"
+						fullWidth
+						multiline
+						minRows={2}
+						margin="normal"
+						size="small"
+						sx={inputSx}
+						value={notaPago}
+						onChange={e => setNotaPago(e.target.value.slice(0, 500))}
+						helperText="Usa este campo para justificar pagos cargados tarde en sistema."
+					/>
+					{Number(pagoInfo?.recargo_aplicado_usd || 0) > 0 && (
+						<Box sx={{ mt: 0.4 }}>
+							<label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14 }}>
+								<input
+									type="checkbox"
+									checked={solicitaRevisionRecargo}
+									onChange={(e) => setSolicitaRevisionRecargo(e.target.checked)}
+								/>
+								Solicitar revisión de recargo para este pago
+							</label>
+						</Box>
 					)}
 					<Box
 						component="label"

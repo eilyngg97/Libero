@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Dialog, DialogTitle, DialogContent, Card, CardContent, Typography, IconButton, Box, Button, Collapse, TextField, InputAdornment } from '@mui/material';
+import { Dialog, DialogTitle, DialogContent, Card, CardContent, Typography, IconButton, Box, Button, TextField, InputAdornment } from '@mui/material';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import CloseIcon from '@mui/icons-material/Close';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
@@ -76,6 +76,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const [montoPagadoBs, setMontoPagadoBs] = useState('');
   const [fechaPago, setFechaPago] = useState('');
   const [referencia, setReferencia] = useState('');
+  const [notaPago, setNotaPago] = useState('');
+  const [solicitaRevisionRecargo, setSolicitaRevisionRecargo] = useState(false);
   const [comprobante, setComprobante] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -115,6 +117,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return Number(value).toFixed(2);
   };
   const referenciaInvalida = !/^[0-9]{6,}$/.test(referencia);
+  const tieneRecargoAplicado = Number(pago?.recargo_aplicado_usd || 0) > 0;
 
   useEffect(() => {
     if (!open) return;
@@ -157,6 +160,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setMontoPagadoBs('');
       setFechaPago('');
       setReferencia('');
+      setNotaPago('');
+      setSolicitaRevisionRecargo(false);
       setComprobante(null);
       setSubmitting(false);
       setSubmitError(null);
@@ -317,6 +322,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       formData.append('fecha_pago', fechaPago);
       formData.append('metodo_pago', metodoSeleccionado?.nombre || metodoSeleccionado?.id || '');
       if (referencia) formData.append('referencia', referencia);
+      if (notaPago.trim()) formData.append('nota', notaPago.trim());
+      formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
       if (comprobante) formData.append('comprobante', comprobante);
 
       const token = localStorage.getItem('token');
@@ -487,7 +494,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
           </Box>
         ) : (
           <Box>
-            {metodoSeleccionado.id == 'deposito-usd' && (
+            {metodoSeleccionado.id === 'deposito-usd' && (
               <Card
                 sx={{
                   mb: 2,
@@ -810,6 +817,20 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     </Typography>
                   </Box>
                   <Box sx={{ height: 1, backgroundColor: '#e2e8f0', mb: 2 }} />
+                  <TextField
+                    label="Fecha de pago"
+                    type="date"
+                    fullWidth
+                    margin="dense"
+                    size="small"
+                    sx={inputSx}
+                    InputLabelProps={{ shrink: true }}
+                    value={fechaPago}
+                    onChange={(e) => setFechaPago(e.target.value)}
+                  />
+                  <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
+                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/USD` : 'No disponible'}
+                  </Typography>
                   {!esAbonoParcial && (
                     <TextField
                       label="Monto pagado (Bs)"
@@ -851,20 +872,6 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     </>
                   )}
                   <TextField
-                    label="Fecha de pago"
-                    type="date"
-                    fullWidth
-                    margin="dense"
-                    size="small"
-                    sx={inputSx}
-                    InputLabelProps={{ shrink: true }}
-                    value={fechaPago}
-                    onChange={(e) => setFechaPago(e.target.value)}
-                  />
-                  <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
-                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/USD` : 'No disponible'}
-                  </Typography>
-                  <TextField
                     label="Referencia"
                     fullWidth
                     margin="dense"
@@ -876,6 +883,30 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     helperText={referenciaInvalida ? 'La referencia debe incluir, como mínimo, los últimos 6 dígitos.' : ''}
                     inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
                   />
+                  <TextField
+                    label="Nota para administracion (opcional)"
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    margin="dense"
+                    size="small"
+                    sx={inputSx}
+                    value={notaPago}
+                    onChange={(e) => setNotaPago(e.target.value.slice(0, 500))}
+                    helperText="Explica aqui si pagaste a tiempo y se registro tarde en sistema."
+                  />
+                  {tieneRecargoAplicado && (
+                    <Box sx={{ mt: 0.4 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14 }}>
+                        <input
+                          type="checkbox"
+                          checked={solicitaRevisionRecargo}
+                          onChange={(e) => setSolicitaRevisionRecargo(e.target.checked)}
+                        />
+                        Solicitar revision de recargo para este pago
+                      </label>
+                    </Box>
+                  )}
                   <Box
                     component="label"
                     sx={{

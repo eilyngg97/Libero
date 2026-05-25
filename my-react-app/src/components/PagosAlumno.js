@@ -55,6 +55,8 @@ function PagosAlumno(props) {
   const [montoPago, setMontoPago] = useState('');
   const [fechaPago, setFechaPago] = useState(() => new Date().toISOString().slice(0, 10));
   const [referencia, setReferencia] = useState('');
+  const [notaPago, setNotaPago] = useState('');
+  const [solicitaRevisionRecargo, setSolicitaRevisionRecargo] = useState(false);
   const [errorRef, setErrorRef] = useState('');
   const [comprobante, setComprobante] = useState(null);
   const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
@@ -238,6 +240,8 @@ function PagosAlumno(props) {
   const esAlumnoBecado = String(alumno?.tipo_mensualidad || '').toLowerCase() === 'beca_completa';
   const tieneMensualidadBecado = mensualidades.some((m) => normalizarEstado(m?.estado) === 'becado');
   const bloqueaAdelantoPorBeca = esAlumnoBecado || tieneMensualidadBecado;
+  const estadoMensualidadDetalle = normalizarEstado(mensualidadDetalle?.estado);
+  const usuarioPuedeEditarEliminarPago = ['insolvente', 'retrasado', 'pendiente'].includes(estadoMensualidadDetalle);
 
   const pagosFiltrados = pagosOrdenados.filter(pago => {
     const estado = normalizarEstado(pago.estado);
@@ -272,24 +276,6 @@ function PagosAlumno(props) {
     return Number(value).toFixed(2);
   };
 
-  const formatMontoEsperadoConBs = (montoUsd) => {
-    const usd = formatMoney(montoUsd);
-    if (!tasa || Number.isNaN(tasa)) {
-      return `${usd} USD`;
-    }
-    const bs = formatMoney(Number(montoUsd) * tasa);
-    return `${usd} USD / Bs ${bs}`;
-  };
-
-  const formatMontoConBs = (pago) => {
-    const montoUsd = formatMoney(pago?.monto_pagado);
-    const montoBs = pago?.monto_pagado_bs;
-    if (montoBs === null || montoBs === undefined || Number.isNaN(Number(montoBs))) {
-      return `$${montoUsd}`;
-    }
-    return `$${montoUsd} / Bs ${formatMoney(montoBs)}`;
-  };
-
   const formatMontoPrincipal = (pago) => {
     const montoBs = Number(pago?.monto_pagado_bs);
     if (Number.isFinite(montoBs) && montoBs > 0) {
@@ -299,9 +285,29 @@ function PagosAlumno(props) {
     return `$${formatMoney(pago?.monto_pagado)} USD`;
   };
 
-  const formatMontoEsperado = (pago) => {
+  const formatMontoEsperado = (pago, fallbackMontoUsd = null, preferirMontoActual = false) => {
+    if (preferirMontoActual) {
+      const montoActualUsd = Number(fallbackMontoUsd);
+      if (Number.isFinite(montoActualUsd) && montoActualUsd >= 0) {
+        const montoPagoUsd = Number(pago?.monto_pagado);
+        const montoPagoBs = Number(pago?.monto_pagado_bs);
+        const tasaAplicada = (Number.isFinite(montoPagoUsd) && montoPagoUsd > 0 && Number.isFinite(montoPagoBs) && montoPagoBs > 0)
+          ? (montoPagoBs / montoPagoUsd)
+          : null;
+
+        if (Number.isFinite(tasaAplicada) && tasaAplicada > 0) {
+          const montoActualBs = montoActualUsd * tasaAplicada;
+          return `Bs ${formatMoney(montoActualBs)} / $${formatMoney(montoActualUsd)} USD`;
+        }
+
+        return `$${formatMoney(montoActualUsd)} USD`;
+      }
+    }
+
     const montoBs = Number(pago?.monto_esperado_bs);
-    const montoUsd = Number(pago?.monto_esperado_usd);
+    const montoUsd = Number.isFinite(Number(pago?.monto_esperado_usd))
+      ? Number(pago?.monto_esperado_usd)
+      : Number(fallbackMontoUsd);
 
     if (Number.isFinite(montoBs) && montoBs > 0 && Number.isFinite(montoUsd) && montoUsd > 0) {
       return `Bs ${formatMoney(montoBs)} / $${formatMoney(montoUsd)} USD`;
@@ -375,6 +381,8 @@ function PagosAlumno(props) {
     setMontoPago(Number(pago?.monto_pagado) || '');
     setFechaPago(pago?.fecha_pago ? new Date(pago.fecha_pago).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
     setReferencia(pago?.referencia ? String(pago.referencia) : '');
+    setNotaPago(pago?.nota ? String(pago.nota) : '');
+    setSolicitaRevisionRecargo(Boolean(pago?.solicita_revision_recargo));
     setErrorRef('');
     setComprobante(null);
     setQuitarComprobanteActual(false);
@@ -404,6 +412,8 @@ function PagosAlumno(props) {
       formData.append('fecha_pago', fechaPago);
       formData.append('metodo_pago', normalizeMetodoPago(metodoPago));
       formData.append('referencia', metodoRequiereReferencia(metodoPago) ? referencia : '');
+      formData.append('nota', String(notaPago || '').trim());
+      formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
 
       const montoBs = tasaPagoHistorica ? (monto * Number(tasaPagoHistorica)).toFixed(2) : '';
       if (montoBs) formData.append('monto_pagado_bs', montoBs);
@@ -425,6 +435,8 @@ function PagosAlumno(props) {
 
       setModalEditarOpen(false);
       setEditandoPago(null);
+      setNotaPago('');
+      setSolicitaRevisionRecargo(false);
       await fetchMensualidades();
       await actualizarDetalleMensualidad(mensualidadDetalle, true);
       setSuccessMessage('Pago actualizado correctamente');
@@ -1207,7 +1219,7 @@ function PagosAlumno(props) {
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatMontoEsperado(detallePago)}</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatMontoEsperado(detallePago, mensualidadDetalle?.monto_total ?? mensualidadDetalle?.monto, true)}</Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
@@ -1232,6 +1244,16 @@ function PagosAlumno(props) {
                     </Box>
                   </Box>
 
+                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Nota</Typography>
+                    <Typography sx={{ mt: 0.7, color: '#334155', fontWeight: 700, lineHeight: 1.3 }}>
+                      {String(detallePago.nota || '').trim() || '-'}
+                    </Typography>
+                    {detallePago.solicita_revision_recargo && (
+                      <Chip size="small" label="Solicitud de revision de recargo" sx={{ mt: 0.8, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }} />
+                    )}
+                  </Box>
+
                   <Box>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Comprobante</Typography>
                     {detallePago.comprobante_url ? (
@@ -1248,25 +1270,27 @@ function PagosAlumno(props) {
                     )}
                   </Box>
 
-                  <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { md: '2 / 3' } }}>
-                    <Button
-                      variant="contained"
-                      startIcon={<EditIcon fontSize="small" />}
-                      onClick={() => abrirModalEditarPago(detallePago)}
-                      sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#e5edf8', color: '#1165a4', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#d8e5f6', boxShadow: 'none' } }}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      variant="contained"
-                      startIcon={<DeleteOutlineIcon fontSize="small" />}
-                      onClick={() => solicitarEliminarPago(detallePago)}
-                      disabled={eliminandoPagoId === detallePago._id}
-                      sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
-                    >
-                      {eliminandoPagoId === detallePago._id ? 'Eliminando...' : 'Eliminar'}
-                    </Button>
-                  </Box>
+                  {usuarioPuedeEditarEliminarPago && (
+                    <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { md: '2 / 3' } }}>
+                      <Button
+                        variant="contained"
+                        startIcon={<EditIcon fontSize="small" />}
+                        onClick={() => abrirModalEditarPago(detallePago)}
+                        sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#e5edf8', color: '#1165a4', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#d8e5f6', boxShadow: 'none' } }}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        variant="contained"
+                        startIcon={<DeleteOutlineIcon fontSize="small" />}
+                        onClick={() => solicitarEliminarPago(detallePago)}
+                        disabled={eliminandoPagoId === detallePago._id}
+                        sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
+                      >
+                        {eliminandoPagoId === detallePago._id ? 'Eliminando...' : 'Eliminar'}
+                      </Button>
+                    </Box>
+                  )}
                 </Box>
               </Box>
             </>
@@ -1315,9 +1339,9 @@ function PagosAlumno(props) {
                           Equivalente: {formatEquivalenteUsdDesdeBs(pago)}
                         </Typography>
                       )}
-                      {formatMontoEsperado(pago) !== '-' && (
+                      {formatMontoEsperado(pago, mensualidadDetalle?.monto_total ?? mensualidadDetalle?.monto, true) !== '-' && (
                         <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
-                          Esperado: {formatMontoEsperado(pago)}
+                          Esperado: {formatMontoEsperado(pago, mensualidadDetalle?.monto_total ?? mensualidadDetalle?.monto, true)}
                         </Typography>
                       )}
                     </Box>
@@ -1333,18 +1357,29 @@ function PagosAlumno(props) {
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
                       <Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
                     </Box>
+                    <Box>
+                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Nota</Typography>
+                      <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>{String(pago.nota || '').trim() || '-'}</Typography>
+                      {pago.solicita_revision_recargo && (
+                        <Chip size="small" label="Solicita revision" sx={{ mt: 0.6, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }} />
+                      )}
+                    </Box>
                     <Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
                       {pago.comprobante_url && (
                         <IconButton size="small" onClick={() => handleVerComprobante(pago.comprobante_url)} sx={{ bgcolor: '#f3f4f6', '&:hover': { bgcolor: '#e9edf3' } }}>
                           <InsertDriveFileIcon fontSize="small" sx={{ color: '#4b5563' }} />
                         </IconButton>
                       )}
-                      <IconButton size="small" onClick={() => abrirModalEditarPago(pago)} sx={{ bgcolor: '#e0f1fb', '&:hover': { bgcolor: '#d1e9f8' } }}>
-                        <EditIcon fontSize="small" sx={{ color: '#0a78b8' }} />
-                      </IconButton>
-                      <IconButton size="small" onClick={() => solicitarEliminarPago(pago)} disabled={eliminandoPagoId === pago._id} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
-                        <DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
-                      </IconButton>
+                      {usuarioPuedeEditarEliminarPago && (
+                        <>
+                          <IconButton size="small" onClick={() => abrirModalEditarPago(pago)} sx={{ bgcolor: '#e0f1fb', '&:hover': { bgcolor: '#d1e9f8' } }}>
+                            <EditIcon fontSize="small" sx={{ color: '#0a78b8' }} />
+                          </IconButton>
+                          <IconButton size="small" onClick={() => solicitarEliminarPago(pago)} disabled={eliminandoPagoId === pago._id} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
+                            <DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
+                          </IconButton>
+                        </>
+                      )}
                     </Box>
                   </Box>
                 ))}
@@ -1463,6 +1498,29 @@ function PagosAlumno(props) {
               error={!!errorRef}
               helperText={errorRef}
             />
+          )}
+          <TextField
+            label="Nota para administración (opcional)"
+            value={notaPago}
+            onChange={(e) => setNotaPago(e.target.value.slice(0, 500))}
+            fullWidth
+            multiline
+            minRows={2}
+            margin="normal"
+            size="small"
+            sx={inputSx}
+          />
+          {Number(mensualidadDetalle?.recargo_aplicado_usd || 0) > 0 && (
+            <Box sx={{ mt: 0.2 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={solicitaRevisionRecargo}
+                  onChange={(e) => setSolicitaRevisionRecargo(e.target.checked)}
+                />
+                Solicitar revision de recargo para este pago
+              </label>
+            </Box>
           )}
           <Box
             component="label"
