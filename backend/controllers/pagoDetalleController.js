@@ -205,7 +205,15 @@ function calcularToleranciaUsdDesdeBs(monto, montoBs) {
   return redondearMonto(MONTO_TOLERANCIA_BS / tasaAplicada);
 }
 
-async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, actorRol = null, models = {} }) {
+async function validarPago({
+  mensualidad,
+  monto,
+  montoBs,
+  pagoIdExcluir = null,
+  actorRol = null,
+  solicitaRevisionRecargo = false,
+  models = {}
+}) {
   const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
   if (!mensualidad) return { error: { status: 404, payload: { error: 'Mensualidad no encontrada' } } };
 
@@ -218,6 +226,15 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
     .reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0);
   const restante = Math.max(0, (Number(mensualidad.monto_esperado) || 0) - totalPrevio);
   const toleranciaUsd = calcularToleranciaUsdDesdeBs(monto, montoBs);
+  const totalConPagoActual = redondearMonto(totalPrevio + monto);
+  const montoBaseSinRecargo = Number.isFinite(Number(mensualidad.monto_sin_recargo_usd))
+    ? Number(mensualidad.monto_sin_recargo_usd)
+    : redondearMonto((Number(mensualidad.monto_esperado) || 0) - (Number(mensualidad.recargo_aplicado_usd) || 0));
+  const recargoAplicado = Number(mensualidad.recargo_aplicado_usd);
+  const tieneRecargoAplicado = Number.isFinite(recargoAplicado) && recargoAplicado > 0;
+  const baseSinRecargoValida = Number.isFinite(montoBaseSinRecargo) && montoBaseSinRecargo > 0;
+  const cubreMontoBaseSinRecargo = baseSinRecargoValida && totalConPagoActual >= (montoBaseSinRecargo - toleranciaUsd);
+  const permiteRevisionRecargoSinCuotas = solicitaRevisionRecargo && tieneRecargoAplicado && cubreMontoBaseSinRecargo;
 
   if (!monto || Number.isNaN(monto) || monto <= 0) {
     return { error: { status: 400, payload: { error: 'Monto pagado inválido' } } };
@@ -231,7 +248,7 @@ async function validarPago({ mensualidad, monto, montoBs, pagoIdExcluir = null, 
     return { error: { status: 400, payload: { error: 'La mensualidad ya está pagada' } } };
   }
 
-  if (!puedePagarCuotas && monto < restante && (restante - monto) > toleranciaUsd) {
+  if (!puedePagarCuotas && monto < restante && (restante - monto) > toleranciaUsd && !permiteRevisionRecargoSinCuotas) {
     return { error: { status: 400, payload: { error: 'Este alumno no tiene habilitado pago en cuotas' } } };
   }
 
@@ -276,7 +293,15 @@ exports.registrarPago = async (req, res) => {
     const montoEsperadoUsd = normalizarMonto(monto_esperado_usd);
     const montoEsperadoBs = normalizarMontoBs(monto_esperado_bs);
     const mensualidad = await obtenerMensualidadConAlumnoTenant(id_mensualidad, tenantModels);
-    const validacion = await validarPago({ mensualidad, monto, montoBs, actorRol: req.user?.rol, models: tenantModels });
+    const solicitaRevisionRecargo = normalizarBooleano(solicita_revision_recargo);
+    const validacion = await validarPago({
+      mensualidad,
+      monto,
+      montoBs,
+      actorRol: req.user?.rol,
+      solicitaRevisionRecargo,
+      models: tenantModels
+    });
     if (validacion.error) {
       return res.status(validacion.error.status).json(validacion.error.payload);
     }
@@ -288,7 +313,7 @@ exports.registrarPago = async (req, res) => {
       monto_esperado_usd: Number.isFinite(montoEsperadoUsd) ? redondearMonto(montoEsperadoUsd) : undefined,
       monto_esperado_bs: montoEsperadoBs !== null ? redondearMonto(montoEsperadoBs) : undefined,
       nota: normalizarNotaPago(nota),
-      solicita_revision_recargo: normalizarBooleano(solicita_revision_recargo),
+      solicita_revision_recargo: solicitaRevisionRecargo,
       fecha_pago,
       metodo_pago,
       referencia,
@@ -332,12 +357,16 @@ exports.editarPago = async (req, res) => {
     const montoBs = normalizarMontoBs(monto_pagado_bs);
     const montoEsperadoUsd = normalizarMonto(monto_esperado_usd);
     const montoEsperadoBs = normalizarMontoBs(monto_esperado_bs);
+    const solicitaRevisionRecargo = solicita_revision_recargo !== undefined
+      ? normalizarBooleano(solicita_revision_recargo)
+      : normalizarBooleano(pago.solicita_revision_recargo);
     const validacion = await validarPago({
       mensualidad,
       monto,
       montoBs,
       pagoIdExcluir: pago._id,
       actorRol: req.user?.rol,
+      solicitaRevisionRecargo,
       models: tenantModels
     });
 
@@ -361,7 +390,7 @@ exports.editarPago = async (req, res) => {
       pago.nota = normalizarNotaPago(nota);
     }
     if (solicita_revision_recargo !== undefined) {
-      pago.solicita_revision_recargo = normalizarBooleano(solicita_revision_recargo);
+      pago.solicita_revision_recargo = solicitaRevisionRecargo;
     }
 
     if (req.file) {

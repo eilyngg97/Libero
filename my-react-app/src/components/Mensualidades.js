@@ -477,11 +477,12 @@ function Mensualidades() {
 			: 0;
 		const tasaFallback = Number(tasaPagoHistorica || dolar?.promedio || 0);
 		const tasaInicial = tasaDesdePago > 0 ? tasaDesdePago : (Number.isFinite(tasaFallback) && tasaFallback > 0 ? tasaFallback : 0);
+		const montoEsperadoPagoBs = Number(detallePago?.monto_esperado_bs);
 		const montoEsperadoVigenteUsd = Number(mensualidadDetalle?.monto_esperado);
-		const esperadoBsInicial = (Number.isFinite(montoEsperadoVigenteUsd) && montoEsperadoVigenteUsd >= 0 && tasaInicial > 0)
-			? Number((montoEsperadoVigenteUsd * tasaInicial).toFixed(2))
-			: (Number.isFinite(Number(detallePago?.monto_esperado_bs))
-				? Number(detallePago?.monto_esperado_bs)
+		const esperadoBsInicial = Number.isFinite(montoEsperadoPagoBs)
+			? montoEsperadoPagoBs
+			: ((Number.isFinite(montoEsperadoVigenteUsd) && montoEsperadoVigenteUsd >= 0 && tasaInicial > 0)
+				? Number((montoEsperadoVigenteUsd * tasaInicial).toFixed(2))
 				: '');
 
 		setUltimoPagoDraft({
@@ -489,7 +490,9 @@ function Mensualidades() {
 			fecha_pago: getInputDateFromApi(detallePago?.fecha_pago),
 			monto_pagado_bs: Number.isFinite(Number(detallePago?.monto_pagado_bs))
 				? Number(detallePago?.monto_pagado_bs)
-				: '',
+				: ((Number.isFinite(montoUsdPago) && montoUsdPago > 0 && tasaInicial > 0)
+					? Number((montoUsdPago * tasaInicial).toFixed(2))
+					: ''),
 			monto_esperado_bs: esperadoBsInicial,
 			referencia: detallePago?.referencia ? String(detallePago.referencia) : '',
 			nota: detallePago?.nota ? String(detallePago.nota) : '',
@@ -594,6 +597,7 @@ function Mensualidades() {
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'No se pudo actualizar el pago');
 
+			let mensualidadActualizada = mensualidadDetalle;
 			if (mensualidadDetalle?._id) {
 				const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}`, {
 					method: 'PATCH',
@@ -608,10 +612,13 @@ function Mensualidades() {
 				});
 				const dataMens = await resMens.json();
 				if (!resMens.ok) throw new Error(dataMens?.error || 'No se pudo actualizar el monto esperado de la mensualidad');
+				if (dataMens?.mensualidad) {
+					mensualidadActualizada = { ...mensualidadDetalle, ...dataMens.mensualidad };
+				}
 			}
 
 			await cargarMensualidades();
-			await actualizarDetalleMensualidad(mensualidadDetalle, true);
+			await actualizarDetalleMensualidad(mensualidadActualizada, true);
 			setEditandoUltimoPagoInline(false);
 			setUltimoPagoComprobante(null);
 			setSuccessMessage('Pago actualizado correctamente');
@@ -947,8 +954,42 @@ function Mensualidades() {
 		return `${formatMoney(montoBs / montoUsd)} Bs/USD`;
 	};
 
+	const existeAjusteManualMontoEsperadoBs = (pago, fallbackMontoUsd = null) => {
+		const montoEsperadoBs = Number(pago?.monto_esperado_bs);
+		if (!Number.isFinite(montoEsperadoBs) || montoEsperadoBs <= 0) return false;
+
+		const montoEsperadoUsdPago = Number(pago?.monto_esperado_usd);
+		const montoEsperadoUsd = Number.isFinite(montoEsperadoUsdPago) && montoEsperadoUsdPago > 0
+			? montoEsperadoUsdPago
+			: Number(fallbackMontoUsd);
+
+		const montoPagadoUsd = Number(pago?.monto_pagado);
+		const montoPagadoBs = Number(pago?.monto_pagado_bs);
+		const tasaAplicada = (Number.isFinite(montoPagadoUsd) && montoPagadoUsd > 0 && Number.isFinite(montoPagadoBs) && montoPagadoBs > 0)
+			? (montoPagadoBs / montoPagadoUsd)
+			: null;
+
+		if (!Number.isFinite(montoEsperadoUsd) || montoEsperadoUsd <= 0 || !Number.isFinite(tasaAplicada) || tasaAplicada <= 0) {
+			return false;
+		}
+
+		const montoEsperadoCalculadoBs = montoEsperadoUsd * tasaAplicada;
+		return Math.abs(montoEsperadoCalculadoBs - montoEsperadoBs) > 0.1;
+	};
+
 	const formatMontoEsperadoPago = (pago, fallbackMontoUsd = null, preferirMontoActual = false) => {
 		if (preferirMontoActual) {
+			const montoEsperadoPagoBs = Number(pago?.monto_esperado_bs);
+			const montoEsperadoPagoUsd = Number(pago?.monto_esperado_usd);
+
+			if (Number.isFinite(montoEsperadoPagoBs) && montoEsperadoPagoBs > 0 && Number.isFinite(montoEsperadoPagoUsd) && montoEsperadoPagoUsd > 0) {
+				return `Bs ${formatMoney(montoEsperadoPagoBs)} / $${formatMoney(montoEsperadoPagoUsd)} USD`;
+			}
+
+			if (Number.isFinite(montoEsperadoPagoBs) && montoEsperadoPagoBs > 0) {
+				return `Bs ${formatMoney(montoEsperadoPagoBs)}`;
+			}
+
 			const montoActualUsd = Number(fallbackMontoUsd);
 			if (Number.isFinite(montoActualUsd) && montoActualUsd >= 0) {
 				const montoPagoUsd = Number(pago?.monto_pagado);
@@ -1390,6 +1431,7 @@ function Mensualidades() {
 		if (!Number.isFinite(montoBs) || montoBs < 0 || !Number.isFinite(tasaDetallePago) || tasaDetallePago <= 0) return null;
 		return montoBs / tasaDetallePago;
 	})();
+	const ultimoPagoTieneAjusteManualMontoEsperado = existeAjusteManualMontoEsperadoBs(detallePago, mensualidadDetalle?.monto_esperado);
 	const inlineEditableFieldSx = {
 		mt: 0.65,
 		minWidth: 180,
@@ -1918,6 +1960,11 @@ function Mensualidades() {
 										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
 											Equivalente USD: {ultimoPagoMontoEsperadoUsdDraft !== null ? `$${formatMoney(ultimoPagoMontoEsperadoUsdDraft)} USD` : '-'}
 										</Typography>
+										{ultimoPagoTieneAjusteManualMontoEsperado && (
+											<Typography sx={{ mt: 0.45, fontSize: 12, color: '#b45309', fontWeight: 800 }}>
+												Monto esperado Bs ajustado manualmente
+											</Typography>
+										)}
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
@@ -1968,7 +2015,7 @@ function Mensualidades() {
 											minRows={2}
 											size="small"
 											sx={inlineEditableMultilineSx}
-											disabled
+											disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
 											value={ultimoPagoDraft.nota}
 											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, nota: e.target.value.slice(0, 500) }))}
 										/>
@@ -2321,6 +2368,13 @@ function Mensualidades() {
 												<Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
 													Esperado: {formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado, true)}
 												</Typography>
+											)}
+											{existeAjusteManualMontoEsperadoBs(pago, mensualidadDetalle?.monto_esperado) && (
+												<Chip
+													size="small"
+													label="Monto esperado Bs ajustado"
+													sx={{ mt: 0.45, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }}
+												/>
 											)}
 											{desgloseRecargoDetalle && (
 												<Box sx={{ mt: 0.35, display: 'grid', gap: 0.15 }}>
