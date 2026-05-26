@@ -893,7 +893,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     sx={inputSx}
                     value={notaPago}
                     onChange={(e) => setNotaPago(e.target.value.slice(0, 500))}
-                    helperText="Explica aqui si pagaste a tiempo y se registro tarde en sistema."
+                    helperText={tieneRecargoAplicado ? 'Explica aqui si pagaste a tiempo y se registro tarde en sistema.' : ''}
                   />
                   {tieneRecargoAplicado && (
                     <Box sx={{ mt: 0.4 }}>
