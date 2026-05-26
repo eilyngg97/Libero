@@ -478,12 +478,18 @@ function Mensualidades() {
 		const tasaFallback = Number(tasaPagoHistorica || dolar?.promedio || 0);
 		const tasaInicial = tasaDesdePago > 0 ? tasaDesdePago : (Number.isFinite(tasaFallback) && tasaFallback > 0 ? tasaFallback : 0);
 		const montoEsperadoPagoBs = Number(detallePago?.monto_esperado_bs);
+		const montoEsperadoPagoUsd = Number(detallePago?.monto_esperado_usd);
 		const montoEsperadoVigenteUsd = Number(mensualidadDetalle?.monto_esperado);
-		const esperadoBsInicial = Number.isFinite(montoEsperadoPagoBs)
-			? montoEsperadoPagoBs
-			: ((Number.isFinite(montoEsperadoVigenteUsd) && montoEsperadoVigenteUsd >= 0 && tasaInicial > 0)
-				? Number((montoEsperadoVigenteUsd * tasaInicial).toFixed(2))
-				: '');
+		const montoEsperadoMensualidadCambio = Number.isFinite(montoEsperadoVigenteUsd)
+			&& montoEsperadoVigenteUsd >= 0
+			&& (!Number.isFinite(montoEsperadoPagoUsd) || Math.abs(montoEsperadoVigenteUsd - montoEsperadoPagoUsd) > 0.01);
+		const esperadoBsInicial = montoEsperadoMensualidadCambio
+			? ((tasaInicial > 0) ? Number((montoEsperadoVigenteUsd * tasaInicial).toFixed(2)) : '')
+			: (Number.isFinite(montoEsperadoPagoBs)
+				? montoEsperadoPagoBs
+				: ((Number.isFinite(montoEsperadoVigenteUsd) && montoEsperadoVigenteUsd >= 0 && tasaInicial > 0)
+					? Number((montoEsperadoVigenteUsd * tasaInicial).toFixed(2))
+					: ''));
 
 		setUltimoPagoDraft({
 			metodo_pago: normalizeMetodoPago(detallePago?.metodo_pago),
@@ -981,6 +987,26 @@ function Mensualidades() {
 		if (preferirMontoActual) {
 			const montoEsperadoPagoBs = Number(pago?.monto_esperado_bs);
 			const montoEsperadoPagoUsd = Number(pago?.monto_esperado_usd);
+			const montoActualUsd = Number(fallbackMontoUsd);
+			const montoEsperadoCambio = Number.isFinite(montoActualUsd)
+				&& montoActualUsd >= 0
+				&& Number.isFinite(montoEsperadoPagoUsd)
+				&& Math.abs(montoActualUsd - montoEsperadoPagoUsd) > 0.01;
+
+			if (montoEsperadoCambio) {
+				const montoPagoUsd = Number(pago?.monto_pagado);
+				const montoPagoBs = Number(pago?.monto_pagado_bs);
+				const tasaAplicada = (Number.isFinite(montoPagoUsd) && montoPagoUsd > 0 && Number.isFinite(montoPagoBs) && montoPagoBs > 0)
+					? (montoPagoBs / montoPagoUsd)
+					: null;
+
+				if (Number.isFinite(tasaAplicada) && tasaAplicada > 0) {
+					const montoActualBs = montoActualUsd * tasaAplicada;
+					return `Bs ${formatMoney(montoActualBs)} / $${formatMoney(montoActualUsd)} USD`;
+				}
+
+				return `$${formatMoney(montoActualUsd)} USD`;
+			}
 
 			if (Number.isFinite(montoEsperadoPagoBs) && montoEsperadoPagoBs > 0 && Number.isFinite(montoEsperadoPagoUsd) && montoEsperadoPagoUsd > 0) {
 				return `Bs ${formatMoney(montoEsperadoPagoBs)} / $${formatMoney(montoEsperadoPagoUsd)} USD`;
@@ -990,7 +1016,6 @@ function Mensualidades() {
 				return `Bs ${formatMoney(montoEsperadoPagoBs)}`;
 			}
 
-			const montoActualUsd = Number(fallbackMontoUsd);
 			if (Number.isFinite(montoActualUsd) && montoActualUsd >= 0) {
 				const montoPagoUsd = Number(pago?.monto_pagado);
 				const montoPagoBs = Number(pago?.monto_pagado_bs);
