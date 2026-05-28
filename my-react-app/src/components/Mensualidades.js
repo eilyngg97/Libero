@@ -1257,6 +1257,17 @@ function Mensualidades() {
 		return nombre || '-';
 	};
 
+	const esAlumnoDeBajaMensualidad = (mensualidad) => {
+		const alumno = mensualidad?.id_alumno;
+		if (!alumno) return false;
+
+		if (alumno?.dado_de_baja === true) return true;
+		if (alumno?.activo === false) return true;
+
+		const estado = String(alumno?.estado || '').trim().toLowerCase();
+		return estado === 'inactivo';
+	};
+
 	const normalizarNombreArchivo = (valor) => String(valor || '')
 		.toLowerCase()
 		.normalize('NFD')
@@ -1294,7 +1305,9 @@ function Mensualidades() {
 		const nombreMes = filtroMes ? normalizarNombreArchivo(meses[Number(filtroMes) - 1] || 'mes') : 'todos_los_meses';
 
 		if (opcionesExportExcel.mesCompleto) {
-			const rowsMesCompleto = fuente.map((m) => ({
+			const rowsMesCompleto = fuente
+				.filter((m) => !esAlumnoDeBajaMensualidad(m))
+				.map((m) => ({
 				Alumno: obtenerNombreAlumnoMensualidad(m),
 				Representante: obtenerNombreRepresentanteMensualidad(m),
 				Categoria: m.id_alumno?.categoria || '-',
@@ -1313,7 +1326,10 @@ function Mensualidades() {
 			);
 		}
 
-		const insolventes = fuente.filter((m) => ['retrasado', 'insolvente'].includes(String(m.estatus || '').toLowerCase()));
+		const insolventes = fuente.filter((m) => {
+			const estatusInsolvente = ['retrasado', 'insolvente'].includes(String(m.estatus || '').toLowerCase());
+			return estatusInsolvente && !esAlumnoDeBajaMensualidad(m);
+		});
 
 		if (opcionesExportExcel.insolventesRepresentante) {
 			const rowsRepresentante = insolventes.map((m) => {

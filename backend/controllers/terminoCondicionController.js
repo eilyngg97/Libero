@@ -11,7 +11,8 @@ async function getTenantModels(req) {
     TenantTerminoCondicion: getTenantModel(connection, 'TerminoCondicion'),
     TenantTerminoAceptacion: getTenantModel(connection, 'TerminoAceptacion'),
     TenantUser: getTenantModel(connection, 'User'),
-    TenantAlumno: getTenantModel(connection, 'Alumno')
+    TenantAlumno: getTenantModel(connection, 'Alumno'),
+    TenantRepresentante: getTenantModel(connection, 'Representante')
   };
 }
 
@@ -164,7 +165,8 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
       TenantTerminoCondicion,
       TenantTerminoAceptacion,
       TenantUser,
-      TenantAlumno
+      TenantAlumno,
+      TenantRepresentante
     } = await getTenantModels(req);
 
     const termino = await TenantTerminoCondicion.findById(id).select('_id version vigente');
@@ -179,30 +181,19 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
 
     const usuarioIds = usuarios.map((item) => item._id);
 
-    const [aceptaciones, alumnos, alumnosSinUsuario] = await Promise.all([
+    const [aceptaciones, representantesConUsuario, alumnos] = await Promise.all([
       TenantTerminoAceptacion.find({ termino_id: termino._id, user_id: { $in: usuarioIds } })
         .select('_id user_id accepted_at createdAt')
         .sort({ accepted_at: -1, createdAt: -1 })
         .lean(),
-      TenantAlumno.find({
-        usuario: { $in: usuarioIds },
-        $or: [{ dado_de_baja: { $exists: false } }, { dado_de_baja: false }]
-      })
-        .select('_id usuario nombres apellidos')
-        .sort({ nombres: 1, apellidos: 1 })
+      TenantRepresentante.find({ usuario: { $in: usuarioIds } })
+        .select('_id usuario')
         .lean(),
       TenantAlumno.find({
-        $and: [
-          { $or: [{ dado_de_baja: { $exists: false } }, { dado_de_baja: false }] },
-          {
-            $or: [
-              { usuario: { $exists: false } },
-              { usuario: null }
-            ]
-          }
-        ]
+        activo: { $ne: false },
+        dado_de_baja: { $ne: true }
       })
-        .select('_id nombres apellidos')
+        .select('_id usuario representante nombres apellidos')
         .sort({ nombres: 1, apellidos: 1 })
         .lean()
     ]);
@@ -218,17 +209,39 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
       usuarios.map((usuario) => [String(usuario._id), usuario])
     );
 
+    const representanteUsuarioPorId = new Map(
+      representantesConUsuario
+        .filter((item) => item?._id && item?.usuario)
+        .map((item) => [String(item._id), String(item.usuario)])
+    );
+
     const aceptados = [];
     const pendientes = [];
     const sinUsuario = [];
 
     alumnos.forEach((alumno) => {
-      const userId = String(alumno?.usuario || '');
-      if (!userId) return;
+      const alumnoUserId = String(alumno?.usuario || '').trim();
+      const representanteId = String(alumno?.representante || '').trim();
+      const representanteUserId = representanteUsuarioPorId.get(representanteId) || '';
+      const userId = usuariosPorId.has(alumnoUserId)
+        ? alumnoUserId
+        : (usuariosPorId.has(representanteUserId) ? representanteUserId : '');
+
+      const nombreAlumno = String(`${alumno?.nombres || ''} ${alumno?.apellidos || ''}`).trim() || 'Sin nombre';
+
+      if (!userId) {
+        sinUsuario.push({
+          alumno_id: alumno._id,
+          alumno_nombre: nombreAlumno,
+          user_id: null,
+          usuario_nombre: '',
+          email: ''
+        });
+        return;
+      }
 
       const usuario = usuariosPorId.get(userId) || null;
       const aceptacion = aceptacionesPorUsuario.get(userId);
-      const nombreAlumno = String(`${alumno?.nombres || ''} ${alumno?.apellidos || ''}`).trim() || 'Sin nombre';
 
       const base = {
         alumno_id: alumno._id,
@@ -249,20 +262,7 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
 
       pendientes.push(base);
     });
-
-    alumnosSinUsuario.forEach((alumno) => {
-      const nombreAlumno = String(`${alumno?.nombres || ''} ${alumno?.apellidos || ''}`).trim() || 'Sin nombre';
-
-      sinUsuario.push({
-        alumno_id: alumno._id,
-        alumno_nombre: nombreAlumno,
-        user_id: null,
-        usuario_nombre: '',
-        email: ''
-      });
-    });
-
-    const totalAlumnosObjetivo = alumnos.length + sinUsuario.length;
+    const totalAlumnosObjetivo = alumnos.length;
 
     return res.json({
       termino_id: termino._id,
