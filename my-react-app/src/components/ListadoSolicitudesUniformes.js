@@ -17,6 +17,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Tooltip,
@@ -70,6 +71,8 @@ function ListadoSolicitudesUniformes() {
   const [comprobanteDialogOpen, setComprobanteDialogOpen] = useState(false);
   const [comprobanteUrl, setComprobanteUrl] = useState('');
   const [comprobanteTipo, setComprobanteTipo] = useState('imagen');
+  const [pagina, setPagina] = useState(0);
+  const [filasPorPagina, setFilasPorPagina] = useState(10);
 
   const token = localStorage.getItem('token');
   const theme = useTheme();
@@ -81,18 +84,52 @@ function ListadoSolicitudesUniformes() {
     return Number(value).toFixed(2);
   };
 
+  const normalizarMoneda = (moneda) => String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const formatMoneyWithCurrency = (value, moneda) => `${normalizarMoneda(moneda)} ${formatMoney(value)}`;
+
+  const parseFechaSinDesfase = (fecha) => {
+    if (!fecha) return null;
+    if (fecha instanceof Date) {
+      return Number.isNaN(fecha.getTime()) ? null : fecha;
+    }
+
+    const raw = String(fecha).trim();
+    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+    if (fechaBase) {
+      const year = Number(fechaBase[1]);
+      const month = Number(fechaBase[2]) - 1;
+      const day = Number(fechaBase[3]);
+      const localDate = new Date(year, month, day);
+      return Number.isNaN(localDate.getTime()) ? null : localDate;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   const formatFecha = (fecha) => {
     if (!fecha) return '-';
-    const date = new Date(fecha);
-    if (Number.isNaN(date.getTime())) return '-';
+    const date = parseFechaSinDesfase(fecha);
+    if (!date || Number.isNaN(date.getTime())) return '-';
     return date.toLocaleDateString('es-VE');
+  };
+
+  const formatTasaAplicada = (montoBs, montoDivisa, moneda) => {
+    const bs = Number(montoBs);
+    const divisa = Number(montoDivisa);
+    if (!Number.isFinite(bs) || !Number.isFinite(divisa) || divisa <= 0) return '-';
+    return `Bs ${formatMoney(bs / divisa)}/${normalizarMoneda(moneda)}`;
   };
 
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
 
   const pagosHistorialOrdenados = Array.isArray(pedidoSeleccionado?.pagos_historial)
-    ? [...pedidoSeleccionado.pagos_historial].sort((a, b) => new Date(a?.fecha_pago || 0) - new Date(b?.fecha_pago || 0))
+    ? [...pedidoSeleccionado.pagos_historial].sort((a, b) => {
+      const fechaA = parseFechaSinDesfase(a?.fecha_pago)?.getTime() || 0;
+      const fechaB = parseFechaSinDesfase(b?.fecha_pago)?.getTime() || 0;
+      return fechaA - fechaB;
+    })
     : [];
 
   const ultimoPagoHistorial = pagosHistorialOrdenados.length > 0
@@ -113,6 +150,32 @@ function ListadoSolicitudesUniformes() {
   const historialPagosAnteriores = pedidoSeleccionado?.estado === 'pago_en_revision'
     ? pagosHistorialOrdenados
     : pagosHistorialOrdenados.slice(0, -1);
+
+  const pedidosPaginados = pedidos.slice(
+    pagina * filasPorPagina,
+    pagina * filasPorPagina + filasPorPagina
+  );
+
+  const montoTotalDivisa = Number(pedidoSeleccionado?.precio);
+  const saldoPendienteDivisa = Number(pedidoSeleccionado?.saldo_pendiente);
+  const usarSaldoRestanteComoEsperado = ['abono', 'pago_en_revision'].includes(pedidoSeleccionado?.estado)
+    && Number.isFinite(saldoPendienteDivisa)
+    && saldoPendienteDivisa > 0;
+  const montoEsperadoDivisa = usarSaldoRestanteComoEsperado
+    ? saldoPendienteDivisa
+    : (Number.isFinite(montoTotalDivisa) ? montoTotalDivisa : 0);
+
+  const tasaAplicadaNumero = (() => {
+    const bs = Number(ultimoPagoDetalle?.monto_pagado_bs);
+    const divisa = Number(ultimoPagoDetalle?.monto_pagado);
+    if (!Number.isFinite(bs) || !Number.isFinite(divisa) || divisa <= 0) return null;
+    return bs / divisa;
+  })();
+
+  const montoEsperadoBs = (() => {
+    if (!Number.isFinite(montoEsperadoDivisa) || montoEsperadoDivisa <= 0 || !Number.isFinite(tasaAplicadaNumero)) return null;
+    return montoEsperadoDivisa * tasaAplicadaNumero;
+  })();
 
   const copiarReferencia = async (texto) => {
     try {
@@ -158,6 +221,21 @@ function ListadoSolicitudesUniformes() {
   useEffect(() => {
     fetchPedidos();
   }, [fetchPedidos]);
+
+  useEffect(() => {
+    if (pagina > 0 && pagina * filasPorPagina >= pedidos.length) {
+      setPagina(0);
+    }
+  }, [pedidos.length, pagina, filasPorPagina]);
+
+  const handleChangePagina = (_event, nuevaPagina) => {
+    setPagina(nuevaPagina);
+  };
+
+  const handleChangeFilasPorPagina = (event) => {
+    setFilasPorPagina(parseInt(event.target.value, 10));
+    setPagina(0);
+  };
 
   const openSolicitudPagoDialog = (pedido) => {
     setPedidoSeleccionado(pedido);
@@ -365,7 +443,7 @@ function ListadoSolicitudesUniformes() {
         </Alert>
       </Snackbar>
 
-      <Typography variant="h5" sx={{ mb: 2 }}>Pedidos de Uniformes</Typography>
+      <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>Pedidos de Uniformes</Typography>
       <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
         Sede: {sedeSeleccionada?.nombre || 'Todas'}
       </Typography>
@@ -375,7 +453,7 @@ function ListadoSolicitudesUniformes() {
         <Typography color="error">{error}</Typography>
       ) : isMobile ? (
         <Box sx={{ display: 'grid', gap: 1.5 }}>
-          {pedidos.map((pedido) => (
+          {pedidosPaginados.map((pedido) => (
             <Paper
               key={pedido._id}
               sx={{
@@ -398,9 +476,10 @@ function ListadoSolicitudesUniformes() {
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Talla:</b> {pedido.talla || '-'}</Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Nombre:</b> {pedido.nombre_personalizado || '-'}</Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Numero:</b> {pedido.numero_franela || '-'}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> ${formatMoney(pedido.precio)}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pagado:</b> ${formatMoney(pedido.monto_pagado)}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pendiente:</b> ${formatMoney(pedido.saldo_pendiente ?? pedido.precio)}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> {formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha:</b> {formatFecha(pedido.createdAt)}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pagado:</b> {formatMoneyWithCurrency(pedido.monto_pagado, pedido.moneda)}</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pendiente:</b> {formatMoneyWithCurrency(pedido.saldo_pendiente ?? pedido.precio, pedido.moneda)}</Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Método:</b> {pedido.metodo_pago || '-'}</Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Referencia:</b> {pedido.referencia || '-'}</Typography>
@@ -426,31 +505,43 @@ function ListadoSolicitudesUniformes() {
           ))}
         </Box>
       ) : (
-        <TableContainer component={Paper}>
-          <Table>
+        <TableContainer
+          component={Paper}
+          sx={{
+            mt: 3,
+            borderRadius: 3,
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            maxWidth: '100%',
+            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
+          }}
+        >
+          <Table sx={{ minWidth: 980 }}>
             <TableHead>
-              <TableRow>
-                <TableCell>Alumno</TableCell>
-                <TableCell>Sede</TableCell>
-                <TableCell>Prenda</TableCell>
-                <TableCell>Talla</TableCell>
-                <TableCell>Nombre</TableCell>
-                <TableCell>Numero</TableCell>
-                <TableCell>Precio</TableCell>
-                <TableCell>Estado</TableCell>
-                <TableCell>Accion</TableCell>
+              <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEDE</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>PRENDA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>TALLA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NUMERO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>PRECIO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>FECHA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCION</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {pedidos.map((pedido) => (
-                <TableRow key={pedido._id}>
-                  <TableCell>{pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}</TableCell>
-                  <TableCell>{pedido.sede?.nombre || '-'}</TableCell>
-                  <TableCell>{pedido.prenda}</TableCell>
-                  <TableCell>{pedido.talla}</TableCell>
-                  <TableCell>{pedido.nombre_personalizado || '-'}</TableCell>
-                  <TableCell>{pedido.numero_franela || '-'}</TableCell>
-                  <TableCell>${formatMoney(pedido.precio)}</TableCell>
+              {pedidosPaginados.map((pedido) => (
+                <TableRow key={pedido._id} sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}>
+                  <TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>{pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}</TableCell>
+                  <TableCell sx={{ color: '#475569' }}>{pedido.sede?.nombre || '-'}</TableCell>
+                  <TableCell sx={{ color: '#1f2937' }}>{pedido.prenda}</TableCell>
+                  <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{pedido.talla}</TableCell>
+                  <TableCell sx={{ color: '#475569' }}>{pedido.nombre_personalizado || '-'}</TableCell>
+                  <TableCell sx={{ color: '#475569' }}>{pedido.numero_franela || '-'}</TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</TableCell>
+                  <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{formatFecha(pedido.createdAt)}</TableCell>
                   <TableCell>
                     <Chip label={getEstadoLabel(pedido.estado)} size="small" sx={{ ...getEstadoStyle(pedido.estado), fontWeight: 700 }} />
                   </TableCell>
@@ -461,6 +552,16 @@ function ListadoSolicitudesUniformes() {
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={pedidos.length}
+            page={pagina}
+            onPageChange={handleChangePagina}
+            rowsPerPage={filasPorPagina}
+            onRowsPerPageChange={handleChangeFilasPorPagina}
+            rowsPerPageOptions={[5, 10, 25, 50]}
+            labelRowsPerPage="Filas por página"
+          />
         </TableContainer>
       )}
 
@@ -512,7 +613,7 @@ function ListadoSolicitudesUniformes() {
               </Box>
 
               <TextField
-                label="Monto solicitado"
+                label={`Monto solicitado (${normalizarMoneda(pedidoSeleccionado?.moneda)})`}
                 type="number"
                 value={precioSolicitado}
                 onChange={(event) => setPrecioSolicitado(event.target.value)}
@@ -603,26 +704,29 @@ function ListadoSolicitudesUniformes() {
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
                     <Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>
-                      ${formatMoney(ultimoPagoDetalle?.monto_pagado)}
-                      {Number.isFinite(Number(ultimoPagoDetalle?.monto_pagado_bs))
-                        ? ` / Bs ${formatMoney(ultimoPagoDetalle?.monto_pagado_bs)}`
-                        : ''}
+                      {`Bs ${formatMoney(ultimoPagoDetalle?.monto_pagado_bs)} / ${formatMoneyWithCurrency(ultimoPagoDetalle?.monto_pagado, pedidoSeleccionado?.moneda)}`}
                     </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>${formatMoney(pedidoSeleccionado?.precio)}</Typography>
-                  </Box>
-
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Saldo pendiente</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>${formatMoney(pedidoSeleccionado?.saldo_pendiente ?? pedidoSeleccionado?.precio)}</Typography>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>
+                      {usarSaldoRestanteComoEsperado ? 'Monto esperado (restante)' : 'Monto esperado'}
+                    </Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
+                      {`Bs ${formatMoney(montoEsperadoBs)} / ${formatMoneyWithCurrency(montoEsperadoDivisa, pedidoSeleccionado?.moneda)}`}
+                    </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
                     <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFecha(ultimoPagoDetalle?.fecha_pago)}</Typography>
+                  </Box>
+
+                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
+                      {formatTasaAplicada(ultimoPagoDetalle?.monto_pagado_bs, ultimoPagoDetalle?.monto_pagado, pedidoSeleccionado?.moneda)}
+                    </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>

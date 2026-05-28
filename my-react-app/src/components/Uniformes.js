@@ -4,6 +4,10 @@ import {
   Typography,
   Button,
   TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
   FormControlLabel,
   Checkbox,
   Snackbar,
@@ -38,6 +42,7 @@ const API_URL = `${process.env.REACT_APP_API_URL}/api/uniformes`;
 const initialForm = {
   prenda: '',
   precio: '',
+  moneda: 'USD',
   lleva_personalizacion_nombre: false,
   lleva_numero_franela: false,
   franela_representante: false,
@@ -174,6 +179,7 @@ export default function Uniformes() {
       setForm({
         prenda: u.prenda,
         precio: u.precio,
+        moneda: String(u.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD',
         lleva_personalizacion_nombre: Boolean(u.lleva_personalizacion_nombre),
         lleva_numero_franela: Boolean(u.lleva_numero_franela),
         franela_representante: Boolean(u.franela_representante),
@@ -294,6 +300,7 @@ export default function Uniformes() {
       const formData = new FormData();
       formData.append('prenda', form.prenda);
       formData.append('precio', form.precio);
+      formData.append('moneda', String(form.moneda || 'USD').toUpperCase());
       formData.append('lleva_personalizacion_nombre', String(Boolean(form.lleva_personalizacion_nombre)));
       formData.append('lleva_numero_franela', String(Boolean(form.lleva_numero_franela)));
       formData.append('franela_representante', String(Boolean(form.franela_representante)));
@@ -410,6 +417,7 @@ export default function Uniformes() {
               </Typography>
               <Box sx={{ display: 'grid', gap: 0.35 }}>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Precio:</b> ${uniforme.precio}</Typography>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Moneda:</b> {String(uniforme.moneda || 'USD').toUpperCase()}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Personalización nombre:</b> {uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Número de franela:</b> {uniforme.lleva_numero_franela ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Franela representante:</b> {uniforme.franela_representante ? 'Si' : 'No'}</Typography>
@@ -455,6 +463,7 @@ export default function Uniformes() {
               <TableRow>
                 <TableCell>Prenda</TableCell>
                 <TableCell>Precio</TableCell>
+                <TableCell>Moneda</TableCell>
                 <TableCell>Personalizacion nombre</TableCell>
                 <TableCell>Numero de franela</TableCell>
                 <TableCell>Franela de representante</TableCell>
@@ -463,12 +472,13 @@ export default function Uniformes() {
             </TableHead>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={6} align="center">Cargando...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center">Cargando...</TableCell></TableRow>
               ) : (
                 uniformes.map((uniforme) => (
                   <TableRow key={uniforme._id}>
                     <TableCell>{uniforme.prenda}</TableCell>
                     <TableCell>{uniforme.precio}</TableCell>
+                    <TableCell>{String(uniforme.moneda || 'USD').toUpperCase()}</TableCell>
                     <TableCell>{uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</TableCell>
                     <TableCell>{uniforme.lleva_numero_franela ? 'Si' : 'No'}</TableCell>
                     <TableCell>{uniforme.franela_representante ? 'Si' : 'No'}</TableCell>
@@ -486,7 +496,7 @@ export default function Uniformes() {
               )}
               {!loading && uniformes.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} align="center">No hay uniformes registrados.</TableCell>
+                  <TableCell colSpan={7} align="center">No hay uniformes registrados.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -588,6 +598,20 @@ export default function Uniformes() {
               startAdornment: <InputAdornment position="start">$</InputAdornment>
             }}
           />
+          <FormControl fullWidth margin="dense" sx={modalInputSx}>
+            <InputLabel id="moneda-prenda-label">Moneda</InputLabel>
+            <Select
+              labelId="moneda-prenda-label"
+              name="moneda"
+              value={form.moneda || 'USD'}
+              label="Moneda"
+              onChange={handleChange}
+              disabled={!token}
+            >
+              <MenuItem value="USD">USD</MenuItem>
+              <MenuItem value="EUR">EUR</MenuItem>
+            </Select>
+          </FormControl>
           <FormControlLabel
             sx={{ mt: 0.5, mb: 0, color: '#475569' }}
             control={(

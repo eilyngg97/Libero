@@ -47,6 +47,10 @@ function parseBooleanField(value) {
   return Boolean(value);
 }
 
+function normalizeMoneda(value) {
+  return String(value || 'USD').trim().toUpperCase();
+}
+
 exports.getUniformes = async (req, res) => {
   try {
     const TenantUniforme = await getTenantUniformeModel(req);
@@ -63,6 +67,7 @@ exports.createUniforme = async (req, res) => {
     const {
       prenda,
       precio,
+      moneda,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
       franela_representante
@@ -70,6 +75,10 @@ exports.createUniforme = async (req, res) => {
     const precioNumerico = Number(precio);
     if (!Number.isFinite(precioNumerico) || precioNumerico < 0) {
       return res.status(400).json({ error: 'Precio invalido para la prenda.' });
+    }
+    const monedaNormalizada = normalizeMoneda(moneda);
+    if (!['USD', 'EUR'].includes(monedaNormalizada)) {
+      return res.status(400).json({ error: 'Moneda invalida. Debe ser USD o EUR.' });
     }
     const fotosNuevas = Array.isArray(req.files) ? req.files.map((file) => buildUploadUrl(req, file)).filter(Boolean) : [];
 
@@ -80,6 +89,7 @@ exports.createUniforme = async (req, res) => {
     const uniforme = new TenantUniforme({
       prenda,
       precio: precioNumerico,
+      moneda: monedaNormalizada,
       lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
       lleva_numero_franela: parseBooleanField(lleva_numero_franela),
       franela_representante: parseBooleanField(franela_representante),
@@ -99,6 +109,7 @@ exports.updateUniforme = async (req, res) => {
     const {
       prenda,
       precio,
+      moneda,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
       franela_representante
@@ -106,6 +117,10 @@ exports.updateUniforme = async (req, res) => {
     const precioNumerico = Number(precio);
     if (!Number.isFinite(precioNumerico) || precioNumerico < 0) {
       return res.status(400).json({ error: 'Precio invalido para la prenda.' });
+    }
+    const monedaNormalizada = normalizeMoneda(moneda);
+    if (!['USD', 'EUR'].includes(monedaNormalizada)) {
+      return res.status(400).json({ error: 'Moneda invalida. Debe ser USD o EUR.' });
     }
     const fotosExistentes = parseFotosExistentes(req.body?.fotos_existentes);
     const fotosNuevas = Array.isArray(req.files) ? req.files.map((file) => buildUploadUrl(req, file)).filter(Boolean) : [];
@@ -120,6 +135,7 @@ exports.updateUniforme = async (req, res) => {
       {
         prenda,
         precio: precioNumerico,
+        moneda: monedaNormalizada,
         lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
         lleva_numero_franela: parseBooleanField(lleva_numero_franela),
         franela_representante: parseBooleanField(franela_representante),

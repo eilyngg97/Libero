@@ -68,6 +68,7 @@ exports.createPedidoUniforme = async (req, res) => {
 
     const uniforme = await TenantUniforme.findOne({ prenda });
     const precio = uniforme?.precio || 0;
+    const moneda = String(uniforme?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
     const requiereNumeroFranela = uniforme?.lleva_numero_franela !== false;
     const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo');
 
@@ -112,6 +113,7 @@ exports.createPedidoUniforme = async (req, res) => {
       alumno: alumnoId,
       sede: sedeId || undefined,
       prenda,
+      moneda,
       nombre_personalizado: String(nombrePersonalizado || '').trim().toUpperCase() || undefined,
       numero_franela: requiereNumeroFranela ? String(numeroFranelaPedido) : null,
       precio,

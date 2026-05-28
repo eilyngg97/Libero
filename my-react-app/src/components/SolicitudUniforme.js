@@ -34,12 +34,12 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
-import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import { useDolar } from '../context/DolarContext';
 import { mediaUrl } from '../utils/mediaUrl';
 
 const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
 const METODO_PAGO_DEFAULT = '';
+const MONTO_TOLERANCIA = 0.01;
 
 function buildPaymentMethods(config) {
   return [
@@ -116,6 +116,10 @@ function construirNombrePersonalizado(alumno) {
   return `${apellidoUpper} ${inicialNombre}`;
 }
 
+function normalizarMoneda(moneda) {
+  return String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+}
+
 function construirEjemploNombreJugador(alumno) {
   const nombres = String(alumno?.nombres || '').trim();
   const apellidos = String(alumno?.apellidos || '').trim();
@@ -166,6 +170,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [numeroFranelaLoading, setNumeroFranelaLoading] = useState(false);
   const [numeroFranelaError, setNumeroFranelaError] = useState('');
   const [mostrarImagenesPrenda, setMostrarImagenesPrenda] = useState(false);
+  const [tasaEuroBCV, setTasaEuroBCV] = useState(null);
 
   const tasaBCV = Number(dolar?.promedio) || 0;
   const token = localStorage.getItem('token');
@@ -186,12 +191,95 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     return Number(value).toFixed(2);
   };
 
+  const parseFechaSinDesfase = (fecha) => {
+    if (!fecha) return null;
+    if (fecha instanceof Date) {
+      return Number.isNaN(fecha.getTime()) ? null : fecha;
+    }
+
+    const raw = String(fecha).trim();
+    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+    if (fechaBase) {
+      const year = Number(fechaBase[1]);
+      const month = Number(fechaBase[2]) - 1;
+      const day = Number(fechaBase[3]);
+      const localDate = new Date(year, month, day);
+      return Number.isNaN(localDate.getTime()) ? null : localDate;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   const formatFecha = (fecha) => {
     if (!fecha) return '-';
-    const date = new Date(fecha);
-    if (Number.isNaN(date.getTime())) return '-';
+    const date = parseFechaSinDesfase(fecha);
+    if (!date || Number.isNaN(date.getTime())) return '-';
     return date.toLocaleDateString('es-VE');
   };
+
+  const obtenerTasaPorMoneda = useCallback((moneda) => {
+    const monedaNormalizada = normalizarMoneda(moneda);
+    if (monedaNormalizada === 'EUR') {
+      return Number(tasaEuroBCV) || 0;
+    }
+    return Number(tasaBCV) || 0;
+  }, [tasaEuroBCV, tasaBCV]);
+
+  const formatearMontoConMoneda = useCallback((monto, moneda) => {
+    return `${normalizarMoneda(moneda)} ${formatMoney(monto)}`;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const parseRate = (payload) => {
+      if (payload == null) return null;
+      if (typeof payload === 'number') return Number.isFinite(payload) ? payload : null;
+      const candidates = [
+        payload.promedio,
+        payload.price,
+        payload.valor,
+        payload.rate,
+        payload.oficial,
+        payload?.data?.promedio,
+        payload?.data?.price,
+        payload?.data?.valor,
+        payload?.data?.rate,
+        payload?.data?.oficial
+      ];
+      for (const candidate of candidates) {
+        const numeric = Number(candidate);
+        if (Number.isFinite(numeric) && numeric > 0) return numeric;
+      }
+      return null;
+    };
+
+    const fetchEuroRate = async () => {
+      try {
+        const response = await fetch('https://ve.dolarapi.com/v1/euros/oficial');
+        if (!response.ok) throw new Error('No se pudo obtener la tasa EUR oficial');
+        const payload = await response.json().catch(() => null);
+        const parsed = parseRate(payload);
+        if (parsed && !cancelled) {
+          setTasaEuroBCV(parsed);
+          return;
+        }
+      } catch {
+        // Sin tasa EUR disponible.
+      }
+
+      if (!cancelled) {
+        setTasaEuroBCV(null);
+      }
+    };
+
+    fetchEuroRate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchPrendas = useCallback(async () => {
     setPrendasLoading(true);
@@ -436,7 +524,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     const saldoPendiente = Number(pedido?.saldo_pendiente);
     const totalPedido = Number(pedido?.precio) || 0;
     const montoSugerido = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
-    setMontoPagado(montoSugerido > 0 ? String(montoSugerido) : '');
+    setMontoPagado(montoSugerido > 0 ? montoSugerido.toFixed(2) : '');
     setMontoPagadoBsConfirmacion('');
     setReferencia('');
     setComprobante(null);
@@ -502,16 +590,16 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setErrorMessage('Debes seleccionar un metodo de pago');
       return;
     }
-    const montoPagadoNum = Number(montoPagado);
-    const saldoValido = Number(getSaldoPendienteVisible(pedidoPago)) || 0;
+    const montoPagadoNum = Number(Number(montoPagado).toFixed(2));
+    const saldoValido = Number(Number(getSaldoPendienteVisible(pedidoPago)).toFixed(2)) || 0;
 
     if (!montoPagadoNum || Number.isNaN(montoPagadoNum) || montoPagadoNum <= 0) {
       setErrorMessage('Debes indicar un monto pagado valido');
       return;
     }
 
-    if (saldoValido > 0 && montoPagadoNum > saldoValido) {
-      setErrorMessage(`El monto pagado no puede superar el saldo pendiente ($${formatMoney(saldoValido)})`);
+    if (saldoValido > 0 && montoPagadoNum > (saldoValido + MONTO_TOLERANCIA)) {
+      setErrorMessage(`El monto pagado no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, pedidoPago?.moneda)})`);
       return;
     }
 
@@ -535,14 +623,18 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return;
     }
 
+    const monedaPedido = normalizarMoneda(pedidoPago?.moneda);
+    const tasaAplicada = obtenerTasaPorMoneda(monedaPedido);
     const montoPagadoBsNum = Number(montoPagadoBsConfirmacion);
-    const montoPagadoNum = tasaBCV > 0 ? (montoPagadoBsNum / tasaBCV) : Number(montoPagado);
+    const montoPagadoConvertido = tasaAplicada > 0 ? (montoPagadoBsNum / tasaAplicada) : Number(montoPagado);
+    const montoPagadoNum = Number(Number(montoPagadoConvertido).toFixed(2));
     const saldoPendiente = Number(pedidoPago?.saldo_pendiente);
     const totalPedido = Number(pedidoPago?.precio) || 0;
-    const saldoValido = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
+    const saldoValidoRaw = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
+    const saldoValido = Number(Number(saldoValidoRaw).toFixed(2));
 
-    if (tasaBCV <= 0) {
-      setErrorMessage('No hay tasa BCV disponible para convertir el monto en Bs');
+    if (tasaAplicada <= 0) {
+      setErrorMessage(`No hay tasa BCV disponible para convertir el monto en Bs (${monedaPedido})`);
       return;
     }
 
@@ -556,16 +648,18 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return;
     }
 
-    if (montoPagadoNum > saldoValido) {
-      setErrorMessage(`El monto pagado no puede superar el saldo pendiente ($${formatMoney(saldoValido)})`);
+    if (montoPagadoNum > (saldoValido + MONTO_TOLERANCIA)) {
+      setErrorMessage(`El monto pagado no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, monedaPedido)})`);
       return;
     }
+
+    const montoPagadoFinal = montoPagadoNum > saldoValido ? saldoValido : montoPagadoNum;
 
     try {
       setSubmittingPago(true);
       const formData = new FormData();
       formData.append('metodo_pago', metodoPago);
-      formData.append('monto_pagado', montoPagadoNum.toFixed(2));
+      formData.append('monto_pagado', montoPagadoFinal.toFixed(2));
       formData.append('monto_pagado_bs', montoPagadoBsNum.toFixed(2));
       if (referencia) formData.append('referencia', referencia);
       formData.append('fecha_pago', fechaPago);
@@ -592,7 +686,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setMostrarConfirmacionPago(false);
       setSuccessMessage(
         data?.estado === 'abono'
-          ? `Abono registrado. Saldo pendiente: $${formatMoney(data?.saldo_pendiente)}`
+          ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(data?.saldo_pendiente, normalizarMoneda(data?.moneda || pedidoPago?.moneda))}`
           : data?.estado === 'pago_en_revision'
             ? 'Pago enviado a revision'
             : 'Pago registrado correctamente'
@@ -604,8 +698,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
   };
 
-  const montoPagoBs = pedidoPago?.precio && tasaBCV ? Number(pedidoPago.precio) * tasaBCV : null;
-  const montoPagadoBsInput = montoPagado && tasaBCV ? Number(montoPagado) * tasaBCV : null;
+  const monedaPedidoPago = normalizarMoneda(pedidoPago?.moneda);
+  const tasaPedidoPago = obtenerTasaPorMoneda(monedaPedidoPago);
+  const montoPagoBs = pedidoPago?.precio && tasaPedidoPago ? Number(pedidoPago.precio) * tasaPedidoPago : null;
+  const montoPagadoBsInput = montoPagado && tasaPedidoPago ? Number(montoPagado) * tasaPedidoPago : null;
 
   const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -711,7 +807,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                               />
                             )}
                             <Typography sx={{ fontSize: 14, color: '#0f172a', whiteSpace: 'normal', lineHeight: 1.25 }}>
-                              {item.prenda} - ${formatMoney(item.precio)}
+                              {item.prenda} - {formatearMontoConMoneda(item.precio, item.moneda)}
                             </Typography>
                           </Box>
                         </MenuItem>
@@ -928,13 +1024,13 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
                       <Box sx={{ mb: 1 }}>
                         <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Precio</Typography>
-                        <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>${formatMoney(pedido.precio)}</Typography>
+                        <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>{formatearMontoConMoneda(pedido.precio, pedido.moneda)}</Typography>
                         <Typography variant="body2" sx={{ color: '#64748b' }}>
-                          Saldo pendiente: ${formatMoney(getSaldoPendienteVisible(pedido))}
+                          Saldo pendiente: {formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}
                         </Typography>
-                        {tasaBCV ? (
+                        {obtenerTasaPorMoneda(pedido.moneda) ? (
                           <Typography variant="body2" sx={{ color: '#64748b' }}>
-                            Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
+                            Bs. {formatMoney(Number(pedido.precio) * obtenerTasaPorMoneda(pedido.moneda))}
                           </Typography>
                         ) : null}
                       </Box>
@@ -951,7 +1047,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                             disabled={cancelandoId === pedido._id}
                             onClick={() => setConfirmCancelId(pedido._id)}
                           >
-                            {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                            {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar solicitud'}
                           </Button>
                         </Box>
                       ) : pedido.estado === 'pendiente' ? (
@@ -966,7 +1062,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                             disabled={cancelandoId === pedido._id}
                             onClick={() => setConfirmCancelId(pedido._id)}
                           >
-                            {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                            {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar solicitud'}
                           </Button>
                         </Box>
                       ) : (
@@ -974,7 +1070,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           {pedido.estado === 'cancelado'
                             ? 'Solicitud cancelada'
                             : pedido.estado === 'abono'
-                              ? `Abono registrado. Saldo pendiente: $${formatMoney(getSaldoPendienteVisible(pedido))}`
+                              ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}`
                             : pedido.estado === 'pago_en_revision'
                               ? 'Pago enviado, en revision'
                               : pedido.estado === 'verificado'
@@ -1011,13 +1107,13 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           <TableCell>{pedido.nombre_personalizado || '-'}</TableCell>
                           <TableCell>{pedido.numero_franela || '-'}</TableCell>
                           <TableCell>
-                            <Typography sx={{ fontWeight: 700 }}>${formatMoney(pedido.precio)}</Typography>
+                            <Typography sx={{ fontWeight: 700 }}>{formatearMontoConMoneda(pedido.precio, pedido.moneda)}</Typography>
                             <Typography variant="body2" sx={{ color: '#64748b' }}>
-                              Pendiente: ${formatMoney(getSaldoPendienteVisible(pedido))}
+                              Pendiente: {formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}
                             </Typography>
-                            {tasaBCV ? (
+                            {obtenerTasaPorMoneda(pedido.moneda) ? (
                               <Typography variant="body2" sx={{ color: '#64748b' }}>
-                                Bs. {formatMoney(Number(pedido.precio) * tasaBCV)}
+                                Bs. {formatMoney(Number(pedido.precio) * obtenerTasaPorMoneda(pedido.moneda))}
                               </Typography>
                             ) : null}
                           </TableCell>
@@ -1055,7 +1151,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                   disabled={cancelandoId === pedido._id}
                                   onClick={() => setConfirmCancelId(pedido._id)}
                                 >
-                                  {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                                  {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar solicitud'}
                                 </Button>
                               </Box>
                             ) : pedido.estado === 'pendiente' ? (
@@ -1070,7 +1166,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                   disabled={cancelandoId === pedido._id}
                                   onClick={() => setConfirmCancelId(pedido._id)}
                                 >
-                                  {cancelandoId === pedido._id ? 'Cancelando...' : 'Cancelar'}
+                                  {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar solicitud'}
                                 </Button>
                               </Box>
                             ) : (
@@ -1078,7 +1174,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                 {pedido.estado === 'cancelado'
                                   ? 'Solicitud cancelada'
                                   : pedido.estado === 'abono'
-                                    ? `Abono registrado. Saldo pendiente: $${formatMoney(getSaldoPendienteVisible(pedido))}`
+                                    ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}`
                                   : pedido.estado === 'pago_en_revision'
                                     ? 'Pago enviado, en revision'
                                     : pedido.estado === 'verificado'
@@ -1256,20 +1352,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
             {metodoPago && (
               <>
-                <Button
-                  variant="text"
-                  fullWidth
-                  onClick={() => {
-                    setMetodoPago('');
-                    setCopySuccess('');
-                    setMostrarConfirmacionPago(false);
-                  }}
-                  startIcon={<ArrowBackIosNewIcon sx={{ fontSize: 16 }} />}
-                  sx={{ mt: -0.25, color: '#64748b', fontWeight: 700 }}
-                >
-                  Volver
-                </Button>
-
                 {!mostrarConfirmacionPago && (
                   <>
                     <Box
@@ -1309,7 +1391,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     )}
 
                     <TextField
-                      label="Monto a pagar (USD)"
+                      label={`Monto a pagar (${monedaPedidoPago})`}
                       type="number"
                       value={montoPagado}
                       onChange={(event) => setMontoPagado(event.target.value)}
@@ -1320,7 +1402,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         step: '0.01',
                         max: getSaldoPendienteVisible(pedidoPago) || undefined
                       }}
-                      helperText={`Saldo pendiente actual: $${formatMoney(getSaldoPendienteVisible(pedidoPago))}`}
+                      helperText={`Saldo pendiente actual: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedidoPago), monedaPedidoPago)}`}
                     />
 
                     <Box
@@ -1358,7 +1440,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     </Box>
 
                     <Typography variant="caption" sx={{ color: '#64748b', mt: -0.5, display: 'block' }}>
-                      Tasa aplicada: {tasaBCV ? `${formatMoney(tasaBCV)} Bs/USD` : 'No disponible'}
+                      Tasa aplicada: {tasaPedidoPago ? `${formatMoney(tasaPedidoPago)} Bs/${monedaPedidoPago}` : 'No disponible'}
                     </Typography>
 
                   <Button
@@ -1380,7 +1462,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                 )}
 
                 {mostrarConfirmacionPago && (
-                  <Box sx={{ display: 'grid', gap: 1.25 }}>
+                  <Box sx={{ display: 'grid', gap: 1.25, mt: 0.8 }}>
                     <TextField
                       label="Monto pagado Bs"
                       type="number"
@@ -1388,9 +1470,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                       onChange={(event) => setMontoPagadoBsConfirmacion(event.target.value)}
                       size="small"
                       sx={inputSx}
+                      InputLabelProps={{ shrink: true }}
                       inputProps={{ min: 0, step: '0.01' }}
-                      helperText={tasaBCV > 0
-                        ? `Equivalente en USD: $${formatMoney((Number(montoPagadoBsConfirmacion) || 0) / tasaBCV)}`
+                      helperText={tasaPedidoPago > 0
+                        ? `Equivalente en ${monedaPedidoPago}: ${formatearMontoConMoneda((Number(montoPagadoBsConfirmacion) || 0) / tasaPedidoPago, monedaPedidoPago)}`
                         : 'No hay tasa BCV disponible'}
                       required
                     />

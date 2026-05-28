@@ -4,6 +4,7 @@ const UniformePedidoSchema = new mongoose.Schema({
   alumno: { type: mongoose.Schema.Types.ObjectId, ref: 'Alumno', required: true },
   sede: { type: mongoose.Schema.Types.ObjectId, ref: 'Sede', required: false },
   prenda: { type: String, required: true },
+  moneda: { type: String, enum: ['USD', 'EUR'], default: 'USD' },
   nombre_personalizado: { type: String, trim: true },
   numero_franela: { type: String, trim: true },
   precio: { type: Number, default: 0 },
