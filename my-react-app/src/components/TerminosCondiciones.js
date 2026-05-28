@@ -131,12 +131,15 @@ function TerminosCondiciones() {
   const [detalleDocumento, setDetalleDocumento] = useState(null);
   const [detallePageAceptados, setDetallePageAceptados] = useState(1);
   const [detallePagePendientes, setDetallePagePendientes] = useState(1);
+  const [detallePageSinUsuario, setDetallePageSinUsuario] = useState(1);
   const [detalleAceptaciones, setDetalleAceptaciones] = useState({
     total_alumnos: 0,
     total_aceptados: 0,
     total_pendientes: 0,
+    total_sin_usuario: 0,
     aceptados: [],
-    pendientes: []
+    pendientes: [],
+    sin_usuario: []
   });
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -385,6 +388,7 @@ function TerminosCondiciones() {
       setDetalleTab(0);
       setDetallePageAceptados(1);
       setDetallePagePendientes(1);
+      setDetallePageSinUsuario(1);
 
       const res = await fetch(`${apiBase}/api/terminos-condiciones/${item._id}/aceptaciones`, {
         headers: getAuthHeaders()
@@ -400,16 +404,20 @@ function TerminosCondiciones() {
         total_alumnos: Number(payload?.total_alumnos || payload?.total_usuarios || 0),
         total_aceptados: Number(payload?.total_aceptados || 0),
         total_pendientes: Number(payload?.total_pendientes || 0),
+        total_sin_usuario: Number(payload?.total_sin_usuario || 0),
         aceptados: Array.isArray(payload?.aceptados) ? payload.aceptados : [],
-        pendientes: Array.isArray(payload?.pendientes) ? payload.pendientes : []
+        pendientes: Array.isArray(payload?.pendientes) ? payload.pendientes : [],
+        sin_usuario: Array.isArray(payload?.sin_usuario) ? payload.sin_usuario : []
       });
     } catch (err) {
       setDetalleAceptaciones({
         total_alumnos: 0,
         total_aceptados: 0,
         total_pendientes: 0,
+        total_sin_usuario: 0,
         aceptados: [],
-        pendientes: []
+        pendientes: [],
+        sin_usuario: []
       });
       setDetalleError(err.message || 'No se pudo cargar el detalle de aceptaciones');
     } finally {
@@ -425,6 +433,7 @@ function TerminosCondiciones() {
     setDetalleTab(0);
     setDetallePageAceptados(1);
     setDetallePagePendientes(1);
+    setDetallePageSinUsuario(1);
   };
 
   const aceptarDocumentoVigente = async () => {
@@ -508,6 +517,7 @@ function TerminosCondiciones() {
 
   const totalPagesAceptados = Math.max(1, Math.ceil(detalleAceptaciones.aceptados.length / DETALLE_PAGE_SIZE));
   const totalPagesPendientes = Math.max(1, Math.ceil(detalleAceptaciones.pendientes.length / DETALLE_PAGE_SIZE));
+  const totalPagesSinUsuario = Math.max(1, Math.ceil(detalleAceptaciones.sin_usuario.length / DETALLE_PAGE_SIZE));
 
   const aceptadosPaginados = useMemo(() => {
     const start = (detallePageAceptados - 1) * DETALLE_PAGE_SIZE;
@@ -518,6 +528,11 @@ function TerminosCondiciones() {
     const start = (detallePagePendientes - 1) * DETALLE_PAGE_SIZE;
     return detalleAceptaciones.pendientes.slice(start, start + DETALLE_PAGE_SIZE);
   }, [detalleAceptaciones.pendientes, detallePagePendientes]);
+
+  const sinUsuarioPaginados = useMemo(() => {
+    const start = (detallePageSinUsuario - 1) * DETALLE_PAGE_SIZE;
+    return detalleAceptaciones.sin_usuario.slice(start, start + DETALLE_PAGE_SIZE);
+  }, [detalleAceptaciones.sin_usuario, detallePageSinUsuario]);
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc', p: { xs: 2, md: 4 } }}>
@@ -1082,6 +1097,11 @@ function TerminosCondiciones() {
                 label={`Pendientes: ${detalleAceptaciones.total_pendientes}`}
                 sx={{ fontWeight: 700, bgcolor: '#ffedd5', color: '#9a3412', border: '1px solid #fdba74' }}
               />
+              <Chip
+                size="small"
+                label={`Sin usuario: ${detalleAceptaciones.total_sin_usuario}`}
+                sx={{ fontWeight: 700, bgcolor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' }}
+              />
             </Stack>
           </Box>
 
@@ -1113,6 +1133,7 @@ function TerminosCondiciones() {
           >
             <Tab label={`Aceptados (${detalleAceptaciones.total_aceptados})`} />
             <Tab label={`Pendientes (${detalleAceptaciones.total_pendientes})`} />
+            <Tab label={`Sin usuario (${detalleAceptaciones.total_sin_usuario})`} />
           </Tabs>
 
           <Box sx={{ px: { xs: 1.5, sm: 2.5 }, py: 2, maxHeight: 380, overflowY: 'auto' }}>
@@ -1216,7 +1237,7 @@ function TerminosCondiciones() {
                   ) : null}
                 </Stack>
               )
-            ) : (
+            ) : detalleTab === 1 ? (
               detalleAceptaciones.pendientes.length === 0 ? (
                 <Alert severity="success">Todos los atletas objetivo ya aceptaron el documento.</Alert>
               ) : (
@@ -1313,6 +1334,112 @@ function TerminosCondiciones() {
                         page={detallePagePendientes}
                         count={totalPagesPendientes}
                         onChange={(_, page) => setDetallePagePendientes(page)}
+                        color="primary"
+                        size="small"
+                        siblingCount={isMobile ? 0 : 1}
+                        boundaryCount={1}
+                      />
+                    </Box>
+                  ) : null}
+                </Stack>
+              )
+            ) : (
+              detalleAceptaciones.sin_usuario.length === 0 ? (
+                <Alert severity="info">No hay atletas sin usuario vinculado.</Alert>
+              ) : (
+                <Stack spacing={1.1}>
+                  {sinUsuarioPaginados.map((item) => (
+                    <Paper
+                      key={String(item.alumno_id)}
+                      variant="outlined"
+                      sx={{ p: 1.5, borderRadius: 2, borderColor: '#e2e8f0', bgcolor: '#ffffff' }}
+                    >
+                      <Stack direction="row" spacing={1.2} alignItems="flex-start" justifyContent="space-between">
+                        <Stack direction="row" spacing={1.1} sx={{ minWidth: 0, flex: 1 }}>
+                          <Box
+                            sx={{
+                              width: 34,
+                              height: 34,
+                              borderRadius: '50%',
+                              bgcolor: '#475569',
+                              color: '#ffffff',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              display: 'grid',
+                              placeItems: 'center',
+                              flexShrink: 0
+                            }}
+                          >
+                            {getInitials(item.alumno_nombre)}
+                          </Box>
+
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography
+                              sx={{
+                                fontWeight: 800,
+                                color: '#0f172a',
+                                fontSize: 13,
+                                textTransform: 'uppercase',
+                                lineHeight: 1.2
+                              }}
+                            >
+                              {item.alumno_nombre || 'Sin nombre'}
+                            </Typography>
+                          </Box>
+                        </Stack>
+
+                        <Chip
+                          size="small"
+                          label="Sin usuario"
+                          sx={{
+                            height: 22,
+                            bgcolor: '#e2e8f0',
+                            color: '#334155',
+                            border: '1px solid #cbd5e1',
+                            fontWeight: 800,
+                            fontSize: 10,
+                            mt: 0.1
+                          }}
+                        />
+                      </Stack>
+
+                      <Box
+                        sx={{
+                          mt: 1,
+                          pt: 0.85,
+                          borderTop: '1px dashed #e2e8f0',
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                          gap: 0.8
+                        }}
+                      >
+                        <Box>
+                          <Typography sx={{ color: '#94a3b8', fontSize: 10, fontWeight: 800, letterSpacing: 0.35 }}>
+                            ESTADO
+                          </Typography>
+                          <Typography sx={{ color: '#334155', fontSize: 12, fontWeight: 700 }}>
+                            No tiene usuario vinculado
+                          </Typography>
+                        </Box>
+
+                        <Box>
+                          <Typography sx={{ color: '#94a3b8', fontSize: 10, fontWeight: 800, letterSpacing: 0.35 }}>
+                            ACCION SUGERIDA
+                          </Typography>
+                          <Typography sx={{ color: '#334155', fontSize: 12, fontWeight: 700 }}>
+                            Crear o vincular usuario
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Paper>
+                  ))}
+
+                  {totalPagesSinUsuario > 1 ? (
+                    <Box sx={{ pt: 0.75, display: 'flex', justifyContent: 'center' }}>
+                      <Pagination
+                        page={detallePageSinUsuario}
+                        count={totalPagesSinUsuario}
+                        onChange={(_, page) => setDetallePageSinUsuario(page)}
                         color="primary"
                         size="small"
                         siblingCount={isMobile ? 0 : 1}

@@ -179,7 +179,7 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
 
     const usuarioIds = usuarios.map((item) => item._id);
 
-    const [aceptaciones, alumnos] = await Promise.all([
+    const [aceptaciones, alumnos, alumnosSinUsuario] = await Promise.all([
       TenantTerminoAceptacion.find({ termino_id: termino._id, user_id: { $in: usuarioIds } })
         .select('_id user_id accepted_at createdAt')
         .sort({ accepted_at: -1, createdAt: -1 })
@@ -189,6 +189,20 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
         $or: [{ dado_de_baja: { $exists: false } }, { dado_de_baja: false }]
       })
         .select('_id usuario nombres apellidos')
+        .sort({ nombres: 1, apellidos: 1 })
+        .lean(),
+      TenantAlumno.find({
+        $and: [
+          { $or: [{ dado_de_baja: { $exists: false } }, { dado_de_baja: false }] },
+          {
+            $or: [
+              { usuario: { $exists: false } },
+              { usuario: null }
+            ]
+          }
+        ]
+      })
+        .select('_id nombres apellidos')
         .sort({ nombres: 1, apellidos: 1 })
         .lean()
     ]);
@@ -206,6 +220,7 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
 
     const aceptados = [];
     const pendientes = [];
+    const sinUsuario = [];
 
     alumnos.forEach((alumno) => {
       const userId = String(alumno?.usuario || '');
@@ -235,16 +250,32 @@ exports.listarEstadoAceptacionesTermino = async (req, res) => {
       pendientes.push(base);
     });
 
+    alumnosSinUsuario.forEach((alumno) => {
+      const nombreAlumno = String(`${alumno?.nombres || ''} ${alumno?.apellidos || ''}`).trim() || 'Sin nombre';
+
+      sinUsuario.push({
+        alumno_id: alumno._id,
+        alumno_nombre: nombreAlumno,
+        user_id: null,
+        usuario_nombre: '',
+        email: ''
+      });
+    });
+
+    const totalAlumnosObjetivo = alumnos.length + sinUsuario.length;
+
     return res.json({
       termino_id: termino._id,
       version: termino.version,
       vigente: Boolean(termino.vigente),
-      total_alumnos: alumnos.length,
+      total_alumnos: totalAlumnosObjetivo,
       total_usuarios: usuarios.length,
       total_aceptados: aceptados.length,
       total_pendientes: pendientes.length,
+      total_sin_usuario: sinUsuario.length,
       aceptados,
-      pendientes
+      pendientes,
+      sin_usuario: sinUsuario
     });
   } catch (err) {
     return res.status(500).json({ error: 'Error al obtener el estado de aceptaciones del documento' });
