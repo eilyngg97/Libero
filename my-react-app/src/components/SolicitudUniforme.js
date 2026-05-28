@@ -116,6 +116,20 @@ function construirNombrePersonalizado(alumno) {
   return `${apellidoUpper} ${inicialNombre}`;
 }
 
+function construirEjemploNombreJugador(alumno) {
+  const nombres = String(alumno?.nombres || '').trim();
+  const apellidos = String(alumno?.apellidos || '').trim();
+
+  const primerNombre = nombres.split(/\s+/).filter(Boolean)[0] || '';
+  const primerApellido = apellidos.split(/\s+/).filter(Boolean)[0] || '';
+  const inicialApellido = primerApellido ? `${primerApellido.charAt(0).toUpperCase()}.` : '';
+
+  if (primerNombre && inicialApellido) return `${primerNombre} ${inicialApellido}`;
+  if (primerNombre) return primerNombre;
+  if (inicialApellido) return inicialApellido;
+  return 'Nombre A.';
+}
+
 function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const { dolar } = useDolar();
   const [prendas, setPrendas] = useState([]);
@@ -158,10 +172,11 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const numeroFranelaAlumno = String(numeroFranelaAsignado || '').trim();
   const categoriaAlumno = String(alumno?.categoria || '').trim();
   const nombrePersonalizadoDefault = construirNombrePersonalizado(alumno);
+  const ejemploNombreJugador = construirEjemploNombreJugador(alumno);
   const [nombrePersonalizadoInput, setNombrePersonalizadoInput] = useState(nombrePersonalizadoDefault);
   const prendaSeleccionada = prendas.find((item) => item.prenda === prenda);
   const esFranelaRepresentante = Boolean(prendaSeleccionada?.franela_representante);
-  const permiteEditarNombrePersonalizado = esFranelaRepresentante && Boolean(prendaSeleccionada?.lleva_personalizacion_nombre);
+  const permiteEditarNombrePersonalizado = Boolean(prendaSeleccionada?.lleva_personalizacion_nombre);
   const usaSelectorNombreRepresentante = esFranelaRepresentante && prendaSeleccionada?.lleva_personalizacion_nombre === false;
   const ocultarNumeroFranela = Boolean(prendaSeleccionada) && prendaSeleccionada.lleva_numero_franela === false;
   const requiereNumeroFranela = !ocultarNumeroFranela;
@@ -743,6 +758,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     <TextField
                       fullWidth
                       label="Nombre personalizado"
+                      placeholder={!esFranelaRepresentante ? `Ej: ${ejemploNombreJugador}` : ''}
                       value={nombrePersonalizadoInput}
                       onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
                       disabled={!permiteEditarNombrePersonalizado}
@@ -755,8 +771,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         }
                       }}
                       helperText={permiteEditarNombrePersonalizado
-                        ? 'Escribe el nombre personalizado para la franela del representante'
-                        : 'Se asigna automaticamente: primer apellido + inicial del primer nombre'}
+                        ? (esFranelaRepresentante
+                          ? 'Escribe el nombre personalizado para la franela'
+                          : `Ejemplo: ${ejemploNombreJugador}`)
+                        : 'Sugerido: primer apellido + inicial del primer nombre'}
                     />
                   )}
                 </Grid>
