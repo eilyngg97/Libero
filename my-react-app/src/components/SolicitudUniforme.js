@@ -635,6 +635,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     const totalPedido = Number(pedidoPago?.precio) || 0;
     const saldoValidoRaw = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
     const saldoValido = Number(Number(saldoValidoRaw).toFixed(2));
+    const saldoValidoBs = Number(Number(saldoValido * tasaAplicada).toFixed(2));
 
     if (tasaAplicada <= 0) {
       setErrorMessage(`No hay tasa BCV disponible para convertir el monto en Bs (${monedaPedido})`);
@@ -651,8 +652,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return;
     }
 
-    if (montoPagadoNum > (saldoValido + MONTO_TOLERANCIA)) {
-      setErrorMessage(`El monto pagado no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, monedaPedido)})`);
+    if (montoPagadoBsNum > (saldoValidoBs + MONTO_TOLERANCIA)) {
+      setErrorMessage(
+        `El monto pagado en Bs no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, monedaPedido)} = Bs. ${formatMoney(saldoValidoBs)})`
+      );
       return;
     }
 
