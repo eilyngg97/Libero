@@ -36,6 +36,7 @@ import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { useDolar } from '../context/DolarContext';
 import { mediaUrl } from '../utils/mediaUrl';
+import { obtenerTasaEuroOficialPorFecha, obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
 const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
 const METODO_PAGO_DEFAULT = '';
@@ -171,6 +172,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [numeroFranelaError, setNumeroFranelaError] = useState('');
   const [mostrarImagenesPrenda, setMostrarImagenesPrenda] = useState(false);
   const [tasaEuroBCV, setTasaEuroBCV] = useState(null);
+  const [tasaUsdPagoHistorica, setTasaUsdPagoHistorica] = useState(null);
+  const [tasaEuroPagoHistorica, setTasaEuroPagoHistorica] = useState(null);
 
   const tasaBCV = Number(dolar?.promedio) || 0;
   const token = localStorage.getItem('token');
@@ -624,7 +627,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
 
     const monedaPedido = normalizarMoneda(pedidoPago?.moneda);
-    const tasaAplicada = obtenerTasaPorMoneda(monedaPedido);
+    const tasaAplicada = tasaPedidoPago;
     const montoPagadoBsNum = Number(montoPagadoBsConfirmacion);
     const montoPagadoConvertido = tasaAplicada > 0 ? (montoPagadoBsNum / tasaAplicada) : Number(montoPagado);
     const montoPagadoNum = Number(Number(montoPagadoConvertido).toFixed(2));
@@ -699,9 +702,69 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   };
 
   const monedaPedidoPago = normalizarMoneda(pedidoPago?.moneda);
-  const tasaPedidoPago = obtenerTasaPorMoneda(monedaPedidoPago);
+  const tasaPedidoPago = monedaPedidoPago === 'USD'
+    ? (Number(tasaUsdPagoHistorica) || Number(tasaBCV) || 0)
+    : monedaPedidoPago === 'EUR'
+      ? (Number(tasaEuroPagoHistorica) || Number(tasaEuroBCV) || 0)
+      : obtenerTasaPorMoneda(monedaPedidoPago);
   const montoPagoBs = pedidoPago?.precio && tasaPedidoPago ? Number(pedidoPago.precio) * tasaPedidoPago : null;
   const montoPagadoBsInput = montoPagado && tasaPedidoPago ? Number(montoPagado) * tasaPedidoPago : null;
+
+  useEffect(() => {
+    if (!pagoDialogOpen || !pedidoPago?._id || !fechaPago) {
+      setTasaUsdPagoHistorica(null);
+      setTasaEuroPagoHistorica(null);
+      return;
+    }
+
+    const monedaPedido = normalizarMoneda(pedidoPago?.moneda);
+    if (monedaPedido !== 'USD' && monedaPedido !== 'EUR') {
+      setTasaUsdPagoHistorica(null);
+      setTasaEuroPagoHistorica(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const cargarTasaPorFecha = async () => {
+      try {
+        const tasaHistorica = monedaPedido === 'EUR'
+          ? await obtenerTasaEuroOficialPorFecha(fechaPago, Number(tasaEuroBCV) || null)
+          : await obtenerTasaOficialPorFecha(fechaPago, Number(tasaBCV) || null);
+        if (cancelled) return;
+        if (monedaPedido === 'EUR') {
+          setTasaUsdPagoHistorica(null);
+          setTasaEuroPagoHistorica(Number(tasaHistorica) || null);
+        } else {
+          setTasaEuroPagoHistorica(null);
+          setTasaUsdPagoHistorica(Number(tasaHistorica) || null);
+        }
+      } catch {
+        if (cancelled) return;
+        if (monedaPedido === 'EUR') {
+          setTasaUsdPagoHistorica(null);
+          setTasaEuroPagoHistorica(Number(tasaEuroBCV) || null);
+        } else {
+          setTasaEuroPagoHistorica(null);
+          setTasaUsdPagoHistorica(Number(tasaBCV) || null);
+        }
+      }
+    };
+
+    cargarTasaPorFecha();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pagoDialogOpen, pedidoPago?._id, pedidoPago?.moneda, fechaPago, tasaBCV, tasaEuroBCV]);
+
+  useEffect(() => {
+    if (!pagoDialogOpen || !mostrarConfirmacionPago) return;
+    if (!montoPagado || Number(montoPagado) <= 0) return;
+    if (montoPagadoBsInput === null || !Number.isFinite(montoPagadoBsInput)) return;
+
+    setMontoPagadoBsConfirmacion(formatMoney(montoPagadoBsInput));
+  }, [pagoDialogOpen, mostrarConfirmacionPago, fechaPago, tasaPedidoPago, montoPagado, montoPagadoBsInput]);
 
   const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -728,6 +791,40 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return precio;
     }
     return 0;
+  };
+
+  const getTasaAplicadaPedido = (pedido) => {
+    const montoPagadoDivisa = Number(pedido?.monto_pagado);
+    const montoPagadoBs = Number(pedido?.monto_pagado_bs);
+    if (Number.isFinite(montoPagadoDivisa) && montoPagadoDivisa > 0 && Number.isFinite(montoPagadoBs) && montoPagadoBs > 0) {
+      return montoPagadoBs / montoPagadoDivisa;
+    }
+
+    if (Array.isArray(pedido?.pagos_historial) && pedido.pagos_historial.length > 0) {
+      const ultimoPago = pedido.pagos_historial[pedido.pagos_historial.length - 1] || null;
+      const ultimoDivisa = Number(ultimoPago?.monto_pagado);
+      const ultimoBs = Number(ultimoPago?.monto_pagado_bs);
+      if (Number.isFinite(ultimoDivisa) && ultimoDivisa > 0 && Number.isFinite(ultimoBs) && ultimoBs > 0) {
+        return ultimoBs / ultimoDivisa;
+      }
+    }
+
+    return null;
+  };
+
+  const getTextoMontoBsPedido = (pedido) => {
+    const precioDivisa = Number(pedido?.precio) || 0;
+    const tasaAplicadaPedido = getTasaAplicadaPedido(pedido);
+    if (Number.isFinite(tasaAplicadaPedido) && tasaAplicadaPedido > 0) {
+      return `Bs. ${formatMoney(precioDivisa * tasaAplicadaPedido)} (tasa del pago)`;
+    }
+
+    const tasaActual = obtenerTasaPorMoneda(pedido?.moneda);
+    if (Number.isFinite(tasaActual) && tasaActual > 0) {
+      return `Bs. ${formatMoney(precioDivisa * tasaActual)} (tasa actual)`;
+    }
+
+    return null;
   };
 
   return (
@@ -1028,9 +1125,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         <Typography variant="body2" sx={{ color: '#64748b' }}>
                           Saldo pendiente: {formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}
                         </Typography>
-                        {obtenerTasaPorMoneda(pedido.moneda) ? (
+                        {getTextoMontoBsPedido(pedido) ? (
                           <Typography variant="body2" sx={{ color: '#64748b' }}>
-                            Bs. {formatMoney(Number(pedido.precio) * obtenerTasaPorMoneda(pedido.moneda))}
+                            {getTextoMontoBsPedido(pedido)}
                           </Typography>
                         ) : null}
                       </Box>
@@ -1111,9 +1208,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                             <Typography variant="body2" sx={{ color: '#64748b' }}>
                               Pendiente: {formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}
                             </Typography>
-                            {obtenerTasaPorMoneda(pedido.moneda) ? (
+                            {getTextoMontoBsPedido(pedido) ? (
                               <Typography variant="body2" sx={{ color: '#64748b' }}>
-                                Bs. {formatMoney(Number(pedido.precio) * obtenerTasaPorMoneda(pedido.moneda))}
+                                {getTextoMontoBsPedido(pedido)}
                               </Typography>
                             ) : null}
                           </TableCell>

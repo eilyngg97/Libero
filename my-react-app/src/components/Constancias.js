@@ -13,6 +13,33 @@ const tipos = [
 ];
 
 const DIAS_ENTRENAMIENTO = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo'];
+const ESTATUS_BLOQUEO_DIRECTO = new Set(['retrasado', 'insolvente']);
+const ESTATUS_BLOQUEO_SI_VENCIO = new Set(['pendiente', 'abono', 'en revision']);
+
+function parseFechaSinDesfase(fechaRaw) {
+  if (!fechaRaw) return null;
+  const raw = String(fechaRaw).trim();
+  const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+  if (fechaBase) {
+    const year = Number(fechaBase[1]);
+    const month = Number(fechaBase[2]) - 1;
+    const day = Number(fechaBase[3]);
+    const localDate = new Date(year, month, day, 23, 59, 59, 999);
+    return Number.isNaN(localDate.getTime()) ? null : localDate;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function mensualidadCuentaComoDeuda(mensualidad = {}, ahora = new Date()) {
+  const estatus = String(mensualidad?.estatus || '').trim().toLowerCase();
+  if (ESTATUS_BLOQUEO_DIRECTO.has(estatus)) return true;
+  if (!ESTATUS_BLOQUEO_SI_VENCIO.has(estatus)) return false;
+
+  const fechaVencimiento = parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
+  if (!fechaVencimiento) return false;
+  return fechaVencimiento.getTime() <= ahora.getTime();
+}
 
 function getAlumnoEstadoVisual(alumno) {
   const estaRetirado = alumno?.dado_de_baja === true || alumno?.activo === false;
@@ -153,8 +180,6 @@ function Constancias() {
     }
 
     let cancelled = false;
-    const estatusConDeuda = new Set(['pendiente', 'abono', 'en revision', 'retrasado', 'insolvente']);
-
     const cargarSolvencia = async () => {
       try {
         setValidandoSolvencia(true);
@@ -165,7 +190,8 @@ function Constancias() {
         if (!res.ok) throw new Error('No se pudo validar solvencia');
         const data = await res.json();
         const mensualidades = Array.isArray(data) ? data : [];
-        const tieneDeuda = mensualidades.some((m) => estatusConDeuda.has(String(m.estatus || '').toLowerCase()));
+        const ahora = new Date();
+        const tieneDeuda = mensualidades.some((m) => mensualidadCuentaComoDeuda(m, ahora));
         if (!cancelled) {
           setSolventeMensualidades(!tieneDeuda);
         }

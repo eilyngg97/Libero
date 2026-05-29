@@ -80,8 +80,34 @@ const DEFAULT_CONSTANCIAS_CONFIG = {
   }
 };
 
-const ESTATUS_CON_DEUDA = new Set(['pendiente', 'abono', 'en revision', 'retrasado', 'insolvente']);
+const ESTATUS_BLOQUEO_DIRECTO = new Set(['retrasado', 'insolvente']);
+const ESTATUS_BLOQUEO_SI_VENCIO = new Set(['pendiente', 'abono', 'en revision']);
 const CUERPO_PRIMERA_LINEA_SANGRIA = 24;
+
+function parseFechaSinDesfase(fechaRaw) {
+  if (!fechaRaw) return null;
+  const raw = String(fechaRaw).trim();
+  const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+  if (fechaBase) {
+    const year = Number(fechaBase[1]);
+    const month = Number(fechaBase[2]) - 1;
+    const day = Number(fechaBase[3]);
+    const localDate = new Date(year, month, day, 23, 59, 59, 999);
+    return Number.isNaN(localDate.getTime()) ? null : localDate;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function mensualidadCuentaComoDeuda(mensualidad = {}, ahora = new Date()) {
+  const estatus = String(mensualidad?.estatus || '').trim().toLowerCase();
+  if (ESTATUS_BLOQUEO_DIRECTO.has(estatus)) return true;
+  if (!ESTATUS_BLOQUEO_SI_VENCIO.has(estatus)) return false;
+
+  const fechaVencimiento = parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
+  if (!fechaVencimiento) return false;
+  return fechaVencimiento.getTime() <= ahora.getTime();
+}
 
 async function getTenantConstanciaModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -779,10 +805,11 @@ exports.generarConstancia = async (req, res) => {
 
       const byId = new Map(alumnos.map((al) => [String(al._id), al]));
       const alumnosOrdenados = ids.map((id) => byId.get(id)).filter(Boolean);
-      const mensualidadesListado = await TenantMensualidad.find({ id_alumno: { $in: ids } }).select('id_alumno estatus').lean();
+      const mensualidadesListado = await TenantMensualidad.find({ id_alumno: { $in: ids } }).select('id_alumno estatus fecha_vencimiento').lean();
+      const ahora = new Date();
       const alumnosConDeudaIds = new Set(
         mensualidadesListado
-          .filter((m) => ESTATUS_CON_DEUDA.has(String(m.estatus || '').toLowerCase()))
+          .filter((m) => mensualidadCuentaComoDeuda(m, ahora))
           .map((m) => String(m.id_alumno || ''))
           .filter(Boolean)
       );
@@ -855,8 +882,9 @@ exports.generarConstancia = async (req, res) => {
     const alumno = await TenantAlumno.findById(alumnoId).populate('representante').populate('sede');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
-    const mensualidades = await TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus').lean();
-    const tieneDeuda = mensualidades.some((m) => ESTATUS_CON_DEUDA.has(String(m.estatus || '').toLowerCase()));
+    const mensualidades = await TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus fecha_vencimiento').lean();
+    const ahora = new Date();
+    const tieneDeuda = mensualidades.some((m) => mensualidadCuentaComoDeuda(m, ahora));
     if (req.user?.rol !== 'admin' && tieneDeuda) {
       return res.status(400).json({ error: 'Todas las constancias solo estan disponibles para alumnos solventes' });
     }

@@ -275,6 +275,23 @@ function parseDateInput(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function normalizarDiaMes(value, fallback = 5) {
+  const num = Number.parseInt(value, 10);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(1, Math.min(31, num));
+}
+
+async function obtenerDiaVencimientoCobro(models = {}) {
+  try {
+    const TenantConfigModel = models.TenantConfig;
+    if (!TenantConfigModel) return 5;
+    const config = await TenantConfigModel.findOne({ key: 'default' }).select('cobro.dia_vencimiento').lean();
+    return normalizarDiaMes(config?.cobro?.dia_vencimiento, 5);
+  } catch {
+    return 5;
+  }
+}
+
 function normalizarTextoPlano(value) {
   return String(value || '')
     .normalize('NFD')
@@ -1000,7 +1017,8 @@ async function aplicarReposoTotalPorPeriodo(alumnoId, fechaInicio, fechaFin = nu
 
 async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio, models = {}) {
   const MensualidadModel = models.Mensualidad || Mensualidad;
-  const fechaVencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
+  const diaVencimiento = await obtenerDiaVencimientoCobro(models);
+  const fechaVencimiento = new Date(anio, mes - 1, diaVencimiento, 23, 59, 59);
   await MensualidadModel.findOneAndUpdate(
     { id_alumno: alumnoId, mes, anio, estatus: { $ne: 'Pagado' } },
     {
@@ -2312,7 +2330,8 @@ exports.reactivarAlumno = async (req, res) => {
       Alumno: TenantAlumno,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
-      HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+      HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
+      TenantConfig: TenantConfigModel
     } = await getTenantAlumnoWriteModels(req);
 
     const alumnoActual = await TenantAlumno.findById(req.params.id).populate('sede');
@@ -2360,7 +2379,8 @@ exports.reactivarAlumno = async (req, res) => {
       });
     }
 
-    const fechaVencimiento = new Date(anio, mes - 1, 5, 23, 59, 59);
+    const diaVencimiento = await obtenerDiaVencimientoCobro({ TenantConfig: TenantConfigModel });
+    const fechaVencimiento = new Date(anio, mes - 1, diaVencimiento, 23, 59, 59);
     const estatusSolicitado = String(req.body?.estatus || '').trim();
     let estatusInicial = estatusSolicitado || 'Pendiente';
     if (totalPagado > 0 && totalPagado < totalEsperado) {

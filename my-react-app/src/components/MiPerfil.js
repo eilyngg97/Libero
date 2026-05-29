@@ -449,6 +449,18 @@ function MiPerfil() {
               <Box>
                 <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Seguridad de usuario</Typography>
                 <Typography sx={{ color: '#637086', fontSize: 14, mb: 3 }}>Cambia tu clave para proteger el acceso a la academia.</Typography>
+
+                {!!successMessage && (
+                  <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+                    {successMessage || 'Contraseña actualizada con éxito.'}
+                  </Alert>
+                )}
+
+                {!!error && (
+                  <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                    {error}
+                  </Alert>
+                )}
                 
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
                    <TextField
