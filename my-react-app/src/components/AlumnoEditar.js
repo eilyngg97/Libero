@@ -49,6 +49,7 @@ function AlumnoEditar({ locationState }) {
   const [numeroFranelaDuplicado, setNumeroFranelaDuplicado] = useState(false);
   const [numeroFranelaCheckLoading, setNumeroFranelaCheckLoading] = useState(false);
   const [numeroFranelaCheckMsg, setNumeroFranelaCheckMsg] = useState('');
+  const [sedesDisponibles, setSedesDisponibles] = useState([]);
   const [numerosFranelaDisponibles, setNumerosFranelaDisponibles] = useState([]);
   const [numerosFranelaOcupados, setNumerosFranelaOcupados] = useState([]);
   const inputRef = useRef(null);
@@ -133,6 +134,33 @@ function AlumnoEditar({ locationState }) {
     cargar();
     return () => { mounted = false; };
   }, [id, locationState, token]);
+
+  useEffect(() => {
+    if (!esAdmin) return;
+
+    let cancelled = false;
+
+    const cargarSedes = async () => {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/sedes`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Error al obtener sedes');
+        if (!cancelled) {
+          setSedesDisponibles(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (!cancelled) setSedesDisponibles([]);
+      }
+    };
+
+    cargarSedes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [esAdmin, token]);
 
   useEffect(() => {
     const cat = getCategoriaPorFechaNacimiento(form.fecha_nacimiento);
@@ -281,6 +309,8 @@ function AlumnoEditar({ locationState }) {
       setForm((prev) => ({ ...prev, aplicar_recargo_mensualidad: e.target.checked }));
     } else if (name === 'dia_limite_personalizado') {
       setForm((prev) => ({ ...prev, dia_limite_personalizado: value }));
+    } else if (name === 'sede') {
+      setForm((prev) => ({ ...prev, sede: value }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
@@ -812,20 +842,42 @@ function AlumnoEditar({ locationState }) {
                     ))}
                   </Select>
                 </FormControl>
+                {(() => {
+                  const sedeActualObj = typeof form.sede === 'object' && form.sede !== null ? form.sede : null;
+                  const sedeActualId = sedeActualObj?._id || sedeActualObj?.id || '';
+                  const sedeActualNombre = sedeActualObj?.nombre || '';
+                  const sedeValue = sedeActualId || (typeof form.sede === 'string' ? form.sede : '');
+
+                  return (
                 <FormControl fullWidth required style={{ minWidth: 180, marginRight: 8 }} sx={{ my: 1 }}>
                   <InputLabel id="sede-label">Sede *</InputLabel>
                   <Select
                     labelId="sede-label"
                     id="sede"
                     name="sede"
-                    value={form.sede?.nombre || ''}
+                    value={sedeValue}
                     label="Sede"
-                    disabled
-                    renderValue={(value) => typeof value === 'object' ? value.nombre : value}
+                    onChange={handleChange}
+                    disabled={!esAdmin}
+                    renderValue={(value) => {
+                      const selected = sedesDisponibles.find((s) => String(s._id || s.id || '') === String(value));
+                      if (selected?.nombre) return selected.nombre;
+                      if (String(value || '') === String(sedeActualId || '') && sedeActualNombre) return sedeActualNombre;
+                      return typeof value === 'string' ? value : '';
+                    }}
                   >
-                    {form.sede?.nombre && <MenuItem value={form.sede.nombre}>{form.sede.nombre}</MenuItem>}
+                    {sedesDisponibles.map((sedeItem) => {
+                      const sedeId = sedeItem?._id || sedeItem?.id;
+                      if (!sedeId) return null;
+                      return <MenuItem key={sedeId} value={sedeId}>{sedeItem.nombre || sedeId}</MenuItem>;
+                    })}
+                    {sedeValue && !sedesDisponibles.some((s) => String(s._id || s.id || '') === String(sedeValue)) && (
+                      <MenuItem value={sedeValue}>{sedeActualNombre || sedeValue}</MenuItem>
+                    )}
                   </Select>
                 </FormControl>
+                  );
+                })()}
               </div>
               {form.tipo_mensualidad === 'monto_personalizado' && (
                 <div className="form-row">
