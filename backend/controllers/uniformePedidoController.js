@@ -15,6 +15,23 @@ const ESTADOS_PEDIDO = {
   ENTREGADO: 'entregado',
   CANCELADO: 'cancelado'
 };
+const MONTO_TOLERANCIA_BS = 100;
+
+function redondearMonto(valor) {
+  return Number((Number(valor) || 0).toFixed(2));
+}
+
+function calcularToleranciaDivisaDesdeBs(montoDivisa, montoBs) {
+  const montoDivisaNum = Number(montoDivisa);
+  const montoBsNum = Number(montoBs);
+  if (!Number.isFinite(montoDivisaNum) || montoDivisaNum <= 0) return 0;
+  if (!Number.isFinite(montoBsNum) || montoBsNum <= 0) return 0;
+
+  const tasaAplicada = montoBsNum / montoDivisaNum;
+  if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) return 0;
+
+  return redondearMonto(MONTO_TOLERANCIA_BS / tasaAplicada);
+}
 
 function buildComprobanteUrl(file, tenantIdInput) {
   if (!file?.filename) return null;
@@ -283,32 +300,37 @@ exports.registrarPagoPedido = async (req, res) => {
       return res.status(400).json({ error: 'El pedido no tiene saldo pendiente por pagar' });
     }
 
-    if (montoPagado > saldoPendiente) {
+    const toleranciaDivisa = calcularToleranciaDivisaDesdeBs(montoPagado, montoPagadoBs);
+
+    if (montoPagado > (saldoPendiente + toleranciaDivisa)) {
       return res.status(400).json({ error: `El monto pagado no puede superar el saldo pendiente (${saldoPendiente.toFixed(2)}).` });
     }
 
-    const esPagoCompleto = montoPagado >= (saldoPendiente - 0.0001);
+    const factorAjuste = montoPagado > saldoPendiente ? (saldoPendiente / montoPagado) : 1;
+    const montoPagadoAplicado = redondearMonto(montoPagado * factorAjuste);
+    const montoPagadoBsAplicado = redondearMonto(montoPagadoBs * factorAjuste);
+    const esPagoCompleto = montoPagadoAplicado >= (saldoPendiente - 0.0001);
 
     pedido.metodo_pago = metodo_pago;
     pedido.referencia = referencia || undefined;
     pedido.fecha_pago = fecha_pago ? new Date(fecha_pago) : new Date();
     pedido.comprobante_url = buildComprobanteUrl(req.file, req.tenantId) || pedido.comprobante_url;
-    pedido.monto_ultimo_pago = montoPagado;
-    pedido.monto_ultimo_pago_bs = montoPagadoBs;
+    pedido.monto_ultimo_pago = montoPagadoAplicado;
+    pedido.monto_ultimo_pago_bs = montoPagadoBsAplicado;
 
     if (esPagoCompleto) {
       // El pago completo requiere revisión administrativa antes de marcar como verificado.
       pedido.estado = ESTADOS_PEDIDO.PAGO_EN_REVISION;
     } else {
       // El abono parcial se acumula inmediatamente y queda listo para próximos pagos.
-      const totalPagado = (Number(pedido.monto_pagado) || 0) + montoPagado;
-      const totalPagadoBs = (Number(pedido.monto_pagado_bs) || 0) + montoPagadoBs;
+      const totalPagado = (Number(pedido.monto_pagado) || 0) + montoPagadoAplicado;
+      const totalPagadoBs = (Number(pedido.monto_pagado_bs) || 0) + montoPagadoBsAplicado;
       const saldoPendienteNuevo = Math.max(totalPedido - totalPagado, 0);
 
       pedido.pagos_historial = Array.isArray(pedido.pagos_historial) ? pedido.pagos_historial : [];
       pedido.pagos_historial.push({
-        monto_pagado: montoPagado,
-        monto_pagado_bs: montoPagadoBs,
+        monto_pagado: montoPagadoAplicado,
+        monto_pagado_bs: montoPagadoBsAplicado,
         metodo_pago: pedido.metodo_pago,
         referencia: pedido.referencia,
         comprobante_url: pedido.comprobante_url,
