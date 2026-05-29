@@ -40,7 +40,7 @@ import { obtenerTasaEuroOficialPorFecha, obtenerTasaOficialPorFecha } from '../u
 
 const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
 const METODO_PAGO_DEFAULT = '';
-const MONTO_TOLERANCIA = 0.01;
+const MONTO_TOLERANCIA_BS = 100;
 
 function buildPaymentMethods(config) {
   return [
@@ -595,13 +595,14 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
     const montoPagadoNum = Number(Number(montoPagado).toFixed(2));
     const saldoValido = Number(Number(getSaldoPendienteVisible(pedidoPago)).toFixed(2)) || 0;
+    const toleranciaDivisa = tasaPedidoPago > 0 ? (MONTO_TOLERANCIA_BS / tasaPedidoPago) : 0;
 
     if (!montoPagadoNum || Number.isNaN(montoPagadoNum) || montoPagadoNum <= 0) {
       setErrorMessage('Debes indicar un monto pagado valido');
       return;
     }
 
-    if (saldoValido > 0 && montoPagadoNum > (saldoValido + MONTO_TOLERANCIA)) {
+    if (saldoValido > 0 && montoPagadoNum > (saldoValido + toleranciaDivisa)) {
       setErrorMessage(`El monto pagado no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, pedidoPago?.moneda)})`);
       return;
     }
@@ -652,9 +653,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return;
     }
 
-    if (montoPagadoBsNum > (saldoValidoBs + MONTO_TOLERANCIA)) {
+    if (montoPagadoBsNum > (saldoValidoBs + MONTO_TOLERANCIA_BS)) {
       setErrorMessage(
-        `El monto pagado en Bs no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, monedaPedido)} = Bs. ${formatMoney(saldoValidoBs)})`
+        `El monto pagado en Bs no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, monedaPedido)} = Bs. ${formatMoney(saldoValidoBs)}; tolerancia Bs. ${formatMoney(MONTO_TOLERANCIA_BS)})`
       );
       return;
     }
