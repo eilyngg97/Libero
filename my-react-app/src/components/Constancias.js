@@ -116,6 +116,7 @@ function Constancias() {
   }, []);
 
   const token = localStorage.getItem('token');
+  const esAdmin = String(rol || '').trim().toLowerCase() === 'admin' || String(rol || '').trim().toLowerCase() === 'super_admin';
   const isEsportaUserRequestMode = rol === 'usuario' && tenantId === 'esporta';
 
   const fetchMisSolicitudes = React.useCallback(async () => {
@@ -147,7 +148,7 @@ function Constancias() {
   }, [fetchMisSolicitudes]);
 
   React.useEffect(() => {
-    if (rol === 'admin') {
+    if (esAdmin) {
       if (inputValue.length >= 3) {
         setLoadingAlumnos(true);
         fetch(`${process.env.REACT_APP_API_URL}/api/alumnos?search=${encodeURIComponent(inputValue)}&incluirBajas=1`)
@@ -170,7 +171,7 @@ function Constancias() {
         setAlumnos([]);
       }
     }
-  }, [inputValue, rol]);
+  }, [inputValue, esAdmin]);
 
   React.useEffect(() => {
     if (!alumnoId) {
@@ -215,12 +216,12 @@ function Constancias() {
 
   const tiposDisponibles = React.useMemo(() => {
     return tipos.filter((t) => {
-      if (t.value === 'retiro' && rol !== 'admin') return false;
-      if (t.value === 'listado_alumnos' && rol !== 'admin') return false;
-      if (rol !== 'admin' && t.value !== 'listado_alumnos' && alumnoId && !solventeMensualidades) return false;
+      if (t.value === 'retiro' && !esAdmin) return false;
+      if (t.value === 'listado_alumnos' && !esAdmin) return false;
+      if (!esAdmin && t.value !== 'listado_alumnos' && alumnoId && !solventeMensualidades) return false;
       return true;
     });
-  }, [rol, solventeMensualidades, alumnoId]);
+  }, [esAdmin, solventeMensualidades, alumnoId]);
 
   React.useEffect(() => {
     if (!tiposDisponibles.length) {
@@ -365,7 +366,7 @@ function Constancias() {
                 {requestError}
               </Alert>
             )}
-            {rol === 'admin' ? (
+            {esAdmin ? (
               <FormControl fullWidth margin="normal">
                 {tipo === 'listado_alumnos' ? (
                   <Autocomplete
@@ -476,7 +477,7 @@ function Constancias() {
                 </Box>
               </Box>
             )}
-            {rol === 'admin' && selectedAlumno && tipo !== 'listado_alumnos' && (
+            {esAdmin && selectedAlumno && tipo !== 'listado_alumnos' && (
               <Typography
                 variant="caption"
                 sx={{
@@ -512,7 +513,7 @@ function Constancias() {
                 {tiposDisponibles.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
               </Select>
             </FormControl>
-            {rol !== 'admin' && alumnoId && !solventeMensualidades && (
+            {!esAdmin && alumnoId && !solventeMensualidades && (
               <Typography variant="caption" sx={{ color: '#b91c1c', display: 'block', mt: 0.5 }}>
                 Todas las constancias solo están disponibles cuando el alumno está solvente.
               </Typography>
@@ -526,8 +527,8 @@ function Constancias() {
               onChange={e => setFechaEmision(e.target.value)}
               InputLabelProps={{ shrink: true }}
               required
-              disabled={rol !== 'admin'}
-              helperText={rol !== 'admin' ? 'Solo un administrador puede modificar la fecha de emisión.' : ''}
+              disabled={!esAdmin}
+              helperText={!esAdmin ? 'Solo un administrador puede modificar la fecha de emisión.' : ''}
               sx={inputSx}
             />
             {tipo === 'horario_entrenamiento' && (
@@ -640,7 +641,7 @@ function Constancias() {
                   loading ||
                   (tipo === 'listado_alumnos' ? selectedAlumnosListado.length === 0 : !alumnoId) ||
                   !tipo ||
-                  (rol !== 'admin' && validandoSolvencia) ||
+                  (!esAdmin && validandoSolvencia) ||
                   (tipo === 'horario_entrenamiento' && (diasEntrenamiento.length === 0 || !horaInicioEntrenamiento || !horaFinEntrenamiento)) ||
                   (tipo === 'asistencia' && (!eventoFecha || !eventoHoraDesde || !eventoHoraHasta))
                 }

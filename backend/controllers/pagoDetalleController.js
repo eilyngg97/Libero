@@ -38,6 +38,11 @@ function normalizarBooleano(value) {
   return false;
 }
 
+function esRolAdmin(rol) {
+  const normalizado = String(rol || '').trim().toLowerCase();
+  return normalizado === 'admin' || normalizado === 'super_admin';
+}
+
 function construirRegistradoPor(req) {
   const rol = String(req?.user?.rol || '').trim().toLowerCase();
   const nombre = String(
@@ -52,7 +57,7 @@ function construirRegistradoPor(req) {
     id_usuario: req?.user?.id || undefined,
     nombre,
     rol: rol || 'desconocido',
-    origen: rol === 'admin' ? 'admin_portal' : (rol ? 'usuario_portal' : 'desconocido')
+    origen: esRolAdmin(rol) ? 'admin_portal' : (rol ? 'usuario_portal' : 'desconocido')
   };
 }
 
@@ -218,8 +223,8 @@ async function validarPago({
   if (!mensualidad) return { error: { status: 404, payload: { error: 'Mensualidad no encontrada' } } };
 
   const habilitarCuotasAlumno = mensualidad.id_alumno?.habilitar_pago_cuotas === true;
-  const puedePagarCuotas = actorRol === 'admin' || habilitarCuotasAlumno;
-  const permiteSobrepagoAdelantado = actorRol === 'admin';
+  const puedePagarCuotas = esRolAdmin(actorRol) || habilitarCuotasAlumno;
+  const permiteSobrepagoAdelantado = esRolAdmin(actorRol);
   const pagosPrevios = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const totalPrevio = pagosPrevios
     .filter((pago) => String(pago._id) !== String(pagoIdExcluir))

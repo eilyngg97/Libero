@@ -294,9 +294,9 @@ function App() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const adminOnly = ['admin'];
+  const adminOnly = ['admin', 'super_admin'];
   const userOnly = ['usuario'];
-  const adminAndUser = ['admin', 'usuario'];
+  const adminAndUser = ['admin', 'super_admin', 'usuario'];
 
   function EntrypointAlumnoEditar() {
                           const location = useLocation();

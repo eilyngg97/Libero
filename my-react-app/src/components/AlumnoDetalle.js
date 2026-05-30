@@ -119,6 +119,7 @@ function AlumnoDetalle() {
   const [requisitosChecklist, setRequisitosChecklist] = useState([]);
   const [requisitosSaving, setRequisitosSaving] = useState('');
   const [requisitosError, setRequisitosError] = useState('');
+  const esAdmin = rol === 'admin' || rol === 'super_admin';
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -196,7 +197,7 @@ function AlumnoDetalle() {
 
   const handleToggleRequisito = async (requisito, checked) => {
     if (!id || !requisito) return;
-    if (rol !== 'admin') return;
+    if (!esAdmin) return;
 
     const prev = requisitosChecklist;
     setRequisitosError('');
@@ -613,7 +614,7 @@ function AlumnoDetalle() {
                               <Checkbox
                                 checked={checked}
                                 onChange={(event) => handleToggleRequisito(requisito, event.target.checked)}
-                                disabled={rol !== 'admin' || loadingItem}
+                                disabled={!esAdmin || loadingItem}
                                 sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#16a34a' } }}
                               />
                             )}
@@ -632,7 +633,7 @@ function AlumnoDetalle() {
                   </Box>
                 )}
 
-                {rol !== 'admin' ? (
+                {!esAdmin ? (
                   <Typography sx={{ mt: 1, fontSize: 12, color: '#94a3b8' }}>
                     Solo administradores pueden marcar requisitos.
                   </Typography>

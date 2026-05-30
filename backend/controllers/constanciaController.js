@@ -750,10 +750,13 @@ exports.generarConstancia = async (req, res) => {
     } = await getTenantConstanciaModels(req);
 
     const tipoConstancia = normalizarTipoConstancia(tipo);
-    if (tipoConstancia === 'retiro' && req.user?.rol !== 'admin') {
+    const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+    const esAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
+
+    if (tipoConstancia === 'retiro' && !esAdmin) {
       return res.status(403).json({ error: 'Solo un administrador puede generar constancia de retiro' });
     }
-    if (tipoConstancia === 'listado_alumnos' && req.user?.rol !== 'admin') {
+    if (tipoConstancia === 'listado_alumnos' && !esAdmin) {
       return res.status(403).json({ error: 'Solo un administrador puede generar constancia con listado de alumnos' });
     }
 
@@ -814,7 +817,7 @@ exports.generarConstancia = async (req, res) => {
           .filter(Boolean)
       );
 
-      if (req.user?.rol !== 'admin' && alumnosConDeudaIds.size > 0) {
+      if (!esAdmin && alumnosConDeudaIds.size > 0) {
         const alumnosConDeudaNombres = alumnosOrdenados
           .filter((al) => alumnosConDeudaIds.has(String(al._id || '')))
           .map((al) => `${String(al.nombres || '').trim()} ${String(al.apellidos || '').trim()}`.trim())
@@ -885,7 +888,7 @@ exports.generarConstancia = async (req, res) => {
     const mensualidades = await TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus fecha_vencimiento').lean();
     const ahora = new Date();
     const tieneDeuda = mensualidades.some((m) => mensualidadCuentaComoDeuda(m, ahora));
-    if (req.user?.rol !== 'admin' && tieneDeuda) {
+    if (!esAdmin && tieneDeuda) {
       return res.status(400).json({ error: 'Todas las constancias solo estan disponibles para alumnos solventes' });
     }
 

@@ -200,6 +200,28 @@ function obtenerPeriodoInicioCobroAlumno(alumno, periodoFallback = getPeriodoZon
   return periodoFallback;
 }
 
+function obtenerPeriodoInscripcionAlumno(alumno) {
+  const fechaInscripcion = alumno?.fecha_inscripcion;
+  if (!(fechaInscripcion instanceof Date) || Number.isNaN(fechaInscripcion.getTime())) {
+    return null;
+  }
+
+  return {
+    mes: fechaInscripcion.getUTCMonth() + 1,
+    anio: fechaInscripcion.getUTCFullYear()
+  };
+}
+
+function esPeriodoInscripcionAlumno(alumno, periodo) {
+  const periodoInscripcion = obtenerPeriodoInscripcionAlumno(alumno);
+  if (!periodoInscripcion || !periodo) return false;
+
+  return (
+    Number(periodo?.mes) === Number(periodoInscripcion.mes) &&
+    Number(periodo?.anio) === Number(periodoInscripcion.anio)
+  );
+}
+
 function compararPeriodos(a, b) {
   if (a.anio !== b.anio) return a.anio - b.anio;
   return a.mes - b.mes;
@@ -347,15 +369,12 @@ async function aplicarRecargoMensualidadSegunConfig(
     };
   }
 
-  const periodoInicialAlumno = obtenerPeriodoInicioCobroAlumno(alumno, {
+  const esPeriodoInscripcion = esPeriodoInscripcionAlumno(alumno, {
     mes: mensualidad?.mes,
     anio: mensualidad?.anio
   });
-  const esPrimerPeriodoAlumno =
-    Number(mensualidad?.mes) === Number(periodoInicialAlumno?.mes) &&
-    Number(mensualidad?.anio) === Number(periodoInicialAlumno?.anio);
 
-  if (esPrimerPeriodoAlumno) {
+  if (esPeriodoInscripcion) {
     return {
       aplicado: false,
       configCobro,
@@ -620,6 +639,7 @@ async function generarMensualidadesPendientesAlumno(
       overridePeriodoActual &&
       periodo.mes === overridePeriodoActual.mes &&
       periodo.anio === overridePeriodoActual.anio;
+    const esInscripcion = esPeriodoInscripcionAlumno(alumno, periodo);
 
     resultados.push(
       await crearMensualidadParaPeriodo(alumno, periodo, {
@@ -631,7 +651,7 @@ async function generarMensualidadesPendientesAlumno(
         metadataInscripcion: esPeriodoOverride ? overridePeriodoActual.metadataInscripcion : undefined,
         crearPagoSiPagado: esPeriodoOverride ? crearPagoSiPagado : false,
         referenciaPago,
-        esInscripcion: periodos.indexOf(periodo) === 0 // Solo la primera mensualidad del alumno nuevo
+        esInscripcion
       })
     );
   }

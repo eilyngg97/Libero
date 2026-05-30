@@ -504,7 +504,7 @@ function TerminosCondiciones() {
     setArchivo(file);
   };
 
-  const esAdmin = rol === 'admin';
+  const esAdmin = rol === 'admin' || rol === 'super_admin';
   const previewSrc = previewItem && isPdfFile(previewItem)
     ? (isMobile
       ? `${previewBlobUrl}#page=1&zoom=page-width&pagemode=none&toolbar=0&navpanes=0&scrollbar=0`

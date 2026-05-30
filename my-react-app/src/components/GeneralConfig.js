@@ -19,6 +19,7 @@ import {
 } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import { mediaUrl } from '../utils/mediaUrl';
 
@@ -168,6 +169,8 @@ function buildConstanciasConfig(data = {}) {
 
 function GeneralConfig() {
   const token = localStorage.getItem('token');
+  const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+  const esSuperAdmin = rolActual === 'super_admin';
   const [asignandoCategorias, setAsignandoCategorias] = useState(false);
   const [subiendoLogo, setSubiendoLogo] = useState(false);
   const [subiendoLogosConstancias, setSubiendoLogosConstancias] = useState(false);
@@ -679,39 +682,40 @@ function GeneralConfig() {
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
       )}
 
-      {/*
-      <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
-        <Box sx={sectionHeaderSx}>
-          <Box sx={sectionIconWrapSx}>
-            <Groups2OutlinedIcon sx={{ fontSize: 22 }} />
+      {esSuperAdmin && (
+        <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
+          <Box sx={sectionHeaderSx}>
+            <Box sx={sectionIconWrapSx}>
+              <Groups2OutlinedIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Categorias de alumnos</Typography>
+              <Typography sx={{ color: '#637086', fontSize: 13 }}>
+                Recalcula y asigna categorias para todos los alumnos activos de la academia usando la fecha de nacimiento.
+              </Typography>
+            </Box>
           </Box>
-          <Box>
-            <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Categorias de alumnos</Typography>
-            <Typography sx={{ color: '#637086', fontSize: 13 }}>
-              Recalcula y asigna categorias para todos los alumnos activos de la academia usando la fecha de nacimiento.
-            </Typography>
-          </Box>
-        </Box>
-        <Button
-          variant="contained"
-          onClick={() => setConfirmDialogOpen(true)}
-          disabled={asignandoCategorias}
-          sx={{
-            textTransform: 'none',
-            fontWeight: 800,
-            bgcolor: '#0f172a',
-            px: 2.8,
-            '&:hover': { bgcolor: '#111b31' },
-            '&.Mui-disabled': {
-              bgcolor: '#e6eaf2',
-              color: '#a8b0bf'
-            }
-          }}
-        >
-          {asignandoCategorias ? 'Asignando categorias...' : 'Asignar categorias'}
-        </Button>
-      </Paper>
-      */}
+          <Button
+            variant="contained"
+            onClick={() => setConfirmDialogOpen(true)}
+            disabled={asignandoCategorias}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 800,
+              bgcolor: '#0f172a',
+              px: 2.8,
+              '&:hover': { bgcolor: '#111b31' },
+              '&.Mui-disabled': {
+                bgcolor: '#e6eaf2',
+                color: '#a8b0bf'
+              }
+            }}
+          >
+            {asignandoCategorias ? 'Asignando categorias...' : 'Asignar categorias'}
+          </Button>
+        </Paper>
+      )}
+      
 
       <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
         <Box sx={sectionHeaderSx}>
@@ -1346,41 +1350,43 @@ function GeneralConfig() {
         )}
       </Paper>
 
-      <Dialog
-        open={confirmDialogOpen}
-        onClose={() => !asignandoCategorias && setConfirmDialogOpen(false)}
-        fullWidth
-        maxWidth="xs"
-      >
-        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>
-          Asignar categorias
-        </DialogTitle>
-        <DialogContent>
-          <Typography sx={{ color: '#475569', fontSize: 14 }}>
-            Esta accion actualizara las categorias de todos los alumnos activos de la academia segun su fecha de nacimiento.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={() => setConfirmDialogOpen(false)}
-            disabled={asignandoCategorias}
-            sx={{ textTransform: 'none' }}
-          >
-            Cancelar
-          </Button>
-          <Button
-            variant="contained"
-            onClick={async () => {
-              await asignarCategorias();
-              setConfirmDialogOpen(false);
-            }}
-            disabled={asignandoCategorias}
-            sx={{ textTransform: 'none', fontWeight: 700 }}
-          >
-            {asignandoCategorias ? 'Asignando...' : 'Confirmar'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {esSuperAdmin && (
+        <Dialog
+          open={confirmDialogOpen}
+          onClose={() => !asignandoCategorias && setConfirmDialogOpen(false)}
+          fullWidth
+          maxWidth="xs"
+        >
+          <DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>
+            Asignar categorias
+          </DialogTitle>
+          <DialogContent>
+            <Typography sx={{ color: '#475569', fontSize: 14 }}>
+              Esta accion actualizara las categorias de todos los alumnos activos de la academia segun su fecha de nacimiento.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button
+              onClick={() => setConfirmDialogOpen(false)}
+              disabled={asignandoCategorias}
+              sx={{ textTransform: 'none' }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              onClick={async () => {
+                await asignarCategorias();
+                setConfirmDialogOpen(false);
+              }}
+              disabled={asignandoCategorias}
+              sx={{ textTransform: 'none', fontWeight: 700 }}
+            >
+              {asignandoCategorias ? 'Asignando...' : 'Confirmar'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Box>
   );
 }

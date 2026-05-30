@@ -52,6 +52,18 @@ const getLocalInputDate = (dateValue = new Date()) => {
   return date.toISOString().slice(0, 10);
 };
 
+const ANIO_ACTUAL = new Date().getFullYear();
+const FECHA_INICIO_COBRO_MIN = `${ANIO_ACTUAL}-01-01`;
+const FECHA_INICIO_COBRO_MAX = `${ANIO_ACTUAL}-12-31`;
+
+function esFechaInicioCobroDelAnioActual(valor) {
+  const raw = String(valor || '').trim();
+  if (!raw) return false;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  return Number(match[1]) === ANIO_ACTUAL;
+}
+
 
 function Alumnos() {
   // Estado para el formulario
@@ -584,6 +596,11 @@ function Alumnos() {
       return;
     }
 
+    if (!esFechaInicioCobroDelAnioActual(form.fecha_inicio_cobro)) {
+      setError(`La fecha de inicio de cobro debe pertenecer al año actual (${ANIO_ACTUAL}).`);
+      return;
+    }
+
     if (form.numero_franela) {
       const nro = Number(form.numero_franela);
       if (Number.isNaN(nro) || nro < 1 || nro > 100) {
@@ -849,6 +866,7 @@ function Alumnos() {
               fullWidth
               size="small"
               InputLabelProps={{ shrink: true }}
+              inputProps={{ min: FECHA_INICIO_COBRO_MIN, max: FECHA_INICIO_COBRO_MAX }}
               sx={{ my: 1 }}
             />
           </div>

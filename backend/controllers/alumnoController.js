@@ -275,6 +275,26 @@ function parseDateInput(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function esFechaDelAnioActual(fecha) {
+  if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) return false;
+  return fecha.getUTCFullYear() === new Date().getUTCFullYear();
+}
+
+function getMensajeErrorFechaInicioCobroAnioActual() {
+  const anioActual = new Date().getUTCFullYear();
+  return `fecha_inicio_cobro debe pertenecer al año actual (${anioActual}).`;
+}
+
+function esMismaFechaUtc(a, b) {
+  if (!(a instanceof Date) || Number.isNaN(a.getTime())) return false;
+  if (!(b instanceof Date) || Number.isNaN(b.getTime())) return false;
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+
 function normalizarDiaMes(value, fallback = 5) {
   const num = Number.parseInt(value, 10);
   if (!Number.isFinite(num)) return fallback;
@@ -1569,6 +1589,9 @@ exports.createAlumno = async (req, res) => {
     if (!fechaInicioCobro) {
       return res.status(400).json({ error: 'fecha_inicio_cobro es obligatoria y debe ser valida.' });
     }
+    if (!esFechaDelAnioActual(fechaInicioCobro)) {
+      return res.status(400).json({ error: getMensajeErrorFechaInicioCobroAnioActual() });
+    }
 
     const cedula = (req.body.cedula || '').trim();
     if (cedula && sedeId) {
@@ -1902,14 +1925,17 @@ exports.updateAlumno = async (req, res) => {
       Sede: TenantSede,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
-      Reposo: TenantReposo
+      Reposo: TenantReposo,
+      TenantConfig: TenantConfigModel
     } = tenantModels;
 
-    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria numero_franela nombres apellidos cedula usuario representante');
+    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria numero_franela nombres apellidos cedula usuario representante fecha_inicio_cobro');
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
-    const esAdmin = String(req.user?.rol || '').trim().toLowerCase() === 'admin';
+    const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+    const esAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
+    let fechaInicioCobroCambio = false;
 
     if (!esAdmin && Object.prototype.hasOwnProperty.call(updateData, 'division')) {
       delete updateData.division;
@@ -1920,6 +1946,10 @@ exports.updateAlumno = async (req, res) => {
       if (!fechaInicioCobro) {
         return res.status(400).json({ error: 'fecha_inicio_cobro es obligatoria y debe ser valida.' });
       }
+      if (!esFechaDelAnioActual(fechaInicioCobro)) {
+        return res.status(400).json({ error: getMensajeErrorFechaInicioCobroAnioActual() });
+      }
+      fechaInicioCobroCambio = !esMismaFechaUtc(fechaInicioCobro, alumnoActual.fecha_inicio_cobro);
       updateData.fecha_inicio_cobro = fechaInicioCobro;
     }
 
@@ -2232,6 +2262,20 @@ exports.updateAlumno = async (req, res) => {
         });
       }
     }
+
+    if (fechaInicioCobroCambio) {
+      await generarMensualidadesPendientesAlumno(alumno, {
+        models: {
+          Alumno: TenantAlumno,
+          Mensualidad: TenantMensualidad,
+          PagoDetalle: TenantPagoDetalle,
+          Sede: TenantSede,
+          Reposo: TenantReposo,
+          TenantConfig: TenantConfigModel
+        }
+      });
+    }
+
     res.json(alumno);
   } catch (err) {
     console.error('Error al actualizar alumno:', {

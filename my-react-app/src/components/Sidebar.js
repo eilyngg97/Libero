@@ -36,7 +36,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   let rol = null;
   let tenantId = '';
   try {
-    rol = localStorage.getItem('rol');
+    rol = String(localStorage.getItem('rol') || '').trim().toLowerCase();
     tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
   } catch {}
   const dashboardPath = rol === 'usuario'
@@ -46,7 +46,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
     { text: 'Dashboard', icon: <DashboardIcon />, path: dashboardPath, onClick: handleDashboardNavigation },
     
   ];
-  if (rol === 'admin') {
+  if (rol === 'admin' || rol === 'super_admin') {
     options.push(
       { text: 'Sedes', icon: <LocationCityIcon />, path: '/sedes' },
       { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },

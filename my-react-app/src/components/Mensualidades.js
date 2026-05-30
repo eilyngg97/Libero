@@ -59,7 +59,8 @@ function Mensualidades() {
 	const { dolar } = useDolar();
 	const theme = useTheme();
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-	const esAdmin = localStorage.getItem('rol') === 'admin';
+	const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+	const esAdmin = rolActual === 'admin' || rolActual === 'super_admin';
 	const [mensualidades, setMensualidades] = useState([]);
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
 	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
@@ -1100,6 +1101,20 @@ function Mensualidades() {
 	};
 
 	const obtenerMontoTablaMensualidad = (mensualidad) => {
+		const montoConRecargo = mensualidad?.monto_con_recargo_usd;
+		if (
+			montoConRecargo !== undefined &&
+			montoConRecargo !== null &&
+			!Number.isNaN(Number(montoConRecargo))
+		) {
+			return Number(montoConRecargo);
+		}
+
+		const montoEsperado = mensualidad?.monto_esperado;
+		if (montoEsperado !== undefined && montoEsperado !== null && !Number.isNaN(Number(montoEsperado))) {
+			return Number(montoEsperado);
+		}
+
 		const montoPrimeraMensualidad = mensualidad?.monto_primera_mensualidad;
 		if (
 			montoPrimeraMensualidad !== undefined &&
@@ -1107,11 +1122,6 @@ function Mensualidades() {
 			!Number.isNaN(Number(montoPrimeraMensualidad))
 		) {
 			return Number(montoPrimeraMensualidad);
-		}
-
-		const montoEsperado = mensualidad?.monto_esperado;
-		if (montoEsperado !== undefined && montoEsperado !== null && !Number.isNaN(Number(montoEsperado))) {
-			return Number(montoEsperado);
 		}
 
 		return 0;

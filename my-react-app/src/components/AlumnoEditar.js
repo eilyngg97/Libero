@@ -16,12 +16,24 @@ const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
 const SEXOS = ['Femenino', 'Masculino'];
 const DIVISIONES = ['Primera división', 'Segunda división', 'Tercera división'];
+const ANIO_ACTUAL = new Date().getFullYear();
+const FECHA_INICIO_COBRO_MIN = `${ANIO_ACTUAL}-01-01`;
+const FECHA_INICIO_COBRO_MAX = `${ANIO_ACTUAL}-12-31`;
+
+function esFechaInicioCobroDelAnioActual(valor) {
+  const raw = String(valor || '').trim();
+  if (!raw) return false;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  return Number(match[1]) === ANIO_ACTUAL;
+}
 
 function AlumnoEditar({ locationState }) {
   const { id } = useParams();
   const { sedeSeleccionada } = useSede();
   const token = localStorage.getItem('token');
-  const esAdmin = localStorage.getItem('rol') === 'admin';
+  const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+  const esAdmin = rolActual === 'admin' || rolActual === 'super_admin';
   const [form, setForm] = useState({
     fecha_inicio_cobro: new Date().toISOString().split('T')[0],
     tipo_mensualidad: 'monto_sede',
@@ -336,6 +348,10 @@ function AlumnoEditar({ locationState }) {
       setError('La fecha de inicio de cobro es obligatoria.');
       return;
     }
+    if (!esFechaInicioCobroDelAnioActual(form.fecha_inicio_cobro)) {
+      setError(`La fecha de inicio de cobro debe pertenecer al año actual (${ANIO_ACTUAL}).`);
+      return;
+    }
     setLoading(true);
     try {
       const formData = new FormData();
@@ -610,7 +626,7 @@ function AlumnoEditar({ locationState }) {
               </Accordion>
             )}
 
-            {localStorage.getItem('rol') === 'admin' && (
+            {esAdmin && (
               <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Habilitar pago en cuotas</Typography>
@@ -631,7 +647,7 @@ function AlumnoEditar({ locationState }) {
               </Paper>
             )}
 
-            {localStorage.getItem('rol') === 'admin' && (
+            {esAdmin && (
               <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <TextField
                   id="input-dia-limite-personalizado-editar"
@@ -657,7 +673,7 @@ function AlumnoEditar({ locationState }) {
               </Paper>
             )}
 
-            {localStorage.getItem('rol') === 'admin' && (
+            {esAdmin && (
               <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Box>
@@ -720,6 +736,7 @@ function AlumnoEditar({ locationState }) {
                   fullWidth
                   size="small"
                   InputLabelProps={{ shrink: true }}
+                  inputProps={{ min: FECHA_INICIO_COBRO_MIN, max: FECHA_INICIO_COBRO_MAX }}
                   sx={{ my: 1 }}
                   disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
                 />
@@ -945,7 +962,7 @@ function AlumnoEditar({ locationState }) {
                 <TextField id="outlined-basic-antecedentes" label="Antecedentes patológicos" name="antecedentes_patologicos" variant="outlined" value={form.antecedentes_patologicos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
                 <TextField id="outlined-basic-alergias" label="Alergias" name="alergias" variant="outlined" value={form.alergias || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
               </div>
-              {localStorage.getItem('rol') === 'admin' && (
+              {esAdmin && (
                 <div className="form-row">
                   <TextField id="outlined-basic-observaciones" label="Observaciones" name="observaciones" variant="outlined" value={form.observaciones || ''} onChange={handleChange} fullWidth size="small" multiline minRows={2} sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
                   />

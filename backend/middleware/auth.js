@@ -42,8 +42,25 @@ exports.authMiddleware = (req, res, next) => {
 };
 
 exports.rolMiddleware = (...roles) => (req, res, next) => {
-  if (!roles.includes(req.user.rol)) {
+  const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+  const rolesNormalizados = roles
+    .map((rol) => String(rol || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  if (rolesNormalizados.includes('admin') && !rolesNormalizados.includes('super_admin')) {
+    rolesNormalizados.push('super_admin');
+  }
+
+  if (!rolesNormalizados.includes(rolUsuario)) {
     return res.status(403).json({ msg: 'No tienes permiso para esta acción' });
   }
   next();
+};
+
+exports.superAdminMiddleware = (req, res, next) => {
+  const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+  if (rolUsuario !== 'super_admin') {
+    return res.status(403).json({ msg: 'Esta acción está permitida solo para super_admin' });
+  }
+  return next();
 };

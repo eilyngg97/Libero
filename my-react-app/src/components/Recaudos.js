@@ -401,7 +401,7 @@ function Recaudos() {
     setRecaudoAEliminar(null);
   };
 
-  const esAdmin = rol === 'admin';
+  const esAdmin = rol === 'admin' || rol === 'super_admin';
   const actionIconSx = {
     color: '#64748b',
     '&:hover': { color: '#475569', backgroundColor: 'rgba(100, 116, 139, 0.08)' }
