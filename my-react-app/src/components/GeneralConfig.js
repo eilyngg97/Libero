@@ -825,8 +825,11 @@ function GeneralConfig() {
               <TextField
                 label="Nombre institucional"
                 size="small"
+                multiline
+                minRows={2}
                 value={constanciasConfig.institucion_nombre}
                 onChange={(e) => updateConstanciasField('institucion_nombre', e.target.value)}
+                helperText="Usa Enter para salto de linea."
                 InputLabelProps={{ shrink: true }}
                 sx={fieldLabelSx}
               />
