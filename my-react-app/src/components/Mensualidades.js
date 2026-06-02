@@ -1102,7 +1102,9 @@ function Mensualidades() {
 
 	const obtenerMontoTablaMensualidad = (mensualidad) => {
 		const montoConRecargo = mensualidad?.monto_con_recargo_usd;
+		const aplicaRecargo = mensualidad?.aplica_recargo === true || Number(mensualidad?.recargo_aplicado_usd) > 0;
 		if (
+			aplicaRecargo &&
 			montoConRecargo !== undefined &&
 			montoConRecargo !== null &&
 			!Number.isNaN(Number(montoConRecargo))
