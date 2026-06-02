@@ -179,6 +179,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const token = localStorage.getItem('token');
   const numeroFranelaAlumno = String(numeroFranelaAsignado || '').trim();
   const categoriaAlumno = String(alumno?.categoria || '').trim();
+  const sexoAlumno = String(alumno?.sexo || '').trim();
   const nombrePersonalizadoDefault = construirNombrePersonalizado(alumno);
   const ejemploNombreJugador = construirEjemploNombreJugador(alumno);
   const [nombrePersonalizadoInput, setNombrePersonalizadoInput] = useState(nombrePersonalizadoDefault);
@@ -407,6 +408,13 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return;
     }
 
+    if (!sexoAlumno) {
+      setNumeroFranelaError('El alumno no tiene sexo asignado para mostrar numeros disponibles.');
+      setNumerosFranelaDisponibles([]);
+      setNumeroFranelaLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     const cargarDisponibilidad = async () => {
@@ -414,7 +422,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         setNumeroFranelaLoading(true);
         setNumeroFranelaError('');
         const res = await fetch(
-          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}`,
+          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}&sexo=${encodeURIComponent(sexoAlumno)}`,
           { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
         );
         const data = await res.json();
@@ -444,7 +452,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     return () => {
       cancelled = true;
     };
-  }, [categoriaAlumno, numeroFranelaAlumno, requiereNumeroFranela, token]);
+  }, [categoriaAlumno, numeroFranelaAlumno, requiereNumeroFranela, sexoAlumno, token]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();

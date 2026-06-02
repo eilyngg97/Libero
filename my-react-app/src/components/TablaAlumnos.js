@@ -503,9 +503,12 @@ function TablaAlumnos() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al reactivar al alumno');
-      setAlumnos(prev => prev.map(a => a._id === reactivarId ? { ...a, estado: 'Activo', dado_de_baja: false, activo: true } : a));
+      setAlumnos(prev => prev.map(a => a._id === reactivarId ? { ...a, estado: 'Activo', dado_de_baja: false, activo: true, numero_franela: null } : a));
       setReactivarId(null);
-      setReactivarSuccess({ open: true, message: data.message || 'Alumno reactivado y reingreso registrado' });
+      setReactivarSuccess({
+        open: true,
+        message: data.message || 'Alumno reactivado y reingreso registrado. Debes reasignar el nro de franela.'
+      });
     } catch (err) {
       setReactivarError(err.message);
     } finally {
@@ -948,6 +951,9 @@ function TablaAlumnos() {
                   <strong>Categoría:</strong> {alumno.categoria || '-'}
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
+                  <strong>Nro franela:</strong> {(alumno.numero_franela ?? '-') || '-'}
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Tipo de mensualidad:</strong> {obtenerTipoMensualidad(alumno)}
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
@@ -1060,31 +1066,32 @@ function TablaAlumnos() {
           component={Paper}
           sx={{
             borderRadius: 3,
-            overflowX: 'auto',
+            overflowX: 'hidden',
             overflowY: 'hidden',
             maxWidth: '100%',
             boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
           }}
         >
-          <Table sx={{ minWidth: 700 }}>
+          <Table sx={{ width: '100%', tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE DEL ALUMNO</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>EDAD</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEXO</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORÍA</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>TIPO DE MENSUALIDAD</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
+                <TableCell sx={{ width: '26%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1.5 }}>ALUMNO</TableCell>
+                <TableCell sx={{ width: '6%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>EDAD</TableCell>
+                <TableCell sx={{ width: '5%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>SEXO</TableCell>
+                <TableCell sx={{ width: '10%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>CATEGORÍA</TableCell>
+                <TableCell sx={{ width: '6%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>FRANELA</TableCell>
+                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>TIPO DE MENSUALIDAD</TableCell>
+                <TableCell sx={{ width: '15%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {alumnosPaginados.map((alumno) => (
                 <TableRow
                   key={alumno._id}
-                  sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}
+                  sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2, px: 1 }, '&:hover': { backgroundColor: '#fafafa' } }}
                 >
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <TableCell sx={{ px: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, minWidth: 0 }}>
                       <Tooltip
                         title={esAlumnoActivo(alumno)
                           ? 'Alumno activo'
@@ -1107,12 +1114,12 @@ function TablaAlumnos() {
                       <Avatar
                         src={mediaUrl(alumno.foto) || ''}
                         alt={alumno.nombres}
-                        sx={{ width: 38, height: 38, bgcolor: '#e0ecff', color: '#2563eb', fontWeight: 700 }}
+                        sx={{ width: 38, height: 38, bgcolor: '#e0ecff', color: '#2563eb', fontWeight: 700, flexShrink: 0 }}
                       >
                         {`${alumno.nombres?.[0] || ''}${alumno.apellidos?.[0] || ''}`.toUpperCase()}
                       </Avatar>
-                      <Box>
-                        <Typography sx={{ fontWeight: 700, color: '#0f172a', lineHeight: 1.1 }}>
+                      <Box sx={{ minWidth: 0, maxWidth: '100%' }}>
+                        <Typography sx={{ fontWeight: 700, color: '#0f172a', lineHeight: 1.1, whiteSpace: 'normal', wordBreak: 'break-word' }}>
                           {obtenerNombreCompletoAlumno(alumno)}
                         </Typography>
                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
@@ -1122,77 +1129,80 @@ function TablaAlumnos() {
                       </Box>
                     </Box>
                   </TableCell>
-                  <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{calcularEdad(alumno.fecha_nacimiento)}</TableCell>
-                  <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{obtenerSexoAlumno(alumno)}</TableCell>
-                  <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>{alumno.categoria || '-'}</TableCell>
-                  <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{calcularEdad(alumno.fecha_nacimiento)}</TableCell>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{obtenerSexoAlumno(alumno)}</TableCell>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{alumno.categoria || '-'}</TableCell>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{(alumno.numero_franela ?? '-') || '-'}</TableCell>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>
                     {obtenerTipoMensualidad(alumno)}
                   </TableCell>
-                  <TableCell>
-                    <Tooltip title="Ver detalles">
-                      <IconButton aria-label="ver" size="small" sx={{ color: '#94a3b8', mr: 1 }} onClick={() => navigate(`/alumno/${alumno._id}`)}>
-                        <VisibilityIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Editar">
-                      <IconButton aria-label="editar" size="small" sx={{ color: '#94a3b8', mr: 1 }} onClick={() => navigate(`/alumno/editar/${alumno._id}`)}>
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                    {!(alumno.dado_de_baja || alumno.activo === false) && (
-                      <Tooltip title="Dar de baja">
-                        <IconButton aria-label="dar de baja" size="small" sx={{ color: '#94a3b8', mr: 1 }} onClick={() => {
-                          setBajaId(alumno._id);
-                          setMotivoBaja('');
-                        }}>
-                          <PersonOffIcon />
+                  <TableCell sx={{ textAlign: 'center', whiteSpace: 'nowrap', px: 1 }}>
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.25, maxWidth: '100%' }}>
+                      <Tooltip title="Ver detalles">
+                        <IconButton aria-label="ver" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => navigate(`/alumno/${alumno._id}`)}>
+                          <VisibilityIcon />
                         </IconButton>
                       </Tooltip>
-                    )}
-                    {(alumno.dado_de_baja || alumno.activo === false) && (
-                      <Tooltip title="Reactivar">
-                        <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', mr: 1 }} onClick={() => openReactivarDialog(alumno)}>
-                          <ReplayIcon />
+                      <Tooltip title="Editar">
+                        <IconButton aria-label="editar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => navigate(`/alumno/editar/${alumno._id}`)}>
+                          <EditIcon />
                         </IconButton>
                       </Tooltip>
-                    )}
-                    <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
-                      <IconButton
-                        aria-label="gestionar reposos"
-                        size="small"
-                        sx={{
-                          color: alumno.tiene_reposo_activo ? '#15803d' : '#94a3b8',
-                          ml: 1
-                        }}
-                        onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
-                      >
-                        <LocalHospitalIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Eliminar">
-                      <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8' }} onClick={() => setDeleteId(alumno._id)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                    {alumno.foto_cedula && (
-                      <Tooltip title="Descargar cédula">
+                      {!(alumno.dado_de_baja || alumno.activo === false) && (
+                        <Tooltip title="Dar de baja">
+                          <IconButton aria-label="dar de baja" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => {
+                            setBajaId(alumno._id);
+                            setMotivoBaja('');
+                          }}>
+                            <PersonOffIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {(alumno.dado_de_baja || alumno.activo === false) && (
+                        <Tooltip title="Reactivar">
+                          <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', p: 0.5 }} onClick={() => openReactivarDialog(alumno)}>
+                            <ReplayIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
                         <IconButton
-                          aria-label="descargar cédula"
+                          aria-label="gestionar reposos"
                           size="small"
-                          sx={{ color: '#94a3b8', ml: 1 }}
-                          onClick={() => {
-                            const link = document.createElement('a');
-                            link.href = alumno.foto_cedula;
-                            link.download = `cedula_${alumno.nombres}_${alumno.apellidos}.jpg`;
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
+                          sx={{
+                            color: alumno.tiene_reposo_activo ? '#15803d' : '#94a3b8',
+                            p: 0.5
                           }}
+                          onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
                         >
-                          <DownloadIcon />
+                          <LocalHospitalIcon />
                         </IconButton>
                       </Tooltip>
-                    )}
+                      <Tooltip title="Eliminar">
+                        <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => setDeleteId(alumno._id)}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
+                      {alumno.foto_cedula && (
+                        <Tooltip title="Descargar cédula">
+                          <IconButton
+                            aria-label="descargar cédula"
+                            size="small"
+                            sx={{ color: '#94a3b8', p: 0.5 }}
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = alumno.foto_cedula;
+                              link.download = `cedula_${alumno.nombres}_${alumno.apellidos}.jpg`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                          >
+                            <DownloadIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))}

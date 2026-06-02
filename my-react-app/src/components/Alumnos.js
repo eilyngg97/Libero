@@ -247,8 +247,9 @@ function Alumnos() {
   useEffect(() => {
     let cancelled = false;
     const categoriaNormalizada = String(form.categoria || '').trim().toUpperCase();
+    const sexoNormalizado = String(form.sexo || '').trim();
 
-    if (!categoriaNormalizada) {
+    if (!categoriaNormalizada || !sexoNormalizado) {
       setNumeroFranelaCheckLoading(false);
       setNumeroFranelaCheckMsg('');
       setNumeroFranelaDuplicado(false);
@@ -260,7 +261,9 @@ function Alumnos() {
     const timer = setTimeout(async () => {
       setNumeroFranelaCheckLoading(true);
       try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}`);
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}&sexo=${encodeURIComponent(sexoNormalizado)}`
+        );
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || 'Error verificando nro de franela');
 
@@ -286,7 +289,7 @@ function Alumnos() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [form.categoria]);
+  }, [form.categoria, form.sexo]);
 
   useEffect(() => {
     if (!form.numero_franela) {
@@ -304,10 +307,10 @@ function Alumnos() {
     setNumeroFranelaDuplicado(duplicado);
     setNumeroFranelaCheckMsg(
       duplicado
-        ? `El nro de franela ${numero} ya esta ocupado en la categoria ${String(form.categoria || '').trim().toUpperCase()}.`
+        ? `El nro de franela ${numero} ya esta ocupado en la categoria ${String(form.categoria || '').trim().toUpperCase()} (${String(form.sexo || '').trim() || 'sin sexo'}).`
         : ''
     );
-  }, [form.numero_franela, form.categoria, numerosFranelaOcupados]);
+  }, [form.numero_franela, form.categoria, form.sexo, numerosFranelaOcupados]);
   // Al montar, establecer la sede desde el contexto o localStorage
   useEffect(() => {
     let sede = sedeSeleccionada;
@@ -608,7 +611,7 @@ function Alumnos() {
         return;
       }
       if (numeroFranelaDuplicado) {
-        setError(numeroFranelaCheckMsg || 'Ese nro de franela ya esta asignado en la categoria.');
+        setError(numeroFranelaCheckMsg || 'Ese nro de franela ya esta asignado en la misma categoria y sexo.');
         return;
       }
     }
@@ -945,15 +948,15 @@ function Alumnos() {
               fullWidth
               size="small"
               sx={{ my: 1 }}
-              disabled={!categoria || numeroFranelaCheckLoading}
+              disabled={!categoria || !form.sexo || numeroFranelaCheckLoading}
               error={numeroFranelaDuplicado}
               helperText={
                 numeroFranelaDuplicado
                   ? numeroFranelaCheckMsg
                   : (numeroFranelaCheckLoading
                       ? 'Verificando disponibilidad por categoría calculada...'
-                    : (!categoria
-                        ? 'Selecciona fecha de nacimiento para calcular la categoría'
+                    : ((!categoria || !form.sexo)
+                        ? 'Selecciona fecha de nacimiento y sexo para calcular disponibilidad'
                       : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
               }
             >

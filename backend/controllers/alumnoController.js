@@ -213,7 +213,7 @@ function normalizarDiaLimitePersonalizado(valor) {
   return numero;
 }
 
-async function validarNumeroFranelaDisponible({ numeroFranela, categoria, excludeAlumnoId, AlumnoModel = Alumno }) {
+async function validarNumeroFranelaDisponible({ numeroFranela, categoria, sexo, excludeAlumnoId, AlumnoModel = Alumno }) {
   if (numeroFranela === undefined || numeroFranela === null || numeroFranela === '') return;
 
   if (!Number.isInteger(numeroFranela) || numeroFranela < 1 || numeroFranela > 100) {
@@ -225,20 +225,31 @@ async function validarNumeroFranelaDisponible({ numeroFranela, categoria, exclud
     throw new Error('La categoria es obligatoria para asignar nro de franela.');
   }
 
+  const sexoNormalizado = normalizarSexo(sexo);
+  if (!sexoNormalizado) {
+    throw new Error('El sexo es obligatorio para asignar nro de franela.');
+  }
+
   const filtro = {
     categoria: categoriaNormalizada,
+    sexo: sexoNormalizado,
     numero_franela: numeroFranela,
-    activo: { $ne: false }
+    activo: { $ne: false },
+    dado_de_baja: { $ne: true },
+    $or: [
+      { estado: { $exists: false } },
+      { estado: { $not: /^baja$/i } }
+    ]
   };
 
   if (excludeAlumnoId) {
     filtro._id = { $ne: excludeAlumnoId };
   }
 
-  const alumnoExistente = await AlumnoModel.findOne(filtro).select('_id nombres apellidos sede categoria numero_franela');
+  const alumnoExistente = await AlumnoModel.findOne(filtro).select('_id nombres apellidos sede categoria sexo numero_franela');
   if (alumnoExistente) {
     throw new Error(
-      `El nro de franela ${numeroFranela} ya esta asignado en la categoria ${categoriaNormalizada} a ${alumnoExistente.nombres} ${alumnoExistente.apellidos}.`
+      `El nro de franela ${numeroFranela} ya esta asignado en la categoria ${categoriaNormalizada} (${sexoNormalizado}) a ${alumnoExistente.nombres} ${alumnoExistente.apellidos}.`
     );
   }
 }
@@ -1281,10 +1292,21 @@ exports.getDisponibilidadNumeroFranela = async (req, res) => {
       return res.status(400).json({ error: 'La categoria es obligatoria.' });
     }
 
+    const sexo = normalizarSexo(req.query.sexo);
+    if (!sexo) {
+      return res.status(400).json({ error: 'El sexo es obligatorio.' });
+    }
+
     const filtro = {
       activo: { $ne: false },
+      dado_de_baja: { $ne: true },
       numero_franela: { $gte: 1, $lte: 100 },
-      categoria: { $regex: new RegExp(`^${escapeRegex(categoria)}$`, 'i') }
+      categoria: { $regex: new RegExp(`^${escapeRegex(categoria)}$`, 'i') },
+      sexo,
+      $or: [
+        { estado: { $exists: false } },
+        { estado: { $not: /^baja$/i } }
+      ]
     };
 
     const excludeAlumnoId = req.query.excludeAlumnoId;
@@ -1310,6 +1332,7 @@ exports.getDisponibilidadNumeroFranela = async (req, res) => {
 
     return res.json({
       categoria,
+      sexo,
       ocupados,
       disponibles,
       totalOcupados: ocupados.length,
@@ -1494,6 +1517,7 @@ exports.importarAlumnosExcel = async (req, res) => {
         await validarNumeroFranelaDisponible({
           numeroFranela: alumnoData.numero_franela,
           categoria: alumnoData.categoria,
+          sexo: alumnoData.sexo,
           AlumnoModel: TenantAlumno
         });
 
@@ -1710,6 +1734,7 @@ exports.createAlumno = async (req, res) => {
     await validarNumeroFranelaDisponible({
       numeroFranela: alumnoData.numero_franela,
       categoria: alumnoData.categoria,
+      sexo: alumnoData.sexo,
       AlumnoModel: TenantAlumno
     });
     if (alumnoData.habilitar_pago_cuotas !== undefined) {
@@ -1929,7 +1954,7 @@ exports.updateAlumno = async (req, res) => {
       TenantConfig: TenantConfigModel
     } = tenantModels;
 
-    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria numero_franela nombres apellidos cedula usuario representante fecha_inicio_cobro');
+    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria sexo numero_franela nombres apellidos cedula usuario representante fecha_inicio_cobro');
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
@@ -2129,18 +2154,22 @@ exports.updateAlumno = async (req, res) => {
       const nro = normalizarNumeroFranela(updateData.numero_franela);
       updateData.numero_franela = nro === undefined ? null : nro;
     }
-    const cambiaNumeroOCategoria = updateData.numero_franela !== undefined || updateData.categoria !== undefined;
-    if (cambiaNumeroOCategoria) {
+    const cambiaNumeroOCategoriaOSexo = updateData.numero_franela !== undefined || updateData.categoria !== undefined || updateData.sexo !== undefined;
+    if (cambiaNumeroOCategoriaOSexo) {
       const categoriaObjetivo = updateData.categoria !== undefined
         ? updateData.categoria
         : alumnoActual.categoria;
       const numeroObjetivo = updateData.numero_franela !== undefined
         ? updateData.numero_franela
         : alumnoActual.numero_franela;
+      const sexoObjetivo = updateData.sexo !== undefined
+        ? updateData.sexo
+        : alumnoActual.sexo;
 
       await validarNumeroFranelaDisponible({
         numeroFranela: numeroObjetivo,
         categoria: categoriaObjetivo,
+        sexo: sexoObjetivo,
         excludeAlumnoId: alumnoActual._id,
         AlumnoModel: TenantAlumno
       });
@@ -2489,12 +2518,15 @@ exports.reactivarAlumno = async (req, res) => {
       PagoDetalle: TenantPagoDetalle
     });
 
+    const numeroFranelaAnterior = alumnoActual.numero_franela ?? null;
+
     const alumno = await TenantAlumno.findByIdAndUpdate(
       req.params.id,
       {
         activo: true,
         dado_de_baja: false,
-        estado: 'Activo'
+        estado: 'Activo',
+        numero_franela: null
       },
       { new: true }
     );
@@ -2514,16 +2546,20 @@ exports.reactivarAlumno = async (req, res) => {
         metodo_pago: metodoPago,
         referencia: referencia || undefined,
         mensualidad_id: mensualidad?._id,
-        pago_id: pagoRegistrado?._id || undefined
+        pago_id: pagoRegistrado?._id || undefined,
+        numero_franela_anterior: numeroFranelaAnterior,
+        requiere_reasignacion_franela: true
       }
     });
 
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
     res.json({
-      message: 'Alumno reactivado y reingreso registrado',
+      message: 'Alumno reactivado y reingreso registrado. Debes reasignar el nro de franela.',
       alumno,
       mensualidad,
-      pago: pagoRegistrado
+      pago: pagoRegistrado,
+      requiere_reasignacion_franela: true,
+      numero_franela_anterior: numeroFranelaAnterior
     });
   } catch (err) {
     res.status(400).json({ error: err?.message || 'Error al reactivar al alumno' });

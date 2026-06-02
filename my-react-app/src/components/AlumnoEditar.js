@@ -33,7 +33,7 @@ function AlumnoEditar({ locationState }) {
   const { sedeSeleccionada } = useSede();
   const token = localStorage.getItem('token');
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-  const esAdmin = rolActual === 'admin' || rolActual === 'super_admin';
+  const esAdmin = rolActual === 'admin' || rolActual === 'administrador' || rolActual === 'super_admin';
   const [form, setForm] = useState({
     fecha_inicio_cobro: new Date().toISOString().split('T')[0],
     tipo_mensualidad: 'monto_sede',
@@ -183,8 +183,9 @@ function AlumnoEditar({ locationState }) {
   useEffect(() => {
     let cancelled = false;
     const categoriaNormalizada = String(form.categoria || '').trim().toUpperCase();
+    const sexoNormalizado = String(form.sexo || '').trim();
 
-    if (!categoriaNormalizada) {
+    if (!categoriaNormalizada || !sexoNormalizado) {
       setNumeroFranelaCheckLoading(false);
       setNumeroFranelaCheckMsg('');
       setNumeroFranelaDuplicado(false);
@@ -197,7 +198,7 @@ function AlumnoEditar({ locationState }) {
       setNumeroFranelaCheckLoading(true);
       try {
         const res = await fetch(
-          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}&excludeAlumnoId=${encodeURIComponent(id)}`
+          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}&sexo=${encodeURIComponent(sexoNormalizado)}&excludeAlumnoId=${encodeURIComponent(id)}`
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || 'Error verificando nro de franela');
@@ -224,7 +225,7 @@ function AlumnoEditar({ locationState }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [form.categoria, id]);
+  }, [form.categoria, form.sexo, id]);
 
   useEffect(() => {
     if (!form.numero_franela) {
@@ -243,10 +244,10 @@ function AlumnoEditar({ locationState }) {
     setNumeroFranelaDuplicado(duplicado);
     setNumeroFranelaCheckMsg(
       duplicado
-        ? `El nro de franela ${numero} ya esta ocupado en la categoria ${String(form.categoria || '').trim().toUpperCase()}.`
+        ? `El nro de franela ${numero} ya esta ocupado en la categoria ${String(form.categoria || '').trim().toUpperCase()} (${String(form.sexo || '').trim() || 'sin sexo'}).`
         : ''
     );
-  }, [form.numero_franela, form.categoria, numerosFranelaOcupados]);
+  }, [form.numero_franela, form.categoria, form.sexo, numerosFranelaOcupados]);
 
   const handleFotoChange = (e) => {
     const file = e.target.files[0];
@@ -823,15 +824,15 @@ function AlumnoEditar({ locationState }) {
                   fullWidth
                   size="small"
                   sx={{ my: 1 }}
-                  disabled={!categoria || numeroFranelaCheckLoading}
+                  disabled={!categoria || !form.sexo || numeroFranelaCheckLoading}
                   error={numeroFranelaDuplicado}
                   helperText={
                     numeroFranelaDuplicado
                       ? numeroFranelaCheckMsg
                       : (numeroFranelaCheckLoading
                         ? 'Verificando disponibilidad por categoría calculada...'
-                        : (!categoria
-                          ? 'Selecciona fecha de nacimiento para calcular la categoría'
+                        : ((!categoria || !form.sexo)
+                          ? 'Selecciona fecha de nacimiento y sexo para calcular disponibilidad'
                           : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
                   }
                 >
