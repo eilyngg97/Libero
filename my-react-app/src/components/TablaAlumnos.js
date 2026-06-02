@@ -223,23 +223,42 @@ function TablaAlumnos() {
   // Función para descargar PDF
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
-    const columns = ["N°", "Nombre", "Apellido", "Cedula", "Categoria", "Division", "Nro franela", "Sexo", "Fecha de Nacimiento", "Edad", "Representante", "Telefono"];
+    const columns = ["N°", "Alumno", "Cedula", "Categoria", "#", "Sexo", "Fecha de Nacimiento", "Edad", "Representante", "Telefono"];
     const rows = alumnosFiltrados.map((a, i) => [
       i + 1,
-      a.nombres,
-      a.apellidos,
+      obtenerNombreCompletoAlumno(a),
       a.cedula,
       a.categoria || '-',
-      a.division || '-',
       (a.numero_franela ?? '-') || '-',
-      obtenerSexoAlumno(a),
+      (() => {
+        const sexo = obtenerSexoAlumno(a);
+        if (sexo === 'Femenino') return 'F';
+        if (sexo === 'Masculino') return 'M';
+        return sexo || '-';
+      })(),
       formatFecha(a.fecha_nacimiento),
       calcularEdad(a.fecha_nacimiento),
       a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
       a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-')
     ]);
     doc.text(`Lista de Alumnos (Total: ${alumnosFiltrados.length})`, 14, 10);
-    autoTable(doc, { head: [columns], body: rows, startY: 20 });
+    autoTable(doc, {
+      head: [columns],
+      body: rows,
+      startY: 20,
+      styles: {
+        fontSize: 8,
+        overflow: 'linebreak',
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { cellWidth: 8 },
+        1: { cellWidth: 32 },
+        4: { cellWidth: 8, halign: 'center' },
+        5: { cellWidth: 10, halign: 'center' },
+        7: { cellWidth: 10, halign: 'center' }
+      }
+    });
     let nombreSede = '';
     if (sedeSeleccionada && sedeSeleccionada.nombre) {
       nombreSede = `_${sedeSeleccionada.nombre.replace(/\s+/g, '_')}`;

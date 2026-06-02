@@ -786,7 +786,7 @@ function AlumnoEditar({ locationState }) {
                     )}
                   </Select>
                   <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
-                    {esAdmin ? 'Se asigna automáticamente, pero puedes ajustarla.' : 'Se asigna automáticamente'}
+                    {esAdmin ? 'Se asigna automáticamente según año de nacimiento, pero puedes ajustarla.' : 'Se asigna automáticamente según año de nacimiento'}
                   </Typography>
                 </FormControl>
                 <FormControl fullWidth size="small" sx={{ my: 1 }}>
@@ -829,9 +829,9 @@ function AlumnoEditar({ locationState }) {
                     numeroFranelaDuplicado
                       ? numeroFranelaCheckMsg
                       : (numeroFranelaCheckLoading
-                        ? 'Verificando disponibilidad por categoria...'
+                        ? 'Verificando disponibilidad por categoría calculada...'
                         : (!categoria
-                          ? 'Selecciona fecha de nacimiento para definir categoria'
+                          ? 'Selecciona fecha de nacimiento para calcular la categoría'
                           : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
                   }
                 >

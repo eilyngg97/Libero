@@ -6,7 +6,6 @@ export const CATEGORIAS_DISPONIBLES = [
   'U17/JUVENIL',
   'U19/JUVENIL LIBRE',
   'U21',
-  'U23/ LIBRE',
   'MAYORES / LIBRE'
 ];
 
@@ -16,20 +15,14 @@ export function getCategoriaPorFechaNacimiento(fechaNacimiento) {
   const nacimiento = new Date(fechaNacimiento);
   if (Number.isNaN(nacimiento.getTime())) return '';
 
-  const hoy = new Date();
-  let edadDeportiva = hoy.getFullYear() - nacimiento.getFullYear();
-  const mesDiff = hoy.getMonth() - nacimiento.getMonth();
-  if (mesDiff < 0 || (mesDiff === 0 && hoy.getDate() < nacimiento.getDate())) {
-    edadDeportiva -= 1;
-  }
+  const anioNacimiento = nacimiento.getFullYear();
 
-  if (edadDeportiva <= 8) return CATEGORIAS_DISPONIBLES[0];
-  if (edadDeportiva <= 10) return CATEGORIAS_DISPONIBLES[1];
-  if (edadDeportiva <= 12) return CATEGORIAS_DISPONIBLES[2];
-  if (edadDeportiva <= 14) return CATEGORIAS_DISPONIBLES[3];
-  if (edadDeportiva <= 16) return CATEGORIAS_DISPONIBLES[4];
-  if (edadDeportiva <= 18) return CATEGORIAS_DISPONIBLES[5];
-  if (edadDeportiva <= 20) return CATEGORIAS_DISPONIBLES[6];
-  if (edadDeportiva <= 22) return CATEGORIAS_DISPONIBLES[7];
-  return CATEGORIAS_DISPONIBLES[8];
+  if (anioNacimiento >= 2017 && anioNacimiento <= 2018) return CATEGORIAS_DISPONIBLES[0];
+  if (anioNacimiento >= 2015 && anioNacimiento <= 2016) return CATEGORIAS_DISPONIBLES[1];
+  if (anioNacimiento >= 2013 && anioNacimiento <= 2014) return CATEGORIAS_DISPONIBLES[2];
+  if (anioNacimiento >= 2011 && anioNacimiento <= 2012) return CATEGORIAS_DISPONIBLES[3];
+  if (anioNacimiento >= 2009 && anioNacimiento <= 2010) return CATEGORIAS_DISPONIBLES[4];
+  if (anioNacimiento >= 2007 && anioNacimiento <= 2008) return CATEGORIAS_DISPONIBLES[5];
+  if (anioNacimiento >= 2005 && anioNacimiento <= 2006) return CATEGORIAS_DISPONIBLES[6];
+  return CATEGORIAS_DISPONIBLES[7];
 }

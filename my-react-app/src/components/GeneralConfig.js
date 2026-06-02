@@ -689,9 +689,9 @@ function GeneralConfig() {
               <Groups2OutlinedIcon sx={{ fontSize: 22 }} />
             </Box>
             <Box>
-              <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Categorias de alumnos</Typography>
+              <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Categorías de alumnos</Typography>
               <Typography sx={{ color: '#637086', fontSize: 13 }}>
-                Recalcula y asigna categorias para todos los alumnos activos de la academia usando la fecha de nacimiento.
+                Recalcula y asigna categorías para todos los alumnos activos de la academia según el año de nacimiento.
               </Typography>
             </Box>
           </Box>
@@ -711,7 +711,7 @@ function GeneralConfig() {
               }
             }}
           >
-            {asignandoCategorias ? 'Asignando categorias...' : 'Asignar categorias'}
+            {asignandoCategorias ? 'Asignando categorías...' : 'Asignar categorías'}
           </Button>
         </Paper>
       )}
