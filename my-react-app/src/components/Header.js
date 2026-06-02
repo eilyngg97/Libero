@@ -23,7 +23,8 @@ function Header({ titulo, onMenuClick }) {
   } catch (e) {
     usuario = null;
   }
-  const esAdmin = String(usuario?.rol || '').toLowerCase() === 'admin';
+  const rolActual = String(usuario?.rol || '').trim().toLowerCase();
+  const puedeVerPerfil = rolActual === 'admin' || rolActual === 'super_admin';
 
   const userInitials = String(usuario?.nombre || 'Usuario')
     .trim()
@@ -84,7 +85,7 @@ function Header({ titulo, onMenuClick }) {
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             PaperProps={{ sx: { mt: 1, minWidth: 140 } }}
           >
-            {esAdmin && (
+            {puedeVerPerfil && (
               <MenuItem onClick={handleGoToProfile} sx={{ gap: 1 }}>
                 <PersonOutlineIcon fontSize="small" />
                 Mi perfil

@@ -37,6 +37,7 @@ function MiPerfil() {
   const [cargandoTotalAlumnos, setCargandoTotalAlumnos] = React.useState(true);
   const [totalAlumnos, setTotalAlumnos] = React.useState(0);
   const [totalAlumnosError, setTotalAlumnosError] = React.useState('');
+  const [copiedField, setCopiedField] = React.useState('');
   const [resumenAcademia, setResumenAcademia] = React.useState({
     plan: 'No configurado',
     costoPlan: null,
@@ -236,6 +237,62 @@ function MiPerfil() {
         ? { bar: '#dc2626', chipBg: '#fee2e2', chipText: '#991b1b', ring: 'rgba(220, 38, 38, 0.22)' }
         : { bar: '#d97706', chipBg: '#fef3c7', chipText: '#92400e', ring: 'rgba(217, 119, 6, 0.22)' };
 
+  const pagoMovilConfig = resumenAcademia?.pagos?.pago_movil || {};
+  const bancoPagoMovil = String(pagoMovilConfig?.banco || '').trim() || 'BANCAMIGA';
+  const cedulaPagoMovil = String(pagoMovilConfig?.cedula || '').trim() || '25894044';
+  const telefonoPagoMovil = String(pagoMovilConfig?.telefono || '').trim() || '04125163627';
+
+  const legacyCopyText = (value) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = value;
+    textArea.setAttribute('readonly', '');
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    textArea.style.pointerEvents = 'none';
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    textArea.setSelectionRange(0, textArea.value.length);
+
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return copied;
+  };
+
+  const copyTextToClipboard = async (text, fieldKey) => {
+    const value = String(text || '').trim();
+    if (!value) {
+      setError('No hay un dato disponible para copiar.');
+      return;
+    }
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch (_) {
+          if (!legacyCopyText(value)) {
+            throw new Error('clipboard-fallback-failed');
+          }
+        }
+      } else {
+        if (!legacyCopyText(value)) {
+          throw new Error('clipboard-fallback-failed');
+        }
+      }
+
+      setError('');
+      setCopiedField(fieldKey);
+      window.setTimeout(() => {
+        setCopiedField((current) => (current === fieldKey ? '' : current));
+      }, 2000);
+    } catch (_) {
+      setError('No se pudo copiar el dato al portapapeles.');
+    }
+  };
+
   const cambiarClave = async () => {
     const payload = {
       clave_actual: String(passwordForm.clave_actual || '').trim(),
@@ -389,36 +446,42 @@ function MiPerfil() {
 
                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
                       {/* BANCAMIGA BOX */}
-                      <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                       <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                          <Box>
                             <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', mb: 0.5, letterSpacing: '0.05em' }}>BANCO</Typography>
-                            <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>BANCAMIGA</Typography>
+                           <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>{bancoPagoMovil}</Typography>
                          </Box>
-                         <Button size="small" sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
-                           <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> Copiar
+                         <Button size="small" onClick={() => copyTextToClipboard(bancoPagoMovil, 'banco')} sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
+                          <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> {copiedField === 'banco' ? 'Copiado' : 'Copiar'}
                          </Button>
                       </Box>
                       {/* CEDULA BOX */}
                       <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                          <Box>
                             <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', mb: 0.5, letterSpacing: '0.05em' }}>CÉDULA</Typography>
-                            <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>25894044</Typography>
+                           <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>{cedulaPagoMovil}</Typography>
                          </Box>
-                         <Button size="small" sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
-                           <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> Copiar
+                         <Button size="small" onClick={() => copyTextToClipboard(cedulaPagoMovil, 'cedula')} sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
+                          <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> {copiedField === 'cedula' ? 'Copiado' : 'Copiar'}
                          </Button>
                       </Box>
                       {/* TELEFONO BOX */}
                       <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                          <Box>
                             <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', mb: 0.5, letterSpacing: '0.05em' }}>TELÉFONO</Typography>
-                            <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>0412-5163627</Typography>
+                           <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>{telefonoPagoMovil}</Typography>
                          </Box>
-                         <Button size="small" sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
-                           <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> Copiar
+                         <Button size="small" onClick={() => copyTextToClipboard(telefonoPagoMovil, 'telefono')} sx={{ textTransform: 'none', color: '#475569', minWidth: 0, p: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 1, fontWeight: 600 }}>
+                          <Box component="span" sx={{mr: 0.5, display: 'flex'}}>📋</Box> {copiedField === 'telefono' ? 'Copiado' : 'Copiar'}
                          </Button>
                       </Box>
                    </Box>
+
+                     {!!error && seccionActiva === 'facturacion' && (
+                      <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                        {error}
+                      </Alert>
+                     )}
 
                    {/* INSTRUCCIONES BOX */}
                    <Box sx={{ p: 2.5, borderRadius: 3, border: '1px dashed #cbd5e1', bgcolor: '#f8fafc' }}>
