@@ -145,7 +145,7 @@ function Alumnos() {
   const navigate = useNavigate();
   const { dolar } = useDolar();
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-  const esAdmin = rolActual === 'admin' || rolActual === 'administrador';
+  const esAdmin = rolActual === 'admin' || rolActual === 'administrador' || rolActual === 'super_admin';
 
   const montoInscripcionNum = Number(montoInscripcion) || 0;
   const montoPrimeraMensualidadNum = Number(montoMensualidad) || 0;
