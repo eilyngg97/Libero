@@ -141,6 +141,7 @@ function TablaAlumnos() {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
   const esSuperAdmin = rolActual === 'super_admin';
+  const tieneSedeEspecifica = Boolean(sedeSeleccionada?._id);
   const [alumnos, setAlumnos] = useState([]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
@@ -285,7 +286,7 @@ function TablaAlumnos() {
   };
 
   const openImportPicker = () => {
-    if (!sedeSeleccionada?._id) {
+    if (!tieneSedeEspecifica) {
       setError('Debes seleccionar una sede antes de importar alumnos.');
       return;
     }
@@ -683,9 +684,13 @@ function TablaAlumnos() {
               sx={{ borderColor: '#e2e8f0', color: '#2563eb', fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}
               startIcon={<UploadFileIcon />}
               onClick={openImportPicker}
-              disabled={importLoading || importPreviewLoading}
+              disabled={importLoading || importPreviewLoading || !tieneSedeEspecifica}
             >
-              {importLoading || importPreviewLoading ? 'Importando...' : 'Importar Excel'}
+              {importLoading || importPreviewLoading
+                ? 'Importando...'
+                : tieneSedeEspecifica
+                  ? 'Importar Excel'
+                  : 'Importar Excel (elige una sede)'}
             </Button>
           )}
           <Button

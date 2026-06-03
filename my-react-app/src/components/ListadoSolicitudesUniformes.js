@@ -10,6 +10,8 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  Menu,
+  MenuItem,
   Paper,
   Snackbar,
   Table,
@@ -32,8 +34,10 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import DownloadIcon from '@mui/icons-material/Download';
 import { mediaUrl } from '../utils/mediaUrl';
 import { useSede } from '../context/SedeContext';
+import { exportToExcel } from '../utils/exportExcel';
 
 const ESTADO_LABELS = {
   pendiente: 'Pendiente',
@@ -73,6 +77,7 @@ function ListadoSolicitudesUniformes() {
   const [comprobanteTipo, setComprobanteTipo] = useState('imagen');
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(10);
+  const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState(null);
 
   const token = localStorage.getItem('token');
   const theme = useTheme();
@@ -155,6 +160,57 @@ function ListadoSolicitudesUniformes() {
     pagina * filasPorPagina,
     pagina * filasPorPagina + filasPorPagina
   );
+
+  const buildExcelRows = (rows) => rows.map((pedido) => ({
+    Alumno: pedido.alumno ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim() : '-',
+    Prenda: pedido.prenda || '-',
+    Talla: pedido.talla || '-',
+    'Nombre deportivo': pedido.nombre_personalizado || '-',
+    'Numero franela': pedido.numero_franela || '-'
+  }));
+
+  const exportPedidosExcel = async (mode) => {
+    const baseRows = mode === 'verificados'
+      ? pedidos.filter((pedido) => String(pedido.estado || '').toLowerCase() === 'verificado')
+      : pedidos;
+
+    const rows = buildExcelRows(baseRows);
+    const suffix = mode === 'verificados' ? '_verificados' : '_todos';
+    const sedeSuffix = sedeSeleccionada?.nombre
+      ? `_${String(sedeSeleccionada.nombre).trim().replace(/\s+/g, '_')}`
+      : '';
+    const fileName = `solicitudes_uniformes${sedeSuffix}${suffix}.xlsx`;
+
+    if (rows.length === 0) {
+      setError(mode === 'verificados'
+        ? 'No hay solicitudes verificadas para exportar.'
+        : 'No hay solicitudes para exportar.');
+      return;
+    }
+
+    await exportToExcel(rows, fileName, ['Alumno', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela']);
+    setSuccessMessage(mode === 'verificados'
+      ? 'Excel de solicitudes verificadas exportado'
+      : 'Excel de todas las solicitudes exportado');
+  };
+
+  const handleOpenExportMenu = (event) => {
+    setExportMenuAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseExportMenu = () => {
+    setExportMenuAnchorEl(null);
+  };
+
+  const handleExportAll = async () => {
+    handleCloseExportMenu();
+    await exportPedidosExcel('all');
+  };
+
+  const handleExportVerified = async () => {
+    handleCloseExportMenu();
+    await exportPedidosExcel('verificados');
+  };
 
   const montoTotalDivisa = Number(pedidoSeleccionado?.precio);
   const saldoPendienteDivisa = Number(pedidoSeleccionado?.saldo_pendiente);
@@ -443,10 +499,35 @@ function ListadoSolicitudesUniformes() {
         </Alert>
       </Snackbar>
 
-      <Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>Pedidos de Uniformes</Typography>
-      <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
-        Sede: {sedeSeleccionada?.nombre || 'Todas'}
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Pedidos de Uniformes</Typography>
+          <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
+            Lista de solicitudes de uniformes realizadas por los alumnos. Puedes solicitar pagos, verificar pagos pendientes y marcar prendas como entregadas desde esta sección.
+          </Typography>
+        </Box>
+
+        <Box>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={handleOpenExportMenu}
+            sx={{ borderColor: '#cbd5e1', color: '#0f172a', fontWeight: 700 }}
+          >
+            Exportar Excel
+          </Button>
+          <Menu
+            anchorEl={exportMenuAnchorEl}
+            open={Boolean(exportMenuAnchorEl)}
+            onClose={handleCloseExportMenu}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            <MenuItem onClick={handleExportAll}>Exportar todos los registros</MenuItem>
+            <MenuItem onClick={handleExportVerified}>Exportar solo verificados</MenuItem>
+          </Menu>
+        </Box>
+      </Box>
       {loading ? (
         <Typography>Cargando...</Typography>
       ) : error ? (

@@ -5,7 +5,6 @@ import { Box, Typography, Grid, IconButton, Select, MenuItem } from '@mui/materi
 import SchoolIcon from '@mui/icons-material/School';
 import SportsVolleyballIcon from '@mui/icons-material/SportsVolleyball';
 import PaymentsIcon from '@mui/icons-material/Payments';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 
@@ -13,6 +12,7 @@ function PanelOpciones() {
     const navigate = useNavigate();
     const { sedeSeleccionada, setSedeSeleccionada } = useSede();
     const [sedes, setSedes] = useState([]);
+    const TODAS_SEDES_VALUE = '__all_sedes__';
 
     useEffect(() => {
         const fetchSedes = async () => {
@@ -29,8 +29,22 @@ function PanelOpciones() {
     }, []);
 
     const handleSedeChange = (event) => {
-        const selected = sedes.find((sede) => sede._id === event.target.value);
+        const { value } = event.target;
+        if (value === TODAS_SEDES_VALUE) {
+            setSedeSeleccionada(null);
+            return;
+        }
+        const selected = sedes.find((sede) => sede._id === value);
         if (selected) setSedeSeleccionada(selected);
+    };
+
+    const handleEntrenadoresClick = () => {
+        if (sedeSeleccionada?._id) {
+            navigate('/entrenadores-sede');
+            return;
+        }
+
+        navigate('/entrenadores');
     };
         return (
             <Box maxWidth={1200} mx="auto" mt={2}>
@@ -54,7 +68,7 @@ function PanelOpciones() {
                         </Typography>
                         <Select
                             size="small"
-                            value={sedeSeleccionada?._id || ''}
+                            value={sedeSeleccionada?._id || TODAS_SEDES_VALUE}
                             onChange={handleSedeChange}
                             displayEmpty
                             sx={{
@@ -65,6 +79,7 @@ function PanelOpciones() {
                                 '& .MuiSelect-select': { py: 0.5 }
                             }}
                         >
+                            <MenuItem value={TODAS_SEDES_VALUE}>Todas las sedes</MenuItem>
                             {sedes.map((sede) => (
                                 <MenuItem key={sede._id} value={sede._id}>
                                     {sede.nombre}
@@ -134,7 +149,7 @@ function PanelOpciones() {
                             transition: 'transform 0.2s',
                             '& > *:not(.bg-icon)': { position: 'relative', zIndex: 1 },
                             '&:hover': { transform: 'scale(1.04)' }
-                        }} onClick={() => navigate('/entrenadores-sede')}>
+                        }} onClick={handleEntrenadoresClick}>
                             <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 1 }}>
                                 <SportsVolleyballIcon sx={{ fontSize: 32, color: 'white' }} />
                             </IconButton>

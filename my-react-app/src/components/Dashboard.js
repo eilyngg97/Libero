@@ -404,6 +404,11 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     navigate('/panelOpciones');
   };
 
+  const handleVerTodasSedes = () => {
+    setSedeSeleccionada(null);
+    navigate('/panelOpciones');
+  };
+
   const handleVerDetallesCobro = (sedeResumen) => {
     const sedeMatch = sedes.find((sede) => sede._id === sedeResumen.sedeId);
     const sedeSeleccion = sedeMatch || {
@@ -542,7 +547,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
             <div className="dashboard-card sedes-panel sedes-panel-card sedes-panel-compact">
               <div className="sedes-header">
                 <h3>Gestión de Sedes</h3>
-                <button type="button" className="sedes-link" onClick={() => navigate('/sedes')}>
+                <button type="button" className="sedes-link" onClick={handleVerTodasSedes}>
                   Ver todas
                 </button>
               </div>

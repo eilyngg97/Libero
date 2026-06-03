@@ -131,7 +131,7 @@ function SedeBreadcrumb() {
   const match = rutaLabels.find((item) => location.pathname.startsWith(item.startsWith));
   if (!match) return null;
 
-  const sedeNombre = obtenerNombreSede(sedeSeleccionada) || obtenerNombreSede(location.state?.sede) || 'Sin sede seleccionada';
+  const sedeNombre = obtenerNombreSede(sedeSeleccionada) || obtenerNombreSede(location.state?.sede) || 'Todas';
 
   return (
     <Box sx={{ mb: 1.25 }}>
@@ -346,7 +346,7 @@ function App() {
                           <Route path="mensualidades" element={<ProtectedRoute allowedRoles={adminOnly}><Mensualidades /></ProtectedRoute>} />
                           <Route path="sedes" element={<ProtectedRoute allowedRoles={adminOnly}><Sedes /></ProtectedRoute>} />
                           <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly}><PanelOpciones /></ProtectedRoute>} />
-                          <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><RequireSedeSelection><TablaAlumnos /></RequireSedeSelection></ProtectedRoute>} />
+                          <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly}><TablaAlumnos /></ProtectedRoute>} />
                           <Route path="alumno/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoDetalle').default)}</ProtectedRoute>} />
                           <Route path="alumno/editar/:id" element={<ProtectedRoute allowedRoles={adminOnly}>{React.createElement(require('./components/AlumnoEditar').default)}</ProtectedRoute>} />
                           <Route path="alumno-editar/:id" element={<ProtectedRoute allowedRoles={adminAndUser}><EntrypointAlumnoEditar /></ProtectedRoute>} />
