@@ -32,6 +32,12 @@ function normalizarNotaPago(value) {
   return String(value || '').trim().slice(0, 500);
 }
 
+function normalizarTelefonoPago(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
 function normalizarBooleano(value) {
   if (value === true || value === 'true' || value === 1 || value === '1') return true;
   if (value === false || value === 'false' || value === 0 || value === '0') return false;
@@ -286,6 +292,7 @@ exports.registrarPago = async (req, res) => {
       fecha_pago,
       metodo_pago,
       referencia,
+      telefono_pago,
       nota,
       solicita_revision_recargo
     } = req.body;
@@ -322,6 +329,7 @@ exports.registrarPago = async (req, res) => {
       fecha_pago,
       metodo_pago,
       referencia,
+      telefono_pago: normalizarTelefonoPago(telefono_pago),
       comprobante_url,
       registrado_por: construirRegistradoPor(req)
     });
@@ -350,6 +358,7 @@ exports.editarPago = async (req, res) => {
       fecha_pago,
       metodo_pago,
       referencia,
+      telefono_pago,
       nota,
       solicita_revision_recargo,
       eliminar_comprobante
@@ -391,6 +400,9 @@ exports.editarPago = async (req, res) => {
     pago.fecha_pago = fecha_pago;
     pago.metodo_pago = metodo_pago;
     pago.referencia = referencia;
+    if (telefono_pago !== undefined) {
+      pago.telefono_pago = normalizarTelefonoPago(telefono_pago);
+    }
     if (nota !== undefined) {
       pago.nota = normalizarNotaPago(nota);
     }

@@ -60,6 +60,8 @@ function Mensualidades() {
 	const theme = useTheme();
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 	const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+	const tenantIdActual = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
+	const esTenantCantevista = tenantIdActual === 'cantevista';
 	const esAdmin = rolActual === 'admin' || rolActual === 'super_admin';
 	const [mensualidades, setMensualidades] = useState([]);
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
@@ -71,6 +73,7 @@ function Mensualidades() {
 	const [comprobante, setComprobante] = useState(null);
 	const [metodoPago, setMetodoPago] = useState(metodosPago[0]);
 	const [referencia, setReferencia] = useState('');
+	const [telefonoPago, setTelefonoPago] = useState('');
 	const [notaPago, setNotaPago] = useState('');
 	const [solicitaRevisionRecargo, setSolicitaRevisionRecargo] = useState(false);
 	const [errorRef, setErrorRef] = useState('');
@@ -118,6 +121,7 @@ function Mensualidades() {
 		monto_pagado_bs: '',
 		monto_esperado_bs: '',
 		referencia: '',
+		telefono_pago: '',
 		nota: '',
 		solicita_revision_recargo: false
 	});
@@ -150,6 +154,7 @@ function Mensualidades() {
 		setQuitarComprobanteActual(false);
 		setMetodoPago(metodosPago[0]);
 		setReferencia('');
+		setTelefonoPago('');
 		setNotaPago('');
 		setSolicitaRevisionRecargo(false);
 		setErrorRef('');
@@ -308,6 +313,7 @@ function Mensualidades() {
 		setErrorRef('');
 		setMetodoPago(normalizeMetodoPago(pagoEditar?.metodo_pago));
 		setReferencia(pagoEditar?.referencia ? String(pagoEditar.referencia) : '');
+		setTelefonoPago(getTelefonoPagoDesdeRegistro(pagoEditar));
 		setNotaPago(pagoEditar?.nota ? String(pagoEditar.nota) : '');
 		setSolicitaRevisionRecargo(Boolean(pagoEditar?.solicita_revision_recargo));
 		setFechaPago(getInputDateFromApi(pagoEditar?.fecha_pago));
@@ -502,6 +508,7 @@ function Mensualidades() {
 					: ''),
 			monto_esperado_bs: esperadoBsInicial,
 			referencia: detallePago?.referencia ? String(detallePago.referencia) : '',
+			telefono_pago: getTelefonoPagoDesdeRegistro(detallePago),
 			nota: detallePago?.nota ? String(detallePago.nota) : '',
 			solicita_revision_recargo: Boolean(detallePago?.solicita_revision_recargo)
 		});
@@ -514,6 +521,10 @@ function Mensualidades() {
 		detallePago?.monto_pagado,
 		detallePago?.monto_esperado_bs,
 		detallePago?.referencia,
+		detallePago?.telefono_pago,
+		detallePago?.telefonoPago,
+		detallePago?.telefono,
+		detallePago?.telefono_de_pago,
 		detallePago?.nota,
 		detallePago?.solicita_revision_recargo,
 		mensualidadDetalle?.monto_esperado,
@@ -534,6 +545,10 @@ function Mensualidades() {
 		detallePago?.monto_pagado_bs,
 		detallePago?.monto_esperado_bs,
 		detallePago?.referencia,
+		detallePago?.telefono_pago,
+		detallePago?.telefonoPago,
+		detallePago?.telefono,
+		detallePago?.telefono_de_pago,
 		detallePago?.nota,
 		detallePago?.solicita_revision_recargo,
 		mensualidadDetalle?.monto_esperado,
@@ -560,6 +575,7 @@ function Mensualidades() {
 
 		const metodoNormalizado = normalizeMetodoPago(ultimoPagoDraft?.metodo_pago);
 		const referenciaNormalizada = String(ultimoPagoDraft?.referencia || '').trim();
+		const telefonoPagoNormalizado = String(ultimoPagoDraft?.telefono_pago || '').replace(/\D/g, '').slice(-10);
 		if (metodoRequiereReferencia(metodoNormalizado) && referenciaNormalizada.length < 6) {
 			setErrorMessage('Debes ingresar al menos 6 digitos en la referencia.');
 			return;
@@ -590,6 +606,7 @@ function Mensualidades() {
 			formData.append('fecha_pago', ultimoPagoDraft?.fecha_pago || getLocalInputDate());
 			formData.append('metodo_pago', metodoNormalizado);
 			formData.append('referencia', metodoRequiereReferencia(metodoNormalizado) ? referenciaNormalizada : '');
+			formData.append('telefono_pago', telefonoPagoNormalizado);
 			formData.append('nota', String(ultimoPagoDraft?.nota || '').trim());
 			formData.append('solicita_revision_recargo', ultimoPagoDraft?.solicita_revision_recargo ? 'true' : 'false');
 			if (ultimoPagoComprobante) {
@@ -606,21 +623,32 @@ function Mensualidades() {
 
 			let mensualidadActualizada = mensualidadDetalle;
 			if (mensualidadDetalle?._id) {
-				const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}`, {
-					method: 'PATCH',
-					headers: {
-						...getAuthHeaders(),
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({
-						monto_esperado: montoEsperadoUsd,
-						nota: 'Ajuste de monto esperado desde detalle de ultimo pago (en Bs)'
-					})
-				});
-				const dataMens = await resMens.json();
-				if (!resMens.ok) throw new Error(dataMens?.error || 'No se pudo actualizar el monto esperado de la mensualidad');
-				if (dataMens?.mensualidad) {
-					mensualidadActualizada = { ...mensualidadDetalle, ...dataMens.mensualidad };
+				const montoEsperadoActualMensualidad = Number(mensualidadDetalle?.monto_esperado);
+				const montoEsperadoActualRedondeado = Number.isFinite(montoEsperadoActualMensualidad)
+					? Number(montoEsperadoActualMensualidad.toFixed(2))
+					: null;
+				const montoEsperadoNuevoRedondeado = Number(montoEsperadoUsd.toFixed(2));
+				const cambioMontoEsperado =
+					montoEsperadoActualRedondeado === null ||
+					Math.abs(montoEsperadoNuevoRedondeado - montoEsperadoActualRedondeado) >= 0.01;
+
+				if (cambioMontoEsperado) {
+					const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}`, {
+						method: 'PATCH',
+						headers: {
+							...getAuthHeaders(),
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify({
+							monto_esperado: montoEsperadoNuevoRedondeado,
+							nota: 'Ajuste de monto esperado desde detalle de ultimo pago (en Bs)'
+						})
+					});
+					const dataMens = await resMens.json();
+					if (!resMens.ok) throw new Error(dataMens?.error || 'No se pudo actualizar el monto esperado de la mensualidad');
+					if (dataMens?.mensualidad) {
+						mensualidadActualizada = { ...mensualidadDetalle, ...dataMens.mensualidad };
+					}
 				}
 			}
 
@@ -893,6 +921,7 @@ function Mensualidades() {
 			} else {
 				formData.append('referencia', '');
 			}
+			formData.append('telefono_pago', String(telefonoPago || '').replace(/[^0-9]/g, '').slice(-10));
 			formData.append('nota', String(notaPago || '').trim());
 			formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
 			if (comprobante) {
@@ -926,6 +955,23 @@ function Mensualidades() {
 	const formatMoney = (value) => {
 		if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
 		return Number(value).toFixed(2);
+	};
+
+	const formatTelefonoPago = (value) => {
+		const digits = String(value || '').replace(/\D/g, '');
+		if (!digits) return '';
+		return digits.length >= 10 ? digits.slice(-10) : digits;
+	};
+
+	const getTelefonoPagoDesdeRegistro = (registro) => {
+		if (!registro) return '';
+		return formatTelefonoPago(
+			registro?.telefono_pago
+			?? registro?.telefonoPago
+			?? registro?.telefono
+			?? registro?.telefono_de_pago
+			?? ''
+		);
 	};
 
 	const formatFechaBonita = (value) => {
@@ -2059,6 +2105,23 @@ function Mensualidades() {
 										)}
 									</Box>
 
+										{esTenantCantevista && (
+											<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+												<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Telefono de pago</Typography>
+												<TextField
+													size="small"
+													sx={inlineEditableFieldSx}
+													disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+													value={ultimoPagoDraft.telefono_pago || ''}
+													onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, telefono_pago: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+													inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+												/>
+													<Typography sx={{ mt: 0.45, color: '#64748b', fontSize: 12, fontWeight: 700 }}>
+														Sin el 0 adelante.
+													</Typography>
+											</Box>
+										)}
+
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Registrado por</Typography>
 										<Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
@@ -2459,6 +2522,11 @@ function Mensualidades() {
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
 											<Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
+											{esTenantCantevista && Boolean(getTelefonoPagoDesdeRegistro(pago)) && (
+												<Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>
+													Tel: {getTelefonoPagoDesdeRegistro(pago)}
+												</Typography>
+											)}
 											<Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.35, fontSize: 12 }}>
 												Registrado por: {formatRegistradoPorPago(pago)}
 											</Typography>
@@ -3054,6 +3122,19 @@ function Mensualidades() {
 							inputProps={{ minLength: 6 }}
 							error={!!errorRef}
 							helperText={errorRef}
+						/>
+					)}
+					{esTenantCantevista && (
+						<TextField
+							label="Telefono de pago"
+							fullWidth
+							margin="normal"
+							size="small"
+							sx={inputSx}
+							value={telefonoPago}
+							onChange={e => setTelefonoPago(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+							inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+							helperText="Opcional. Solo numeros, hasta 10 digitos."
 						/>
 					)}
 					<TextField

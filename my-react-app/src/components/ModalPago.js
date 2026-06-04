@@ -67,10 +67,24 @@ const getTodayInCaracas = () => {
 };
 
 function ModalPago({ open, onClose, pago, onSuccess }) {
+  const normalizarTelefonoPago = (value) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.length >= 10 ? digits.slice(-10) : digits;
+  };
+
+  const formatearTelefonoPagoVE = (value) => {
+    const digits = normalizarTelefonoPago(value);
+    if (!digits) return '';
+    return `VE ${digits}`;
+  };
+
   const [metodos, setMetodos] = useState([]);
   const [loadingMetodos, setLoadingMetodos] = useState(false);
   const [metodosError, setMetodosError] = useState('');
   const [metodoSeleccionado, setMetodoSeleccionado] = useState(null);
+  const [mostrarConfirmacionCantevista, setMostrarConfirmacionCantevista] = useState(false);
+  const [mostrarCapturaNumeroCantevista, setMostrarCapturaNumeroCantevista] = useState(false);
   const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
   const [montoPagado, setMontoPagado] = useState('');
   const [montoPagadoBs, setMontoPagadoBs] = useState('');
@@ -84,6 +98,11 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const [copySuccess, setCopySuccess] = useState('');
   const [tasaPago, setTasaPago] = useState(null);
   const [preferenciaCuota, setPreferenciaCuota] = useState(null);
+  const [numeroConfirmacionCantevista, setNumeroConfirmacionCantevista] = useState('');
+  const [numeroAlternoCantevista, setNumeroAlternoCantevista] = useState('');
+  const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+  const tenantIdActual = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
+  const mostrarPasoConfirmacionCantevista = rolActual === 'usuario' && tenantIdActual === 'cantevista';
   const monto = pago?.monto;
   const cuotasHabilitadas = pago?.id_alumno?.habilitar_pago_cuotas === true;
   const { dolar } = useDolar();
@@ -117,6 +136,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return Number(value).toFixed(2);
   };
   const referenciaInvalida = !/^[0-9]{6,}$/.test(referencia);
+  const numeroAlternoCantevistaValido = /^[1-9]\d{9}$/.test(numeroAlternoCantevista);
   const tieneRecargoAplicado = Number(pago?.recargo_aplicado_usd || 0) > 0;
 
   useEffect(() => {
@@ -155,6 +175,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   useEffect(() => {
     if (!open) {
       setMetodoSeleccionado(null);
+      setMostrarConfirmacionCantevista(false);
+      setMostrarCapturaNumeroCantevista(false);
       setMostrarFormularioPago(false);
       setMontoPagado('');
       setMontoPagadoBs('');
@@ -168,9 +190,45 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setCopySuccess('');
       setTasaPago(Number(tasa) || null);
       setPreferenciaCuota(null);
+      setNumeroAlternoCantevista('');
       setMetodosError('');
     }
   }, [open, tasa]);
+
+  useEffect(() => {
+    if (!open || !mostrarPasoConfirmacionCantevista) return;
+
+    let cancelled = false;
+
+    const loadRepresentativePhone = async () => {
+      try {
+        const usuarioRaw = localStorage.getItem('usuario') || '';
+        const usuario = usuarioRaw ? JSON.parse(usuarioRaw) : null;
+        const usuarioId = String(usuario?.id || usuario?._id || '').trim();
+        if (!usuarioId) return;
+
+        const token = localStorage.getItem('token');
+        const repRes = await fetch(`${API_BASE}/api/representantes/por-usuario/${usuarioId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        const repData = await repRes.json().catch(() => ({}));
+        if (!repRes.ok || cancelled) return;
+
+        const telefonoRepresentante = String(repData?.telefono || repData?.rep_telefono || '').trim();
+        if (!cancelled) {
+          setNumeroConfirmacionCantevista(normalizarTelefonoPago(telefonoRepresentante));
+        }
+      } catch (_) {
+        // Si falla la consulta, se conserva el valor actual.
+      }
+    };
+
+    loadRepresentativePhone();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mostrarPasoConfirmacionCantevista]);
 
   const copiarDatoPago = async (clave, valor) => {
     const valorFormateado = formatearValorDetallePago(clave, valor);
@@ -245,11 +303,15 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);
+    setMostrarConfirmacionCantevista(false);
+    setMostrarCapturaNumeroCantevista(false);
     setMostrarFormularioPago(false);
     setPreferenciaCuota(null);
   };
 
-  const handleYaPague = () => {
+  const abrirFormularioPago = () => {
+    setMostrarConfirmacionCantevista(false);
+    setMostrarCapturaNumeroCantevista(false);
     setMostrarFormularioPago(true);
     if (esAbonoParcial) {
       setMontoPagadoBs(montoAbonoBs !== null ? formatMoney(montoAbonoBs) : '');
@@ -259,7 +321,64 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     }
   };
 
+  const handleYaPague = () => {
+    if (mostrarPasoConfirmacionCantevista && metodoSeleccionado?.id !== 'deposito-usd') {
+      if (!String(numeroConfirmacionCantevista || '').trim()) {
+        setMostrarConfirmacionCantevista(false);
+        setMostrarCapturaNumeroCantevista(true);
+      } else {
+        setMostrarCapturaNumeroCantevista(false);
+        setMostrarConfirmacionCantevista(true);
+      }
+      if (fechaPago === '') {
+        setFechaPago(getTodayInCaracas());
+      }
+      return;
+    }
+
+    abrirFormularioPago();
+  };
+
+  const handleConfirmacionNumeroCantevista = (confirmado) => {
+    if (confirmado) {
+      abrirFormularioPago();
+      return;
+    }
+
+    setMostrarConfirmacionCantevista(false);
+    setMostrarCapturaNumeroCantevista(true);
+    setMostrarFormularioPago(false);
+  };
+
+  const handleContinuarConNumeroAlterno = () => {
+    if (!numeroAlternoCantevistaValido) return;
+    setNumeroConfirmacionCantevista(normalizarTelefonoPago(numeroAlternoCantevista));
+    abrirFormularioPago();
+  };
+
+  const handleVolver = () => {
+    if (mostrarCapturaNumeroCantevista) {
+      setMostrarCapturaNumeroCantevista(false);
+      if (String(numeroConfirmacionCantevista || '').trim()) {
+        setMostrarConfirmacionCantevista(true);
+      }
+      return;
+    }
+
+    if (mostrarConfirmacionCantevista) {
+      setMostrarConfirmacionCantevista(false);
+      return;
+    }
+
+    setMetodoSeleccionado(null);
+  };
+
   const handleSeleccionPreferenciaCuota = (tipo) => {
+    setMostrarConfirmacionCantevista(false);
+    setMostrarCapturaNumeroCantevista(false);
+    if (fechaPago === '') {
+      setFechaPago(getTodayInCaracas());
+    }
     setPreferenciaCuota(tipo);
     if (tipo === 'parcial') {
       setMontoPagado('');
@@ -322,6 +441,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       formData.append('fecha_pago', fechaPago);
       formData.append('metodo_pago', metodoSeleccionado?.nombre || metodoSeleccionado?.id || '');
       if (referencia) formData.append('referencia', referencia);
+      const telefonoPagoNormalizado = normalizarTelefonoPago(numeroConfirmacionCantevista);
+      if (telefonoPagoNormalizado) {
+        formData.append('telefono_pago', telefonoPagoNormalizado);
+      }
       if (notaPago.trim()) formData.append('nota', notaPago.trim());
       formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
       if (comprobante) formData.append('comprobante', comprobante);
@@ -363,7 +486,11 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   };
 
   const headerTitle = !metodoSeleccionado
-    ? '¿Como vas a pagar?'
+    ? '¿Cómo vas a pagar?'
+    : mostrarCapturaNumeroCantevista
+      ? '¿Con qué número de teléfono hiciste el pago?'
+    : mostrarConfirmacionCantevista
+      ? 'Confirma el número de teléfono de pago'
     : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Pago por cuotas habilitado'
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
@@ -376,6 +503,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const headerSubtitle = !metodoSeleccionado
     ? 'Selecciona tu metodo de pago preferido para continuar.'
+    : mostrarCapturaNumeroCantevista
+      ? 'Debe ser el mismo que aparece en el comprobante.'
+    : mostrarConfirmacionCantevista
+      ? 'Antes de continuar, confirma de qué número realizaste el pago.'
     : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Se ha habilitado el pago por cuotas para su cuenta. Seleccione su preferencia:'
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
@@ -513,7 +644,147 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </CardContent>
               </Card>
             )}
-            {metodoSeleccionado.detalles && !mostrarFormularioPago && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
+            {mostrarConfirmacionCantevista && metodoSeleccionado.id !== 'deposito-usd' && (
+              <Card
+                sx={{
+                  mb: 2,
+                  borderRadius: 3,
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: '#ffffff',
+                  minHeight: 420,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <CardContent sx={{ p: 3, width: '100%' }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 2.5 }}>
+                    <Box
+                      sx={{
+                        width: 92,
+                        height: 92,
+                        borderRadius: '50%',
+                        backgroundColor: '#fff7ed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <PhoneIphoneIcon sx={{ fontSize: 48, color: '#f59e0b' }} />
+                    </Box>
+
+                    <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 32, lineHeight: 1 }}>
+                      ?
+                    </Typography>
+
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                      ¿Hiciste el pago con el numero
+                      <br />
+                      {formatearTelefonoPagoVE(numeroConfirmacionCantevista) || 'VE -'}?
+                    </Typography>
+
+                    <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 1.25, mt: 1 }}>
+                      <Button
+                        variant="contained"
+                        fullWidth
+                        onClick={() => handleConfirmacionNumeroCantevista(true)}
+                        sx={{
+                          bgcolor: '#2f333b',
+                          '&:hover': { bgcolor: '#23262d' },
+                          fontWeight: 800,
+                          borderRadius: 20,
+                          py: 1.1,
+                          textTransform: 'none',
+                          fontSize: 18
+                        }}
+                      >
+                        Si, continuar
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        fullWidth
+                        onClick={() => handleConfirmacionNumeroCantevista(false)}
+                        sx={{
+                          borderColor: '#e2e8f0',
+                          color: '#1f2937',
+                          fontWeight: 700,
+                          borderRadius: 20,
+                          py: 1.1,
+                          textTransform: 'none',
+                          fontSize: 18
+                        }}
+                      >
+                        No, otro numero
+                      </Button>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
+            {mostrarCapturaNumeroCantevista && metodoSeleccionado.id !== 'deposito-usd' && (
+              <Card
+                sx={{
+                  mb: 2,
+                  borderRadius: 3,
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: '#ffffff'
+                }}
+              >
+                <CardContent sx={{ p: 2.5 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a', mb: 1.2 }}>
+                    Número que usaste
+                  </Typography>
+                  <Box
+                    sx={{
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 2,
+                      px: 1.5,
+                      py: 0.85,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.2,
+                      backgroundColor: '#ffffff'
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 20, lineHeight: 1 }}>🇻🇪</Typography>
+                    <TextField
+                      variant="standard"
+                      placeholder="4125163627"
+                      value={numeroAlternoCantevista}
+                      onChange={(e) => setNumeroAlternoCantevista(String(e.target.value || '').replace(/\D/g, '').slice(0, 10))}
+                      InputProps={{ disableUnderline: true, sx: { fontWeight: 600, color: '#334155' } }}
+                      fullWidth
+                    />
+                  </Box>
+                  <Typography variant="body2" sx={{ color: '#64748b', mt: 1.1 }}>
+                    Sin el 0 adelante.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleContinuarConNumeroAlterno}
+                    disabled={!numeroAlternoCantevistaValido}
+                    sx={{
+                      mt: 4,
+                      bgcolor: '#2f333b',
+                      '&:hover': { bgcolor: '#23262d' },
+                      fontWeight: 800,
+                      borderRadius: 20,
+                      py: 1.1,
+                      textTransform: 'none',
+                      fontSize: 18,
+                      '&.Mui-disabled': {
+                        backgroundColor: '#e5e7eb',
+                        color: '#9ca3af'
+                      }
+                    }}
+                  >
+                    Continuar
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+            {metodoSeleccionado.detalles && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
               <Card
                 sx={{
                   mb: 2,
@@ -600,7 +871,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </CardContent>
               </Card>
             )}
-            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && (
+            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && !preferenciaCuota && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
                 <Card
                   sx={{
@@ -667,7 +938,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </Card>
               </Box>
             )}
-            {metodoSeleccionado.id !== 'deposito-usd' && !mostrarFormularioPago && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
+            {metodoSeleccionado.id !== 'deposito-usd' && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
               <Button
                 variant="contained"
                 fullWidth
@@ -683,7 +954,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 Ya pague
               </Button>
             )}
-            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && preferenciaCuota === 'parcial' && !mostrarFormularioPago && (
+            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && preferenciaCuota === 'parcial' && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && (
               <Card
                 sx={{
                   mt: 2,
@@ -995,7 +1266,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
               variant="text"
               fullWidth
               sx={{ mt: 1, color: '#64748b', fontWeight: 700 }}
-              onClick={() => setMetodoSeleccionado(null)}
+              onClick={handleVolver}
               startIcon={<ArrowBackIosNewIcon sx={{ fontSize: 16 }} />}
             >
               Volver

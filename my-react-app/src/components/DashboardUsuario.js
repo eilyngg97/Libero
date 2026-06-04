@@ -5,6 +5,34 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
 
+const normalizarDiaMes = (value) => {
+  const numero = Number(value);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 31) return null;
+  return numero;
+};
+
+const construirFechaPeriodoConDia = (mes, anio, dia) => {
+  const ultimoDiaMes = new Date(anio, mes, 0).getDate();
+  const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
+  return new Date(anio, mes - 1, diaAjustado);
+};
+
+const parseFechaSinDesfase = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchIso) {
+    const year = Number(matchIso[1]);
+    const month = Number(matchIso[2]);
+    const day = Number(matchIso[3]);
+    const fecha = new Date(year, month - 1, day);
+    return Number.isNaN(fecha.getTime()) ? null : fecha;
+  }
+
+  const fecha = new Date(value);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+};
+
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
   const [resumenPagos, setResumenPagos] = useState({});
@@ -17,7 +45,16 @@ function DashboardUsuario() {
     return `$${montoNum.toFixed(2)} USD`;
   };
 
-  const obtenerResumenPago = (mensualidades = []) => {
+  const obtenerFechaVencimientoVisible = (mensualidad, alumno) => {
+    const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado);
+    if (diaLimitePersonalizado) {
+      return construirFechaPeriodoConDia(mensualidad?.mes, mensualidad?.anio, diaLimitePersonalizado);
+    }
+
+    return parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
+  };
+
+  const obtenerResumenPago = (mensualidades = [], alumno = null) => {
     if (!Array.isArray(mensualidades) || mensualidades.length === 0) {
       return { fechaTexto: '--', monto: null, estado: 'sin datos' };
     }
@@ -25,9 +62,11 @@ function DashboardUsuario() {
     const normalizarEstado = (estado) => (estado || '').toLowerCase();
     const ordenadas = mensualidades
       .map((m) => {
-        const fecha = new Date(`${m.anio}-${String(m.mes).padStart(2, '0')}-01T00:00:00`);
+        const fechaPeriodo = new Date(`${m.anio}-${String(m.mes).padStart(2, '0')}-01T00:00:00`);
+        const fechaVencimientoVisible = obtenerFechaVencimientoVisible(m, alumno);
         return {
-          fecha,
+          fecha: fechaPeriodo,
+          fechaVencimientoVisible,
           estado: normalizarEstado(m.estatus),
           monto: m.monto_esperado
         };
@@ -43,7 +82,9 @@ function DashboardUsuario() {
     const referencia = pendientes.length ? pendientes[0] : ordenadas[ordenadas.length - 1];
 
     return {
-      fechaTexto: referencia.fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+      fechaTexto: referencia.fechaVencimientoVisible
+        ? referencia.fechaVencimientoVisible.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+        : referencia.fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
       monto: referencia.monto,
       estado: pendientes.length ? 'pendiente' : 'al dia'
     };
@@ -88,7 +129,7 @@ function DashboardUsuario() {
             try {
               const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?id_alumno=${alumno._id}`);
               const dataMens = await resMens.json();
-              return [alumno._id, obtenerResumenPago(Array.isArray(dataMens) ? dataMens : [])];
+              return [alumno._id, obtenerResumenPago(Array.isArray(dataMens) ? dataMens : [], alumno)];
             } catch {
               return [alumno._id, { fechaTexto: '--', monto: null, estado: 'sin datos' }];
             }

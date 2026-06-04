@@ -24,6 +24,35 @@ import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentM
 
 // Eliminar pagosEjemplo, usaremos datos reales
 
+const normalizarDiaMes = (value) => {
+  const numero = Number(value);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 31) return null;
+  return numero;
+};
+
+const construirFechaPeriodoConDia = (mes, anio, dia) => {
+  const ultimoDiaMes = new Date(anio, mes, 0).getDate();
+  const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
+  return new Date(anio, mes - 1, diaAjustado);
+};
+
+const parseFechaSinDesfase = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (matchIso) {
+    const year = Number(matchIso[1]);
+    const month = Number(matchIso[2]);
+    const day = Number(matchIso[3]);
+    const fecha = new Date(year, month - 1, day);
+    return Number.isNaN(fecha.getTime()) ? null : fecha;
+  }
+
+  const fecha = new Date(value);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+};
+
 function PagosAlumno(props) {
   const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo'];
 
@@ -276,6 +305,13 @@ function PagosAlumno(props) {
     return Number(value).toFixed(2);
   };
 
+  const formatTelefonoPago = (value) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    const base = digits.length >= 10 ? digits.slice(-10) : digits;
+    return base;
+  };
+
   const formatMontoPrincipal = (pago) => {
     const montoBs = Number(pago?.monto_pagado_bs);
     if (Number.isFinite(montoBs) && montoBs > 0) {
@@ -373,6 +409,20 @@ function PagosAlumno(props) {
       month: 'short',
       year: 'numeric'
     });
+  };
+
+  const obtenerFechaVencimientoVisible = (item) => {
+    const diaLimitePersonalizado = normalizarDiaMes(item?.id_alumno?.dia_limite_personalizado ?? alumno?.dia_limite_personalizado);
+    if (diaLimitePersonalizado) {
+      const matchPeriodo = String(item?.fecha || '').trim().match(/^(\d{4})-(\d{2})-/);
+      if (matchPeriodo) {
+        const anioPeriodo = Number(matchPeriodo[1]);
+        const mesPeriodo = Number(matchPeriodo[2]);
+        return construirFechaPeriodoConDia(mesPeriodo, anioPeriodo, diaLimitePersonalizado);
+      }
+    }
+
+    return parseFechaSinDesfase(item?.fecha_vencimiento);
   };
 
   const abrirModalEditarPago = (pago) => {
@@ -497,10 +547,7 @@ function PagosAlumno(props) {
   const balancePendiente = mensualidadesConSaldo.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
   const saldoAFavorDisponible = Math.max(0, Number(alumno?.saldo_a_favor_mensualidades) || 0);
   const proximaMensualidadPorVencer = mensualidadesConSaldo
-    .map((item) => {
-      const vencimiento = item.fecha_vencimiento ? new Date(item.fecha_vencimiento) : null;
-      return Number.isNaN(vencimiento?.getTime()) ? null : vencimiento;
-    })
+    .map((item) => obtenerFechaVencimientoVisible(item))
     .filter(Boolean)
     .sort((a, b) => a.getTime() - b.getTime())[0] || null;
 
@@ -722,7 +769,7 @@ function PagosAlumno(props) {
           const dateObj = new Date(pago.fecha + 'T00:00:00');
           const mesNombre = dateObj.toLocaleString('es-ES', { month: 'long', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
           const anio = dateObj.toLocaleString('es-ES', { year: 'numeric', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-          const vencimiento = pago.fecha_vencimiento ? new Date(pago.fecha_vencimiento) : null;
+          const vencimiento = obtenerFechaVencimientoVisible(pago);
           const tieneVencimiento = vencimiento && !Number.isNaN(vencimiento.getTime());
           const diasRetraso = tieneVencimiento
             ? Math.max(0, Math.ceil((new Date().setHours(0, 0, 0, 0) - new Date(vencimiento.getFullYear(), vencimiento.getMonth(), vencimiento.getDate()).getTime()) / 86400000))
@@ -1244,6 +1291,15 @@ function PagosAlumno(props) {
                     </Box>
                   </Box>
 
+                  {String(detallePago.telefono_pago || '').trim() && (
+                    <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                      <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Telefono de pago</Typography>
+                      <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
+                        {formatTelefonoPago(detallePago.telefono_pago)}
+                      </Typography>
+                    </Box>
+                  )}
+
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Nota</Typography>
                     <Typography sx={{ mt: 0.7, color: '#334155', fontWeight: 700, lineHeight: 1.3 }}>
@@ -1356,6 +1412,11 @@ function PagosAlumno(props) {
                     <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
                       <Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
+                      {String(pago.telefono_pago || '').trim() && (
+                        <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>
+                          Tel: {formatTelefonoPago(pago.telefono_pago)}
+                        </Typography>
+                      )}
                     </Box>
                     <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Nota</Typography>

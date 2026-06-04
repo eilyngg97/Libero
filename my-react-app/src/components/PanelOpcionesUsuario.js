@@ -13,6 +13,34 @@ import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
 
+const normalizarDiaMes = (value) => {
+  const numero = Number(value);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 31) return null;
+  return numero;
+};
+
+const construirFechaPeriodoConDia = (mes, anio, dia) => {
+  const ultimoDiaMes = new Date(anio, mes, 0).getDate();
+  const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
+  return new Date(anio, mes - 1, diaAjustado);
+};
+
+const parseFechaSinDesfase = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchIso) {
+    const year = Number(matchIso[1]);
+    const month = Number(matchIso[2]);
+    const day = Number(matchIso[3]);
+    const fecha = new Date(year, month - 1, day);
+    return Number.isNaN(fecha.getTime()) ? null : fecha;
+  }
+
+  const fecha = new Date(value);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+};
+
 function PanelOpcionesUsuario() {
    const location = useLocation();
   const navigate = useNavigate();
@@ -191,6 +219,15 @@ function PanelOpcionesUsuario() {
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const obtenerFechaVencimientoVisible = (mensualidad) => {
+    const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado);
+    if (diaLimitePersonalizado) {
+      return construirFechaPeriodoConDia(mensualidad?.mes, mensualidad?.anio, diaLimitePersonalizado);
+    }
+
+    return parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
+  };
+
   const isDeadlinePassed = (iso) => {
     if (!iso) return false;
     return new Date() > new Date(iso);
@@ -214,6 +251,7 @@ function PanelOpcionesUsuario() {
         return {
           estado: normalizarEstado(m.estatus),
           fecha,
+          fechaVencimientoVisible: obtenerFechaVencimientoVisible(m),
           raw: m
         };
       })
@@ -225,7 +263,7 @@ function PanelOpcionesUsuario() {
     );
     const hayRetraso = pendientes.some((m) => m.estado === 'retrasado');
     const hayPendiente = pendientes.length > 0;
-    const proximo = pendientes.length ? pendientes[0].fecha : null;
+    const proximo = pendientes.length ? (pendientes[0].fechaVencimientoVisible || pendientes[0].fecha) : null;
 
     if (hayRetraso) {
       return {

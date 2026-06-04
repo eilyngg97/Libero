@@ -205,6 +205,8 @@ export default function ConciliacionBancaria() {
       alumno: row.sistema?.alumno || '-',
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
+      telefonoSistema: row.sistema?.telefono_pago || '-',
+      telefonoExcel: row.excel?.telefono || '-',
       montoSistema: row.sistema?.monto_bs,
       montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
       montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
@@ -219,6 +221,8 @@ export default function ConciliacionBancaria() {
       alumno: row.sistema?.alumno || '-',
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
+      telefonoSistema: row.sistema?.telefono_pago || '-',
+      telefonoExcel: row.excel?.telefono || '-',
       montoSistema: row.sistema?.monto_bs,
       montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
       montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
@@ -233,6 +237,8 @@ export default function ConciliacionBancaria() {
       alumno: row.sistema?.alumno || '-',
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: '-',
+      telefonoSistema: row.sistema?.telefono_pago || '-',
+      telefonoExcel: '-',
       montoSistema: row.sistema?.monto_bs,
       montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
       montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
@@ -247,6 +253,8 @@ export default function ConciliacionBancaria() {
       alumno: '-',
       referenciaSistema: '-',
       referenciaExcel: row.excel?.referencia || '-',
+      telefonoSistema: '-',
+      telefonoExcel: row.excel?.telefono || '-',
       montoSistema: null,
       montoEsperadoSistemaBs: null,
       montoEsperadoSistemaUsd: null,
@@ -430,6 +438,14 @@ export default function ConciliacionBancaria() {
                     <span className="value">{fila.referenciaExcel}</span>
                   </div>
                   <div className="conciliacionMobileRow">
+                    <span className="label">Tel. Sistema</span>
+                    <span className="value">{fila.telefonoSistema || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Tel. Banco</span>
+                    <span className="value">{fila.telefonoExcel || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
                     <span className="label">Monto esperado</span>
                     <span className="value">{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</span>
                   </div>
@@ -488,6 +504,8 @@ export default function ConciliacionBancaria() {
                     <TableCell>Alumno</TableCell>
                     <TableCell>Ref. Sistema</TableCell>
                     <TableCell>Ref. Excel</TableCell>
+                    <TableCell>Tel. Sistema</TableCell>
+                    <TableCell>Tel. Banco</TableCell>
                     <TableCell>Monto esperado</TableCell>
                     <TableCell>Monto Sistema (Bs)</TableCell>
                     <TableCell>Monto Excel (Bs)</TableCell>
@@ -504,6 +522,8 @@ export default function ConciliacionBancaria() {
                       <TableCell>{fila.alumno}</TableCell>
                       <TableCell>{fila.referenciaSistema}</TableCell>
                       <TableCell>{fila.referenciaExcel}</TableCell>
+                      <TableCell>{fila.telefonoSistema || '-'}</TableCell>
+                      <TableCell>{fila.telefonoExcel || '-'}</TableCell>
                       <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</TableCell>
                       <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
                       <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
@@ -515,7 +535,7 @@ export default function ConciliacionBancaria() {
                   ))}
                   {filasComparativas.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={11}>
+                      <TableCell colSpan={13}>
                         <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
                           No hay filas para mostrar.
                         </Typography>

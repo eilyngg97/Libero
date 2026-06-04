@@ -45,6 +45,24 @@ function ultimosDigitosReferencia(value, cantidad = 6) {
   return ref.slice(-cantidad);
 }
 
+function telefonoComparable(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.length >= 10 ? digits.slice(-10) : '';
+}
+
+function extraerTelefonoDesdeDescripcion(descripcion) {
+  const raw = String(descripcion || '');
+  if (!raw.trim()) return '';
+
+  // Soporta variantes comunes en estados Provincial:
+  // 0412xxxxxxx, 412xxxxxxx, +58412xxxxxxx, 58412xxxxxxx
+  const match = raw.match(/(?:\+?58)?0?4\d{9}|4\d{9}/);
+  if (!match) return '';
+
+  return String(match[0] || '').replace(/\D/g, '');
+}
+
 function referenciasCoinciden(valueBanco, valueSistema) {
   const refBanco = normalizarReferencia(valueBanco);
   const refSistema = normalizarReferencia(valueSistema);
@@ -67,6 +85,20 @@ function parseMonto(value) {
 
   const limpio = raw.replace(/[^0-9,.-]/g, '');
   if (!limpio) return null;
+
+  const comas = (limpio.match(/,/g) || []).length;
+  const puntos = (limpio.match(/\./g) || []).length;
+
+  // Caso ambiguo con un solo separador y 3 digitos a la derecha:
+  // 10.000 o 10,000 suele representar miles, no decimales.
+  if ((comas + puntos) === 1) {
+    const separator = comas === 1 ? ',' : '.';
+    const [left = '', right = ''] = limpio.split(separator);
+    if (/^\d+$/.test(left) && /^\d+$/.test(right) && right.length === 3) {
+      const miles = Number(`${left}${right}`);
+      if (!Number.isNaN(miles)) return Number(miles.toFixed(2));
+    }
+  }
 
   const ultimaComa = limpio.lastIndexOf(',');
   const ultimoPunto = limpio.lastIndexOf('.');
@@ -91,7 +123,7 @@ function pad(num) {
 
 function toIsoDate(dateObj) {
   if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return null;
-  return `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}`;
+  return `${dateObj.getUTCFullYear()}-${pad(dateObj.getUTCMonth() + 1)}-${pad(dateObj.getUTCDate())}`;
 }
 
 function parseFecha(value) {
@@ -116,6 +148,14 @@ function parseFecha(value) {
     return `${y}-${pad(m)}-${pad(d)}`;
   }
 
+  const ymd = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (ymd) {
+    const y = Number(ymd[1]);
+    const m = Number(ymd[2]);
+    const d = Number(ymd[3]);
+    return `${y}-${pad(m)}-${pad(d)}`;
+  }
+
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return toIsoDate(parsed);
@@ -124,6 +164,15 @@ function parseFecha(value) {
 function areAmountsEqual(a, b) {
   if (a === null || b === null || a === undefined || b === undefined) return false;
   return Math.abs(Number(a) - Number(b)) <= MONTO_TOLERANCIA_BS;
+}
+
+function areDatesWithinDays(dateA, dateB, maxDays = 1) {
+  if (!dateA || !dateB) return true;
+  const a = new Date(`${dateA}T00:00:00Z`);
+  const b = new Date(`${dateB}T00:00:00Z`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return true;
+  const diffDays = Math.abs(a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24);
+  return diffDays <= maxDays;
 }
 
 function levenshteinDistance(a, b) {
@@ -164,11 +213,12 @@ function parseExcelRows(fileBuffer) {
   if (!firstSheetName) throw new Error('El archivo Excel no tiene hojas');
 
   const worksheet = workbook.Sheets[firstSheetName];
-  // Leemos como AOA con raw:false para preservar el valor visual de la celda.
+  // Leemos como AOA con raw:true para priorizar el valor real de la celda.
+  // Esto evita que el parseo de monto dependa del formato visual (ej: separadores locales).
   const rows = XLSX.utils.sheet_to_json(worksheet, {
     header: 1,
     defval: '',
-    raw: false,
+    raw: true,
     blankrows: false
   });
   if (!rows.length) throw new Error('El archivo Excel esta vacio');
@@ -191,37 +241,43 @@ function parseExcelRows(fileBuffer) {
 
     const currentReferenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
     const currentMontoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe', 'credito', 'crédito']);
+    const currentDescripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
 
-    if (currentReferenciaIdx === null || currentMontoIdx === null) continue;
+    if (currentMontoIdx === null || (currentReferenciaIdx === null && currentDescripcionIdx === null)) continue;
 
     headerRowIndex = i;
     referenciaIdx = currentReferenciaIdx;
     montoIdx = currentMontoIdx;
     fechaIdx = findColumnKey(headersMap, ['fecha', 'date']);
-    descripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
+    descripcionIdx = currentDescripcionIdx;
     break;
   }
 
-  if (referenciaIdx === null || montoIdx === null) {
-    throw new Error('No se encontraron columnas requeridas: Referencia y Monto');
+  const esFormatoProvincial = referenciaIdx === null && descripcionIdx !== null && montoIdx !== null;
+
+  if (montoIdx === null || (referenciaIdx === null && !esFormatoProvincial)) {
+    throw new Error('No se encontraron columnas requeridas: Referencia y/o Monto');
   }
 
   const dataRows = rows.slice(headerRowIndex + 1);
   const parsedRows = dataRows
     .map((row, idx) => {
-      const referencia = normalizarReferencia(row[referenciaIdx]);
+      const referencia = referenciaIdx !== null ? normalizarReferencia(row[referenciaIdx]) : null;
       const montoBs = parseMonto(row[montoIdx]);
       const fecha = fechaIdx !== null ? parseFecha(row[fechaIdx]) : null;
       const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
+      const telefonoDescripcion = extraerTelefonoDesdeDescripcion(descripcion);
 
-      if (!referencia && (montoBs === null || montoBs === undefined)) return null;
+      if (!referencia && !telefonoDescripcion && (montoBs === null || montoBs === undefined)) return null;
 
       return {
         excelRow: headerRowIndex + idx + 2,
         referencia,
         monto_bs: montoBs,
         fecha,
-        descripcion
+        descripcion,
+        telefono_movimiento: telefonoDescripcion,
+        es_formato_provincial: esFormatoProvincial
       };
     })
     .filter(Boolean);
@@ -267,8 +323,10 @@ function parseTxtRows(fileBuffer) {
     const montoIdx = findColumnKey(headersMap, ['monto', 'amount', 'monto bs', 'monto_bs', 'importe', 'credito', 'crédito']);
     const descripcionIdx = findColumnKey(headersMap, ['descripcion', 'description', 'detalle', 'concepto']);
 
-    if (referenciaIdx === null || montoIdx === null) {
-      throw new Error('No se encontraron columnas requeridas en TXT: Referencia y Monto');
+    const esFormatoProvincial = referenciaIdx === null && descripcionIdx !== null && montoIdx !== null;
+
+    if (montoIdx === null || (referenciaIdx === null && !esFormatoProvincial)) {
+      throw new Error('No se encontraron columnas requeridas en TXT: Referencia y/o Monto');
     }
 
     const dataRows = rows.slice(1);
@@ -278,15 +336,18 @@ function parseTxtRows(fileBuffer) {
         const montoBs = parseMonto(row[montoIdx]);
         const fecha = fechaIdx !== null ? parseFecha(row[fechaIdx]) : null;
         const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
+        const telefonoDescripcion = extraerTelefonoDesdeDescripcion(descripcion);
 
-        if (!referencia && (montoBs === null || montoBs === undefined)) return null;
+        if (!referencia && !telefonoDescripcion && (montoBs === null || montoBs === undefined)) return null;
 
         return {
           excelRow: idx + 2,
           referencia,
           monto_bs: montoBs,
           fecha,
-          descripcion
+          descripcion,
+          telefono_movimiento: telefonoDescripcion,
+          es_formato_provincial: esFormatoProvincial
         };
       })
       .filter(Boolean);
@@ -333,7 +394,9 @@ function parseTxtRows(fileBuffer) {
       referencia,
       monto_bs: montoBs,
       fecha,
-      descripcion: descripcionRaw
+      descripcion: descripcionRaw,
+      telefono_movimiento: extraerTelefonoDesdeDescripcion(descripcionRaw),
+      es_formato_provincial: /\bdr\s+ob\b/i.test(String(descripcionRaw || ''))
     });
   });
 
@@ -353,12 +416,14 @@ function buildMatchRecord({ banco, sistema, tipo, motivo = [] }) {
       referencia: banco.referencia || '-',
       monto_bs: banco.monto_bs,
       fecha: banco.fecha,
-      descripcion: banco.descripcion || ''
+      descripcion: banco.descripcion || '',
+      telefono: banco.telefono_movimiento || ''
     },
     sistema: {
       pago_id: String(sistema._id),
       mensualidad_id: String(sistema.id_mensualidad),
       referencia: sistema.referencia || '-',
+      telefono_pago: sistema.telefono_pago || '',
       monto_bs: sistema.monto_pagado_bs,
       monto_esperado_bs: sistema.monto_esperado_bs,
       monto_esperado_usd: sistema.monto_esperado_usd,
@@ -424,7 +489,7 @@ exports.previsualizarConciliacion = async (req, res) => {
 
     const pagosSistema = await TenantPagoDetalle.find({
       id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) }
-    }).select('_id id_mensualidad referencia monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
+    }).select('_id id_mensualidad referencia telefono_pago monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
 
     const sistemaRows = pagosSistema.map((pago) => {
       const mensualidad = mensualidadMap.get(String(pago.id_mensualidad));
@@ -436,6 +501,8 @@ exports.previsualizarConciliacion = async (req, res) => {
         _id: pago._id,
         id_mensualidad: pago.id_mensualidad,
         referencia: normalizarReferencia(pago.referencia),
+        telefono_pago: String(pago.telefono_pago || '').trim(),
+        telefono_pago_cmp: telefonoComparable(pago.telefono_pago),
         monto_pagado_bs: parseMonto(pago.monto_pagado_bs),
         monto_esperado_bs: parseMonto(pago.monto_esperado_bs),
         monto_esperado_usd: pago.monto_esperado_usd === null || pago.monto_esperado_usd === undefined
@@ -472,6 +539,37 @@ exports.previsualizarConciliacion = async (req, res) => {
       bancoDisponibles.delete(bancoIdx);
       sistemaDisponibles.delete(sistemaIdx);
       matchTotal.push(buildMatchRecord({ banco: mejor, sistema, tipo: 'match_total', motivo: [`referencia (completa o ultimos 6) y monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS}`] }));
+    }
+
+    // Nivel 1.5 (solo formato Provincial): match total por telefono en descripcion + monto.
+    for (const sistemaIdx of [...sistemaDisponibles]) {
+      const sistema = sistemaRows[sistemaIdx];
+      if (!sistema.telefono_pago_cmp) continue;
+
+      const candidatos = [...bancoDisponibles]
+        .map((idx) => ({ idx, row: bancoRows[idx] }))
+        .filter(({ row }) => (
+          row.es_formato_provincial === true
+          && areAmountsEqual(row.monto_bs, sistema.monto_pagado_bs)
+          && telefonoComparable(row.telefono_movimiento)
+          && telefonoComparable(row.telefono_movimiento) === sistema.telefono_pago_cmp
+          && areDatesWithinDays(row.fecha, sistema.fecha_pago, 1)
+        ))
+        .map(({ row }) => row);
+
+      if (!candidatos.length) continue;
+
+      const mejor = rankByDateSimilarity(candidatos, sistema.fecha_pago)[0];
+      const bancoIdx = bancoRows.findIndex((row) => row.excelRow === mejor.excelRow);
+
+      bancoDisponibles.delete(bancoIdx);
+      sistemaDisponibles.delete(sistemaIdx);
+      matchTotal.push(buildMatchRecord({
+        banco: mejor,
+        sistema,
+        tipo: 'match_total',
+        motivo: [`telefono en descripcion (formato Provincial), monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS} y fecha dentro de ±1 dia`]
+      }));
     }
 
     // Nivel 2: match parcial por monto dentro de tolerancia + (referencia casi igual o misma fecha).
@@ -527,7 +625,8 @@ exports.previsualizarConciliacion = async (req, res) => {
           referencia: row.referencia || '-',
           monto_bs: row.monto_bs,
           fecha: row.fecha,
-          descripcion: row.descripcion || ''
+          descripcion: row.descripcion || '',
+          telefono: row.telefono_movimiento || ''
         }
       };
     });
@@ -539,6 +638,7 @@ exports.previsualizarConciliacion = async (req, res) => {
           pago_id: String(row._id),
           mensualidad_id: String(row.id_mensualidad),
           referencia: row.referencia || '-',
+          telefono_pago: row.telefono_pago || '',
           monto_bs: row.monto_pagado_bs,
           monto_esperado_bs: row.monto_esperado_bs,
           monto_esperado_usd: row.monto_esperado_usd,
