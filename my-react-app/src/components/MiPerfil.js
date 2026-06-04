@@ -237,10 +237,9 @@ function MiPerfil() {
         ? { bar: '#dc2626', chipBg: '#fee2e2', chipText: '#991b1b', ring: 'rgba(220, 38, 38, 0.22)' }
         : { bar: '#d97706', chipBg: '#fef3c7', chipText: '#92400e', ring: 'rgba(217, 119, 6, 0.22)' };
 
-  const pagoMovilConfig = resumenAcademia?.pagos?.pago_movil || {};
-  const bancoPagoMovil = String(pagoMovilConfig?.banco || '').trim() || 'BANCAMIGA';
-  const cedulaPagoMovil = String(pagoMovilConfig?.cedula || '').trim() || '25894044';
-  const telefonoPagoMovil = String(pagoMovilConfig?.telefono || '').trim() || '04125163627';
+  const bancoPagoMovil = 'BANCAMIGA';
+  const cedulaPagoMovil = '25894044';
+  const telefonoPagoMovil = '04125163627';
 
   const legacyCopyText = (value) => {
     const textArea = document.createElement('textarea');
