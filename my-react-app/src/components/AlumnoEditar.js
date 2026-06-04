@@ -353,6 +353,13 @@ function AlumnoEditar({ locationState }) {
       setError(`La fecha de inicio de cobro debe pertenecer al año actual (${ANIO_ACTUAL}).`);
       return;
     }
+    if (String(form.tipo_mensualidad || '').toLowerCase() === 'monto_personalizado') {
+      const montoPersonalizado = Number(form.monto_personalizado_valor);
+      if (!Number.isFinite(montoPersonalizado) || montoPersonalizado <= 0) {
+        setError('El monto personalizado debe ser mayor a 0.');
+        return;
+      }
+    }
     setLoading(true);
     try {
       const formData = new FormData();
@@ -474,7 +481,8 @@ function AlumnoEditar({ locationState }) {
   }, [token]);
 
   if (loading) return <Typography>Cargando...</Typography>;
-  if (error) return <Typography color="error">{error}</Typography>;
+
+  const esErrorMontoPersonalizado = /monto personalizado/i.test(String(error || ''));
 
   // Combina los requisitos base con los del alumno
   const estadoAlumno = form.requisitos_recaudos_estado || [];
@@ -899,25 +907,38 @@ function AlumnoEditar({ locationState }) {
               </div>
               {form.tipo_mensualidad === 'monto_personalizado' && (
                 <div className="form-row">
-                  <TextField
-                    id="input-monto-personalizado"
-                    label="Monto personalizado"
-                    name="monto_personalizado_valor"
-                    type="number"
-                    variant="outlined"
-                    value={form.monto_personalizado_valor || ''}
-                    onChange={handleChange}
-                    fullWidth
-                    size="small"
-                    sx={{ mt: 1 }}
-                    disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
-                  />
+                  <Box sx={{ width: '100%', mt: 1 }}>
+                    <TextField
+                      id="input-monto-personalizado"
+                      label="Monto personalizado"
+                      name="monto_personalizado_valor"
+                      type="number"
+                      variant="outlined"
+                      value={form.monto_personalizado_valor || ''}
+                      onChange={handleChange}
+                      fullWidth
+                      size="small"
+                      inputProps={{ min: 0.01, step: '0.01' }}
+                      error={esErrorMontoPersonalizado}
+                      disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}
+                    />
+                    {esErrorMontoPersonalizado && (
+                      <Alert severity="error" sx={{ mt: 1 }}>
+                        {error}
+                      </Alert>
+                    )}
+                  </Box>
                   <Box sx={{ my: 1 }} />
                 </div>
               )}
               {debeMostrarAvisoRecalculoMensualidades && (
                 <Alert severity="info" sx={{ mt: 1, mb: 1.5, borderRadius: 2 }}>
                   Al guardar, se recalcularan las mensualidades del alumno que esten en Pendiente, Insolvente o Retrasado usando la configuracion de monto actual.
+                </Alert>
+              )}
+              {error && !esErrorMontoPersonalizado && (
+                <Alert severity="error" sx={{ mt: 1, mb: 1.5, borderRadius: 2 }}>
+                  {error}
                 </Alert>
               )}
               <div className="form-row">

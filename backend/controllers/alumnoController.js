@@ -1767,6 +1767,18 @@ exports.createAlumno = async (req, res) => {
         alumnoData.etiquetas = [];
       }
     }
+
+    const tipoMensualidadNuevo = String(alumnoData.tipo_mensualidad || '').toLowerCase();
+    if (tipoMensualidadNuevo === 'monto_personalizado') {
+      const montoPersonalizado = Number(alumnoData.monto_personalizado_valor);
+      if (!Number.isFinite(montoPersonalizado) || montoPersonalizado <= 0) {
+        return res.status(400).json({ error: 'monto_personalizado_valor debe ser mayor a 0 cuando tipo_mensualidad es monto_personalizado.' });
+      }
+      alumnoData.monto_personalizado_valor = redondearMonto(montoPersonalizado);
+    } else {
+      delete alumnoData.monto_personalizado_valor;
+    }
+
     // Eliminar los campos de representante del body para evitar duplicidad
     delete alumnoData.rep_nombres;
     delete alumnoData.rep_apellidos;
@@ -1954,7 +1966,7 @@ exports.updateAlumno = async (req, res) => {
       TenantConfig: TenantConfigModel
     } = tenantModels;
 
-    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria sexo numero_franela nombres apellidos cedula usuario representante fecha_inicio_cobro');
+    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria sexo numero_franela nombres apellidos cedula usuario representante fecha_inicio_cobro tipo_mensualidad monto_personalizado_valor');
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
@@ -2200,6 +2212,29 @@ exports.updateAlumno = async (req, res) => {
         updateData.etiquetas = [];
       }
     }
+
+    const tipoMensualidadObjetivo = String(
+      updateData.tipo_mensualidad !== undefined ? updateData.tipo_mensualidad : alumnoActual.tipo_mensualidad
+    || '').toLowerCase();
+
+    if (tipoMensualidadObjetivo === 'monto_personalizado') {
+      const montoPersonalizadoObjetivo = Number(
+        updateData.monto_personalizado_valor !== undefined
+          ? updateData.monto_personalizado_valor
+          : alumnoActual.monto_personalizado_valor
+      );
+
+      if (!Number.isFinite(montoPersonalizadoObjetivo) || montoPersonalizadoObjetivo <= 0) {
+        return res.status(400).json({ error: 'monto_personalizado_valor debe ser mayor a 0 cuando tipo_mensualidad es monto_personalizado.' });
+      }
+
+      if (updateData.monto_personalizado_valor !== undefined) {
+        updateData.monto_personalizado_valor = redondearMonto(montoPersonalizadoObjetivo);
+      }
+    } else if (Object.prototype.hasOwnProperty.call(updateData, 'monto_personalizado_valor')) {
+      updateData.monto_personalizado_valor = null;
+    }
+
     // Si hay archivo de foto, guardar solo la URL pública
     if (req.files && req.files['foto'] && req.files['foto'][0]) {
       const fotoFile = req.files['foto'][0];

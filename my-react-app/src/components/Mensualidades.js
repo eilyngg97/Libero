@@ -1579,7 +1579,11 @@ function Mensualidades() {
 						const estadoAlumno = obtenerEstadoAlumnoVisual(m.id_alumno);
 
 						return (
-							<Paper key={m._id} sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)', minWidth: 0, overflow: 'hidden' }}>
+								<Paper
+									key={m._id}
+									onClick={() => handleVerDetalle(m)}
+									sx={{ borderRadius: 3, border: '1px solid #eef0f3', p: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)', minWidth: 0, overflow: 'hidden', cursor: 'pointer' }}
+								>
 								<Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, mb: 1, minWidth: 0 }}>
 									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
 										<Tooltip title={`Alumno ${estadoAlumno.label}`}>
@@ -1656,20 +1660,20 @@ function Mensualidades() {
 								</Box>
 								<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
 									<Tooltip title="Ver detalle">
-										<IconButton onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
+										<IconButton onClick={(e) => { e.stopPropagation(); handleVerDetalle(m); }} sx={actionIconButtonSx}>
 											<VisibilityIcon fontSize="small" />
 										</IconButton>
 									</Tooltip>
 									{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
 										<Tooltip title="Editar mensualidad">
-											<IconButton onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
+											<IconButton onClick={(e) => { e.stopPropagation(); abrirModalEditarMensualidad(m); }} sx={actionIconButtonSx}>
 												<EditIcon fontSize="small" />
 											</IconButton>
 										</Tooltip>
 									)}
 									{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 										<Tooltip title="Registrar pago">
-											<IconButton onClick={() => handlePago(m)} sx={actionIconButtonSx}>
+											<IconButton onClick={(e) => { e.stopPropagation(); handlePago(m); }} sx={actionIconButtonSx}>
 												<PaidIcon fontSize="small" />
 											</IconButton>
 										</Tooltip>
@@ -1678,7 +1682,7 @@ function Mensualidades() {
 										<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
 											<span>
 												<IconButton
-													onClick={() => solicitarAdelantoMensualidad(m)}
+													onClick={(e) => { e.stopPropagation(); solicitarAdelantoMensualidad(m); }}
 													disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
 													sx={actionIconButtonSx}
 												>
@@ -1690,7 +1694,7 @@ function Mensualidades() {
 									{esAdmin && (
 										<Tooltip title="Eliminar mensualidad">
 											<IconButton
-												onClick={() => solicitarEliminarMensualidad(m)}
+													onClick={(e) => { e.stopPropagation(); solicitarEliminarMensualidad(m); }}
 												disabled={eliminandoMensualidadId === m._id}
 												sx={actionIconButtonSx}
 											>
@@ -1749,7 +1753,8 @@ function Mensualidades() {
 								return (
 									<TableRow
 										key={m._id}
-										sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}
+										onClick={() => handleVerDetalle(m)}
+										sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' }, cursor: 'pointer' }}
 									>
 										<TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>
 											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1792,20 +1797,20 @@ function Mensualidades() {
 										<TableCell>
 											<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
 												<Tooltip title="Ver detalle">
-													<IconButton size="small" onClick={() => handleVerDetalle(m)} sx={actionIconButtonSx}>
+													<IconButton size="small" onClick={(e) => { e.stopPropagation(); handleVerDetalle(m); }} sx={actionIconButtonSx}>
 														<VisibilityIcon fontSize="small" />
 													</IconButton>
 												</Tooltip>
 												{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
 													<Tooltip title="Editar mensualidad">
-														<IconButton size="small" onClick={() => abrirModalEditarMensualidad(m)} sx={actionIconButtonSx}>
+														<IconButton size="small" onClick={(e) => { e.stopPropagation(); abrirModalEditarMensualidad(m); }} sx={actionIconButtonSx}>
 															<EditIcon fontSize="small" />
 														</IconButton>
 													</Tooltip>
 												)}
 												{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 													<Tooltip title="Registrar pago">
-														<IconButton size="small" onClick={() => handlePago(m)} sx={actionIconButtonSx}>
+														<IconButton size="small" onClick={(e) => { e.stopPropagation(); handlePago(m); }} sx={actionIconButtonSx}>
 															<PaidIcon fontSize="small" />
 														</IconButton>
 													</Tooltip>
@@ -1815,7 +1820,7 @@ function Mensualidades() {
 														<span>
 															<IconButton
 																size="small"
-																onClick={() => solicitarAdelantoMensualidad(m)}
+																onClick={(e) => { e.stopPropagation(); solicitarAdelantoMensualidad(m); }}
 																disabled={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno)}
 																sx={actionIconButtonSx}
 															>
@@ -1828,7 +1833,7 @@ function Mensualidades() {
 													<Tooltip title="Eliminar mensualidad">
 														<IconButton
 															size="small"
-															onClick={() => solicitarEliminarMensualidad(m)}
+															onClick={(e) => { e.stopPropagation(); solicitarEliminarMensualidad(m); }}
 															disabled={eliminandoMensualidadId === m._id}
 															sx={actionIconButtonSx}
 														>

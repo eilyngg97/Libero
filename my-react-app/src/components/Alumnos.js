@@ -9,6 +9,7 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
+import Alert from '@mui/material/Alert';
 import { MenuItem, FormControl, InputLabel, Select, TextField, Autocomplete, CircularProgress, Checkbox, FormControlLabel, InputAdornment, Box, Paper, Typography, Switch } from '@mui/material';
 import './Alumnos.css';
 import { useDolar } from '../context/DolarContext';
@@ -616,6 +617,14 @@ function Alumnos() {
       }
     }
 
+    if (String(form.tipo_mensualidad || '').toLowerCase() === 'monto_personalizado') {
+      const montoPersonalizado = Number(form.monto_personalizado_valor);
+      if (!Number.isFinite(montoPersonalizado) || montoPersonalizado <= 0) {
+        setError('El monto personalizado debe ser mayor a 0.');
+        return;
+      }
+    }
+
     // Si es beca completa, registrar el alumno directamente
     console.log('Tipo de mensualidad seleccionado:', form.tipo_mensualidad);
     if (form.tipo_mensualidad === 'beca_completa') {
@@ -655,6 +664,8 @@ function Alumnos() {
       setShowMensualidadModal(true);
     }
   };
+
+  const esErrorMontoPersonalizado = /monto personalizado/i.test(String(error || ''));
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', py: { xs: 2, md: 3 } }}>
@@ -1013,18 +1024,27 @@ function Alumnos() {
           </div>
           {form.tipo_mensualidad === 'monto_personalizado' && (
             <div className="form-row">
-              <TextField
-                id="input-monto-personalizado"
-                label="Monto personalizado"
-                name="monto_personalizado_valor"
-                type="number"
-                variant="outlined"
-                value={form.monto_personalizado_valor || ''}
-                onChange={handleChange}
-                fullWidth
-                size="small"
-                sx={{ my: 1 }}
-              />
+              <Box sx={{ width: '100%' }}>
+                <TextField
+                  id="input-monto-personalizado"
+                  label="Monto personalizado"
+                  name="monto_personalizado_valor"
+                  type="number"
+                  variant="outlined"
+                  value={form.monto_personalizado_valor || ''}
+                  onChange={handleChange}
+                  fullWidth
+                  size="small"
+                  inputProps={{ min: 0.01, step: '0.01' }}
+                  error={esErrorMontoPersonalizado}
+                  sx={{ my: 1 }}
+                />
+                {esErrorMontoPersonalizado && (
+                  <Alert severity="error" sx={{ mb: 1 }}>
+                    {error}
+                  </Alert>
+                )}
+              </Box>
               <Box sx={{ my: 1 }} />
             </div>
           )}
@@ -1226,7 +1246,7 @@ function Alumnos() {
                 </button>
               </div>
             </div>
-            {error && <div className="error-message">{error}</div>}
+            {error && !esErrorMontoPersonalizado && <div className="error-message">{error}</div>}
           </Box>
         </Box>
       <Dialog open={!!success} onClose={() => {}} disableEscapeKeyDown>

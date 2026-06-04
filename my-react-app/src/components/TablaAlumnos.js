@@ -898,6 +898,7 @@ function TablaAlumnos() {
           {alumnosPaginados.map((alumno) => (
             <Paper
               key={alumno._id}
+              onClick={() => navigate(`/alumno/${alumno._id}`)}
               sx={{
                 p: 1.5,
                 borderRadius: 3,
@@ -906,7 +907,8 @@ function TablaAlumnos() {
                   width: '100%',
                   boxSizing: 'border-box',
                   overflow: 'hidden',
-                  overflowWrap: 'break-word'
+                  overflowWrap: 'break-word',
+                  cursor: 'pointer'
                 }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.2, minWidth: 0 }}>
@@ -973,18 +975,19 @@ function TablaAlumnos() {
 
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                 <Tooltip title="Ver detalles">
-                  <IconButton aria-label="ver" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={() => navigate(`/alumno/${alumno._id}`)}>
+                  <IconButton aria-label="ver" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/${alumno._id}`); }}>
                     <VisibilityIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Editar">
-                  <IconButton aria-label="editar" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={() => navigate(`/alumno/editar/${alumno._id}`)}>
+                  <IconButton aria-label="editar" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/editar/${alumno._id}`); }}>
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 {!(alumno.dado_de_baja || alumno.activo === false) && (
                   <Tooltip title="Dar de baja">
-                    <IconButton aria-label="dar de baja" size="small" sx={{ color: '#64748b', bgcolor: '#fff7ed' }} onClick={() => {
+                    <IconButton aria-label="dar de baja" size="small" sx={{ color: '#64748b', bgcolor: '#fff7ed' }} onClick={(e) => {
+                      e.stopPropagation();
                       setBajaId(alumno._id);
                       setMotivoBaja('');
                     }}>
@@ -994,7 +997,7 @@ function TablaAlumnos() {
                 )}
                 {(alumno.dado_de_baja || alumno.activo === false) && (
                   <Tooltip title="Reactivar">
-                    <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', bgcolor: '#f0fdf4' }} onClick={() => openReactivarDialog(alumno)}>
+                    <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', bgcolor: '#f0fdf4' }} onClick={(e) => { e.stopPropagation(); openReactivarDialog(alumno); }}>
                       <ReplayIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
@@ -1007,13 +1010,13 @@ function TablaAlumnos() {
                       color: alumno.tiene_reposo_activo ? '#15803d' : '#64748b',
                       bgcolor: alumno.tiene_reposo_activo ? '#f0fdf4' : '#f8fafc'
                     }}
-                    onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/alumno/reposos/${alumno._id}`); }}
                   >
                     <LocalHospitalIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Eliminar">
-                  <IconButton aria-label="eliminar" size="small" sx={{ color: '#64748b', bgcolor: '#fff1f2' }} onClick={() => setDeleteId(alumno._id)}>
+                  <IconButton aria-label="eliminar" size="small" sx={{ color: '#64748b', bgcolor: '#fff1f2' }} onClick={(e) => { e.stopPropagation(); setDeleteId(alumno._id); }}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -1023,7 +1026,8 @@ function TablaAlumnos() {
                       aria-label="descargar cédula"
                       size="small"
                       sx={{ color: '#64748b', bgcolor: '#f8fafc' }}
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         const link = document.createElement('a');
                         link.href = alumno.foto_cedula;
                         link.download = `cedula_${alumno.nombres}_${alumno.apellidos}.jpg`;
@@ -1093,7 +1097,8 @@ function TablaAlumnos() {
               {alumnosPaginados.map((alumno) => (
                 <TableRow
                   key={alumno._id}
-                  sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2, px: 1 }, '&:hover': { backgroundColor: '#fafafa' } }}
+                  onClick={() => navigate(`/alumno/${alumno._id}`)}
+                  sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2, px: 1 }, '&:hover': { backgroundColor: '#fafafa' }, cursor: 'pointer' }}
                 >
                   <TableCell sx={{ px: 1.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, minWidth: 0 }}>
@@ -1144,18 +1149,19 @@ function TablaAlumnos() {
                   <TableCell sx={{ textAlign: 'center', whiteSpace: 'nowrap', px: 1 }}>
                     <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.25, maxWidth: '100%' }}>
                       <Tooltip title="Ver detalles">
-                        <IconButton aria-label="ver" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => navigate(`/alumno/${alumno._id}`)}>
+                        <IconButton aria-label="ver" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/${alumno._id}`); }}>
                           <VisibilityIcon />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Editar">
-                        <IconButton aria-label="editar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => navigate(`/alumno/editar/${alumno._id}`)}>
+                        <IconButton aria-label="editar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/editar/${alumno._id}`); }}>
                           <EditIcon />
                         </IconButton>
                       </Tooltip>
                       {!(alumno.dado_de_baja || alumno.activo === false) && (
                         <Tooltip title="Dar de baja">
-                          <IconButton aria-label="dar de baja" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => {
+                          <IconButton aria-label="dar de baja" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={(e) => {
+                            e.stopPropagation();
                             setBajaId(alumno._id);
                             setMotivoBaja('');
                           }}>
@@ -1165,7 +1171,7 @@ function TablaAlumnos() {
                       )}
                       {(alumno.dado_de_baja || alumno.activo === false) && (
                         <Tooltip title="Reactivar">
-                          <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', p: 0.5 }} onClick={() => openReactivarDialog(alumno)}>
+                          <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', p: 0.5 }} onClick={(e) => { e.stopPropagation(); openReactivarDialog(alumno); }}>
                             <ReplayIcon />
                           </IconButton>
                         </Tooltip>
@@ -1178,13 +1184,13 @@ function TablaAlumnos() {
                             color: alumno.tiene_reposo_activo ? '#15803d' : '#94a3b8',
                             p: 0.5
                           }}
-                          onClick={() => navigate(`/alumno/reposos/${alumno._id}`)}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/alumno/reposos/${alumno._id}`); }}
                         >
                           <LocalHospitalIcon />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Eliminar">
-                        <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={() => setDeleteId(alumno._id)}>
+                        <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={(e) => { e.stopPropagation(); setDeleteId(alumno._id); }}>
                           <DeleteIcon />
                         </IconButton>
                       </Tooltip>
@@ -1194,7 +1200,8 @@ function TablaAlumnos() {
                             aria-label="descargar cédula"
                             size="small"
                             sx={{ color: '#94a3b8', p: 0.5 }}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               const link = document.createElement('a');
                               link.href = alumno.foto_cedula;
                               link.download = `cedula_${alumno.nombres}_${alumno.apellidos}.jpg`;
