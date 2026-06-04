@@ -108,7 +108,15 @@ exports.eliminarRecaudo = async (req, res) => {
 exports.listarRequisitosRecaudos = async (req, res) => {
   try {
     const { TenantConfig } = await getTenantRecaudoModel(req);
-    const config = await TenantConfig.findOne().select('requisitos_recaudos').lean();
+    let config = await TenantConfig.findOne({ key: 'default' }).select('requisitos_recaudos').lean();
+
+    if (!config) {
+      config = await TenantConfig
+        .findOne({ requisitos_recaudos: { $exists: true, $ne: [] } })
+        .select('requisitos_recaudos')
+        .lean();
+    }
+
     const requisitos = sanitizeRequisitos(config?.requisitos_recaudos || []);
     return res.json({ requisitos });
   } catch (err) {

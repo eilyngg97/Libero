@@ -12,6 +12,7 @@ import {
   IconButton,
   Paper,
   Stack,
+  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -89,6 +90,7 @@ function Recaudos() {
   const [requisitosCatalogo, setRequisitosCatalogo] = useState([]);
   const [requisitoInput, setRequisitoInput] = useState('');
   const [guardandoRequisitos, setGuardandoRequisitos] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewItem, setPreviewItem] = useState(null);
@@ -164,9 +166,10 @@ function Recaudos() {
 
   useEffect(() => {
     const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+    const puedeGestionarRequisitos = rolLs === 'admin' || rolLs === 'super_admin';
     setRol(rolLs);
     cargarRecaudos();
-    if (rolLs === 'admin') {
+    if (puedeGestionarRequisitos) {
       cargarRequisitos();
     }
   }, [cargarRecaudos, cargarRequisitos]);
@@ -194,6 +197,7 @@ function Recaudos() {
     try {
       setGuardandoRequisitos(true);
       setError('');
+      setSuccessMessage('');
 
       const res = await fetch(`${apiBase}/api/recaudos/requisitos`, {
         method: 'PUT',
@@ -211,6 +215,7 @@ function Recaudos() {
 
       const payload = await res.json().catch(() => ({}));
       setRequisitosCatalogo(Array.isArray(payload?.requisitos) ? payload.requisitos : []);
+      setSuccessMessage(payload?.message || 'Requisitos guardados correctamente');
     } catch (err) {
       setError(err.message || 'No se pudo guardar el catalogo de requisitos');
     } finally {
@@ -425,6 +430,17 @@ function Recaudos() {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc', p: { xs: 2, md: 4 } }}>
+      <Snackbar
+        open={!!successMessage}
+        autoHideDuration={3000}
+        onClose={() => setSuccessMessage('')}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSuccessMessage('')} severity="success" sx={{ width: '100%' }}>
+          {successMessage}
+        </Alert>
+      </Snackbar>
+
       <Box sx={{ maxWidth: 1200, mx: 'auto', display: 'grid', gap: 2.5 }}>
         <Box>
           <Typography variant="h5" sx={{ color: '#0f172a', fontWeight: 800 }}>
