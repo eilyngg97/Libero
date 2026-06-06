@@ -72,15 +72,17 @@ async function obtenerConfigCobro(models = {}) {
 function construirFechaPeriodoConDia(mes, anio, dia, { finDelDia = false } = {}) {
   const ultimoDiaMes = new Date(anio, mes, 0).getDate();
   const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
-  return new Date(
+  const CARACAS_OFFSET_UTC_HOURS = 4;
+
+  return new Date(Date.UTC(
     anio,
     mes - 1,
     diaAjustado,
-    finDelDia ? 23 : 0,
+    (finDelDia ? 23 : 0) + CARACAS_OFFSET_UTC_HOURS,
     finDelDia ? 59 : 0,
     finDelDia ? 59 : 0,
     finDelDia ? 999 : 0
-  );
+  ));
 }
 
 function redondearMonto(valor) {
@@ -254,7 +256,7 @@ function obtenerFechaVencimientoPeriodo(mes, anio, diaVencimiento = 5) {
 function obtenerFechaRecargoPeriodo(mes, anio, cobroConfig) {
   const fechaVencimiento = obtenerFechaVencimientoPeriodo(mes, anio, cobroConfig?.dia_vencimiento);
   const fechaRecargo = new Date(fechaVencimiento);
-  fechaRecargo.setDate(fechaRecargo.getDate() + (Number(cobroConfig?.dias_gracia) || 0));
+  fechaRecargo.setUTCDate(fechaRecargo.getUTCDate() + (Number(cobroConfig?.dias_gracia) || 0));
   return fechaRecargo;
 }
 

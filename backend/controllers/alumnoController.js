@@ -312,6 +312,13 @@ function normalizarDiaMes(value, fallback = 5) {
   return Math.max(1, Math.min(31, num));
 }
 
+function construirFinDeDiaCaracasPeriodo(anio, mes, dia) {
+  const ultimoDiaMes = new Date(anio, mes, 0).getDate();
+  const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
+  const CARACAS_OFFSET_UTC_HOURS = 4;
+  return new Date(Date.UTC(anio, mes - 1, diaAjustado, 23 + CARACAS_OFFSET_UTC_HOURS, 59, 59, 999));
+}
+
 async function obtenerDiaVencimientoCobro(models = {}) {
   try {
     const TenantConfigModel = models.TenantConfig;
@@ -1049,7 +1056,7 @@ async function aplicarReposoTotalPorPeriodo(alumnoId, fechaInicio, fechaFin = nu
 async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio, models = {}) {
   const MensualidadModel = models.Mensualidad || Mensualidad;
   const diaVencimiento = await obtenerDiaVencimientoCobro(models);
-  const fechaVencimiento = new Date(anio, mes - 1, diaVencimiento, 23, 59, 59);
+  const fechaVencimiento = construirFinDeDiaCaracasPeriodo(anio, mes, diaVencimiento);
   await MensualidadModel.findOneAndUpdate(
     { id_alumno: alumnoId, mes, anio, estatus: { $ne: 'Pagado' } },
     {
@@ -2488,7 +2495,7 @@ exports.reactivarAlumno = async (req, res) => {
     }
 
     const diaVencimiento = await obtenerDiaVencimientoCobro({ TenantConfig: TenantConfigModel });
-    const fechaVencimiento = new Date(anio, mes - 1, diaVencimiento, 23, 59, 59);
+    const fechaVencimiento = construirFinDeDiaCaracasPeriodo(anio, mes, diaVencimiento);
     const estatusSolicitado = String(req.body?.estatus || '').trim();
     let estatusInicial = estatusSolicitado || 'Pendiente';
     if (totalPagado > 0 && totalPagado < totalEsperado) {
