@@ -159,7 +159,24 @@ async function main() {
   const reporte = [];
 
   for (const tenant of tenantsToProcess) {
-    const resultado = await procesarTenant(tenant, args, hoy);
+    if (!tenant.tenantId || typeof tenant.tenantId !== 'string') {
+      console.warn(`SKIP TENANT: no tenantId definido para registro ${tenant._id || '(sin id)'}`);
+      continue;
+    }
+
+    if (!tenant.dbUri || typeof tenant.dbUri !== 'string' || !tenant.dbUri.trim()) {
+      console.warn(`SKIP TENANT ${tenant.tenantId}: dbUri no definido o invalido`);
+      continue;
+    }
+
+    let resultado;
+    try {
+      resultado = await procesarTenant(tenant, args, hoy);
+    } catch (error) {
+      console.error(`ERROR TENANT ${tenant.tenantId}: ${error.message || error}`);
+      continue;
+    }
+
     totalCandidatas += resultado.total;
     totalAplicadas += resultado.aplicadas;
     totalNoAplicadas += resultado.noAplicadas;
