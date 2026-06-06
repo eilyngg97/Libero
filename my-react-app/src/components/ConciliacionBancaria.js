@@ -28,6 +28,23 @@ import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded';
 import './ConciliacionBancaria.css';
 
 const MONTO_TOLERANCIA_BS = 100;
+
+const formatMatchPor = (value) => {
+  switch (String(value || '').toLowerCase()) {
+    case 'telefono':
+      return 'Telefono';
+    case 'cedula':
+      return 'Cedula';
+    case 'referencia':
+      return 'Referencia';
+    case 'referencia_aproximada':
+      return 'Referencia aprox.';
+    case 'fecha':
+      return 'Fecha';
+    default:
+      return '-';
+  }
+};
 const ALLOWED_EXTENSIONS = ['xlsx', 'xls', 'txt'];
 
 function isAllowedFile(file) {
@@ -207,6 +224,11 @@ export default function ConciliacionBancaria() {
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
       telefonoExcel: row.excel?.telefono || '-',
+      cedulaSistema: row.sistema?.cedula_pago || '-',
+      cedulaExcel: row.excel?.cedula || '-',
+      matchPor: formatMatchPor(row.match_por),
+      identificadorSistema: row.identificador_sistema || '-',
+      identificadorExcel: row.identificador_banco || '-',
       montoSistema: row.sistema?.monto_bs,
       montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
       montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
@@ -223,6 +245,11 @@ export default function ConciliacionBancaria() {
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
       telefonoExcel: row.excel?.telefono || '-',
+      cedulaSistema: row.sistema?.cedula_pago || '-',
+      cedulaExcel: row.excel?.cedula || '-',
+      matchPor: formatMatchPor(row.match_por),
+      identificadorSistema: row.identificador_sistema || '-',
+      identificadorExcel: row.identificador_banco || '-',
       montoSistema: row.sistema?.monto_bs,
       montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
       montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
@@ -239,6 +266,11 @@ export default function ConciliacionBancaria() {
       referenciaExcel: '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
       telefonoExcel: '-',
+      cedulaSistema: row.sistema?.cedula_pago || '-',
+      cedulaExcel: '-',
+      matchPor: '-',
+      identificadorSistema: '-',
+      identificadorExcel: '-',
       montoSistema: row.sistema?.monto_bs,
       montoEsperadoSistemaBs: row.sistema?.monto_esperado_bs,
       montoEsperadoSistemaUsd: row.sistema?.monto_esperado_usd,
@@ -255,6 +287,11 @@ export default function ConciliacionBancaria() {
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: '-',
       telefonoExcel: row.excel?.telefono || '-',
+      cedulaSistema: '-',
+      cedulaExcel: row.excel?.cedula || '-',
+      matchPor: '-',
+      identificadorSistema: '-',
+      identificadorExcel: '-',
       montoSistema: null,
       montoEsperadoSistemaBs: null,
       montoEsperadoSistemaUsd: null,
@@ -446,6 +483,26 @@ export default function ConciliacionBancaria() {
                     <span className="value">{fila.telefonoExcel || '-'}</span>
                   </div>
                   <div className="conciliacionMobileRow">
+                    <span className="label">Ced. Sistema</span>
+                    <span className="value">{fila.cedulaSistema || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Ced. Banco</span>
+                    <span className="value">{fila.cedulaExcel || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Match por</span>
+                    <span className="value">{fila.matchPor}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Id. Sistema</span>
+                    <span className="value">{fila.identificadorSistema || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
+                    <span className="label">Id. Banco</span>
+                    <span className="value">{fila.identificadorExcel || '-'}</span>
+                  </div>
+                  <div className="conciliacionMobileRow">
                     <span className="label">Monto esperado</span>
                     <span className="value">{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</span>
                   </div>
@@ -506,6 +563,11 @@ export default function ConciliacionBancaria() {
                     <TableCell>Ref. Excel</TableCell>
                     <TableCell>Tel. Sistema</TableCell>
                     <TableCell>Tel. Banco</TableCell>
+                    <TableCell>Ced. Sistema</TableCell>
+                    <TableCell>Ced. Banco</TableCell>
+                    <TableCell>Match por</TableCell>
+                    <TableCell>Id. Sistema</TableCell>
+                    <TableCell>Id. Banco</TableCell>
                     <TableCell>Monto esperado</TableCell>
                     <TableCell>Monto Sistema (Bs)</TableCell>
                     <TableCell>Monto Excel (Bs)</TableCell>
@@ -524,6 +586,11 @@ export default function ConciliacionBancaria() {
                       <TableCell>{fila.referenciaExcel}</TableCell>
                       <TableCell>{fila.telefonoSistema || '-'}</TableCell>
                       <TableCell>{fila.telefonoExcel || '-'}</TableCell>
+                      <TableCell>{fila.cedulaSistema || '-'}</TableCell>
+                      <TableCell>{fila.cedulaExcel || '-'}</TableCell>
+                      <TableCell>{fila.matchPor}</TableCell>
+                      <TableCell>{fila.identificadorSistema || '-'}</TableCell>
+                      <TableCell>{fila.identificadorExcel || '-'}</TableCell>
                       <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</TableCell>
                       <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
                       <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
@@ -535,7 +602,7 @@ export default function ConciliacionBancaria() {
                   ))}
                   {filasComparativas.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={13}>
+                      <TableCell colSpan={18}>
                         <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
                           No hay filas para mostrar.
                         </Typography>

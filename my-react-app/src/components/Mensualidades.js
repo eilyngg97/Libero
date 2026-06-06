@@ -60,8 +60,6 @@ function Mensualidades() {
 	const theme = useTheme();
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 	const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-	const tenantIdActual = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
-	const esTenantCantevista = tenantIdActual === 'cantevista';
 	const esAdmin = rolActual === 'admin' || rolActual === 'super_admin';
 	const [mensualidades, setMensualidades] = useState([]);
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
@@ -122,6 +120,7 @@ function Mensualidades() {
 		monto_esperado_bs: '',
 		referencia: '',
 		telefono_pago: '',
+		cedula_titular: '',
 		nota: '',
 		solicita_revision_recargo: false
 	});
@@ -473,7 +472,7 @@ function Mensualidades() {
 	};
 
 	const solicitarConfirmarMensualidad = () => {
-		if (!mensualidadDetalle?._id || confirmandoMensualidad) return;
+		if (!mensualidadDetalle?._id || confirmandoMensualidad || editandoUltimoPagoInline) return;
 		setConfirmarPagoOpen(true);
 	};
 
@@ -513,6 +512,7 @@ function Mensualidades() {
 			monto_esperado_bs: esperadoBsInicial,
 			referencia: detallePago?.referencia ? String(detallePago.referencia) : '',
 			telefono_pago: getTelefonoPagoDesdeRegistro(detallePago),
+			cedula_titular: getCedulaPagoDesdeRegistro(detallePago),
 			nota: detallePago?.nota ? String(detallePago.nota) : '',
 			solicita_revision_recargo: Boolean(detallePago?.solicita_revision_recargo)
 		});
@@ -530,6 +530,10 @@ function Mensualidades() {
 		detallePago?.telefonoPago,
 		detallePago?.telefono,
 		detallePago?.telefono_de_pago,
+		detallePago?.cedula_titular,
+		detallePago?.cedulaTitular,
+		detallePago?.cedula_pago,
+		detallePago?.cedulaPago,
 		detallePago?.nota,
 		detallePago?.solicita_revision_recargo,
 		mensualidadDetalle?.monto_esperado,
@@ -554,6 +558,10 @@ function Mensualidades() {
 		detallePago?.telefonoPago,
 		detallePago?.telefono,
 		detallePago?.telefono_de_pago,
+		detallePago?.cedula_titular,
+		detallePago?.cedulaTitular,
+		detallePago?.cedula_pago,
+		detallePago?.cedulaPago,
 		detallePago?.nota,
 		detallePago?.solicita_revision_recargo,
 		mensualidadDetalle?.monto_esperado,
@@ -662,6 +670,7 @@ function Mensualidades() {
 		const metodoNormalizado = normalizeMetodoPago(ultimoPagoDraft?.metodo_pago);
 		const referenciaNormalizada = String(ultimoPagoDraft?.referencia || '').trim();
 		const telefonoPagoNormalizado = String(ultimoPagoDraft?.telefono_pago || '').replace(/\D/g, '').slice(-10);
+		const cedulaPagoNormalizada = formatCedulaPago(ultimoPagoDraft?.cedula_titular);
 		if (metodoRequiereReferencia(metodoNormalizado) && referenciaNormalizada.length < 6) {
 			setErrorMessage('Debes ingresar al menos 6 digitos en la referencia.');
 			return;
@@ -695,6 +704,7 @@ function Mensualidades() {
 			formData.append('metodo_pago', metodoNormalizado);
 			formData.append('referencia', metodoRequiereReferencia(metodoNormalizado) ? referenciaNormalizada : '');
 			formData.append('telefono_pago', telefonoPagoNormalizado);
+			formData.append('cedula_titular', cedulaPagoNormalizada);
 			formData.append('nota', String(ultimoPagoDraft?.nota || '').trim());
 			formData.append('solicita_revision_recargo', ultimoPagoDraft?.solicita_revision_recargo ? 'true' : 'false');
 			if (ultimoPagoComprobante) {
@@ -1058,6 +1068,31 @@ function Mensualidades() {
 			?? registro?.telefonoPago
 			?? registro?.telefono
 			?? registro?.telefono_de_pago
+			?? ''
+		);
+	};
+
+	const formatCedulaPago = (value) => {
+		const raw = String(value || '').trim().toUpperCase();
+		if (!raw) return '';
+
+		const match = raw.match(/^([VEJG])\s*[-:]?\s*(\d+)$/i);
+		if (match) {
+			return `${match[1].toUpperCase()}-${match[2]}`;
+		}
+
+		const digits = raw.replace(/\D/g, '');
+		if (!digits) return '';
+		return `V-${digits}`;
+	};
+
+	const getCedulaPagoDesdeRegistro = (registro) => {
+		if (!registro) return '';
+		return formatCedulaPago(
+			registro?.cedula_titular
+			?? registro?.cedulaTitular
+			?? registro?.cedula_pago
+			?? registro?.cedulaPago
 			?? ''
 		);
 	};
@@ -2216,22 +2251,39 @@ function Mensualidades() {
 										)}
 									</Box>
 
-										{esTenantCantevista && (
-											<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-												<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Telefono de pago</Typography>
-												<TextField
-													size="small"
-													sx={inlineEditableFieldSx}
-													disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
-													value={ultimoPagoDraft.telefono_pago || ''}
-													onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, telefono_pago: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
-													inputProps={{ inputMode: 'numeric', maxLength: 10 }}
-												/>
-													<Typography sx={{ mt: 0.45, color: '#64748b', fontSize: 12, fontWeight: 700 }}>
-														Sin el 0 adelante.
-													</Typography>
-											</Box>
-										)}
+										<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Telefono de pago</Typography>
+											<TextField
+												size="small"
+												sx={inlineEditableFieldSx}
+												disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+												value={ultimoPagoDraft.telefono_pago || ''}
+												onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, telefono_pago: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+												inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+											/>
+											<Typography sx={{ mt: 0.45, color: '#64748b', fontSize: 12, fontWeight: 700 }}>
+												Sin el 0 adelante.
+											</Typography>
+										</Box>
+
+										<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Cedula de pago</Typography>
+											<TextField
+												size="small"
+												sx={inlineEditableFieldSx}
+												disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
+												value={ultimoPagoDraft.cedula_titular || ''}
+												onChange={(e) => {
+													const raw = String(e.target.value || '').toUpperCase();
+													const limpio = raw.replace(/[^VEJG0-9-]/g, '');
+													setUltimoPagoDraft((prev) => ({ ...prev, cedula_titular: limpio.slice(0, 14) }));
+												}}
+												inputProps={{ maxLength: 14 }}
+											/>
+											<Typography sx={{ mt: 0.45, color: '#64748b', fontSize: 12, fontWeight: 700 }}>
+												Formato sugerido: V-12345678.
+											</Typography>
+										</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Registrado por</Typography>
@@ -2633,11 +2685,12 @@ function Mensualidades() {
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
 											<Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
-											{esTenantCantevista && Boolean(getTelefonoPagoDesdeRegistro(pago)) && (
-												<Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>
-													Tel: {getTelefonoPagoDesdeRegistro(pago)}
-												</Typography>
-											)}
+											<Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25, fontSize: 12 }}>
+												Tel: {getTelefonoPagoDesdeRegistro(pago) || '-'}
+											</Typography>
+											<Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25, fontSize: 12 }}>
+												Ced: {getCedulaPagoDesdeRegistro(pago) || '-'}
+											</Typography>
 											<Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.35, fontSize: 12 }}>
 												Registrado por: {formatRegistradoPorPago(pago)}
 											</Typography>
@@ -2690,6 +2743,7 @@ function Mensualidades() {
 						<Button
 							onClick={solicitarConfirmarMensualidad}
 							variant="contained"
+							disabled={editandoUltimoPagoInline}
 							sx={{ bgcolor: '#0e1334', color: '#fff', boxShadow: 'none', '&:hover': { bgcolor: '#0b102b', boxShadow: 'none' }, borderRadius: 999, px: 2.2, fontWeight: 800 }}
 						>
 							Confirmar
@@ -3235,19 +3289,17 @@ function Mensualidades() {
 							helperText={errorRef}
 						/>
 					)}
-					{esTenantCantevista && (
-						<TextField
-							label="Telefono de pago"
-							fullWidth
-							margin="normal"
-							size="small"
-							sx={inputSx}
-							value={telefonoPago}
-							onChange={e => setTelefonoPago(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-							inputProps={{ inputMode: 'numeric', maxLength: 10 }}
-							helperText="Opcional. Solo numeros, hasta 10 digitos."
-						/>
-					)}
+					<TextField
+						label="Telefono de pago"
+						fullWidth
+						margin="normal"
+						size="small"
+						sx={inputSx}
+						value={telefonoPago}
+						onChange={e => setTelefonoPago(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+						inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+						helperText="Opcional. Solo numeros, hasta 10 digitos."
+					/>
 					<TextField
 						label="Nota para administración (opcional)"
 						fullWidth

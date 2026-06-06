@@ -21,6 +21,7 @@ const PagoDetalleSchema = new mongoose.Schema({
   metodo_pago: { type: String, required: true },
   referencia: { type: String },
   telefono_pago: { type: String, default: '' },
+  cedula_titular: { type: String, default: '' },
   comprobante_url: { type: String },
   registrado_por: {
     id_usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

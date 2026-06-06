@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Dialog, DialogTitle, DialogContent, Card, CardContent, Typography, IconButton, Box, Button, TextField, InputAdornment } from '@mui/material';
+import { Dialog, DialogTitle, DialogContent, Card, CardContent, Typography, IconButton, Box, Button, TextField, InputAdornment, MenuItem } from '@mui/material';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import CloseIcon from '@mui/icons-material/Close';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
@@ -66,6 +66,26 @@ const getTodayInCaracas = () => {
   return `${year}-${month}-${day}`;
 };
 
+const normalizarCedulaPago = (value) => {
+  return String(value || '').replace(/\D/g, '');
+};
+
+const descomponerCedulaPago = (value) => {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^([VEJGvejg])\s*[-:]?\s*(\d+)$/);
+  if (match) {
+    return {
+      tipo: match[1].toUpperCase(),
+      numero: normalizarCedulaPago(match[2])
+    };
+  }
+
+  return {
+    tipo: 'V',
+    numero: normalizarCedulaPago(raw)
+  };
+};
+
 function ModalPago({ open, onClose, pago, onSuccess }) {
   const normalizarTelefonoPago = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
@@ -73,18 +93,11 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return digits.length >= 10 ? digits.slice(-10) : digits;
   };
 
-  const formatearTelefonoPagoVE = (value) => {
-    const digits = normalizarTelefonoPago(value);
-    if (!digits) return '';
-    return `VE ${digits}`;
-  };
-
   const [metodos, setMetodos] = useState([]);
   const [loadingMetodos, setLoadingMetodos] = useState(false);
   const [metodosError, setMetodosError] = useState('');
   const [metodoSeleccionado, setMetodoSeleccionado] = useState(null);
   const [mostrarConfirmacionCantevista, setMostrarConfirmacionCantevista] = useState(false);
-  const [mostrarCapturaNumeroCantevista, setMostrarCapturaNumeroCantevista] = useState(false);
   const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
   const [montoPagado, setMontoPagado] = useState('');
   const [montoPagadoBs, setMontoPagadoBs] = useState('');
@@ -98,11 +111,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const [copySuccess, setCopySuccess] = useState('');
   const [tasaPago, setTasaPago] = useState(null);
   const [preferenciaCuota, setPreferenciaCuota] = useState(null);
-  const [numeroConfirmacionCantevista, setNumeroConfirmacionCantevista] = useState('');
-  const [numeroAlternoCantevista, setNumeroAlternoCantevista] = useState('');
-  const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-  const tenantIdActual = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
-  const mostrarPasoConfirmacionCantevista = rolActual === 'usuario' && tenantIdActual === 'cantevista';
+  const [telefonoConfirmacionCantevista, setTelefonoConfirmacionCantevista] = useState('');
+  const [cedulaConfirmacionCantevista, setCedulaConfirmacionCantevista] = useState('');
+  const [tipoCedulaConfirmacionCantevista, setTipoCedulaConfirmacionCantevista] = useState('V');
+  const mostrarPasoConfirmacionCantevista = true;
   const monto = pago?.monto;
   const cuotasHabilitadas = pago?.id_alumno?.habilitar_pago_cuotas === true;
   const { dolar } = useDolar();
@@ -136,8 +148,10 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return Number(value).toFixed(2);
   };
   const referenciaInvalida = !/^[0-9]{6,}$/.test(referencia);
-  const numeroAlternoCantevistaValido = /^[1-9]\d{9}$/.test(numeroAlternoCantevista);
   const tieneRecargoAplicado = Number(pago?.recargo_aplicado_usd || 0) > 0;
+  const telefonoConfirmacionNormalizado = normalizarTelefonoPago(telefonoConfirmacionCantevista);
+  const cedulaConfirmacionNormalizada = normalizarCedulaPago(cedulaConfirmacionCantevista);
+  const puedeContinuarConfirmacion = Boolean(telefonoConfirmacionNormalizado && cedulaConfirmacionNormalizada);
 
   useEffect(() => {
     if (!open) return;
@@ -176,7 +190,6 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     if (!open) {
       setMetodoSeleccionado(null);
       setMostrarConfirmacionCantevista(false);
-      setMostrarCapturaNumeroCantevista(false);
       setMostrarFormularioPago(false);
       setMontoPagado('');
       setMontoPagadoBs('');
@@ -190,13 +203,15 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setCopySuccess('');
       setTasaPago(Number(tasa) || null);
       setPreferenciaCuota(null);
-      setNumeroAlternoCantevista('');
+      setTelefonoConfirmacionCantevista('');
+      setCedulaConfirmacionCantevista('');
+      setTipoCedulaConfirmacionCantevista('V');
       setMetodosError('');
     }
   }, [open, tasa]);
 
   useEffect(() => {
-    if (!open || !mostrarPasoConfirmacionCantevista) return;
+    if (!open) return;
 
     let cancelled = false;
 
@@ -215,8 +230,12 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
         if (!repRes.ok || cancelled) return;
 
         const telefonoRepresentante = String(repData?.telefono || repData?.rep_telefono || '').trim();
+        const cedulaRepresentante = String(repData?.cedula || repData?.rep_cedula || '').trim();
+        const cedulaDescompuesta = descomponerCedulaPago(cedulaRepresentante);
         if (!cancelled) {
-          setNumeroConfirmacionCantevista(normalizarTelefonoPago(telefonoRepresentante));
+          setTelefonoConfirmacionCantevista(normalizarTelefonoPago(telefonoRepresentante));
+          setTipoCedulaConfirmacionCantevista(cedulaDescompuesta.tipo || 'V');
+          setCedulaConfirmacionCantevista(cedulaDescompuesta.numero || '');
         }
       } catch (_) {
         // Si falla la consulta, se conserva el valor actual.
@@ -228,7 +247,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return () => {
       cancelled = true;
     };
-  }, [open, mostrarPasoConfirmacionCantevista]);
+  }, [open, descomponerCedulaPago]);
 
   const copiarDatoPago = async (clave, valor) => {
     const valorFormateado = formatearValorDetallePago(clave, valor);
@@ -304,14 +323,12 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);
     setMostrarConfirmacionCantevista(false);
-    setMostrarCapturaNumeroCantevista(false);
     setMostrarFormularioPago(false);
     setPreferenciaCuota(null);
   };
 
   const abrirFormularioPago = () => {
     setMostrarConfirmacionCantevista(false);
-    setMostrarCapturaNumeroCantevista(false);
     setMostrarFormularioPago(true);
     if (esAbonoParcial) {
       setMontoPagadoBs(montoAbonoBs !== null ? formatMoney(montoAbonoBs) : '');
@@ -323,13 +340,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const handleYaPague = () => {
     if (mostrarPasoConfirmacionCantevista && metodoSeleccionado?.id !== 'deposito-usd') {
-      if (!String(numeroConfirmacionCantevista || '').trim()) {
-        setMostrarConfirmacionCantevista(false);
-        setMostrarCapturaNumeroCantevista(true);
-      } else {
-        setMostrarCapturaNumeroCantevista(false);
-        setMostrarConfirmacionCantevista(true);
-      }
+      setMostrarConfirmacionCantevista(true);
       if (fechaPago === '') {
         setFechaPago(getTodayInCaracas());
       }
@@ -339,32 +350,18 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     abrirFormularioPago();
   };
 
-  const handleConfirmacionNumeroCantevista = (confirmado) => {
-    if (confirmado) {
-      abrirFormularioPago();
+  const handleContinuarConDatosCantevista = () => {
+    if (!puedeContinuarConfirmacion) {
       return;
     }
 
-    setMostrarConfirmacionCantevista(false);
-    setMostrarCapturaNumeroCantevista(true);
-    setMostrarFormularioPago(false);
-  };
-
-  const handleContinuarConNumeroAlterno = () => {
-    if (!numeroAlternoCantevistaValido) return;
-    setNumeroConfirmacionCantevista(normalizarTelefonoPago(numeroAlternoCantevista));
+    setTelefonoConfirmacionCantevista(telefonoConfirmacionNormalizado);
+    setCedulaConfirmacionCantevista(cedulaConfirmacionNormalizada);
+    setTipoCedulaConfirmacionCantevista(String(tipoCedulaConfirmacionCantevista || 'V').toUpperCase());
     abrirFormularioPago();
   };
 
   const handleVolver = () => {
-    if (mostrarCapturaNumeroCantevista) {
-      setMostrarCapturaNumeroCantevista(false);
-      if (String(numeroConfirmacionCantevista || '').trim()) {
-        setMostrarConfirmacionCantevista(true);
-      }
-      return;
-    }
-
     if (mostrarConfirmacionCantevista) {
       setMostrarConfirmacionCantevista(false);
       return;
@@ -375,7 +372,6 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const handleSeleccionPreferenciaCuota = (tipo) => {
     setMostrarConfirmacionCantevista(false);
-    setMostrarCapturaNumeroCantevista(false);
     if (fechaPago === '') {
       setFechaPago(getTodayInCaracas());
     }
@@ -441,9 +437,13 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       formData.append('fecha_pago', fechaPago);
       formData.append('metodo_pago', metodoSeleccionado?.nombre || metodoSeleccionado?.id || '');
       if (referencia) formData.append('referencia', referencia);
-      const telefonoPagoNormalizado = normalizarTelefonoPago(numeroConfirmacionCantevista);
+      const telefonoPagoNormalizado = normalizarTelefonoPago(telefonoConfirmacionCantevista);
       if (telefonoPagoNormalizado) {
         formData.append('telefono_pago', telefonoPagoNormalizado);
+      }
+      const cedulaConfirmacionNormalizada = normalizarCedulaPago(cedulaConfirmacionCantevista);
+      if (cedulaConfirmacionNormalizada) {
+        formData.append('cedula_titular', `${String(tipoCedulaConfirmacionCantevista || 'V').toUpperCase()}-${cedulaConfirmacionNormalizada}`);
       }
       if (notaPago.trim()) formData.append('nota', notaPago.trim());
       formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
@@ -487,10 +487,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const headerTitle = !metodoSeleccionado
     ? '¿Cómo vas a pagar?'
-    : mostrarCapturaNumeroCantevista
-      ? '¿Con qué número de teléfono hiciste el pago?'
     : mostrarConfirmacionCantevista
-      ? 'Confirma el número de teléfono de pago'
+      ? 'Confirma los datos del pago'
     : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Pago por cuotas habilitado'
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
@@ -503,10 +501,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
   const headerSubtitle = !metodoSeleccionado
     ? 'Selecciona tu metodo de pago preferido para continuar.'
-    : mostrarCapturaNumeroCantevista
-      ? 'Debe ser el mismo que aparece en el comprobante.'
     : mostrarConfirmacionCantevista
-      ? 'Antes de continuar, confirma de qué número realizaste el pago.'
+      ? 'Puedes editar el teléfono y la cédula antes de continuar.'
     : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Se ha habilitado el pago por cuotas para su cuenta. Seleccione su preferencia:'
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
@@ -650,122 +646,79 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                   mb: 2,
                   borderRadius: 3,
                   border: '1px solid #e2e8f0',
-                  backgroundColor: '#ffffff',
-                  minHeight: 420,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <CardContent sx={{ p: 3, width: '100%' }}>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 2.5 }}>
-                    <Box
-                      sx={{
-                        width: 92,
-                        height: 92,
-                        borderRadius: '50%',
-                        backgroundColor: '#fff7ed',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <PhoneIphoneIcon sx={{ fontSize: 48, color: '#f59e0b' }} />
-                    </Box>
-
-                    <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 32, lineHeight: 1 }}>
-                      ?
-                    </Typography>
-
-                    <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a' }}>
-                      ¿Hiciste el pago con el numero
-                      <br />
-                      {formatearTelefonoPagoVE(numeroConfirmacionCantevista) || 'VE -'}?
-                    </Typography>
-
-                    <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 1.25, mt: 1 }}>
-                      <Button
-                        variant="contained"
-                        fullWidth
-                        onClick={() => handleConfirmacionNumeroCantevista(true)}
-                        sx={{
-                          bgcolor: '#2f333b',
-                          '&:hover': { bgcolor: '#23262d' },
-                          fontWeight: 800,
-                          borderRadius: 20,
-                          py: 1.1,
-                          textTransform: 'none',
-                          fontSize: 18
-                        }}
-                      >
-                        Si, continuar
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        fullWidth
-                        onClick={() => handleConfirmacionNumeroCantevista(false)}
-                        sx={{
-                          borderColor: '#e2e8f0',
-                          color: '#1f2937',
-                          fontWeight: 700,
-                          borderRadius: 20,
-                          py: 1.1,
-                          textTransform: 'none',
-                          fontSize: 18
-                        }}
-                      >
-                        No, otro numero
-                      </Button>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            )}
-            {mostrarCapturaNumeroCantevista && metodoSeleccionado.id !== 'deposito-usd' && (
-              <Card
-                sx={{
-                  mb: 2,
-                  borderRadius: 3,
-                  border: '1px solid #e2e8f0',
                   backgroundColor: '#ffffff'
                 }}
               >
                 <CardContent sx={{ p: 2.5 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a', mb: 1.2 }}>
-                    Número que usaste
-                  </Typography>
-                  <Box
-                    sx={{
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 2,
-                      px: 1.5,
-                      py: 0.85,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1.2,
-                      backgroundColor: '#ffffff'
-                    }}
-                  >
-                    <Typography sx={{ fontSize: 20, lineHeight: 1 }}>🇻🇪</Typography>
-                    <TextField
-                      variant="standard"
-                      placeholder="4125163627"
-                      value={numeroAlternoCantevista}
-                      onChange={(e) => setNumeroAlternoCantevista(String(e.target.value || '').replace(/\D/g, '').slice(0, 10))}
-                      InputProps={{ disableUnderline: true, sx: { fontWeight: 600, color: '#334155' } }}
-                      fullWidth
-                    />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                    <PhoneIphoneIcon sx={{ color: '#f97316', fontSize: 18 }} />
+                    <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.08em', color: '#0f172a' }}>
+                      DATOS DEL PAGO
+                    </Typography>
                   </Box>
-                  <Typography variant="body2" sx={{ color: '#64748b', mt: 1.1 }}>
-                    Sin el 0 adelante.
-                  </Typography>
+
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    <Box>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        Teléfono que usaste
+                      </Typography>
+                      <Box sx={{ mt: 0.5, border: '1px solid #e2e8f0', borderRadius: 2, px: 1.5, py: 0.85, display: 'flex', alignItems: 'center', gap: 1.2, backgroundColor: '#ffffff' }}>
+                        <Typography sx={{ fontSize: 15, fontWeight: 800, color: '#0f172a', minWidth: 28 }}>VE</Typography>
+                        <TextField
+                          variant="standard"
+                          placeholder="4125163627"
+                          value={telefonoConfirmacionCantevista}
+                          onChange={(e) => setTelefonoConfirmacionCantevista(String(e.target.value || '').replace(/\D/g, '').slice(0, 10))}
+                          error={!telefonoConfirmacionNormalizado}
+                          InputProps={{ disableUnderline: true, sx: { fontWeight: 600, color: '#334155' } }}
+                          fullWidth
+                        />
+                      </Box>
+                      <Typography variant="caption" sx={{ color: '#64748b', mt: 0.75, display: 'block' }}>
+                        Sin el 0 adelante. Este campo es obligatorio.
+                      </Typography>
+                    </Box>
+
+                    <Box>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        Cédula afiliada a la cuenta
+                      </Typography>
+                      <Box sx={{ mt: 0.5, border: '1px solid #e2e8f0', borderRadius: 2, px: 1.2, py: 0.85, display: 'flex', alignItems: 'center', gap: 1, backgroundColor: '#ffffff' }}>
+                        <TextField
+                          select
+                          variant="standard"
+                          value={tipoCedulaConfirmacionCantevista}
+                          onChange={(e) => setTipoCedulaConfirmacionCantevista(String(e.target.value || 'V').toUpperCase())}
+                          InputProps={{ disableUnderline: true, sx: { fontWeight: 800, color: '#0f172a', minWidth: 24 } }}
+                          sx={{ minWidth: 52 }}
+                        >
+                          {['V', 'E', 'J', 'G'].map((tipo) => (
+                            <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
+                          ))}
+                        </TextField>
+                        <TextField
+                          variant="standard"
+                          placeholder="22188421"
+                          value={cedulaConfirmacionCantevista}
+                          onChange={(e) => setCedulaConfirmacionCantevista(String(e.target.value || '').replace(/\D/g, '').slice(0, 12))}
+                          error={!cedulaConfirmacionNormalizada}
+                          InputProps={{ disableUnderline: true, sx: { fontWeight: 600, color: '#334155' } }}
+                          fullWidth
+                        />
+                      </Box>
+                      <Typography variant="caption" sx={{ color: '#64748b', mt: 0.75, display: 'block' }}>
+                        La cédula del titular es obligatoria.
+                      </Typography>
+                    </Box>
+                  </Box>
+
                   <Button
                     variant="contained"
                     fullWidth
-                    onClick={handleContinuarConNumeroAlterno}
-                    disabled={!numeroAlternoCantevistaValido}
+                    onClick={handleContinuarConDatosCantevista}
+                    disabled={!puedeContinuarConfirmacion}
                     sx={{
-                      mt: 4,
+                      mt: 3,
                       bgcolor: '#2f333b',
                       '&:hover': { bgcolor: '#23262d' },
                       fontWeight: 800,
@@ -784,7 +737,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </CardContent>
               </Card>
             )}
-            {metodoSeleccionado.detalles && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
+            {metodoSeleccionado.detalles && !mostrarFormularioPago && !mostrarConfirmacionCantevista && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
               <Card
                 sx={{
                   mb: 2,
@@ -871,7 +824,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </CardContent>
               </Card>
             )}
-            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && !preferenciaCuota && (
+            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !preferenciaCuota && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
                 <Card
                   sx={{
@@ -938,7 +891,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 </Card>
               </Box>
             )}
-            {metodoSeleccionado.id !== 'deposito-usd' && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
+            {metodoSeleccionado.id !== 'deposito-usd' && !mostrarFormularioPago && !mostrarConfirmacionCantevista && (!cuotasHabilitadas || preferenciaCuota === 'completo') && (
               <Button
                 variant="contained"
                 fullWidth
@@ -954,7 +907,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 Ya pague
               </Button>
             )}
-            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && preferenciaCuota === 'parcial' && !mostrarFormularioPago && !mostrarConfirmacionCantevista && !mostrarCapturaNumeroCantevista && (
+            {metodoSeleccionado.id !== 'deposito-usd' && cuotasHabilitadas && preferenciaCuota === 'parcial' && !mostrarFormularioPago && !mostrarConfirmacionCantevista && (
               <Card
                 sx={{
                   mt: 2,

@@ -317,6 +317,7 @@ exports.registrarPago = async (req, res) => {
       metodo_pago,
       referencia,
       telefono_pago,
+      cedula_titular,
       nota,
       solicita_revision_recargo
     } = req.body;
@@ -354,6 +355,7 @@ exports.registrarPago = async (req, res) => {
       metodo_pago,
       referencia,
       telefono_pago: normalizarTelefonoPago(telefono_pago),
+      cedula_titular: String(cedula_titular || '').trim(),
       comprobante_url,
       registrado_por: construirRegistradoPor(req)
     });
@@ -383,6 +385,7 @@ exports.editarPago = async (req, res) => {
       metodo_pago,
       referencia,
       telefono_pago,
+      cedula_titular,
       nota,
       solicita_revision_recargo,
       eliminar_comprobante
@@ -426,6 +429,9 @@ exports.editarPago = async (req, res) => {
     pago.referencia = referencia;
     if (telefono_pago !== undefined) {
       pago.telefono_pago = normalizarTelefonoPago(telefono_pago);
+    }
+    if (cedula_titular !== undefined) {
+      pago.cedula_titular = String(cedula_titular || '').trim();
     }
     if (nota !== undefined) {
       pago.nota = normalizarNotaPago(nota);

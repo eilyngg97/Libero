@@ -86,6 +86,8 @@ function PagosAlumno(props) {
   const [referencia, setReferencia] = useState('');
   const [notaPago, setNotaPago] = useState('');
   const [solicitaRevisionRecargo, setSolicitaRevisionRecargo] = useState(false);
+  const [tipoCedulaTitular, setTipoCedulaTitular] = useState('V');
+  const [cedulaTitular, setCedulaTitular] = useState('');
   const [errorRef, setErrorRef] = useState('');
   const [comprobante, setComprobante] = useState(null);
   const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
@@ -312,6 +314,30 @@ function PagosAlumno(props) {
     return base;
   };
 
+  const descomponerCedulaTitular = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return { tipo: 'V', numero: '' };
+
+    const match = raw.match(/^([VEJG])\s*[-:]?\s*(\d+)$/i);
+    if (match) {
+      return { tipo: match[1].toUpperCase(), numero: match[2] };
+    }
+
+    return { tipo: 'V', numero: raw.replace(/\D/g, '') };
+  };
+
+  const formatCedulaTitular = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const match = raw.match(/^([VEJG])\s*[-:]?\s*(\d+)$/i);
+    if (match) {
+      return `${match[1].toUpperCase()}-${match[2]}`;
+    }
+
+    return raw;
+  };
+
   const formatMontoPrincipal = (pago) => {
     const montoBs = Number(pago?.monto_pagado_bs);
     if (Number.isFinite(montoBs) && montoBs > 0) {
@@ -431,6 +457,9 @@ function PagosAlumno(props) {
     setMontoPago(Number(pago?.monto_pagado) || '');
     setFechaPago(pago?.fecha_pago ? new Date(pago.fecha_pago).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
     setReferencia(pago?.referencia ? String(pago.referencia) : '');
+    const cedulaEditada = descomponerCedulaTitular(pago?.cedula_titular);
+    setTipoCedulaTitular(cedulaEditada.tipo || 'V');
+    setCedulaTitular(cedulaEditada.numero || '');
     setNotaPago(pago?.nota ? String(pago.nota) : '');
     setSolicitaRevisionRecargo(Boolean(pago?.solicita_revision_recargo));
     setErrorRef('');
@@ -462,6 +491,8 @@ function PagosAlumno(props) {
       formData.append('fecha_pago', fechaPago);
       formData.append('metodo_pago', normalizeMetodoPago(metodoPago));
       formData.append('referencia', metodoRequiereReferencia(metodoPago) ? referencia : '');
+      const cedulaTitularNormalizada = String(cedulaTitular || '').replace(/\D/g, '');
+      formData.append('cedula_titular', cedulaTitularNormalizada ? `${String(tipoCedulaTitular || 'V').toUpperCase()}-${cedulaTitularNormalizada}` : '');
       formData.append('nota', String(notaPago || '').trim());
       formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
 
@@ -1300,6 +1331,15 @@ function PagosAlumno(props) {
                     </Box>
                   )}
 
+                  {String(detallePago.cedula_titular || '').trim() && (
+                    <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                      <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Cédula del titular</Typography>
+                      <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
+                        {formatCedulaTitular(detallePago.cedula_titular)}
+                      </Typography>
+                    </Box>
+                  )}
+
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Nota</Typography>
                     <Typography sx={{ mt: 0.7, color: '#334155', fontWeight: 700, lineHeight: 1.3 }}>
@@ -1415,6 +1455,11 @@ function PagosAlumno(props) {
                       {String(pago.telefono_pago || '').trim() && (
                         <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>
                           Tel: {formatTelefonoPago(pago.telefono_pago)}
+                        </Typography>
+                      )}
+                      {String(pago.cedula_titular || '').trim() && (
+                        <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>
+                          Cédula: {formatCedulaTitular(pago.cedula_titular)}
                         </Typography>
                       )}
                     </Box>
@@ -1560,6 +1605,32 @@ function PagosAlumno(props) {
               helperText={errorRef}
             />
           )}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '76px 1fr' }, gap: 1, mt: 1 }}>
+            <TextField
+              select
+              label="Tipo"
+              value={tipoCedulaTitular}
+              onChange={(e) => setTipoCedulaTitular(String(e.target.value || 'V').toUpperCase())}
+              fullWidth
+              margin="normal"
+              size="small"
+              sx={inputSx}
+            >
+              {['V', 'E', 'J', 'G'].map((tipo) => (
+                <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Cédula del titular"
+              value={cedulaTitular}
+              onChange={(e) => setCedulaTitular(e.target.value.replace(/\D/g, ''))}
+              fullWidth
+              margin="normal"
+              size="small"
+              sx={inputSx}
+              inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+            />
+          </Box>
           <TextField
             label="Nota para administración (opcional)"
             value={notaPago}

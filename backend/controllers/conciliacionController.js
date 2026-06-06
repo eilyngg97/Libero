@@ -51,16 +51,41 @@ function telefonoComparable(value) {
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
 
-function extraerTelefonoDesdeDescripcion(descripcion) {
+function cedulaComparable(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+
+  // Algunos bancos reportan cedulas con cero a la izquierda (ej: V025894044).
+  // Para comparar contra el sistema, normalizamos removiendo ceros iniciales.
+  return digits.replace(/^0+/, '');
+}
+
+function extraerIdentificadoresDesdeDescripcion(descripcion) {
   const raw = String(descripcion || '');
-  if (!raw.trim()) return '';
+  if (!raw.trim()) return [];
+
+  const matches = raw.match(/\d{7,12}/g) || [];
+  return [...new Set(matches.map((match) => String(match || '').replace(/\D/g, '')).filter(Boolean))];
+}
+
+function extraerTelefonoDesdeDescripcion(descripcion) {
+  const identificadores = extraerIdentificadoresDesdeDescripcion(descripcion);
+  if (!identificadores.length) return '';
 
   // Soporta variantes comunes en estados Provincial:
   // 0412xxxxxxx, 412xxxxxxx, +58412xxxxxxx, 58412xxxxxxx
-  const match = raw.match(/(?:\+?58)?0?4\d{9}|4\d{9}/);
-  if (!match) return '';
+  const telefono = identificadores.find((item) => /^(?:58)?0?4\d{9}$|^4\d{9}$/.test(item));
+  if (!telefono) return '';
 
-  return String(match[0] || '').replace(/\D/g, '');
+  return telefono;
+}
+
+function extraerCedulaDesdeDescripcion(descripcion) {
+  const identificadores = extraerIdentificadoresDesdeDescripcion(descripcion);
+  if (!identificadores.length) return '';
+
+  const cedula = identificadores.find((item) => item.length >= 6 && item.length <= 9);
+  return cedula || '';
 }
 
 function referenciasCoinciden(valueBanco, valueSistema) {
@@ -277,6 +302,7 @@ function parseExcelRows(fileBuffer) {
         fecha,
         descripcion,
         telefono_movimiento: telefonoDescripcion,
+        cedula_movimiento: extraerCedulaDesdeDescripcion(descripcion),
         es_formato_provincial: esFormatoProvincial
       };
     })
@@ -347,6 +373,7 @@ function parseTxtRows(fileBuffer) {
           fecha,
           descripcion,
           telefono_movimiento: telefonoDescripcion,
+          cedula_movimiento: extraerCedulaDesdeDescripcion(descripcion),
           es_formato_provincial: esFormatoProvincial
         };
       })
@@ -396,6 +423,7 @@ function parseTxtRows(fileBuffer) {
       fecha,
       descripcion: descripcionRaw,
       telefono_movimiento: extraerTelefonoDesdeDescripcion(descripcionRaw),
+      cedula_movimiento: extraerCedulaDesdeDescripcion(descripcionRaw),
       es_formato_provincial: /\bdr\s+ob\b/i.test(String(descripcionRaw || ''))
     });
   });
@@ -407,23 +435,28 @@ function parseTxtRows(fileBuffer) {
   return parsedRows;
 }
 
-function buildMatchRecord({ banco, sistema, tipo, motivo = [] }) {
+function buildMatchRecord({ banco, sistema, tipo, motivo = [], matchPor = '', identificadorBanco = '', identificadorSistema = '' }) {
   return {
     tipo,
     motivo,
+    match_por: matchPor,
+    identificador_banco: identificadorBanco,
+    identificador_sistema: identificadorSistema,
     excel: {
       fila: banco.excelRow,
       referencia: banco.referencia || '-',
       monto_bs: banco.monto_bs,
       fecha: banco.fecha,
       descripcion: banco.descripcion || '',
-      telefono: banco.telefono_movimiento || ''
+      telefono: banco.telefono_movimiento || '',
+      cedula: banco.cedula_movimiento || ''
     },
     sistema: {
       pago_id: String(sistema._id),
       mensualidad_id: String(sistema.id_mensualidad),
       referencia: sistema.referencia || '-',
       telefono_pago: sistema.telefono_pago || '',
+      cedula_pago: sistema.cedula_titular || '',
       monto_bs: sistema.monto_pagado_bs,
       monto_esperado_bs: sistema.monto_esperado_bs,
       monto_esperado_usd: sistema.monto_esperado_usd,
@@ -489,7 +522,7 @@ exports.previsualizarConciliacion = async (req, res) => {
 
     const pagosSistema = await TenantPagoDetalle.find({
       id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) }
-    }).select('_id id_mensualidad referencia telefono_pago monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
+    }).select('_id id_mensualidad referencia telefono_pago cedula_titular monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
 
     const sistemaRows = pagosSistema.map((pago) => {
       const mensualidad = mensualidadMap.get(String(pago.id_mensualidad));
@@ -503,6 +536,8 @@ exports.previsualizarConciliacion = async (req, res) => {
         referencia: normalizarReferencia(pago.referencia),
         telefono_pago: String(pago.telefono_pago || '').trim(),
         telefono_pago_cmp: telefonoComparable(pago.telefono_pago),
+        cedula_titular: String(pago.cedula_titular || '').trim(),
+        cedula_titular_cmp: cedulaComparable(pago.cedula_titular),
         monto_pagado_bs: parseMonto(pago.monto_pagado_bs),
         monto_esperado_bs: parseMonto(pago.monto_esperado_bs),
         monto_esperado_usd: pago.monto_esperado_usd === null || pago.monto_esperado_usd === undefined
@@ -538,37 +573,69 @@ exports.previsualizarConciliacion = async (req, res) => {
 
       bancoDisponibles.delete(bancoIdx);
       sistemaDisponibles.delete(sistemaIdx);
-      matchTotal.push(buildMatchRecord({ banco: mejor, sistema, tipo: 'match_total', motivo: [`referencia (completa o ultimos 6) y monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS}`] }));
-    }
-
-    // Nivel 1.5 (solo formato Provincial): match total por telefono en descripcion + monto.
-    for (const sistemaIdx of [...sistemaDisponibles]) {
-      const sistema = sistemaRows[sistemaIdx];
-      if (!sistema.telefono_pago_cmp) continue;
-
-      const candidatos = [...bancoDisponibles]
-        .map((idx) => ({ idx, row: bancoRows[idx] }))
-        .filter(({ row }) => (
-          row.es_formato_provincial === true
-          && areAmountsEqual(row.monto_bs, sistema.monto_pagado_bs)
-          && telefonoComparable(row.telefono_movimiento)
-          && telefonoComparable(row.telefono_movimiento) === sistema.telefono_pago_cmp
-          && areDatesWithinDays(row.fecha, sistema.fecha_pago, 1)
-        ))
-        .map(({ row }) => row);
-
-      if (!candidatos.length) continue;
-
-      const mejor = rankByDateSimilarity(candidatos, sistema.fecha_pago)[0];
-      const bancoIdx = bancoRows.findIndex((row) => row.excelRow === mejor.excelRow);
-
-      bancoDisponibles.delete(bancoIdx);
-      sistemaDisponibles.delete(sistemaIdx);
       matchTotal.push(buildMatchRecord({
         banco: mejor,
         sistema,
         tipo: 'match_total',
-        motivo: [`telefono en descripcion (formato Provincial), monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS} y fecha dentro de ±1 dia`]
+        motivo: [`referencia (completa o ultimos 6) y monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS}`],
+        matchPor: 'referencia',
+        identificadorBanco: mejor.referencia || '',
+        identificadorSistema: sistema.referencia || ''
+      }));
+    }
+
+    // Nivel 1.5 (solo formato Provincial): match total por telefono o cedula en descripcion + monto.
+    for (const sistemaIdx of [...sistemaDisponibles]) {
+      const sistema = sistemaRows[sistemaIdx];
+      if (!sistema.telefono_pago_cmp && !sistema.cedula_titular_cmp) continue;
+
+      const candidatos = [...bancoDisponibles]
+        .map((idx) => ({ idx, row: bancoRows[idx] }))
+        .map(({ idx, row }) => {
+          const telefonoBancoComparable = telefonoComparable(row.telefono_movimiento);
+          const cedulaBancoComparable = cedulaComparable(row.cedula_movimiento);
+          const matchTelefono = Boolean(
+            telefonoBancoComparable
+            && sistema.telefono_pago_cmp
+            && telefonoBancoComparable === sistema.telefono_pago_cmp
+          );
+          const matchCedula = Boolean(
+            cedulaBancoComparable
+            && sistema.cedula_titular_cmp
+            && cedulaBancoComparable === sistema.cedula_titular_cmp
+          );
+
+          return {
+            idx,
+            row,
+            fecha: row.fecha,
+            matchPor: matchTelefono ? 'telefono' : (matchCedula ? 'cedula' : ''),
+            identificadorBanco: matchTelefono ? (row.telefono_movimiento || '') : (matchCedula ? (row.cedula_movimiento || '') : ''),
+            identificadorSistema: matchTelefono ? (sistema.telefono_pago || '') : (matchCedula ? (sistema.cedula_titular || '') : '')
+          };
+        })
+        .filter(({ row, matchPor }) => (
+          row.es_formato_provincial === true
+          && areAmountsEqual(row.monto_bs, sistema.monto_pagado_bs)
+          && Boolean(matchPor)
+          && areDatesWithinDays(row.fecha, sistema.fecha_pago, 1)
+        ));
+
+      if (!candidatos.length) continue;
+
+      const mejor = rankByDateSimilarity(candidatos, sistema.fecha_pago)[0];
+      const bancoIdx = bancoRows.findIndex((row) => row.excelRow === mejor.row.excelRow);
+
+      bancoDisponibles.delete(bancoIdx);
+      sistemaDisponibles.delete(sistemaIdx);
+      matchTotal.push(buildMatchRecord({
+        banco: mejor.row,
+        sistema,
+        tipo: 'match_total',
+        motivo: [`telefono o cedula en descripcion (formato Provincial), monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS} y fecha dentro de ±1 dia`],
+        matchPor: mejor.matchPor,
+        identificadorBanco: mejor.identificadorBanco,
+        identificadorSistema: mejor.identificadorSistema
       }));
     }
 
@@ -580,6 +647,22 @@ exports.previsualizarConciliacion = async (req, res) => {
       for (const bancoIdx of [...bancoDisponibles]) {
         const banco = bancoRows[bancoIdx];
         if (!areAmountsEqual(banco.monto_bs, sistema.monto_pagado_bs)) continue;
+
+        const telefonoBancoComparable = telefonoComparable(banco.telefono_movimiento);
+        const cedulaBancoComparable = cedulaComparable(banco.cedula_movimiento);
+        const coincideIdentificador = Boolean(
+          (telefonoBancoComparable && sistema.telefono_pago_cmp && telefonoBancoComparable === sistema.telefono_pago_cmp)
+          || (cedulaBancoComparable && sistema.cedula_titular_cmp && cedulaBancoComparable === sistema.cedula_titular_cmp)
+        );
+        const bancoTraeIdentificador = Boolean(telefonoBancoComparable || cedulaBancoComparable);
+        const sistemaTieneDatoComparable = Boolean(
+          (telefonoBancoComparable && sistema.telefono_pago_cmp)
+          || (cedulaBancoComparable && sistema.cedula_titular_cmp)
+        );
+
+        // Evita falsos parciales por fecha+monto cuando el banco trae identificador
+        // (telefono/cedula) y este contradice al pago del sistema.
+        if (bancoTraeIdentificador && sistemaTieneDatoComparable && !coincideIdentificador) continue;
 
         const motivos = [];
         let score = 0;
@@ -613,7 +696,8 @@ exports.previsualizarConciliacion = async (req, res) => {
         banco: mejor.banco,
         sistema,
         tipo: 'match_parcial',
-        motivo: mejor.motivos
+        motivo: mejor.motivos,
+        matchPor: mejor.motivos.includes('referencia con diferencia minima') ? 'referencia_aproximada' : 'fecha'
       }));
     }
 
@@ -626,7 +710,8 @@ exports.previsualizarConciliacion = async (req, res) => {
           monto_bs: row.monto_bs,
           fecha: row.fecha,
           descripcion: row.descripcion || '',
-          telefono: row.telefono_movimiento || ''
+          telefono: row.telefono_movimiento || '',
+          cedula: row.cedula_movimiento || ''
         }
       };
     });
@@ -639,6 +724,7 @@ exports.previsualizarConciliacion = async (req, res) => {
           mensualidad_id: String(row.id_mensualidad),
           referencia: row.referencia || '-',
           telefono_pago: row.telefono_pago || '',
+          cedula_pago: row.cedula_titular || '',
           monto_bs: row.monto_pagado_bs,
           monto_esperado_bs: row.monto_esperado_bs,
           monto_esperado_usd: row.monto_esperado_usd,
