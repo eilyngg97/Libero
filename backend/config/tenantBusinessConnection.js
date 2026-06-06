@@ -88,11 +88,16 @@ async function getTenantBusinessConnection(tenant = {}) {
   const tenantId = normalizeTenantId(tenant?.tenantId || fallbackTenant.tenantId);
   const dbUri = getBusinessDbUriFromTenant(tenant, fallbackTenant);
 
-  if (!tenantId || !dbUri) {
+  // saneamiento defensivo y logs para depuración
+  const candidateDbUri = typeof dbUri === 'string' ? String(dbUri).replace(/^<|>|\s+$/g, '').trim() : dbUri;
+  console.log(`[TENANT-CONN] tenantId=${tenantId} fallbackTenant=${fallbackTenant && fallbackTenant.tenantId}; rawDbUri=${dbUri}; candidateDbUri=${candidateDbUri}`);
+
+  if (!tenantId || !candidateDbUri) {
+    console.error(`[TENANT-CONN] No se pudo resolver un tenant seguro para la conexion de negocio - tenantId=${tenantId} candidateDbUri=${candidateDbUri}`);
     throw new Error('No se pudo resolver un tenant seguro para la conexion de negocio');
   }
 
-  const cacheKey = getCacheKey(tenantId, dbUri);
+  const cacheKey = getCacheKey(tenantId, candidateDbUri);
   const maxEntries = normalizePoolSize(process.env.TENANT_CONNECTION_CACHE_SIZE, 20);
 
   const existing = connectionCache.get(cacheKey);
@@ -106,7 +111,7 @@ async function getTenantBusinessConnection(tenant = {}) {
   evictIfNeeded(maxEntries);
 
   const maxPoolSize = normalizePoolSize(process.env.TENANT_MONGO_MAX_POOL_SIZE, 10);
-  const connection = mongoose.createConnection(dbUri, {
+  const connection = mongoose.createConnection(candidateDbUri, {
     maxPoolSize,
     serverSelectionTimeoutMS: 5000
   });
@@ -119,7 +124,7 @@ async function getTenantBusinessConnection(tenant = {}) {
 
   connectionCache.set(cacheKey, {
     tenantId,
-    dbUri,
+    dbUri: candidateDbUri,
     connection,
     connectionPromise,
     createdAt: Date.now()
