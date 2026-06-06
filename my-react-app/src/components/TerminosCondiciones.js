@@ -189,8 +189,10 @@ function TerminosCondiciones() {
 
       const payload = await res.json();
       const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+      const esRolAdmin = rolActual === 'admin' || rolActual === 'super_admin';
+      const payloadAdmin = Array.isArray(payload?.documentos) || Object.prototype.hasOwnProperty.call(payload || {}, 'vigente');
 
-      if (rolActual === 'admin') {
+      if (esRolAdmin || payloadAdmin) {
         setDocumentos(Array.isArray(payload?.documentos) ? payload.documentos : []);
         setTerminoVigente(payload?.vigente || null);
       } else {

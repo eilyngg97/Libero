@@ -128,6 +128,9 @@ function Mensualidades() {
 	const [guardandoUltimoPagoInline, setGuardandoUltimoPagoInline] = useState(false);
 	const [editandoUltimoPagoInline, setEditandoUltimoPagoInline] = useState(false);
 	const [ultimoPagoComprobante, setUltimoPagoComprobante] = useState(null);
+	const [tasaUltimoPagoHistorica, setTasaUltimoPagoHistorica] = useState(null);
+	const [cargandoTasaUltimoPago, setCargandoTasaUltimoPago] = useState(false);
+	const [ultimoPagoEsperadoBsManual, setUltimoPagoEsperadoBsManual] = useState(false);
 	const [modalEditarMensualidadOpen, setModalEditarMensualidadOpen] = useState(false);
 	const [mensualidadAEditar, setMensualidadAEditar] = useState(null);
 	const [editarMontoEsperado, setEditarMontoEsperado] = useState('');
@@ -484,6 +487,7 @@ function Mensualidades() {
 			: 0;
 		const tasaFallback = Number(tasaPagoHistorica || dolar?.promedio || 0);
 		const tasaInicial = tasaDesdePago > 0 ? tasaDesdePago : (Number.isFinite(tasaFallback) && tasaFallback > 0 ? tasaFallback : 0);
+		setTasaUltimoPagoHistorica(Number.isFinite(tasaInicial) && tasaInicial > 0 ? tasaInicial : null);
 		const montoEsperadoPagoBs = Number(detallePago?.monto_esperado_bs);
 		const montoEsperadoPagoUsd = Number(detallePago?.monto_esperado_usd);
 		const montoEsperadoVigenteUsd = Number(mensualidadDetalle?.monto_esperado);
@@ -512,6 +516,7 @@ function Mensualidades() {
 			nota: detallePago?.nota ? String(detallePago.nota) : '',
 			solicita_revision_recargo: Boolean(detallePago?.solicita_revision_recargo)
 		});
+		setUltimoPagoEsperadoBsManual(existeAjusteManualMontoEsperadoBs(detallePago, mensualidadDetalle?.monto_esperado));
 		setUltimoPagoComprobante(null);
 	}, [
 		detallePago?._id,
@@ -558,6 +563,87 @@ function Mensualidades() {
 		dolar?.promedio
 	]);
 
+	React.useEffect(() => {
+		if (!editandoUltimoPagoInline || !ultimoPagoDraft?.fecha_pago) return;
+
+		let cancelled = false;
+
+		const cargarTasaHistoricaUltimoPago = async () => {
+			try {
+				setCargandoTasaUltimoPago(true);
+				const tasaHistorica = await obtenerTasaOficialPorFecha(ultimoPagoDraft.fecha_pago, Number(dolar?.promedio) || 0);
+				if (!cancelled) {
+					const tasaNormalizada = Number(tasaHistorica);
+					setTasaUltimoPagoHistorica(Number.isFinite(tasaNormalizada) && tasaNormalizada > 0 ? tasaNormalizada : null);
+				}
+			} catch {
+				if (!cancelled) {
+					const fallback = Number(dolar?.promedio || 0);
+					setTasaUltimoPagoHistorica(Number.isFinite(fallback) && fallback > 0 ? fallback : null);
+				}
+			} finally {
+				if (!cancelled) setCargandoTasaUltimoPago(false);
+			}
+		};
+
+		cargarTasaHistoricaUltimoPago();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [editandoUltimoPagoInline, ultimoPagoDraft?.fecha_pago, dolar?.promedio]);
+
+	React.useEffect(() => {
+		if (!editandoUltimoPagoInline) return;
+		if (ultimoPagoEsperadoBsManual) return;
+
+		const montoEsperadoUsd = Number(mensualidadDetalle?.monto_esperado);
+		const tasaActiva = Number(tasaUltimoPagoHistorica);
+
+		if (!Number.isFinite(montoEsperadoUsd) || montoEsperadoUsd < 0) return;
+		if (!Number.isFinite(tasaActiva) || tasaActiva <= 0) return;
+
+		const nuevoEsperadoBs = Number((montoEsperadoUsd * tasaActiva).toFixed(2));
+		setUltimoPagoDraft((prev) => {
+			const actualEsperadoBs = Number(prev?.monto_esperado_bs);
+			if (Number.isFinite(actualEsperadoBs) && Math.abs(actualEsperadoBs - nuevoEsperadoBs) < 0.01) {
+				return prev;
+			}
+			return {
+				...prev,
+				monto_esperado_bs: nuevoEsperadoBs
+			};
+		});
+	}, [
+		editandoUltimoPagoInline,
+		ultimoPagoEsperadoBsManual,
+		tasaUltimoPagoHistorica,
+		mensualidadDetalle?.monto_esperado
+	]);
+
+	const recalcularMontoEsperadoBsUltimoPago = () => {
+		if (!editandoUltimoPagoInline || guardandoUltimoPagoInline) return;
+
+		const montoEsperadoUsd = Number(mensualidadDetalle?.monto_esperado);
+		if (!Number.isFinite(montoEsperadoUsd) || montoEsperadoUsd < 0) {
+			setErrorMessage('No hay un monto esperado USD valido para recalcular.');
+			return;
+		}
+
+		const tasaActiva = Number(tasaUltimoPagoHistorica || tasaPagoHistorica || dolar?.promedio || 0);
+		if (!Number.isFinite(tasaActiva) || tasaActiva <= 0) {
+			setErrorMessage('No se pudo determinar una tasa valida para recalcular.');
+			return;
+		}
+
+		const nuevoEsperadoBs = Number((montoEsperadoUsd * tasaActiva).toFixed(2));
+		setUltimoPagoEsperadoBsManual(false);
+		setUltimoPagoDraft((prev) => ({
+			...prev,
+			monto_esperado_bs: nuevoEsperadoBs
+		}));
+	};
+
 	const guardarUltimoPagoInline = async () => {
 		if (!detallePago?._id || guardandoUltimoPagoInline || !editandoUltimoPagoInline) return;
 
@@ -583,11 +669,13 @@ function Mensualidades() {
 
 		const montoBsPagoActual = Number(detallePago?.monto_pagado_bs);
 		const montoUsdPagoActual = Number(detallePago?.monto_pagado);
+		const tasaFallbackActual = Number(tasaUltimoPagoHistorica || tasaPagoHistorica || dolar?.promedio || 0);
 		const tasaDesdePago = (Number.isFinite(montoBsPagoActual) && montoBsPagoActual > 0 && Number.isFinite(montoUsdPagoActual) && montoUsdPagoActual > 0)
 			? (montoBsPagoActual / montoUsdPagoActual)
 			: 0;
-		const tasaFallbackActual = Number(tasaPagoHistorica || dolar?.promedio || 0);
-		const tasaParaBs = tasaDesdePago > 0 ? tasaDesdePago : (Number.isFinite(tasaFallbackActual) ? tasaFallbackActual : 0);
+		const tasaParaBs = Number.isFinite(tasaFallbackActual) && tasaFallbackActual > 0
+			? tasaFallbackActual
+			: tasaDesdePago;
 		if (!Number.isFinite(tasaParaBs) || tasaParaBs <= 0) {
 			setErrorMessage('No se pudo determinar una tasa valida para convertir a USD.');
 			return;
@@ -1512,6 +1600,10 @@ function Mensualidades() {
 	const diaRecargoPersonalizadoDetalle = obtenerDiaLimitePersonalizado(mensualidadDetalle);
 	const formatMontoCorto = (value) => `$${formatMoney(value)}`;
 	const tasaDetallePago = (() => {
+		const tasaDesdeFechaEdicion = Number(tasaUltimoPagoHistorica);
+		if (editandoUltimoPagoInline && Number.isFinite(tasaDesdeFechaEdicion) && tasaDesdeFechaEdicion > 0) {
+			return tasaDesdeFechaEdicion;
+		}
 		const montoBsPago = Number(detallePago?.monto_pagado_bs);
 		const montoUsdPago = Number(detallePago?.monto_pagado);
 		if (Number.isFinite(montoBsPago) && montoBsPago > 0 && Number.isFinite(montoUsdPago) && montoUsdPago > 0) {
@@ -1968,6 +2060,7 @@ function Mensualidades() {
 												if (editandoUltimoPagoInline) {
 													cargarUltimoPagoDraft();
 													setEditandoUltimoPagoInline(false);
+														setUltimoPagoEsperadoBsManual(false);
 													setUltimoPagoComprobante(null);
 													return;
 												}
@@ -2059,8 +2152,22 @@ function Mensualidades() {
 											disabled={!editandoUltimoPagoInline || guardandoUltimoPagoInline}
 											inputProps={{ min: 0, step: '0.01' }}
 											value={ultimoPagoDraft.monto_esperado_bs}
-											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, monto_esperado_bs: e.target.value }))}
+											onChange={(e) => {
+												setUltimoPagoEsperadoBsManual(true);
+												setUltimoPagoDraft((prev) => ({ ...prev, monto_esperado_bs: e.target.value }));
+											}}
 										/>
+										{editandoUltimoPagoInline && (
+											<Button
+												size="small"
+												variant="text"
+												onClick={recalcularMontoEsperadoBsUltimoPago}
+												disabled={guardandoUltimoPagoInline || cargandoTasaUltimoPago}
+												sx={{ mt: 0.35, px: 0, minWidth: 'fit-content', textTransform: 'none', fontWeight: 800 }}
+											>
+												Recalcular
+											</Button>
+										)}
 										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
 											Equivalente USD: {ultimoPagoMontoEsperadoUsdDraft !== null ? `$${formatMoney(ultimoPagoMontoEsperadoUsdDraft)} USD` : '-'}
 										</Typography>
@@ -2086,7 +2193,11 @@ function Mensualidades() {
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
-										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatTasaAplicada(detallePago)}</Typography>
+										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
+											{cargandoTasaUltimoPago && editandoUltimoPagoInline
+												? 'Actualizando...'
+												: (Number.isFinite(tasaDetallePago) && tasaDetallePago > 0 ? `${formatMoney(tasaDetallePago)} Bs/USD` : '-')}
+										</Typography>
 									</Box>
 
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>

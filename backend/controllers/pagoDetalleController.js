@@ -147,7 +147,15 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, mod
   const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const totalPagado = redondearMonto(pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0));
   const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
-  const restante = redondearMonto(Math.max(0, montoEsperado - totalPagado));
+  const tasaReferencia = obtenerTasaReferenciaDesdePagos(pagos);
+  const toleranciaUsdLiquidacion = Number.isFinite(tasaReferencia) && tasaReferencia > 0
+    ? redondearMonto(MONTO_TOLERANCIA_BS / tasaReferencia)
+    : 0;
+  const montoEsperadoConTolerancia = redondearMonto(Math.max(0, montoEsperado - toleranciaUsdLiquidacion));
+  const cubreEsperadoConTolerancia = totalPagado >= montoEsperadoConTolerancia;
+  const restante = cubreEsperadoConTolerancia
+    ? 0
+    : redondearMonto(Math.max(0, montoEsperado - totalPagado));
   const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
   const saldoGeneradoNuevo = redondearMonto(Math.max(0, totalPagado - montoEsperado));
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
@@ -176,7 +184,7 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, mod
     mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
     mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
-  } else if (totalPagado >= montoEsperado) {
+  } else if (cubreEsperadoConTolerancia) {
     mensualidad.estatus = requiereRevisionPagoCompleto ? 'En revision' : 'Pagado';
   } else {
     mensualidad.estatus = 'Abono';
@@ -214,6 +222,22 @@ function calcularToleranciaUsdDesdeBs(monto, montoBs) {
   if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) return 0;
 
   return redondearMonto(MONTO_TOLERANCIA_BS / tasaAplicada);
+}
+
+function obtenerTasaReferenciaDesdePagos(pagos = []) {
+  if (!Array.isArray(pagos) || pagos.length === 0) return 0;
+
+  const pagosOrdenados = ordenarPagos(pagos);
+  const pagoRecienteConTasa = [...pagosOrdenados].reverse().find((pago) => {
+    const montoUsd = Number(pago?.monto_pagado);
+    const montoBs = Number(pago?.monto_pagado_bs);
+    return Number.isFinite(montoUsd) && montoUsd > 0 && Number.isFinite(montoBs) && montoBs > 0;
+  });
+
+  if (!pagoRecienteConTasa) return 0;
+
+  const tasa = Number(pagoRecienteConTasa.monto_pagado_bs) / Number(pagoRecienteConTasa.monto_pagado);
+  return Number.isFinite(tasa) && tasa > 0 ? tasa : 0;
 }
 
 async function validarPago({

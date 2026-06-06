@@ -48,7 +48,7 @@ exports.listarTerminos = async (req, res) => {
     const { TenantTerminoCondicion, TenantTerminoAceptacion } = await getTenantModels(req);
     const role = String(req.user?.rol || '').toLowerCase();
 
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'super_admin') {
       const terminos = await TenantTerminoCondicion.find().sort({ version: -1, createdAt: -1 });
 
       const acceptanceSummary = await TenantTerminoAceptacion.aggregate([

@@ -10,6 +10,8 @@ const { getTenantBusinessConnection } = require('../config/tenantBusinessConnect
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
+const MONTO_TOLERANCIA_BS = 100;
+
 async function getTenantMensualidadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
@@ -686,10 +688,32 @@ async function recalcularMensualidadPorPagos(
 
   const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
   const tienePagosRegistrados = pagos.length > 0;
+  const pagosOrdenados = [...pagos].sort((a, b) => {
+    const fechaA = new Date(a.fecha_pago || a.createdAt || 0).getTime();
+    const fechaB = new Date(b.fecha_pago || b.createdAt || 0).getTime();
+    if (fechaA !== fechaB) return fechaA - fechaB;
+
+    const creadoA = new Date(a.createdAt || 0).getTime();
+    const creadoB = new Date(b.createdAt || 0).getTime();
+    return creadoA - creadoB;
+  });
+  const pagoRecienteConTasa = [...pagosOrdenados].reverse().find((pago) => {
+    const montoUsd = Number(pago?.monto_pagado);
+    const montoBs = Number(pago?.monto_pagado_bs);
+    return Number.isFinite(montoUsd) && montoUsd > 0 && Number.isFinite(montoBs) && montoBs > 0;
+  });
+  const tasaReferencia = pagoRecienteConTasa
+    ? (Number(pagoRecienteConTasa.monto_pagado_bs) / Number(pagoRecienteConTasa.monto_pagado))
+    : 0;
+  const toleranciaUsdLiquidacion = Number.isFinite(tasaReferencia) && tasaReferencia > 0
+    ? redondearMonto(MONTO_TOLERANCIA_BS / tasaReferencia)
+    : 0;
   const totalPagado = redondearMonto(
     pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0)
   );
   const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
+  const montoEsperadoConTolerancia = redondearMonto(Math.max(0, montoEsperado - toleranciaUsdLiquidacion));
+  const cubreEsperadoConTolerancia = totalPagado >= montoEsperadoConTolerancia;
   const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
   const saldoGeneradoNuevo = redondearMonto(Math.max(0, totalPagado - montoEsperado));
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
@@ -744,7 +768,7 @@ async function recalcularMensualidadPorPagos(
     mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
     mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
-  } else if (totalPagado >= montoEsperado) {
+  } else if (cubreEsperadoConTolerancia) {
     mensualidad.estatus = requiereRevisionPagoCompleto ? 'En revision' : 'Pagado';
   } else {
     mensualidad.estatus = 'Abono';
@@ -754,7 +778,9 @@ async function recalcularMensualidadPorPagos(
 
   return {
     totalPagado,
-    restante: redondearMonto(Math.max(0, montoEsperado - totalPagado)),
+    restante: cubreEsperadoConTolerancia
+      ? 0
+      : redondearMonto(Math.max(0, montoEsperado - totalPagado)),
     estatus: mensualidad.estatus,
     saldoAFavorGenerado: saldoGeneradoNuevo
   };
