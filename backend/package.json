@@ -12,6 +12,8 @@
     "ops:preflight": "node scripts/opsPreflight.js",
     "mensualidades:enero:pagadas:dry": "node scripts/marcar_mensualidades_enero_pagadas.js",
     "mensualidades:enero:pagadas": "node scripts/marcar_mensualidades_enero_pagadas.js --apply",
+    "mensualidades:recargo:faltante:dry": "node scripts/aplicar_recargo_faltante.js",
+    "mensualidades:recargo:faltante": "node scripts/aplicar_recargo_faltante.js --apply",
     "migrate:media:dry": "node scripts/migrar_media_base64_a_archivos.js --dry-run",
     "migrate:media": "node scripts/migrar_media_base64_a_archivos.js --apply",
     "qa:multi-tenant": "node scripts/qa_multi_tenant_ab.js",
