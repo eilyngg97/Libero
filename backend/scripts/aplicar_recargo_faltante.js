@@ -45,7 +45,9 @@ function validarArgs(args) {
 }
 
 async function getTenantModels(tenant) {
-  const connection = await getTenantBusinessConnection({ tenantId: tenant.tenantId });
+  // pasar el objeto tenant completo para que getTenantBusinessConnection pueda
+  // usar tenant.dbUri cuando esté disponible en el registro leído desde core
+  const connection = await getTenantBusinessConnection(tenant);
   return {
     connection,
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
@@ -159,6 +161,17 @@ async function main() {
   const reporte = [];
 
   for (const tenant of tenantsToProcess) {
+    // logs para depuración: mostrar resumen y documento completo del tenant recibido
+    try {
+      console.log('[APLICAR-RECARGO] tenant recibido (summary):', {
+        tenantId: tenant && tenant.tenantId,
+        nombre: tenant && tenant.nombre,
+        dbUri: tenant && tenant.dbUri
+      });
+      console.log('[APLICAR-RECARGO] tenant completo:', JSON.stringify(tenant));
+    } catch (e) {
+      console.warn('[APLICAR-RECARGO] error serializando tenant para logs', e && e.message);
+    }
     if (!tenant.tenantId || typeof tenant.tenantId !== 'string') {
       console.warn(`SKIP TENANT: no tenantId definido para registro ${tenant._id || '(sin id)'}`);
       continue;
