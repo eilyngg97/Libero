@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -78,6 +79,8 @@ function ListadoSolicitudesUniformes() {
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(10);
   const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState(null);
+  const [selectedPedidoIds, setSelectedPedidoIds] = useState([]);
+  const [submittingSolicitudPagoLote, setSubmittingSolicitudPagoLote] = useState(false);
 
   const token = localStorage.getItem('token');
   const theme = useTheme();
@@ -128,6 +131,7 @@ function ListadoSolicitudesUniformes() {
 
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
+  const esPedidoPendiente = (pedido) => String(pedido?.estado || '').toLowerCase() === 'pendiente';
 
   const pagosHistorialOrdenados = Array.isArray(pedidoSeleccionado?.pagos_historial)
     ? [...pedidoSeleccionado.pagos_historial].sort((a, b) => {
@@ -160,6 +164,14 @@ function ListadoSolicitudesUniformes() {
     pagina * filasPorPagina,
     pagina * filasPorPagina + filasPorPagina
   );
+
+  const pedidosPaginadosPendientes = pedidosPaginados.filter((pedido) => esPedidoPendiente(pedido));
+  const pedidosPendientesSeleccionados = pedidos.filter((pedido) =>
+    selectedPedidoIds.includes(String(pedido._id)) && esPedidoPendiente(pedido)
+  );
+  const todosPendientesPaginaSeleccionados =
+    pedidosPaginadosPendientes.length > 0 &&
+    pedidosPaginadosPendientes.every((pedido) => selectedPedidoIds.includes(String(pedido._id)));
 
   const buildExcelRows = (rows) => rows.map((pedido) => ({
     Alumno: pedido.alumno ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim() : '-',
@@ -284,6 +296,11 @@ function ListadoSolicitudesUniformes() {
     }
   }, [pedidos.length, pagina, filasPorPagina]);
 
+  useEffect(() => {
+    const idsValidos = new Set(pedidos.map((pedido) => String(pedido._id)));
+    setSelectedPedidoIds((prev) => prev.filter((id) => idsValidos.has(String(id))));
+  }, [pedidos]);
+
   const handleChangePagina = (_event, nuevaPagina) => {
     setPagina(nuevaPagina);
   };
@@ -334,6 +351,100 @@ function ListadoSolicitudesUniformes() {
       setError(err.message || 'Error al solicitar el pago');
     } finally {
       setSubmittingSolicitudPago(false);
+    }
+  };
+
+  const handleTogglePedidoSeleccionado = (pedidoId) => {
+    const id = String(pedidoId || '');
+    if (!id) return;
+
+    setSelectedPedidoIds((prev) => (
+      prev.includes(id)
+        ? prev.filter((item) => item !== id)
+        : [...prev, id]
+    ));
+  };
+
+  const handleToggleSeleccionPaginaPendientes = () => {
+    const idsPaginaPendientes = pedidosPaginadosPendientes.map((pedido) => String(pedido._id));
+    if (idsPaginaPendientes.length === 0) return;
+
+    setSelectedPedidoIds((prev) => {
+      if (todosPendientesPaginaSeleccionados) {
+        return prev.filter((id) => !idsPaginaPendientes.includes(String(id)));
+      }
+
+      const merged = new Set(prev.map((id) => String(id)));
+      idsPaginaPendientes.forEach((id) => merged.add(id));
+      return Array.from(merged);
+    });
+  };
+
+  const handleSolicitarPagoPorLote = async () => {
+    if (pedidosPendientesSeleccionados.length === 0) {
+      setError('Selecciona al menos un pedido pendiente para solicitar pago.');
+      return;
+    }
+
+    const pedidosConPrecio = pedidosPendientesSeleccionados.filter((pedido) => {
+      const precio = Number(pedido?.precio);
+      return Number.isFinite(precio) && precio > 0;
+    });
+    const pedidosSinPrecio = pedidosPendientesSeleccionados.filter((pedido) => !pedidosConPrecio.includes(pedido));
+
+    if (pedidosConPrecio.length === 0) {
+      setError('Los pedidos seleccionados no tienen un precio valido para solicitar pago.');
+      return;
+    }
+
+    try {
+      setSubmittingSolicitudPagoLote(true);
+
+      const resultados = await Promise.allSettled(
+        pedidosConPrecio.map(async (pedido) => {
+          const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedido._id}/solicitar-pago`, {
+            method: 'PATCH',
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ precio: Number(pedido.precio) })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.error || 'Error al solicitar pago');
+          }
+          return data;
+        })
+      );
+
+      const actualizados = resultados
+        .filter((resultado) => resultado.status === 'fulfilled')
+        .map((resultado) => resultado.value);
+
+      if (actualizados.length > 0) {
+        const byId = new Map(actualizados.map((pedido) => [String(pedido._id), pedido]));
+        setPedidos((prev) => prev.map((pedido) => byId.get(String(pedido._id)) || pedido));
+      }
+
+      const exitos = actualizados.length;
+      const fallidos = resultados.length - exitos;
+      const sinPrecio = pedidosSinPrecio.length;
+
+      setSelectedPedidoIds((prev) => prev.filter((id) => {
+        const fueExitoso = actualizados.some((pedido) => String(pedido._id) === String(id));
+        return !fueExitoso;
+      }));
+
+      if (fallidos > 0 || sinPrecio > 0) {
+        setError(`Solicitudes procesadas parcialmente: ${exitos} exitosas, ${fallidos} fallidas, ${sinPrecio} sin precio valido.`);
+      } else {
+        setSuccessMessage(`Solicitud de pago enviada para ${exitos} pedido(s).`);
+      }
+    } catch (err) {
+      setError(err.message || 'Error al solicitar pagos por lote');
+    } finally {
+      setSubmittingSolicitudPagoLote(false);
     }
   };
 
@@ -508,14 +619,27 @@ function ListadoSolicitudesUniformes() {
         </Box>
 
         <Box>
-          <Button
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            onClick={handleOpenExportMenu}
-            sx={{ borderColor: '#cbd5e1', color: '#0f172a', fontWeight: 700 }}
-          >
-            Exportar Excel
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+            <Button
+              variant="contained"
+              startIcon={<RequestQuoteIcon />}
+              disabled={pedidosPendientesSeleccionados.length === 0 || submittingSolicitudPagoLote}
+              onClick={handleSolicitarPagoPorLote}
+              sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none' }}
+            >
+              {submittingSolicitudPagoLote
+                ? 'Procesando lote...'
+                : `Solicitar pago por lote (${pedidosPendientesSeleccionados.length})`}
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={handleOpenExportMenu}
+              sx={{ borderColor: '#cbd5e1', color: '#0f172a', fontWeight: 700 }}
+            >
+              Exportar Excel
+            </Button>
+          </Box>
           <Menu
             anchorEl={exportMenuAnchorEl}
             open={Boolean(exportMenuAnchorEl)}
@@ -545,9 +669,18 @@ function ListadoSolicitudesUniformes() {
               }}
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1 }}>
-                <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
-                  {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                  {esPedidoPendiente(pedido) && (
+                    <Checkbox
+                      size="small"
+                      checked={selectedPedidoIds.includes(String(pedido._id))}
+                      onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
+                    />
+                  )}
+                  <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
+                    {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
+                  </Typography>
+                </Box>
                 <Chip label={getEstadoLabel(pedido.estado)} size="small" sx={{ ...getEstadoStyle(pedido.estado), fontWeight: 700 }} />
               </Box>
 
@@ -600,6 +733,15 @@ function ListadoSolicitudesUniformes() {
           <Table sx={{ minWidth: 980 }}>
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                <TableCell padding="checkbox" sx={{ color: '#64748b', fontSize: 12, fontWeight: 700 }}>
+                  <Checkbox
+                    size="small"
+                    indeterminate={!todosPendientesPaginaSeleccionados && pedidosPaginadosPendientes.some((pedido) => selectedPedidoIds.includes(String(pedido._id)))}
+                    checked={todosPendientesPaginaSeleccionados}
+                    onChange={handleToggleSeleccionPaginaPendientes}
+                    disabled={pedidosPaginadosPendientes.length === 0}
+                  />
+                </TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEDE</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>PRENDA</TableCell>
@@ -615,6 +757,15 @@ function ListadoSolicitudesUniformes() {
             <TableBody>
               {pedidosPaginados.map((pedido) => (
                 <TableRow key={pedido._id} sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}>
+                  <TableCell padding="checkbox">
+                    {esPedidoPendiente(pedido) && (
+                      <Checkbox
+                        size="small"
+                        checked={selectedPedidoIds.includes(String(pedido._id))}
+                        onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
+                      />
+                    )}
+                  </TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>{pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}</TableCell>
                   <TableCell sx={{ color: '#475569' }}>{pedido.sede?.nombre || '-'}</TableCell>
                   <TableCell sx={{ color: '#1f2937' }}>{pedido.prenda}</TableCell>
