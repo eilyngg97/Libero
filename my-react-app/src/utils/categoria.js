@@ -17,7 +17,7 @@ export function getCategoriaPorFechaNacimiento(fechaNacimiento) {
 
   const anioNacimiento = nacimiento.getFullYear();
 
-  if (anioNacimiento >= 2017 && anioNacimiento <= 2018) return CATEGORIAS_DISPONIBLES[0];
+  if (anioNacimiento >= 2017) return CATEGORIAS_DISPONIBLES[0];
   if (anioNacimiento >= 2015 && anioNacimiento <= 2016) return CATEGORIAS_DISPONIBLES[1];
   if (anioNacimiento >= 2013 && anioNacimiento <= 2014) return CATEGORIAS_DISPONIBLES[2];
   if (anioNacimiento >= 2011 && anioNacimiento <= 2012) return CATEGORIAS_DISPONIBLES[3];
