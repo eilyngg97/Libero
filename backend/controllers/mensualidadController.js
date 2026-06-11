@@ -271,6 +271,47 @@ function obtenerFechaRecargoAlumnoPeriodo(mes, anio, cobroConfig, alumno) {
   return obtenerFechaRecargoPeriodo(mes, anio, cobroConfig);
 }
 
+function obtenerFechaCortePagoAlumnoMensualidad(mensualidad, alumno = null) {
+  const diaPersonalizado = normalizarDiaMes(
+    alumno?.dia_limite_personalizado ?? mensualidad?.id_alumno?.dia_limite_personalizado,
+    null
+  );
+  const mesPeriodo = Number(mensualidad?.mes);
+  const anioPeriodo = Number(mensualidad?.anio);
+
+  if (
+    diaPersonalizado &&
+    Number.isInteger(mesPeriodo) &&
+    mesPeriodo >= 1 &&
+    mesPeriodo <= 12 &&
+    Number.isInteger(anioPeriodo) &&
+    anioPeriodo > 1900
+  ) {
+    return construirFechaPeriodoConDia(mesPeriodo, anioPeriodo, diaPersonalizado, { finDelDia: true });
+  }
+
+  const fechaVencimiento = mensualidad?.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) : null;
+  if (!fechaVencimiento || Number.isNaN(fechaVencimiento.getTime())) {
+    return null;
+  }
+
+  return fechaVencimiento;
+}
+
+async function obtenerFechaCortePagoAlumnoMensualidadAsync(mensualidad, models = {}) {
+  const fechaDesdeDocumento = obtenerFechaCortePagoAlumnoMensualidad(mensualidad, mensualidad?.id_alumno);
+  if (fechaDesdeDocumento) {
+    return fechaDesdeDocumento;
+  }
+
+  try {
+    const alumno = await obtenerAlumnoParaRecargo(mensualidad, models);
+    return obtenerFechaCortePagoAlumnoMensualidad(mensualidad, alumno);
+  } catch (_error) {
+    return obtenerFechaCortePagoAlumnoMensualidad(mensualidad, null);
+  }
+}
+
 function obtenerEstatusPendientePorVencimiento(fechaVencimiento) {
   return fechaVencimiento < new Date() ? 'Insolvente' : 'Pendiente';
 }
@@ -302,7 +343,25 @@ async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models 
   const alumnoId = mensualidad?.id_alumno?._id || mensualidad?.id_alumno;
   if (!alumnoId) return null;
 
-  const alumno = await AlumnoModel.findById(alumnoId).select('tipo_mensualidad').lean();
+  if (!AlumnoModel || typeof AlumnoModel.findById !== 'function') {
+    return null;
+  }
+
+  const consultaAlumno = AlumnoModel.findById(alumnoId);
+  if (!consultaAlumno) return null;
+
+  let alumno;
+  if (typeof consultaAlumno.select === 'function') {
+    const consultaSeleccionada = consultaAlumno.select('tipo_mensualidad');
+    alumno = typeof consultaSeleccionada?.lean === 'function'
+      ? await consultaSeleccionada.lean()
+      : await consultaSeleccionada;
+  } else if (typeof consultaAlumno.lean === 'function') {
+    alumno = await consultaAlumno.lean();
+  } else {
+    alumno = await Promise.resolve(consultaAlumno);
+  }
+
   return alumno?.tipo_mensualidad || null;
 }
 
@@ -326,9 +385,26 @@ async function obtenerAlumnoParaRecargo(mensualidad, models = {}) {
   }
   const alumnoId = alumnoPopulate?._id || alumnoPopulate || mensualidad?.id_alumno;
   if (!alumnoId) return null;
-  return AlumnoModel.findById(alumnoId)
-    .select('tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado fecha_inicio_cobro fecha_inscripcion')
-    .lean();
+  if (!AlumnoModel || typeof AlumnoModel.findById !== 'function') {
+    return null;
+  }
+
+  const consultaAlumno = AlumnoModel.findById(alumnoId);
+  if (!consultaAlumno) return null;
+
+  if (typeof consultaAlumno.select === 'function') {
+    const consultaSeleccionada = consultaAlumno
+      .select('tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado fecha_inicio_cobro fecha_inscripcion');
+    return typeof consultaSeleccionada?.lean === 'function'
+      ? consultaSeleccionada.lean()
+      : consultaSeleccionada;
+  }
+
+  if (typeof consultaAlumno.lean === 'function') {
+    return consultaAlumno.lean();
+  }
+
+  return Promise.resolve(consultaAlumno);
 }
 
 function calcularSnapshotRecargo({
@@ -503,11 +579,14 @@ async function crearMensualidadParaPeriodo(
 
   const configCobro = cobroConfig || await obtenerConfigCobro(models);
 
-  const existente = await MensualidadModel.findOne({
+  const consultaExistente = MensualidadModel.findOne({
     id_alumno: alumno._id,
     mes: periodo.mes,
     anio: periodo.anio
-  }).populate('id_alumno');
+  });
+  const existente = typeof consultaExistente?.populate === 'function'
+    ? await consultaExistente.populate('id_alumno')
+    : await Promise.resolve(consultaExistente);
 
   if (existente) {
     return { mensualidad: existente, creada: false, pagoRegistrado: false };
@@ -617,7 +696,10 @@ async function crearMensualidadParaPeriodo(
     }
   }
 
-  const mensualidadPopulada = await MensualidadModel.findById(mensualidad._id).populate('id_alumno');
+  const consultaMensualidadCreada = MensualidadModel.findById(mensualidad._id);
+  const mensualidadPopulada = typeof consultaMensualidadCreada?.populate === 'function'
+    ? await consultaMensualidadCreada.populate('id_alumno')
+    : await Promise.resolve(consultaMensualidadCreada || mensualidad);
   return { mensualidad: mensualidadPopulada, creada: true, pagoRegistrado };
 }
 
@@ -720,7 +802,17 @@ async function recalcularMensualidadPorPagos(
 
   if (deltaSaldo !== 0) {
     const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
-    const alumnoDoc = await AlumnoModel.findById(alumnoId).select('saldo_a_favor_mensualidades');
+    let alumnoDoc = null;
+    if (AlumnoModel && typeof AlumnoModel.findById === 'function' && alumnoId) {
+      const consultaAlumno = AlumnoModel.findById(alumnoId);
+      if (consultaAlumno) {
+        if (typeof consultaAlumno.select === 'function') {
+          alumnoDoc = await consultaAlumno.select('saldo_a_favor_mensualidades');
+        } else {
+          alumnoDoc = await Promise.resolve(consultaAlumno);
+        }
+      }
+    }
     if (alumnoDoc) {
       const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
       const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
@@ -729,9 +821,14 @@ async function recalcularMensualidadPorPagos(
         throw new Error('El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.');
       }
 
-      await AlumnoModel.findByIdAndUpdate(alumnoId, {
-        $set: { saldo_a_favor_mensualidades: saldoResultante }
-      });
+      alumnoDoc.saldo_a_favor_mensualidades = saldoResultante;
+      if (typeof alumnoDoc.save === 'function') {
+        await alumnoDoc.save();
+      } else if (AlumnoModel && typeof AlumnoModel.findByIdAndUpdate === 'function') {
+        await AlumnoModel.findByIdAndUpdate(alumnoId, {
+          $set: { saldo_a_favor_mensualidades: saldoResultante }
+        });
+      }
     }
   }
 
@@ -739,7 +836,8 @@ async function recalcularMensualidadPorPagos(
 
   const requiereRevisionPagoCompleto = estatusAnterior === 'En revision' || actorRol === 'usuario';
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
-  const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
+  const fechaCortePago = await obtenerFechaCortePagoAlumnoMensualidadAsync(mensualidad, models);
+  const estaVencida = fechaCortePago ? fechaCortePago < new Date() : false;
   const debePreservarPagadoManual =
     preservarPagadoSinPagos &&
     !tienePagosRegistrados &&
@@ -767,7 +865,7 @@ async function recalcularMensualidadPorPagos(
   if (montoEsperado <= 0) {
     mensualidad.estatus = requiereRevisionPagoCompleto && totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
-    mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
+    mensualidad.estatus = estaVencida ? 'Insolvente' : 'Pendiente';
   } else if (cubreEsperadoConTolerancia) {
     mensualidad.estatus = requiereRevisionPagoCompleto ? 'En revision' : 'Pagado';
   } else {
@@ -826,7 +924,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
     return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
   }
 
-  const repososParcialesProrrateados = await ReposoModel.find({
+  const repososParcialesConsulta = ReposoModel.find({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Parcial',
@@ -836,7 +934,13 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
       { fecha_fin: null },
       { fecha_fin: { $gte: inicioMes } }
     ]
-  }).select('fecha_inicio fecha_fin monto_parcial_personalizado').sort({ fecha_inicio: -1, createdAt: -1 });
+  }).select('fecha_inicio fecha_fin monto_parcial_personalizado');
+
+  const repososParcialesProrrateados = typeof repososParcialesConsulta?.sort === 'function'
+    ? await repososParcialesConsulta.sort({ fecha_inicio: -1, createdAt: -1 })
+    : (typeof repososParcialesConsulta?.lean === 'function'
+      ? await repososParcialesConsulta.lean()
+      : await Promise.resolve(repososParcialesConsulta));
 
   if (!repososParcialesProrrateados.length) {
     return { tipo: 'NORMAL', montoPersonalizado: null };
@@ -1006,14 +1110,49 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
   } = resolveMensualidadModels(models);
 
   const hoy = new Date();
-  const result = await MensualidadModel.updateMany(
-    {
-      estatus: 'Pendiente',
-      fecha_vencimiento: { $lt: hoy },
-      monto_esperado: { $gt: 0 }
-    },
-    { $set: { estatus: 'Insolvente' } }
-  );
+  const candidatasInsolvencia = await MensualidadModel.find({
+    estatus: { $in: ['Pendiente', 'Insolvente'] },
+    monto_esperado: { $gt: 0 }
+  })
+    .select('_id id_alumno fecha_vencimiento mes anio')
+    .populate({
+      path: 'id_alumno',
+      select: 'dia_limite_personalizado'
+    });
+
+  const idsInsolventes = candidatasInsolvencia
+    .filter((mensualidad) => {
+      if (String(mensualidad?.estatus || '').toLowerCase() !== 'pendiente') return false;
+      const fechaCortePago = obtenerFechaCortePagoAlumnoMensualidad(mensualidad, mensualidad?.id_alumno);
+      return fechaCortePago ? fechaCortePago < hoy : false;
+    })
+    .map((mensualidad) => mensualidad._id);
+
+  const idsPendientes = candidatasInsolvencia
+    .filter((mensualidad) => {
+      if (String(mensualidad?.estatus || '').toLowerCase() !== 'insolvente') return false;
+      const fechaCortePago = obtenerFechaCortePagoAlumnoMensualidad(mensualidad, mensualidad?.id_alumno);
+      return fechaCortePago ? fechaCortePago >= hoy : false;
+    })
+    .map((mensualidad) => mensualidad._id);
+
+  let mensualidadesInsolventes = 0;
+  if (idsInsolventes.length > 0) {
+    const result = await MensualidadModel.updateMany(
+      { _id: { $in: idsInsolventes } },
+      { $set: { estatus: 'Insolvente' } }
+    );
+    mensualidadesInsolventes = result.modifiedCount || 0;
+  }
+
+  let mensualidadesRegresadasPendiente = 0;
+  if (idsPendientes.length > 0) {
+    const resultPendiente = await MensualidadModel.updateMany(
+      { _id: { $in: idsPendientes } },
+      { $set: { estatus: 'Pendiente' } }
+    );
+    mensualidadesRegresadasPendiente = resultPendiente.modifiedCount || 0;
+  }
 
   const candidatasRecargo = await MensualidadModel.find({
     estatus: { $in: ['Pendiente', 'Insolvente', 'Abono', 'En revision'] },
@@ -1039,7 +1178,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     }
   }
 
-  return (result.modifiedCount || 0) + recargosAplicados;
+  return mensualidadesInsolventes + mensualidadesRegresadasPendiente + recargosAplicados;
 }
 
 // Registrar la primera mensualidad manualmente

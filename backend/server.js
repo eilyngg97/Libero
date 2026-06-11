@@ -134,15 +134,12 @@ async function bootstrap() {
       }
 
       try {
-        const hoy = new Date();
-        if (hoy.getDate() >= 6) {
-          const actualizadas = isMultiTenantModeEnabled()
-            ? await runJobForTenants('Catch-up retrasados actualizados', ({ models }) =>
-                actualizarRetrasadosCore({ force: true, models })
-              )
-            : await actualizarRetrasadosCore({ force: true });
-          logWithTime(`Catch-up retrasados actualizados: ${actualizadas}`);
-        }
+        const actualizadas = isMultiTenantModeEnabled()
+          ? await runJobForTenants('Catch-up retrasados actualizados', ({ models }) =>
+              actualizarRetrasadosCore({ force: true, models })
+            )
+          : await actualizarRetrasadosCore({ force: true });
+        logWithTime(`Catch-up retrasados actualizados: ${actualizadas}`);
       } catch (err) {
         console.error(`[${new Date().toISOString()}] Error en catch-up de retrasados:`, err);
       }
@@ -175,7 +172,7 @@ async function bootstrap() {
         }
       }, { timezone: cronTimezone });
 
-      cron.schedule('10 0 6 * *', async () => {
+      cron.schedule('10 0 * * *', async () => {
         try {
           const actualizadas = isMultiTenantModeEnabled()
             ? await runJobForTenants('Mensualidades actualizadas a Insolvente', ({ models }) =>

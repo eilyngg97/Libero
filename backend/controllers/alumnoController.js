@@ -736,7 +736,16 @@ async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models 
   const alumnoId = mensualidad?.id_alumno?._id || mensualidad?.id_alumno;
   if (!alumnoId) return null;
 
-  const alumno = await AlumnoModel.findById(alumnoId).select('tipo_mensualidad').lean();
+  if (!AlumnoModel || typeof AlumnoModel.findById !== 'function') {
+    return null;
+  }
+
+  const consultaAlumno = AlumnoModel.findById(alumnoId);
+  if (!consultaAlumno) return null;
+
+  const alumno = typeof consultaAlumno.select === 'function'
+    ? await consultaAlumno.select('tipo_mensualidad').lean()
+    : await Promise.resolve(consultaAlumno);
   return alumno?.tipo_mensualidad || null;
 }
 
@@ -831,6 +840,7 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
   const estatusActualNormalizado = String(mensualidad.estatus || '').toLowerCase();
+  const veniaExentoPorReposo = estatusAnteriorNormalizado === 'exento por reposo';
   const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models);
   const esBecado = esTipoMensualidadBecaCompleta(tipoMensualidadAlumno);
 
@@ -839,7 +849,11 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
   } else if (montoEsperado <= 0) {
     mensualidad.estatus = totalPagado > 0 ? 'En revision' : 'Pagado';
   } else if (totalPagado <= 0) {
-    mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
+    if (veniaExentoPorReposo) {
+      mensualidad.estatus = 'Pendiente';
+    } else {
+      mensualidad.estatus = (esEstatusInsolvente(estatusAnteriorNormalizado) || estaVencida) ? 'Insolvente' : 'Pendiente';
+    }
   } else if (cubreEsperadoConTolerancia) {
     mensualidad.estatus = 'Pagado';
   } else {
@@ -889,7 +903,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
     return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
   }
 
-  const repososParcialesProrrateados = await ReposoModel.find({
+  const repososParcialesConsulta = ReposoModel.find({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Parcial',
@@ -899,7 +913,13 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
       { fecha_fin: null },
       { fecha_fin: { $gte: inicioMes } }
     ]
-  }).select('fecha_inicio fecha_fin monto_parcial_personalizado').sort({ fecha_inicio: -1, createdAt: -1 });
+  }).select('fecha_inicio fecha_fin monto_parcial_personalizado');
+
+  const repososParcialesProrrateados = repososParcialesConsulta && typeof repososParcialesConsulta.sort === 'function'
+    ? await repososParcialesConsulta.sort({ fecha_inicio: -1, createdAt: -1 })
+    : (repososParcialesConsulta && typeof repososParcialesConsulta.lean === 'function'
+      ? await repososParcialesConsulta.lean()
+      : (Array.isArray(repososParcialesConsulta) ? repososParcialesConsulta : []));
 
   if (!repososParcialesProrrateados.length) {
     return { tipo: 'NORMAL', montoPersonalizado: null };
@@ -942,13 +962,16 @@ async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}) {
 
   const inicioMes = reposo.fecha_inicio.getUTCMonth() + 1;
   const inicioAnio = reposo.fecha_inicio.getUTCFullYear();
-  const mensualidades = await MensualidadModel.find({
+  const consultaMensualidades = MensualidadModel.find({
     id_alumno: alumnoId,
     $or: [
       { anio: { $gt: inicioAnio } },
       { anio: inicioAnio, mes: { $gte: inicioMes } }
     ]
-  }).select('mes anio').lean();
+  });
+  const mensualidades = consultaMensualidades && typeof consultaMensualidades.select === 'function'
+    ? await consultaMensualidades.select('mes anio').lean()
+    : (Array.isArray(consultaMensualidades) ? consultaMensualidades : []);
 
   const periodosMap = new Map();
   periodosMap.set(buildPeriodoKey(inicioMes, inicioAnio), { mes: inicioMes, anio: inicioAnio });
@@ -977,10 +1000,13 @@ async function validarMensualidadesParaReposoConImpactoMonto(alumnoId, reposo, m
   const periodos = await listarPeriodosAfectadosPorReposo(alumnoId, reposo, models);
   if (!periodos.length) return;
 
-  const mensualidades = await MensualidadModel.find({
+  const consultaMensualidades = MensualidadModel.find({
     id_alumno: alumnoId,
     $or: periodos.map((periodo) => ({ mes: periodo.mes, anio: periodo.anio }))
-  }).select('mes anio estatus').lean();
+  });
+  const mensualidades = consultaMensualidades && typeof consultaMensualidades.select === 'function'
+    ? await consultaMensualidades.select('mes anio estatus').lean()
+    : (Array.isArray(consultaMensualidades) ? consultaMensualidades : []);
 
   if (!mensualidades.length) return;
 
@@ -1006,7 +1032,13 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, m
   const MensualidadModel = models.Mensualidad || Mensualidad;
   if (!Array.isArray(periodos) || periodos.length === 0) return;
 
-  const alumno = await AlumnoModel.findById(alumnoId).select('sede tipo_mensualidad monto_personalizado_valor');
+  if (!AlumnoModel || typeof AlumnoModel.findById !== 'function') return;
+  const consultaAlumno = AlumnoModel.findById(alumnoId);
+  if (!consultaAlumno) return;
+
+  const alumno = typeof consultaAlumno.select === 'function'
+    ? await consultaAlumno.select('sede tipo_mensualidad monto_personalizado_valor')
+    : await Promise.resolve(consultaAlumno);
   if (!alumno) return;
 
   const periodosUnicos = Array.from(

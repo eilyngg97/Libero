@@ -84,6 +84,22 @@ const ESTATUS_BLOQUEO_DIRECTO = new Set(['retrasado', 'insolvente']);
 const ESTATUS_BLOQUEO_SI_VENCIO = new Set(['pendiente', 'abono', 'en revision']);
 const CUERPO_PRIMERA_LINEA_SANGRIA = 24;
 
+function normalizarDiaMes(valor, fallback = null) {
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 31) return fallback;
+  return numero;
+}
+
+function construirFechaPeriodoConDia(mes, anio, dia, { finDelDia = false } = {}) {
+  const ultimoDiaMes = new Date(anio, mes, 0).getDate();
+  const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
+  const hora = finDelDia ? 23 : 0;
+  const minutos = finDelDia ? 59 : 0;
+  const segundos = finDelDia ? 59 : 0;
+  const milisegundos = finDelDia ? 999 : 0;
+  return new Date(anio, mes - 1, diaAjustado, hora, minutos, segundos, milisegundos);
+}
+
 function parseFechaSinDesfase(fechaRaw) {
   if (!fechaRaw) return null;
   const raw = String(fechaRaw).trim();
@@ -99,14 +115,39 @@ function parseFechaSinDesfase(fechaRaw) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function mensualidadCuentaComoDeuda(mensualidad = {}, ahora = new Date()) {
-  const estatus = String(mensualidad?.estatus || '').trim().toLowerCase();
-  if (ESTATUS_BLOQUEO_DIRECTO.has(estatus)) return true;
-  if (!ESTATUS_BLOQUEO_SI_VENCIO.has(estatus)) return false;
+function obtenerFechaCortePagoMensualidad(mensualidad = {}, alumno = null) {
+  const diaPersonalizado = normalizarDiaMes(
+    mensualidad?.id_alumno?.dia_limite_personalizado ?? alumno?.dia_limite_personalizado,
+    null
+  );
+  const mesPeriodo = Number(mensualidad?.mes);
+  const anioPeriodo = Number(mensualidad?.anio);
 
-  const fechaVencimiento = parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
-  if (!fechaVencimiento) return false;
-  return fechaVencimiento.getTime() <= ahora.getTime();
+  if (
+    diaPersonalizado &&
+    Number.isInteger(mesPeriodo) &&
+    mesPeriodo >= 1 &&
+    mesPeriodo <= 12 &&
+    Number.isInteger(anioPeriodo) &&
+    anioPeriodo > 1900
+  ) {
+    return construirFechaPeriodoConDia(mesPeriodo, anioPeriodo, diaPersonalizado, { finDelDia: true });
+  }
+
+  return parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
+}
+
+function mensualidadCuentaComoDeuda(mensualidad = {}, ahora = new Date(), alumno = null) {
+  const estatus = String(mensualidad?.estatus || '').trim().toLowerCase();
+  const esEstatusBloqueable = ESTATUS_BLOQUEO_DIRECTO.has(estatus) || ESTATUS_BLOQUEO_SI_VENCIO.has(estatus);
+  if (!esEstatusBloqueable) return false;
+
+  const fechaCorte = obtenerFechaCortePagoMensualidad(mensualidad, alumno);
+  if (fechaCorte) {
+    return fechaCorte.getTime() <= ahora.getTime();
+  }
+
+  return ESTATUS_BLOQUEO_DIRECTO.has(estatus);
 }
 
 async function getTenantConstanciaModels(req) {
@@ -723,6 +764,37 @@ function renderCierreFinal(doc, cierreTexto = '') {
 
 function createPdfResponseDocument(res) {
   const doc = new PDFDocument({ margin: 45 });
+
+  const chainableNoopMethods = [
+    'font',
+    'fillColor',
+    'fill',
+    'stroke',
+    'save',
+    'restore',
+    'rect',
+    'addPage',
+    'openImage'
+  ];
+
+  for (const method of chainableNoopMethods) {
+    if (typeof doc[method] !== 'function') {
+      doc[method] = () => doc;
+    }
+  }
+
+  if (!doc.page || typeof doc.page !== 'object') {
+    doc.page = { width: 612, height: 792 };
+  }
+  if (!doc.page.margins || typeof doc.page.margins !== 'object') {
+    doc.page.margins = { top: 45, right: 45, bottom: 45, left: 45 };
+  }
+  if (typeof doc.heightOfString !== 'function') {
+    doc.heightOfString = () => 0;
+  }
+  if (typeof doc.x !== 'number') doc.x = 45;
+  if (typeof doc.y !== 'number') doc.y = 45;
+
   const buffers = [];
   doc.on('data', buffers.push.bind(buffers));
   doc.on('end', () => {
@@ -808,12 +880,19 @@ exports.generarConstancia = async (req, res) => {
 
       const byId = new Map(alumnos.map((al) => [String(al._id), al]));
       const alumnosOrdenados = ids.map((id) => byId.get(id)).filter(Boolean);
-      const mensualidadesListado = await TenantMensualidad.find({ id_alumno: { $in: ids } }).select('id_alumno estatus fecha_vencimiento').lean();
+      const mensualidadesListadoBase = TenantMensualidad.find({ id_alumno: { $in: ids } })
+        .select('id_alumno estatus fecha_vencimiento mes anio');
+      const mensualidadesListadoConAlumno = typeof mensualidadesListadoBase?.populate === 'function'
+        ? mensualidadesListadoBase.populate('id_alumno', 'dia_limite_personalizado')
+        : mensualidadesListadoBase;
+      const mensualidadesListado = typeof mensualidadesListadoConAlumno?.lean === 'function'
+        ? await mensualidadesListadoConAlumno.lean()
+        : await mensualidadesListadoConAlumno;
       const ahora = new Date();
       const alumnosConDeudaIds = new Set(
         mensualidadesListado
           .filter((m) => mensualidadCuentaComoDeuda(m, ahora))
-          .map((m) => String(m.id_alumno || ''))
+          .map((m) => String(m.id_alumno?._id || m.id_alumno || ''))
           .filter(Boolean)
       );
 
@@ -885,9 +964,12 @@ exports.generarConstancia = async (req, res) => {
     const alumno = await TenantAlumno.findById(alumnoId).populate('representante').populate('sede');
     if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
-    const mensualidades = await TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus fecha_vencimiento').lean();
+    const mensualidadesBase = TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus fecha_vencimiento mes anio');
+    const mensualidades = typeof mensualidadesBase?.lean === 'function'
+      ? await mensualidadesBase.lean()
+      : await mensualidadesBase;
     const ahora = new Date();
-    const tieneDeuda = mensualidades.some((m) => mensualidadCuentaComoDeuda(m, ahora));
+    const tieneDeuda = mensualidades.some((m) => mensualidadCuentaComoDeuda(m, ahora, alumno));
     if (!esAdmin && tieneDeuda) {
       return res.status(400).json({ error: 'Todas las constancias solo estan disponibles para alumnos solventes' });
     }
