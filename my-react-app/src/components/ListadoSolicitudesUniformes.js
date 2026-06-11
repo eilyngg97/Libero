@@ -81,6 +81,7 @@ function ListadoSolicitudesUniformes() {
   const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState(null);
   const [selectedPedidoIds, setSelectedPedidoIds] = useState([]);
   const [submittingSolicitudPagoLote, setSubmittingSolicitudPagoLote] = useState(false);
+  const [confirmSolicitudPagoLoteOpen, setConfirmSolicitudPagoLoteOpen] = useState(false);
 
   const token = localStorage.getItem('token');
   const theme = useTheme();
@@ -166,9 +167,15 @@ function ListadoSolicitudesUniformes() {
   );
 
   const pedidosPaginadosPendientes = pedidosPaginados.filter((pedido) => esPedidoPendiente(pedido));
+  const pedidosPendientesIds = pedidos
+    .filter((pedido) => esPedidoPendiente(pedido))
+    .map((pedido) => String(pedido._id));
   const pedidosPendientesSeleccionados = pedidos.filter((pedido) =>
     selectedPedidoIds.includes(String(pedido._id)) && esPedidoPendiente(pedido)
   );
+  const todosPendientesSeleccionadosGlobal =
+    pedidosPendientesIds.length > 0 &&
+    pedidosPendientesIds.every((id) => selectedPedidoIds.includes(id));
   const todosPendientesPaginaSeleccionados =
     pedidosPaginadosPendientes.length > 0 &&
     pedidosPaginadosPendientes.every((pedido) => selectedPedidoIds.includes(String(pedido._id)));
@@ -380,6 +387,20 @@ function ListadoSolicitudesUniformes() {
     });
   };
 
+  const handleToggleSeleccionGlobalPendientes = () => {
+    if (pedidosPendientesIds.length === 0) return;
+
+    setSelectedPedidoIds((prev) => {
+      if (todosPendientesSeleccionadosGlobal) {
+        return prev.filter((id) => !pedidosPendientesIds.includes(String(id)));
+      }
+
+      const merged = new Set(prev.map((id) => String(id)));
+      pedidosPendientesIds.forEach((id) => merged.add(id));
+      return Array.from(merged);
+    });
+  };
+
   const handleSolicitarPagoPorLote = async () => {
     if (pedidosPendientesSeleccionados.length === 0) {
       setError('Selecciona al menos un pedido pendiente para solicitar pago.');
@@ -399,6 +420,7 @@ function ListadoSolicitudesUniformes() {
 
     try {
       setSubmittingSolicitudPagoLote(true);
+      setConfirmSolicitudPagoLoteOpen(false);
 
       const resultados = await Promise.allSettled(
         pedidosConPrecio.map(async (pedido) => {
@@ -621,11 +643,36 @@ function ListadoSolicitudesUniformes() {
         <Box>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
             <Button
-              variant="contained"
+              variant="outlined"
               startIcon={<RequestQuoteIcon />}
               disabled={pedidosPendientesSeleccionados.length === 0 || submittingSolicitudPagoLote}
-              onClick={handleSolicitarPagoPorLote}
-              sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none' }}
+              onClick={() => setConfirmSolicitudPagoLoteOpen(true)}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 600,
+                letterSpacing: '0.01em',
+                borderRadius: 2,
+                px: 1.8,
+                py: 0.85,
+                minHeight: 38,
+                color: '#334155',
+                borderColor: '#cbd5e1',
+                backgroundColor: '#ffffff',
+                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                '& .MuiButton-startIcon': {
+                  color: '#64748b'
+                },
+                '&:hover': {
+                  borderColor: '#94a3b8',
+                  backgroundColor: '#f8fafc',
+                  boxShadow: '0 2px 6px rgba(15, 23, 42, 0.06)'
+                },
+                '&:disabled': {
+                  borderColor: '#e2e8f0',
+                  color: '#94a3b8',
+                  backgroundColor: '#f8fafc'
+                }
+              }}
             >
               {submittingSolicitudPagoLote
                 ? 'Procesando lote...'
@@ -635,7 +682,27 @@ function ListadoSolicitudesUniformes() {
               variant="outlined"
               startIcon={<DownloadIcon />}
               onClick={handleOpenExportMenu}
-              sx={{ borderColor: '#cbd5e1', color: '#0f172a', fontWeight: 700 }}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 600,
+                letterSpacing: '0.01em',
+                borderRadius: 2,
+                px: 1.8,
+                py: 0.85,
+                minHeight: 38,
+                color: '#334155',
+                borderColor: '#cbd5e1',
+                backgroundColor: '#ffffff',
+                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                '& .MuiButton-startIcon': {
+                  color: '#64748b'
+                },
+                '&:hover': {
+                  borderColor: '#94a3b8',
+                  backgroundColor: '#f8fafc',
+                  boxShadow: '0 2px 6px rgba(15, 23, 42, 0.06)'
+                }
+              }}
             >
               Exportar Excel
             </Button>
@@ -652,71 +719,115 @@ function ListadoSolicitudesUniformes() {
           </Menu>
         </Box>
       </Box>
+
+      <Box sx={{ mb: 1.25 }}>
+        <Button
+          variant="text"
+          onClick={handleToggleSeleccionGlobalPendientes}
+          disabled={pedidosPendientesIds.length === 0 || submittingSolicitudPagoLote}
+          sx={{
+            textTransform: 'none',
+            fontWeight: 600,
+            color: '#475569',
+            minHeight: 36,
+            px: 0.5,
+            justifyContent: 'flex-start',
+            '&:hover': { backgroundColor: '#f1f5f9' }
+          }}
+        >
+          {todosPendientesSeleccionadosGlobal
+            ? 'Limpiar selección global'
+            : `Seleccionar todos los pendientes (${pedidosPendientesIds.length})`}
+        </Button>
+      </Box>
+
       {loading ? (
         <Typography>Cargando...</Typography>
       ) : error ? (
         <Typography color="error">{error}</Typography>
       ) : isMobile ? (
-        <Box sx={{ display: 'grid', gap: 1.5 }}>
-          {pedidosPaginados.map((pedido) => (
-            <Paper
-              key={pedido._id}
-              sx={{
-                borderRadius: 3,
-                border: '1px solid #e2e8f0',
-                p: 1.5,
-                boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)'
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-                  {esPedidoPendiente(pedido) && (
-                    <Checkbox
-                      size="small"
-                      checked={selectedPedidoIds.includes(String(pedido._id))}
-                      onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
-                    />
-                  )}
-                  <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
-                    {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
-                  </Typography>
+        <Box>
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            {pedidosPaginados.map((pedido) => (
+              <Paper
+                key={pedido._id}
+                sx={{
+                  borderRadius: 3,
+                  border: '1px solid #e2e8f0',
+                  p: 1.5,
+                  boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)'
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                    {esPedidoPendiente(pedido) && (
+                      <Checkbox
+                        size="small"
+                        checked={selectedPedidoIds.includes(String(pedido._id))}
+                        onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
+                      />
+                    )}
+                    <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
+                      {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
+                    </Typography>
+                  </Box>
+                  <Chip label={getEstadoLabel(pedido.estado)} size="small" sx={{ ...getEstadoStyle(pedido.estado), fontWeight: 700 }} />
                 </Box>
-                <Chip label={getEstadoLabel(pedido.estado)} size="small" sx={{ ...getEstadoStyle(pedido.estado), fontWeight: 700 }} />
-              </Box>
 
-              <Box sx={{ display: 'grid', gap: 0.5, mb: 1.2 }}>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Sede:</b> {pedido.sede?.nombre || '-'}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Prenda:</b> {pedido.prenda || '-'}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Talla:</b> {pedido.talla || '-'}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Nombre:</b> {pedido.nombre_personalizado || '-'}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Numero:</b> {pedido.numero_franela || '-'}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> {formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha:</b> {formatFecha(pedido.createdAt)}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pagado:</b> {formatMoneyWithCurrency(pedido.monto_pagado, pedido.moneda)}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pendiente:</b> {formatMoneyWithCurrency(pedido.saldo_pendiente ?? pedido.precio, pedido.moneda)}</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Método:</b> {pedido.metodo_pago || '-'}</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Referencia:</b> {pedido.referencia || '-'}</Typography>
-                  {pedido.referencia && (
-                    <IconButton size="small" onClick={() => copiarReferencia(pedido.referencia)} aria-label="Copiar referencia" sx={{ color: '#94a3b8' }}>
-                      <ContentCopyIcon fontSize="inherit" />
-                    </IconButton>
-                  )}
+                <Box sx={{ display: 'grid', gap: 0.5, mb: 1.2 }}>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Sede:</b> {pedido.sede?.nombre || '-'}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Prenda:</b> {pedido.prenda || '-'}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Talla:</b> {pedido.talla || '-'}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Nombre:</b> {pedido.nombre_personalizado || '-'}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Numero:</b> {pedido.numero_franela || '-'}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> {formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha:</b> {formatFecha(pedido.createdAt)}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pagado:</b> {formatMoneyWithCurrency(pedido.monto_pagado, pedido.moneda)}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pendiente:</b> {formatMoneyWithCurrency(pedido.saldo_pendiente ?? pedido.precio, pedido.moneda)}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Método:</b> {pedido.metodo_pago || '-'}</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                    <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Referencia:</b> {pedido.referencia || '-'}</Typography>
+                    {pedido.referencia && (
+                      <IconButton size="small" onClick={() => copiarReferencia(pedido.referencia)} aria-label="Copiar referencia" sx={{ color: '#94a3b8' }}>
+                        <ContentCopyIcon fontSize="inherit" />
+                      </IconButton>
+                    )}
+                  </Box>
                 </Box>
-              </Box>
 
-              <Box sx={{ display: 'grid', gap: 1 }}>
-                {pedido.comprobante_url ? (
-                  <Button size="small" variant="text" onClick={() => handleVerComprobante(pedido.comprobante_url)}>
-                    Ver comprobante
-                  </Button>
-                ) : (
-                  <Typography variant="body2" color="text.secondary">Sin comprobante</Typography>
-                )}
-                {renderAccion(pedido, true)}
-              </Box>
-            </Paper>
-          ))}
+                <Box sx={{ display: 'grid', gap: 1 }}>
+                  {pedido.comprobante_url ? (
+                    <Button size="small" variant="text" onClick={() => handleVerComprobante(pedido.comprobante_url)}>
+                      Ver comprobante
+                    </Button>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">Sin comprobante</Typography>
+                  )}
+                  {renderAccion(pedido, true)}
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+
+          <Paper
+            sx={{
+              mt: 1.5,
+              borderRadius: 2,
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)'
+            }}
+          >
+            <TablePagination
+              component="div"
+              count={pedidos.length}
+              page={pagina}
+              onPageChange={handleChangePagina}
+              rowsPerPage={filasPorPagina}
+              onRowsPerPageChange={handleChangeFilasPorPagina}
+              rowsPerPageOptions={[5, 10, 25, 50]}
+              labelRowsPerPage="Filas por página"
+            />
+          </Paper>
         </Box>
       ) : (
         <TableContainer
@@ -1117,6 +1228,60 @@ function ListadoSolicitudesUniformes() {
             }}
           >
             {entregandoId === confirmEntregarId ? 'Procesando...' : 'Confirmar entrega'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={confirmSolicitudPagoLoteOpen}
+        onClose={() => {
+          if (!submittingSolicitudPagoLote) setConfirmSolicitudPagoLoteOpen(false);
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Confirmar solicitud por lote</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1 }}>
+            Se enviará solicitud de pago para <b>{pedidosPendientesSeleccionados.length}</b> pedido(s) pendiente(s) seleccionados.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmSolicitudPagoLoteOpen(false)}
+            disabled={submittingSolicitudPagoLote}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 600,
+              color: '#64748b',
+              '&:hover': {
+                backgroundColor: '#f1f5f9'
+              }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSolicitarPagoPorLote}
+            variant="contained"
+            disabled={submittingSolicitudPagoLote || pedidosPendientesSeleccionados.length === 0}
+            startIcon={submittingSolicitudPagoLote ? <CircularProgress size={14} sx={{ color: '#ffffff' }} /> : <RequestQuoteIcon fontSize="small" />}
+            sx={{
+              textTransform: 'none',
+              boxShadow: 'none',
+              bgcolor: '#0B0F2A',
+              color: '#ffffff',
+              '&:hover': {
+                bgcolor: '#141A3A',
+                boxShadow: 'none'
+              },
+              '&:disabled': {
+                bgcolor: '#94a3b8',
+                color: '#ffffff'
+              }
+            }}
+          >
+            {submittingSolicitudPagoLote ? 'Procesando...' : 'Confirmar solicitud'}
           </Button>
         </DialogActions>
       </Dialog>
