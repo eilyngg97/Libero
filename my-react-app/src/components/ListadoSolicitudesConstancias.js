@@ -34,6 +34,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 const TIPOS_LABEL = {
   simple: 'Constancia simple',
@@ -100,6 +101,12 @@ function ListadoSolicitudesConstancias() {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
   const [pdfPreviewName, setPdfPreviewName] = useState('constancia.pdf');
   const [generatingPdfId, setGeneratingPdfId] = useState('');
+  const [updatingEstadoId, setUpdatingEstadoId] = useState('');
+  const [estadoConfirmDialog, setEstadoConfirmDialog] = useState({
+    open: false,
+    estado: '',
+    solicitud: null
+  });
   const inputSx = {
     '& .MuiOutlinedInput-root': {
       bgcolor: '#f8fafc',
@@ -214,7 +221,10 @@ function ListadoSolicitudesConstancias() {
   };
 
   const handleChangeEstado = async (solicitud, estado) => {
+    const solicitudId = String(solicitud?._id || '');
+    if (!solicitudId) return;
     try {
+      setUpdatingEstadoId(solicitudId);
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/constancias/solicitudes/${solicitud._id}`, {
         method: 'PATCH',
         headers: {
@@ -229,7 +239,36 @@ function ListadoSolicitudesConstancias() {
       fetchSolicitudes();
     } catch (err) {
       setError(err.message || 'No se pudo actualizar el estado.');
+    } finally {
+      setUpdatingEstadoId('');
     }
+  };
+
+  const openEstadoConfirmDialog = (solicitud, estado) => {
+    setEstadoConfirmDialog({
+      open: true,
+      estado,
+      solicitud
+    });
+  };
+
+  const closeEstadoConfirmDialog = () => {
+    if (updatingEstadoId) return;
+    setEstadoConfirmDialog({
+      open: false,
+      estado: '',
+      solicitud: null
+    });
+  };
+
+  const confirmEstadoChange = async () => {
+    if (!estadoConfirmDialog?.solicitud || !estadoConfirmDialog?.estado) return;
+    await handleChangeEstado(estadoConfirmDialog.solicitud, estadoConfirmDialog.estado);
+    setEstadoConfirmDialog({
+      open: false,
+      estado: '',
+      solicitud: null
+    });
   };
 
   const handleGenerarPdf = async (solicitud) => {
@@ -519,16 +558,27 @@ function ListadoSolicitudesConstancias() {
                           onClick={() => handleGenerarPdf(solicitud)}
                           disabled={generatingPdfId === String(solicitud?._id || '')}
                         >
-                          {generatingPdfId === String(solicitud?._id || '') ? 'Generando...' : 'Generar PDF'}
+                          {generatingPdfId === String(solicitud?._id || '') ? 'Generando...' : 'Ver PDF'}
                         </Button>
                       </Box>
 
                       <Button
                         variant="text"
                         size="small"
+                        color="success"
+                        onClick={() => openEstadoConfirmDialog(solicitud, 'completada')}
+                        disabled={solicitud.estado === 'completada' || updatingEstadoId === String(solicitud?._id || '')}
+                        sx={{ mt: 0.4 }}
+                      >
+                        Marcar como completado
+                      </Button>
+
+                      <Button
+                        variant="text"
+                        size="small"
                         color="error"
-                        onClick={() => handleChangeEstado(solicitud, 'rechazada')}
-                        disabled={solicitud.estado === 'rechazada'}
+                        onClick={() => openEstadoConfirmDialog(solicitud, 'rechazada')}
+                        disabled={solicitud.estado === 'rechazada' || updatingEstadoId === String(solicitud?._id || '')}
                         sx={{ mt: 0.4 }}
                       >
                         Rechazar
@@ -640,7 +690,7 @@ function ListadoSolicitudesConstancias() {
                               </Tooltip>
 
                               <Tooltip
-                                title={generatingPdfId === String(solicitud?._id || '') ? 'Generando PDF...' : 'Generar PDF'}
+                                title={generatingPdfId === String(solicitud?._id || '') ? 'Generando PDF...' : 'Ver PDF'}
                                 arrow
                               >
                                 <span>
@@ -660,6 +710,22 @@ function ListadoSolicitudesConstancias() {
                               </Tooltip>
 
                               <Tooltip
+                                title={solicitud.estado === 'completada' ? 'Solicitud ya completada' : 'Marcar como completado'}
+                                arrow
+                              >
+                                <span>
+                                  <IconButton
+                                    size="small"
+                                    color="success"
+                                    onClick={() => openEstadoConfirmDialog(solicitud, 'completada')}
+                                    disabled={solicitud.estado === 'completada' || updatingEstadoId === String(solicitud?._id || '')}
+                                  >
+                                    <CheckCircleOutlineIcon fontSize="small" />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+
+                              <Tooltip
                                 title={solicitud.estado === 'rechazada' ? 'Solicitud ya rechazada' : 'Rechazar solicitud'}
                                 arrow
                               >
@@ -667,8 +733,8 @@ function ListadoSolicitudesConstancias() {
                                   <IconButton
                                     size="small"
                                     color="error"
-                                    onClick={() => handleChangeEstado(solicitud, 'rechazada')}
-                                    disabled={solicitud.estado === 'rechazada'}
+                                    onClick={() => openEstadoConfirmDialog(solicitud, 'rechazada')}
+                                    disabled={solicitud.estado === 'rechazada' || updatingEstadoId === String(solicitud?._id || '')}
                                   >
                                     <BlockOutlinedIcon fontSize="small" />
                                   </IconButton>
@@ -927,6 +993,47 @@ function ListadoSolicitudesConstancias() {
             }}
           >
             {saving ? 'Guardando...' : 'Guardar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={estadoConfirmDialog.open}
+        onClose={closeEstadoConfirmDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>
+          Confirmar acción
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: '#334155' }}>
+            {estadoConfirmDialog.estado === 'completada'
+              ? `Vas a marcar como completada la solicitud de ${`${estadoConfirmDialog?.solicitud?.alumno?.nombres || ''} ${estadoConfirmDialog?.solicitud?.alumno?.apellidos || ''}`.trim() || 'este alumno'}.`
+              : `Vas a rechazar la solicitud de ${`${estadoConfirmDialog?.solicitud?.alumno?.nombres || ''} ${estadoConfirmDialog?.solicitud?.alumno?.apellidos || ''}`.trim() || 'este alumno'}. Esta acción cambiará su estado.`}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEstadoConfirmDialog} disabled={Boolean(updatingEstadoId)}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={confirmEstadoChange}
+            variant="contained"
+            disabled={Boolean(updatingEstadoId)}
+            sx={estadoConfirmDialog.estado === 'rechazada'
+              ? {
+                  bgcolor: '#dc2626',
+                  '&:hover': { bgcolor: '#b91c1c' },
+                  '&.Mui-disabled': { bgcolor: '#fecaca', color: '#7f1d1d' }
+                }
+              : {
+                  bgcolor: '#1e293b',
+                  '&:hover': { bgcolor: '#0f172a' },
+                  '&.Mui-disabled': { bgcolor: '#cbd5e1', color: '#64748b' }
+                }}
+          >
+            {updatingEstadoId ? 'Procesando...' : 'Confirmar'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -52,6 +52,9 @@ function normalizarPayloadSolicitud(body = {}, tipo = 'simple') {
 async function getTenantSolicitudModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
+  // Registrar modelos referenciados por populate en esta misma conexion.
+  getTenantModel(connection, 'Alumno');
+  getTenantModel(connection, 'User');
   return {
     ConstanciaSolicitud: getTenantModel(connection, 'ConstanciaSolicitud')
   };
@@ -136,6 +139,7 @@ exports.getSolicitudesConstancia = async (req, res) => {
 
     return res.json(solicitudes);
   } catch (err) {
+    console.error('[constanciaSolicitudController.getSolicitudesConstancia] Error:', err);
     return res.status(500).json({ error: 'No se pudieron cargar las solicitudes de constancia.' });
   }
 };
@@ -200,11 +204,6 @@ exports.generarConstanciaDesdeSolicitud = async (req, res) => {
       return res.status(404).json({ error: 'Solicitud no encontrada.' });
     }
 
-    solicitud.estado = 'en_revision';
-    solicitud.atendido_por = req.user?.id;
-    solicitud.atendido_en = new Date();
-    await solicitud.save();
-
     req.body = {
       alumnoId: String(solicitud.alumno),
       alumnoIds: Array.isArray(solicitud.alumno_ids) ? solicitud.alumno_ids.map((id) => String(id)) : [],
@@ -220,22 +219,6 @@ exports.generarConstanciaDesdeSolicitud = async (req, res) => {
       horaInicio: solicitud.payload?.horaInicio || '',
       horaFin: solicitud.payload?.horaFin || ''
     };
-
-    res.on('finish', async () => {
-      try {
-        if (res.statusCode < 400) {
-          await ConstanciaSolicitud.findByIdAndUpdate(solicitud._id, {
-            $set: {
-              estado: 'completada',
-              atendido_por: req.user?.id,
-              atendido_en: new Date()
-            }
-          });
-        }
-      } catch (_) {
-        // No interrumpir la respuesta al cliente si falla el update de estado.
-      }
-    });
 
     return constanciaController.generarConstancia(req, res);
   } catch (err) {
