@@ -86,7 +86,16 @@ const descomponerCedulaPago = (value) => {
   };
 };
 
-function ModalPago({ open, onClose, pago, onSuccess }) {
+function ModalPago({
+  open,
+  onClose,
+  pago,
+  onSuccess,
+  onSubmitPayment,
+  currencyCode = 'USD',
+  disableCuotas = false,
+  allowedMethodIds = null
+}) {
   const normalizarTelefonoPago = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
     if (!digits) return '';
@@ -116,7 +125,8 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const [tipoCedulaConfirmacionCantevista, setTipoCedulaConfirmacionCantevista] = useState('V');
   const mostrarPasoConfirmacionCantevista = true;
   const monto = pago?.monto;
-  const cuotasHabilitadas = pago?.id_alumno?.habilitar_pago_cuotas === true;
+  const moneda = String(currencyCode || 'USD').trim().toUpperCase();
+  const cuotasHabilitadas = !disableCuotas && pago?.id_alumno?.habilitar_pago_cuotas === true;
   const { dolar } = useDolar();
   const tasa = dolar?.promedio;
   const montoBs = (monto !== undefined && monto !== null && tasaPago) ? Number(monto) * Number(tasaPago) : null;
@@ -125,7 +135,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
   const montoAbonoBs = (esAbonoParcial && Number.isFinite(montoAbonoUsd) && montoAbonoUsd > 0 && Number.isFinite(Number(tasaPago)) && Number(tasaPago) > 0)
     ? (montoAbonoUsd * Number(tasaPago))
     : null;
-  const montoPagadoEquivalenteUsd = (() => {
+  const montoPagadoEquivalenteMoneda = (() => {
     const montoBsIngresado = Number(montoPagado);
     const tasaAplicada = Number(tasaPago);
 
@@ -134,7 +144,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
 
     return montoBsIngresado / tasaAplicada;
   })();
-  const montoPagadoBsEquivalenteUsd = (() => {
+  const montoPagadoBsEquivalenteMoneda = (() => {
     const montoBsIngresado = Number(montoPagadoBs);
     const tasaAplicada = Number(tasaPago);
 
@@ -148,6 +158,9 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return Number(value).toFixed(2);
   };
   const referenciaInvalida = !/^[0-9]{6,}$/.test(referencia);
+  const metodosDisponibles = Array.isArray(allowedMethodIds) && allowedMethodIds.length > 0
+    ? metodos.filter((m) => allowedMethodIds.includes(m.id))
+    : metodos;
   const tieneRecargoAplicado = Number(pago?.recargo_aplicado_usd || 0) > 0;
   const telefonoConfirmacionNormalizado = normalizarTelefonoPago(telefonoConfirmacionCantevista);
   const cedulaConfirmacionNormalizada = normalizarCedulaPago(cedulaConfirmacionCantevista);
@@ -247,7 +260,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     return () => {
       cancelled = true;
     };
-  }, [open, descomponerCedulaPago]);
+  }, [open]);
 
   const copiarDatoPago = async (clave, valor) => {
     const valorFormateado = formatearValorDetallePago(clave, valor);
@@ -403,7 +416,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     const montoPagadoNum = Number(montoPagado);
     const montoPagadoBsNum = Number(montoPagadoBs);
     const tasaAplicada = Number(tasaPago) || Number(tasa) || null;
-    const montoPagadoUsd = esAbonoParcial
+    const montoPagadoMoneda = esAbonoParcial
       ? (tasaAplicada ? (montoPagadoBsNum / tasaAplicada) : null)
       : (tasaAplicada ? (montoPagadoNum / tasaAplicada) : null);
     const montoPagadoBsFinal = esAbonoParcial ? montoPagadoBsNum : montoPagadoNum;
@@ -417,16 +430,36 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
       setSubmitError('Monto pagado invalido');
       return;
     }
-    if (!tasaAplicada || !montoPagadoUsd || Number.isNaN(montoPagadoUsd)) {
-      setSubmitError('No se pudo calcular el monto en USD');
+    if (!tasaAplicada || !montoPagadoMoneda || Number.isNaN(montoPagadoMoneda)) {
+      setSubmitError(`No se pudo calcular el monto en ${moneda}`);
       return;
     }
     setSubmitting(true);
     setSubmitError(null);
     try {
+      if (typeof onSubmitPayment === 'function') {
+        await onSubmitPayment({
+          pago,
+          metodoPago: metodoSeleccionado?.nombre || metodoSeleccionado?.id || '',
+          fechaPago,
+          referencia,
+          telefonoPago: normalizarTelefonoPago(telefonoConfirmacionCantevista),
+          cedulaTitular: `${String(tipoCedulaConfirmacionCantevista || 'V').toUpperCase()}-${normalizarCedulaPago(cedulaConfirmacionCantevista)}`,
+          notaPago: notaPago.trim(),
+          solicitaRevisionRecargo,
+          comprobante,
+          montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
+          montoPagadoBs: Number(montoPagadoBsFinal.toFixed(2)),
+          moneda
+        });
+        onClose();
+        if (onSuccess) onSuccess();
+        return;
+      }
+
       const formData = new FormData();
       formData.append('id_mensualidad', pago.id);
-      formData.append('monto_pagado', montoPagadoUsd.toFixed(2));
+      formData.append('monto_pagado', montoPagadoMoneda.toFixed(2));
       formData.append('monto_pagado_bs', montoPagadoBsFinal.toFixed(2));
       if (Number.isFinite(montoEsperadoUsd)) {
         formData.append('monto_esperado_usd', montoEsperadoUsd.toFixed(2));
@@ -506,7 +539,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
     : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Se ha habilitado el pago por cuotas para su cuenta. Seleccione su preferencia:'
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
-      ? 'Ingresa el monto en USD y usa el equivalente en Bs para realizar la transferencia.'
+      ? `Ingresa el monto en ${moneda} y usa el equivalente en Bs para realizar la transferencia.`
     : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Completa los datos y carga el comprobante para finalizar.'
       : metodoSeleccionado.id === 'deposito-usd'
@@ -558,7 +591,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                 Cargando metodos de pago...
               </Typography>
             )}
-            {!loadingMetodos && metodos.map((m) => (
+            {!loadingMetodos && metodosDisponibles.map((m) => (
               <Card
                 key={m.id}
                 sx={{
@@ -805,7 +838,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                         MONTO TOTAL A TRANSFERIR
                       </Typography>
                       <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                        {montoBs !== null ? `${formatMoney(montoBs)} Bs` : '-'} / {formatMoney(monto)} USD
+                        {montoBs !== null ? `${formatMoney(montoBs)} Bs` : '-'} / {formatMoney(monto)} {moneda}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -959,7 +992,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     </Typography>
                   )}
                   <TextField
-                    label="Monto a pagar (USD)"
+                    label={`Monto a pagar (${moneda})`}
                     fullWidth
                     margin="dense"
                     size="small"
@@ -967,7 +1000,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     value={montoPagado}
                     onChange={(e) => setMontoPagado(e.target.value)}
                     InputProps={{
-                      endAdornment: <InputAdornment position="end">USD</InputAdornment>
+                        endAdornment: <InputAdornment position="end">{moneda}</InputAdornment>
                     }}
                   />
                   <Box
@@ -1003,7 +1036,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     </IconButton>
                   </Box>
                   <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
-                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/USD` : 'No disponible'}
+                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/${moneda}` : 'No disponible'}
                   </Typography>
                   <Button
                     variant="contained"
@@ -1053,7 +1086,7 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                     onChange={(e) => setFechaPago(e.target.value)}
                   />
                   <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
-                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/USD` : 'No disponible'}
+                    Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/${moneda}` : 'No disponible'}
                   </Typography>
                   {!esAbonoParcial && (
                     <TextField
@@ -1069,9 +1102,9 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                       }}
                     />
                   )}
-                  {!esAbonoParcial && montoPagadoEquivalenteUsd !== null && (
+                  {!esAbonoParcial && montoPagadoEquivalenteMoneda !== null && (
                     <Typography variant="caption" sx={{ color: '#64748b', mt: 0.35, display: 'block' }}>
-                      Equivalente: ${formatMoney(montoPagadoEquivalenteUsd)} USD
+                        Equivalente: {formatMoney(montoPagadoEquivalenteMoneda)} {moneda}
                     </Typography>
                   )}
                   {esAbonoParcial && (
@@ -1088,9 +1121,9 @@ function ModalPago({ open, onClose, pago, onSuccess }) {
                           endAdornment: <InputAdornment position="end">Bs</InputAdornment>
                         }}
                       />
-                      {montoPagadoBsEquivalenteUsd !== null && (
+                      {montoPagadoBsEquivalenteMoneda !== null && (
                         <Typography variant="caption" sx={{ color: '#64748b', mt: 0.35, display: 'block' }}>
-                          Equivalente: ${formatMoney(montoPagadoBsEquivalenteUsd)} USD
+                          Equivalente: {formatMoney(montoPagadoBsEquivalenteMoneda)} {moneda}
                         </Typography>
                       )}
                     </>

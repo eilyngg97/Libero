@@ -9,17 +9,14 @@ import Avatar from '@mui/material/Avatar';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
-import SupportAgentOutlinedIcon from '@mui/icons-material/SupportAgentOutlined';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
-import EastIcon from '@mui/icons-material/East';
 import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 
 function MiPerfil() {
@@ -33,10 +30,10 @@ function MiPerfil() {
   const [seccionActiva, setSeccionActiva] = React.useState('facturacion');
   const [cambiandoClave, setCambiandoClave] = React.useState(false);
   const [cargandoPerfilAcademia, setCargandoPerfilAcademia] = React.useState(true);
-  const [perfilAcademiaError, setPerfilAcademiaError] = React.useState('');
+  const [, setPerfilAcademiaError] = React.useState('');
   const [cargandoTotalAlumnos, setCargandoTotalAlumnos] = React.useState(true);
   const [totalAlumnos, setTotalAlumnos] = React.useState(0);
-  const [totalAlumnosError, setTotalAlumnosError] = React.useState('');
+  const [, setTotalAlumnosError] = React.useState('');
   const [copiedField, setCopiedField] = React.useState('');
   const [resumenAcademia, setResumenAcademia] = React.useState({
     plan: 'No configurado',
@@ -204,11 +201,6 @@ function MiPerfil() {
     setShowPasswords((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const formatUsd = (value) => {
-    if (!Number.isFinite(value)) return 'No configurado';
-    return `$${value.toFixed(2)} USD`;
-  };
-
   const formatDateValue = (value) => {
     if (!value) return 'No configurado';
     const parsed = new Date(value);
@@ -222,13 +214,6 @@ function MiPerfil() {
       : resumenAcademia.estadoSolvencia === 'insolvente'
         ? 'Insolvente'
         : 'Pendiente';
-
-  const solvenciaColor =
-    resumenAcademia.estadoSolvencia === 'solvente'
-      ? 'success'
-      : resumenAcademia.estadoSolvencia === 'insolvente'
-        ? 'error'
-        : 'default';
 
   const solvenciaAccent =
     resumenAcademia.estadoSolvencia === 'solvente'

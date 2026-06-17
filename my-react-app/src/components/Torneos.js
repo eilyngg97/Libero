@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, List, ListItem, ListItemText, IconButton, Typography, Accordion, AccordionSummary, AccordionDetails, Box, Grid, Chip, InputAdornment, Snackbar, Alert, AlertTitle, Paper, Avatar } from '@mui/material';
-import { alpha } from '@mui/material/styles';
 import { DataGrid } from '@mui/x-data-grid';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import EventIcon from '@mui/icons-material/Event';
@@ -72,7 +70,7 @@ function Torneos() {
   const [convocadosModalList, setConvocadosModalList] = useState([]);
 
   // --- PARTIDOS ---
-  const [partidos, setPartidos] = useState([]);
+  const [, setPartidos] = useState([]);
   const [partidoLoading, setPartidoLoading] = useState(false);
   const [partidoError, setPartidoError] = useState('');
   const [uiAlert, setUiAlert] = useState({ open: false, severity: 'success', title: '', message: '' });
@@ -88,12 +86,6 @@ function Torneos() {
     equipo_contrario: '',
     jugadores: []
   });
-  const alumnosEjemplo = [
-    { id: 1, nombre: 'Juan Pérez' },
-    { id: 2, nombre: 'Ana Gómez' },
-    { id: 3, nombre: 'Luis Torres' },
-  ];
-
   const showUiAlert = (severity, title, message) => {
     setUiAlert({ open: true, severity, title, message });
   };
@@ -347,15 +339,6 @@ function Torneos() {
       setPartidoLoading(false);
     }
   };
-  const handleConvocados = (id) => {
-    setPartidoForm(form => {
-      const jugadores = form.jugadores.includes(id)
-        ? form.jugadores.filter(j => j !== id)
-        : [...form.jugadores, id];
-      return { ...form, jugadores };
-    });
-  };
-
   const getBaseDate = (fecha) => {
     if (!fecha) return '';
     return fecha.substring(0, 10);
@@ -398,10 +381,6 @@ function Torneos() {
       if (aSel === bSel) return 0;
       return aSel ? -1 : 1;
     });
-
-  const handleToggleConvocado = (id) => {
-    setConvocados(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
 
   const alumnosRows = alumnosFiltrados.map((al) => ({
     id: getAlumnoId(al),

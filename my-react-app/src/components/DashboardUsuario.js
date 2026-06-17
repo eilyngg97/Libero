@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, CardActions, CardContent, Typography, Avatar, Grid, Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
 

@@ -113,7 +113,6 @@ function TerminosCondiciones() {
   const [documentos, setDocumentos] = useState([]);
   const [terminoVigente, setTerminoVigente] = useState(null);
   const [aceptado, setAceptado] = useState(false);
-  const [aceptacion, setAceptacion] = useState(null);
   const [nombreAcademia, setNombreAcademia] = useState('la academia');
 
   const [nota, setNota] = useState('');
@@ -199,14 +198,12 @@ function TerminosCondiciones() {
         setDocumentos([]);
         setTerminoVigente(payload?.termino || null);
         setAceptado(Boolean(payload?.aceptado));
-        setAceptacion(payload?.aceptacion || null);
       }
     } catch (err) {
       setError(err.message || 'No se pudo cargar la informacion del reglamento interno');
       setDocumentos([]);
       setTerminoVigente(null);
       setAceptado(false);
-      setAceptacion(null);
     } finally {
       setLoading(false);
     }

@@ -45,15 +45,15 @@ function PanelOpcionesUsuario() {
    const location = useLocation();
   const navigate = useNavigate();
   const [loadingRep, setLoadingRep] = useState(false);
-  const [torneosAlumno, setTorneosAlumno] = useState([]);
-  const [torneosLoading, setTorneosLoading] = useState(false);
-  const [torneosError, setTorneosError] = useState('');
+  const [, setTorneosAlumno] = useState([]);
+  const [, setTorneosLoading] = useState(false);
+  const [, setTorneosError] = useState('');
   const [mensualidades, setMensualidades] = useState([]);
   const [mensualidadesLoading, setMensualidadesLoading] = useState(false);
   const [mensualidadesError, setMensualidadesError] = useState('');
-  const [juegosAlumno, setJuegosAlumno] = useState([]);
-  const [juegosLoading, setJuegosLoading] = useState(false);
-  const [juegosError, setJuegosError] = useState('');
+  const [, setJuegosAlumno] = useState([]);
+  const [, setJuegosLoading] = useState(false);
+  const [, setJuegosError] = useState('');
   const [pedidosUniforme, setPedidosUniforme] = useState([]);
   const [uniformesLoading, setUniformesLoading] = useState(false);
   const [uniformesError, setUniformesError] = useState('');
@@ -65,22 +65,6 @@ function PanelOpcionesUsuario() {
   const sizeTarjetaOpciones = { xs: 12, sm: 6, md: 6 };
   const saldoAFavorActual = Number(alumno?.saldo_a_favor_mensualidades) || 0;
 
-  const handleRespuestaJuego = async (torneoId, partidoId, estado) => {
-    if (!alumno?._id) return;
-    try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos/${partidoId}/convocados/${alumno._id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo registrar la respuesta');
-      setJuegosAlumno(prev => prev.map(j => j._id === partidoId ? { ...j, estadoConvocatoria: estado, respondido_en: data.respondido_en } : j));
-    } catch (err) {
-      window.alert(err.message);
-    }
-  };
-  
   // Utilidad para obtener partidos futuros donde el alumno está convocado
   const fetchProximosJuegos = async (alumnoId, torneos) => {
     const juegos = [];
@@ -189,36 +173,6 @@ function PanelOpcionesUsuario() {
     fetchPedidosUniforme();
   }, [alumno?._id, token]);
 
-  const handleRespuestaTorneo = async (torneoId, estado) => {
-    if (!alumno?._id) return;
-    try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/convocados/${alumno._id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo registrar la respuesta');
-      setTorneosAlumno(prev => prev.map(t => t._id === torneoId ? { ...t, estado } : t));
-    } catch (err) {
-      window.alert(err.message);
-    }
-  };
-
-  const formatFechaCorta = (iso) => {
-    if (!iso) return '-';
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return '-';
-    return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
-  };
-
-  const formatHora = (iso) => {
-    if (!iso) return '';
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-  };
-
   const obtenerFechaVencimientoVisible = (mensualidad) => {
     const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado);
     if (diaLimitePersonalizado) {
@@ -226,11 +180,6 @@ function PanelOpcionesUsuario() {
     }
 
     return parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
-  };
-
-  const isDeadlinePassed = (iso) => {
-    if (!iso) return false;
-    return new Date() > new Date(iso);
   };
 
   const resumenPago = useMemo(() => {

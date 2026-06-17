@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
@@ -12,12 +12,6 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
 import AddIcon from '@mui/icons-material/Add';
@@ -26,8 +20,6 @@ import AddIcon from '@mui/icons-material/Add';
 function Sedes() {
   const [sedes, setSedes] = useState([]);
   const [open, setOpen] = useState(false);
-  const [openVer, setOpenVer] = useState(false);
-  const [sedeSeleccionada, setSedeSeleccionada] = useState(null);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [sedeEditar, setSedeEditar] = useState(null);
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
@@ -106,12 +98,6 @@ function Sedes() {
     setOpen(true);
   };
 
-  const verSede = (id) => {
-    const sede = sedes.find((s) => s.id === id);
-    setSedeSeleccionada(sede || null);
-    setOpenVer(true);
-  };
-
   return (
     <div>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -151,7 +137,6 @@ function Sedes() {
       </Snackbar>
       <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         {sedes.map((sede, idx) => {
-          const porcentaje = sede.meta && sede.costo ? Math.round((sede.costo / sede.meta) * 100) : null;
           return (
             <Paper key={sede.id || `sede-card-${idx}`}
               sx={{
@@ -234,33 +219,6 @@ function Sedes() {
           );
         })}
       </Box>
-
-      {/* Diálogo para ver sede */}
-      <Dialog open={openVer} onClose={() => setOpenVer(false)}>
-        <DialogTitle sx={{ m: 0, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          Detalles de la Sede
-          <IconButton
-            aria-label="close"
-            onClick={() => setOpenVer(false)}
-            sx={{ position: 'absolute', right: 8, top: 8, color: (theme) => theme.palette.grey[500] }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent dividers sx={{ minWidth: 300 }}>
-          {sedeSeleccionada ? (
-            <div>
-              <p><strong>Nombre:</strong> {sedeSeleccionada.nombre}</p>
-              <p><strong>Dirección:</strong> {sedeSeleccionada.direccion || '-'}</p>
-              <p><strong>Monto Mensualidad:</strong> {sedeSeleccionada.costo || '-'}</p>
-              <p><strong>Horario para constancia:</strong> {sedeSeleccionada.horario_constancia || '-'}</p>
-              <p><strong>Estado:</strong> {sedeSeleccionada.estado}</p>
-            </div>
-          ) : (
-            <p>No hay datos para mostrar.</p>
-          )}
-        </DialogContent>
-      </Dialog>
       <Dialog
         open={openConfirm}
         onClose={() => {

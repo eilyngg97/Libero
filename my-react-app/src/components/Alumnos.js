@@ -82,8 +82,6 @@ function Alumnos() {
   });
   // Estado para ocultar datos de representante
   const [sinRepresentante, setSinRepresentante] = useState(false);
-  // Estado para controlar búsqueda de representante
-  const [buscandoRep, setBuscandoRep] = useState(false);
   const [opcionesRepresentantes, setOpcionesRepresentantes] = useState([]);
   const [loadingOpciones, setLoadingOpciones] = useState(false);
 
@@ -130,7 +128,6 @@ function Alumnos() {
   const [numerosFranelaOcupados, setNumerosFranelaOcupados] = useState([]);
   // Estados para la primera mensualidad
   const [showMensualidadModal, setShowMensualidadModal] = useState(false);
-  const [nuevoAlumnoId, setNuevoAlumnoId] = useState(null);
   const [montoMensualidad, setMontoMensualidad] = useState('');
   const [loadingMensualidad, setLoadingMensualidad] = useState(false);
   const [errorMensualidad, setErrorMensualidad] = useState(null);
@@ -392,7 +389,7 @@ function Alumnos() {
   };
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
+    const { name, value, checked } = e.target;
     if (name === 'sinRepresentante') {
       setSinRepresentante(checked);
       setForm((prev) => ({ ...prev, sinRepresentante: checked }));

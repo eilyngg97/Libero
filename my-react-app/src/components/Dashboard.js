@@ -14,9 +14,9 @@ import { exportToExcel } from '../utils/exportExcel';
 import { mediaUrl } from '../utils/mediaUrl';
 
 function Dashboard() {
-  const chartFillColors = ['#e64b9b', '#f28a3f', '#8b72e8', '#40b8ce'];
-  const mesActual = new Date().getMonth() + 1;
   const apiBase = process.env.REACT_APP_API_URL || '';
+  const mesActual = new Date().getMonth() + 1;
+  const chartFillColors = ['#d92b73', '#f59e0b', '#2563eb', '#10b981'];
   const { setSedeSeleccionada } = useSede();
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
   const navigate = useNavigate();
@@ -250,34 +250,9 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
     fetchRevisionPorSede();
   }, [mesRevisionSeleccionado]);
-  const dataFinanzas = [
-    { name: 'Ingresos', monto: 12500 },
-    { name: 'Egresos', monto: 7200 },
-    { name: 'Balance', monto: 5300 },
-  ];
-
   const formatDolar = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
-  };
-
-  const formatFecha = (iso) => {
-    if (!iso) return '-';
-    const date = new Date(iso);
-    return new Intl.DateTimeFormat('es-VE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: 'America/Caracas'
-    }).format(date);
-  };
-
-  const formatPercent = (value) => {
-    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
-    return `${Number(value).toFixed(1)}%`;
   };
 
   const formatMoney = (value) => {
@@ -318,7 +293,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
   const formatDiaMes = (fecha) => {
     if (!fecha) return { dia: '--', mes: '--' };
-    const [anio, mes, dia] = fecha.substring(0, 10).split('-');
+    const [, mes, dia] = fecha.substring(0, 10).split('-');
     const meses = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
     const mesIdx = parseInt(mes, 10) - 1;
     return {
@@ -418,22 +393,6 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     setSedeSeleccionada(sedeSeleccion);
     navigate('/mensualidades');
   };
-
-  const resumenTotales = resumenMensualidades.sedes.reduce(
-    (acc, sede) => {
-      acc.total += Number(sede.total || 0);
-      acc.pagado += Number(sede.pagado || 0);
-      acc.abono += Number(sede.abono || 0);
-      acc.becado += Number(sede.becado || 0);
-      return acc;
-    },
-    { total: 0, pagado: 0, abono: 0, becado: 0 }
-  );
-  const totalFacturable = Math.max(0, resumenTotales.total - resumenTotales.becado);
-  const porcentajePagado = totalFacturable > 0 ? (resumenTotales.pagado / totalFacturable) * 100 : 0;
-  const porcentajeAbono = totalFacturable > 0 ? (resumenTotales.abono / totalFacturable) * 100 : 0;
-  const porcentajeNoPagado = totalFacturable > 0 ? Math.max(0, 100 - porcentajePagado - porcentajeAbono) : 0;
-
   const getProgressStatus = (progress) => {
     if (progress >= 80) return 'Excelente';
     if (progress >= 50) return 'Estable';

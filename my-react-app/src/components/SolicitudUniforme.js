@@ -3,8 +3,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   Dialog,
   DialogActions,
@@ -27,45 +25,13 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import PaymentIcon from '@mui/icons-material/Payment';
-import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
-import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
-import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import ModalPago from './ModalPago';
 import { useDolar } from '../context/DolarContext';
 import { mediaUrl } from '../utils/mediaUrl';
-import { obtenerTasaEuroOficialPorFecha, obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
 const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
-const METODO_PAGO_DEFAULT = '';
 const MONTO_TOLERANCIA_BS = 100;
-
-function buildPaymentMethods(config) {
-  return [
-    {
-      id: 'Pago movil',
-      nombre: 'Pago Movil',
-      detalles: {
-        banco: config?.pago_movil?.banco || '',
-        telefono: config?.pago_movil?.telefono || '',
-        cedula: config?.pago_movil?.cedula || '',
-        titular: config?.pago_movil?.titular || ''
-      }
-    },
-    {
-      id: 'Transferencia',
-      nombre: 'Transferencia',
-      detalles: {
-        banco: config?.transferencia?.banco || '',
-        cuenta: config?.transferencia?.cuenta || '',
-        titular: config?.transferencia?.titular || '',
-        cedula: config?.transferencia?.cedula || ''
-      }
-    }
-  ];
-}
 const OPCIONES_NOMBRE_REPRESENTANTE = [
   'Volley Mom',
   'Volley Dad',
@@ -93,12 +59,6 @@ const ESTADO_STYLES = {
   verificado: { bgcolor: '#dcfce7', color: '#166534' },
   entregado: { bgcolor: '#ccfbf1', color: '#0f766e' },
   cancelado: { bgcolor: '#fee2e2', color: '#b91c1c' }
-};
-
-const getLocalInputDate = (dateValue = new Date()) => {
-  const date = new Date(dateValue);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 10);
 };
 
 function construirNombrePersonalizado(alumno) {
@@ -151,20 +111,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [confirmCancelId, setConfirmCancelId] = useState(null);
   const [pagoDialogOpen, setPagoDialogOpen] = useState(false);
   const [pedidoPago, setPedidoPago] = useState(null);
-  const [metodoPago, setMetodoPago] = useState(METODO_PAGO_DEFAULT);
-  const [paymentConfig, setPaymentConfig] = useState(null);
-  const [loadingMetodosPago, setLoadingMetodosPago] = useState(false);
-  const [errorMetodosPago, setErrorMetodosPago] = useState('');
-  const metodosPagoUniforme = buildPaymentMethods(paymentConfig);
-  const metodoPagoConfig = metodosPagoUniforme.find((item) => item.id === metodoPago) || null;
-  const [fechaPago, setFechaPago] = useState(() => getLocalInputDate());
-  const [montoPagado, setMontoPagado] = useState('');
-  const [montoPagadoBsConfirmacion, setMontoPagadoBsConfirmacion] = useState('');
-  const [referencia, setReferencia] = useState('');
-  const [comprobante, setComprobante] = useState(null);
-  const [copySuccess, setCopySuccess] = useState('');
-  const [mostrarConfirmacionPago, setMostrarConfirmacionPago] = useState(false);
-  const [submittingPago, setSubmittingPago] = useState(false);
   const [numeroFranelaAsignado, setNumeroFranelaAsignado] = useState(() => String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());
   const [numeroFranelaSeleccionado, setNumeroFranelaSeleccionado] = useState('');
   const [numerosFranelaDisponibles, setNumerosFranelaDisponibles] = useState([]);
@@ -172,8 +118,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [numeroFranelaError, setNumeroFranelaError] = useState('');
   const [mostrarImagenesPrenda, setMostrarImagenesPrenda] = useState(false);
   const [tasaEuroBCV, setTasaEuroBCV] = useState(null);
-  const [tasaUsdPagoHistorica, setTasaUsdPagoHistorica] = useState(null);
-  const [tasaEuroPagoHistorica, setTasaEuroPagoHistorica] = useState(null);
 
   const tasaBCV = Number(dolar?.promedio) || 0;
   const token = localStorage.getItem('token');
@@ -330,43 +274,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   useEffect(() => {
     setMostrarImagenesPrenda(false);
   }, [prenda]);
-
-  useEffect(() => {
-    if (!pagoDialogOpen) return;
-
-    let cancelled = false;
-
-    const fetchMetodosPago = async () => {
-      try {
-        setLoadingMetodosPago(true);
-        setErrorMetodosPago('');
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/configuracion/pagos`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || data?.msg || 'No se pudo cargar la configuracion de pago');
-
-        if (!cancelled) {
-          setPaymentConfig(data?.pagos || null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setPaymentConfig(null);
-          setErrorMetodosPago(err.message || 'No se pudo cargar la configuracion de pago');
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingMetodosPago(false);
-        }
-      }
-    };
-
-    fetchMetodosPago();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pagoDialogOpen, token]);
 
   useEffect(() => {
     setNumeroFranelaAsignado(String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());
@@ -530,265 +437,69 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
   const openPagoDialog = (pedido) => {
     setPedidoPago(pedido);
-    setMetodoPago(METODO_PAGO_DEFAULT);
-    setFechaPago(getLocalInputDate());
-    const saldoPendiente = Number(pedido?.saldo_pendiente);
-    const totalPedido = Number(pedido?.precio) || 0;
-    const montoSugerido = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
-    setMontoPagado(montoSugerido > 0 ? montoSugerido.toFixed(2) : '');
-    setMontoPagadoBsConfirmacion('');
-    setReferencia('');
-    setComprobante(null);
-    setCopySuccess('');
-    setMostrarConfirmacionPago(false);
     setPagoDialogOpen(true);
   };
 
   const closePagoDialog = () => {
-    if (submittingPago) return;
     setPagoDialogOpen(false);
     setPedidoPago(null);
-    setMetodoPago(METODO_PAGO_DEFAULT);
-    setFechaPago(getLocalInputDate());
-    setMontoPagado('');
-    setMontoPagadoBsConfirmacion('');
-    setReferencia('');
-    setComprobante(null);
-    setCopySuccess('');
-    setMostrarConfirmacionPago(false);
   };
 
-  const formatearValorDetallePago = (clave, valor) => {
-    if (clave === 'cedula') {
-      const base = String(valor || '').replace(/^V-?/i, '').trim();
-      return base ? `V-${base}` : '-';
-    }
-    if (clave === 'telefono') {
-      const digits = String(valor || '').replace(/\D/g, '');
-      if (!digits) return '-';
-      if (digits.length <= 4) return digits;
-      return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-    }
-    if (clave === 'cuenta') {
-      const digits = String(valor || '').replace(/\D/g, '');
-      if (!digits) return '-';
-      return digits.match(/.{1,4}/g)?.join('-') || digits;
-    }
-    return String(valor || '-');
-  };
+  const handlePagarPedido = async ({ pago, metodoPago, fechaPago, referencia, comprobante, montoPagadoMoneda, montoPagadoBs, moneda }) => {
+    if (!pago?._id) return;
 
-  const copiarDatoPago = async (clave, valor) => {
-    const valorFormateado = formatearValorDetallePago(clave, valor);
-    const soloDigitos = String(valor || '').replace(/\D/g, '');
-    const textoParaCopiar = (clave === 'cedula' || clave === 'cuenta' || clave === 'telefono')
-      ? soloDigitos
-      : String(valorFormateado || '');
-
-    if (!textoParaCopiar || textoParaCopiar === '-') return;
-
-    try {
-      await navigator.clipboard.writeText(textoParaCopiar);
-      setCopySuccess(`${String(clave || '').replace('_', ' ')} copiado`);
-      setTimeout(() => setCopySuccess(''), 1800);
-    } catch {
-      setCopySuccess('No se pudo copiar');
-      setTimeout(() => setCopySuccess(''), 1800);
-    }
-  };
-
-  const handleYaPagueClick = () => {
-    if (!metodoPago) {
-      setErrorMessage('Debes seleccionar un metodo de pago');
-      return;
-    }
-    const montoPagadoNum = Number(Number(montoPagado).toFixed(2));
-    const saldoValido = Number(Number(getSaldoPendienteVisible(pedidoPago)).toFixed(2)) || 0;
-    const toleranciaDivisa = tasaPedidoPago > 0 ? (MONTO_TOLERANCIA_BS / tasaPedidoPago) : 0;
-
-    if (!montoPagadoNum || Number.isNaN(montoPagadoNum) || montoPagadoNum <= 0) {
-      setErrorMessage('Debes indicar un monto pagado valido');
-      return;
-    }
-
-    if (saldoValido > 0 && montoPagadoNum > (saldoValido + toleranciaDivisa)) {
-      setErrorMessage(`El monto pagado no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, pedidoPago?.moneda)})`);
-      return;
-    }
-
-    setMontoPagadoBsConfirmacion(montoPagadoBsInput !== null && Number.isFinite(montoPagadoBsInput) ? formatMoney(montoPagadoBsInput) : '');
-    setMostrarConfirmacionPago(true);
-  };
-
-  const handlePagarPedido = async () => {
-    if (!pedidoPago?._id) return;
-    if (!metodoPago) {
-      setErrorMessage('Debes seleccionar un metodo de pago');
-      return;
-    }
-    if ((metodoPago === 'Transferencia' || metodoPago === 'Pago movil') && !/^[0-9]{6,}$/.test(referencia)) {
-      setErrorMessage('La referencia debe tener minimo 6 digitos');
-      return;
-    }
-
-    if (!fechaPago) {
-      setErrorMessage('Debes indicar la fecha del pago');
-      return;
-    }
-
-    const monedaPedido = normalizarMoneda(pedidoPago?.moneda);
-    const tasaAplicada = tasaPedidoPago;
-    const montoPagadoBsNum = Number(montoPagadoBsConfirmacion);
-    const montoPagadoConvertido = tasaAplicada > 0 ? (montoPagadoBsNum / tasaAplicada) : Number(montoPagado);
-    const montoPagadoNum = Number(Number(montoPagadoConvertido).toFixed(2));
-    const saldoPendiente = Number(pedidoPago?.saldo_pendiente);
-    const totalPedido = Number(pedidoPago?.precio) || 0;
+    const montoPagadoNum = Number(montoPagadoMoneda);
+    const montoPagadoBsNum = Number(montoPagadoBs);
+    const saldoPendiente = Number(pago?.saldo_pendiente);
+    const totalPedido = Number(pago?.precio) || 0;
     const saldoValidoRaw = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
     const saldoValido = Number(Number(saldoValidoRaw).toFixed(2));
-    const saldoValidoBs = Number(Number(saldoValido * tasaAplicada).toFixed(2));
+    const tasaAplicada = montoPagadoNum > 0 ? (montoPagadoBsNum / montoPagadoNum) : 0;
+    const saldoValidoBs = Number.isFinite(tasaAplicada) && tasaAplicada > 0
+      ? Number(Number(saldoValido * tasaAplicada).toFixed(2))
+      : null;
 
-    if (tasaAplicada <= 0) {
-      setErrorMessage(`No hay tasa BCV disponible para convertir el monto en Bs (${monedaPedido})`);
-      return;
+    if (!montoPagadoNum || Number.isNaN(montoPagadoNum) || montoPagadoNum <= 0) {
+      throw new Error('Debes indicar un monto pagado valido');
     }
 
     if (!montoPagadoBsNum || Number.isNaN(montoPagadoBsNum) || montoPagadoBsNum <= 0) {
-      setErrorMessage('Debes indicar un monto pagado en Bs valido');
-      return;
+      throw new Error('Debes indicar un monto pagado en Bs valido');
     }
 
-    if (!montoPagadoNum || Number.isNaN(montoPagadoNum) || montoPagadoNum <= 0) {
-      setErrorMessage('Debes indicar un monto pagado valido');
-      return;
-    }
-
-    if (montoPagadoBsNum > (saldoValidoBs + MONTO_TOLERANCIA_BS)) {
-      setErrorMessage(
-        `El monto pagado en Bs no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, monedaPedido)} = Bs. ${formatMoney(saldoValidoBs)}; tolerancia Bs. ${formatMoney(MONTO_TOLERANCIA_BS)})`
+    if (Number.isFinite(saldoValidoBs) && montoPagadoBsNum > (saldoValidoBs + MONTO_TOLERANCIA_BS)) {
+      throw new Error(
+        `El monto pagado en Bs no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, moneda)} = Bs. ${formatMoney(saldoValidoBs)}; tolerancia Bs. ${formatMoney(MONTO_TOLERANCIA_BS)})`
       );
-      return;
     }
 
     const montoPagadoFinal = montoPagadoNum > saldoValido ? saldoValido : montoPagadoNum;
+    const formData = new FormData();
+    formData.append('metodo_pago', metodoPago);
+    formData.append('monto_pagado', montoPagadoFinal.toFixed(2));
+    formData.append('monto_pagado_bs', Number(montoPagadoBsNum.toFixed(2)).toFixed(2));
+    if (referencia) formData.append('referencia', referencia);
+    formData.append('fecha_pago', fechaPago);
+    if (comprobante) formData.append('comprobante', comprobante);
 
-    try {
-      setSubmittingPago(true);
-      const formData = new FormData();
-      formData.append('metodo_pago', metodoPago);
-      formData.append('monto_pagado', montoPagadoFinal.toFixed(2));
-      formData.append('monto_pagado_bs', montoPagadoBsNum.toFixed(2));
-      if (referencia) formData.append('referencia', referencia);
-      formData.append('fecha_pago', fechaPago);
-      if (comprobante) formData.append('comprobante', comprobante);
-
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoPago._id}/pagar`, {
-        method: 'PATCH',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: formData
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Error al registrar el pago');
-
-      setPedidos((prev) => prev.map((pedido) => (pedido._id === data._id ? data : pedido)));
-      setPagoDialogOpen(false);
-      setPedidoPago(null);
-      setMetodoPago(METODO_PAGO_DEFAULT);
-      setFechaPago(getLocalInputDate());
-      setMontoPagado('');
-      setMontoPagadoBsConfirmacion('');
-      setReferencia('');
-      setComprobante(null);
-      setCopySuccess('');
-      setMostrarConfirmacionPago(false);
-      setSuccessMessage(
-        data?.estado === 'abono'
-          ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(data?.saldo_pendiente, normalizarMoneda(data?.moneda || pedidoPago?.moneda))}`
-          : data?.estado === 'pago_en_revision'
-            ? 'Pago enviado a revision'
-            : 'Pago registrado correctamente'
-      );
-    } catch (err) {
-      setErrorMessage(err.message || 'Error al registrar el pago');
-    } finally {
-      setSubmittingPago(false);
-    }
-  };
-
-  const monedaPedidoPago = normalizarMoneda(pedidoPago?.moneda);
-  const tasaPedidoPago = monedaPedidoPago === 'USD'
-    ? (Number(tasaUsdPagoHistorica) || Number(tasaBCV) || 0)
-    : monedaPedidoPago === 'EUR'
-      ? (Number(tasaEuroPagoHistorica) || Number(tasaEuroBCV) || 0)
-      : obtenerTasaPorMoneda(monedaPedidoPago);
-  const montoPagoBs = pedidoPago?.precio && tasaPedidoPago ? Number(pedidoPago.precio) * tasaPedidoPago : null;
-  const montoPagadoBsInput = montoPagado && tasaPedidoPago ? Number(montoPagado) * tasaPedidoPago : null;
-
-  useEffect(() => {
-    if (!pagoDialogOpen || !pedidoPago?._id || !fechaPago) {
-      setTasaUsdPagoHistorica(null);
-      setTasaEuroPagoHistorica(null);
-      return;
+    const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pago._id}/pagar`, {
+      method: 'PATCH',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data?.error || 'Error al registrar el pago');
     }
 
-    const monedaPedido = normalizarMoneda(pedidoPago?.moneda);
-    if (monedaPedido !== 'USD' && monedaPedido !== 'EUR') {
-      setTasaUsdPagoHistorica(null);
-      setTasaEuroPagoHistorica(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const cargarTasaPorFecha = async () => {
-      try {
-        const tasaHistorica = monedaPedido === 'EUR'
-          ? await obtenerTasaEuroOficialPorFecha(fechaPago, Number(tasaEuroBCV) || null)
-          : await obtenerTasaOficialPorFecha(fechaPago, Number(tasaBCV) || null);
-        if (cancelled) return;
-        if (monedaPedido === 'EUR') {
-          setTasaUsdPagoHistorica(null);
-          setTasaEuroPagoHistorica(Number(tasaHistorica) || null);
-        } else {
-          setTasaEuroPagoHistorica(null);
-          setTasaUsdPagoHistorica(Number(tasaHistorica) || null);
-        }
-      } catch {
-        if (cancelled) return;
-        if (monedaPedido === 'EUR') {
-          setTasaUsdPagoHistorica(null);
-          setTasaEuroPagoHistorica(Number(tasaEuroBCV) || null);
-        } else {
-          setTasaEuroPagoHistorica(null);
-          setTasaUsdPagoHistorica(Number(tasaBCV) || null);
-        }
-      }
-    };
-
-    cargarTasaPorFecha();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pagoDialogOpen, pedidoPago?._id, pedidoPago?.moneda, fechaPago, tasaBCV, tasaEuroBCV]);
-
-  useEffect(() => {
-    if (!pagoDialogOpen || !mostrarConfirmacionPago) return;
-    if (!montoPagado || Number(montoPagado) <= 0) return;
-    if (montoPagadoBsInput === null || !Number.isFinite(montoPagadoBsInput)) return;
-
-    setMontoPagadoBsConfirmacion(formatMoney(montoPagadoBsInput));
-  }, [pagoDialogOpen, mostrarConfirmacionPago, fechaPago, tasaPedidoPago, montoPagado, montoPagadoBsInput]);
-
-  const inputSx = {
-    '& .MuiOutlinedInput-root': {
-      borderRadius: 2,
-      backgroundColor: '#ffffff'
-    },
-    '& .MuiOutlinedInput-notchedOutline': {
-      borderColor: '#e2e8f0'
-    },
-    '& .MuiInputLabel-root': {
-      color: '#64748b'
-    }
+    setPedidos((prev) => prev.map((pedido) => (pedido._id === data._id ? data : pedido)));
+    setSuccessMessage(
+      data?.estado === 'abono'
+        ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(data?.saldo_pendiente, normalizarMoneda(data?.moneda || pago?.moneda))}`
+        : data?.estado === 'pago_en_revision'
+          ? 'Pago enviado a revision'
+          : 'Pago registrado correctamente'
+    );
   };
 
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
@@ -1359,316 +1070,28 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <ModalPago
         open={pagoDialogOpen}
         onClose={closePagoDialog}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
-      >
-        <DialogTitle
-          disableTypography
-          sx={{
-            p: 3,
-            pb: 1.5,
-            backgroundColor: '#ffffff'
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Box
-              sx={{
-                width: 36,
-                height: 36,
-                borderRadius: 2,
-                backgroundColor: '#fff2e7',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <PaymentIcon sx={{ color: '#ff7a00' }} />
-            </Box>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a' }}>
-                Realizar pago del uniforme
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.25 }}>
-                Confirma los datos y carga el comprobante para validar el pago.
-              </Typography>
-            </Box>
-          </Box>
-        </DialogTitle>
-        <DialogContent sx={{ p: 3, pt: 1.5, bgcolor: '#f8fafc' }}>
-          <Box sx={{ display: 'grid', gap: 2 }}>
-            {!metodoPago && (
-              <>
-                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f172a' }}>
-                  Como vas a pagar?
-                </Typography>
-                {loadingMetodosPago && (
-                  <Typography variant="body2" sx={{ color: '#64748b' }}>
-                    Cargando metodos de pago...
-                  </Typography>
-                )}
-                {errorMetodosPago && (
-                  <Alert severity="error" sx={{ borderRadius: 2 }}>
-                    {errorMetodosPago}
-                  </Alert>
-                )}
-                {metodosPagoUniforme.map((metodo) => (
-                  <Card
-                    key={metodo.id}
-                    sx={{
-                      borderRadius: 2.5,
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 10px 20px rgba(15, 23, 42, 0.06)',
-                      cursor: loadingMetodosPago ? 'not-allowed' : 'pointer',
-                      opacity: loadingMetodosPago ? 0.6 : 1
-                    }}
-                    onClick={() => {
-                      if (!loadingMetodosPago) setMetodoPago(metodo.id);
-                    }}
-                  >
-                    <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, py: 2 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Box
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: '50%',
-                            backgroundColor: '#fff2e7',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          {metodo.id === 'Pago movil' ? (
-                            <PhoneIphoneIcon sx={{ color: '#f97316' }} />
-                          ) : (
-                            <AccountBalanceIcon sx={{ color: '#f97316' }} />
-                          )}
-                        </Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                          {metodo.nombre}
-                        </Typography>
-                      </Box>
-                      <ArrowForwardIosIcon sx={{ color: '#cbd5f0', fontSize: 18 }} />
-                    </CardContent>
-                  </Card>
-                ))}
-              </>
-            )}
-
-            {metodoPago && (
-              <>
-                {!mostrarConfirmacionPago && (
-                  <>
-                    <Box
-                      sx={{
-                        borderRadius: 2.5,
-                        border: '1px solid #e2e8f0',
-                        backgroundColor: '#ffffff',
-                        p: 2
-                      }}
-                    >
-                      <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.08em', color: '#0f172a' }}>
-                        DATOS PARA EL PAGO
-                      </Typography>
-                      <Box sx={{ display: 'grid', gap: 1, mt: 1 }}>
-                        {Object.entries(metodoPagoConfig?.detalles || {}).map(([clave, valor]) => (
-                          <Box key={clave}>
-                            <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                              {clave.replace('_', ' ')}
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
-                                {formatearValorDetallePago(clave, valor)}
-                              </Typography>
-                              <IconButton size="small" onClick={() => copiarDatoPago(clave, valor)} sx={{ color: '#64748b' }}>
-                                <ContentCopyIcon fontSize="inherit" />
-                              </IconButton>
-                            </Box>
-                          </Box>
-                        ))}
-                      </Box>
-                    </Box>
-
-                    {copySuccess && (
-                      <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 700, display: 'block', mt: -0.5 }}>
-                        {copySuccess}
-                      </Typography>
-                    )}
-
-                    <TextField
-                      label={`Monto a pagar (${monedaPedidoPago})`}
-                      type="number"
-                      value={montoPagado}
-                      onChange={(event) => setMontoPagado(event.target.value)}
-                      size="small"
-                      sx={inputSx}
-                      inputProps={{
-                        min: 0,
-                        step: '0.01',
-                        max: getSaldoPendienteVisible(pedidoPago) || undefined
-                      }}
-                      helperText={`Saldo pendiente actual: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedidoPago), monedaPedidoPago)}`}
-                    />
-
-                    <Box
-                      sx={{
-                        borderRadius: 2,
-                        backgroundColor: '#343e48',
-                        color: '#ffffff',
-                        px: 1.5,
-                        py: 1.25,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 1
-                      }}
-                    >
-                      <Box>
-                        <Typography variant="caption" sx={{ opacity: 0.9, letterSpacing: '0.08em' }}>
-                          MONTO A TRANSFERIR EN BS
-                        </Typography>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                          {montoPagadoBsInput !== null && Number.isFinite(montoPagadoBsInput)
-                            ? `${formatMoney(montoPagadoBsInput)} Bs`
-                            : '-'}
-                        </Typography>
-                      </Box>
-                      <IconButton
-                        size="small"
-                        onClick={() => copiarDatoPago('monto_bs', montoPagadoBsInput !== null ? formatMoney(montoPagadoBsInput) : '')}
-                        disabled={montoPagadoBsInput === null || !Number.isFinite(montoPagadoBsInput)}
-                        sx={{ color: '#ffffff', opacity: (montoPagadoBsInput === null || !Number.isFinite(montoPagadoBsInput)) ? 0.45 : 0.9 }}
-                        aria-label="Copiar monto en Bs"
-                      >
-                        <ContentCopyIcon fontSize="inherit" />
-                      </IconButton>
-                    </Box>
-
-                    <Typography variant="caption" sx={{ color: '#64748b', mt: -0.5, display: 'block' }}>
-                      Tasa aplicada: {tasaPedidoPago ? `${formatMoney(tasaPedidoPago)} Bs/${monedaPedidoPago}` : 'No disponible'}
-                    </Typography>
-
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={handleYaPagueClick}
-                    disabled={!montoPagado || Number(montoPagado) <= 0}
-                    sx={{
-                      bgcolor: '#f97316',
-                      '&:hover': { bgcolor: '#ea580c' },
-                      fontWeight: 800,
-                      borderRadius: 2,
-                      py: 1.2
-                    }}
-                  >
-                    Ya pague
-                  </Button>
-                  </>
-                )}
-
-                {mostrarConfirmacionPago && (
-                  <Box sx={{ display: 'grid', gap: 1.25, mt: 0.8 }}>
-                    <TextField
-                      label="Monto pagado Bs"
-                      type="number"
-                      value={montoPagadoBsConfirmacion}
-                      onChange={(event) => setMontoPagadoBsConfirmacion(event.target.value)}
-                      size="small"
-                      sx={inputSx}
-                      InputLabelProps={{ shrink: true }}
-                      inputProps={{ min: 0, step: '0.01' }}
-                      helperText={tasaPedidoPago > 0
-                        ? `Equivalente en ${monedaPedidoPago}: ${formatearMontoConMoneda((Number(montoPagadoBsConfirmacion) || 0) / tasaPedidoPago, monedaPedidoPago)}`
-                        : 'No hay tasa BCV disponible'}
-                      required
-                    />
-                    <TextField
-                      label="Fecha de pago"
-                      type="date"
-                      value={fechaPago}
-                      onChange={(event) => setFechaPago(event.target.value)}
-                      size="small"
-                      sx={inputSx}
-                      InputLabelProps={{ shrink: true }}
-                      required
-                    />
-                    <TextField
-                      label="Referencia"
-                      value={referencia}
-                      onChange={(event) => setReferencia(event.target.value.replace(/[^0-9]/g, '').slice(0, 20))}
-                      size="small"
-                      sx={inputSx}
-                      helperText={metodoPago === 'Transferencia' || metodoPago === 'Pago movil' ? 'Minimo ultimos 6 digitos' : ''}
-                    />
-                    <Box
-                      component="label"
-                      sx={{
-                        mt: 0.5,
-                        border: '1px dashed #cbd5f0',
-                        borderRadius: 2,
-                        p: 2,
-                        textAlign: 'center',
-                        backgroundColor: '#f8fafc',
-                        display: 'block',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: '50%',
-                          backgroundColor: '#fff2e7',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          mx: 'auto',
-                          mb: 1
-                        }}
-                      >
-                        <PaymentIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
-                      </Box>
-                      <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>Haz clic para adjuntar comprobante</Typography>
-                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG o PDF hasta 5MB</Typography>
-                      <input type="file" hidden onChange={(event) => setComprobante(event.target.files?.[0] || null)} />
-                    </Box>
-                    {comprobante && (
-                      <Box sx={{ mt: 0.25, px: 1.5, py: 1, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                          <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
-                          <Typography variant="body2" sx={{ color: '#475569', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {comprobante.name}
-                          </Typography>
-                        </Box>
-                        <IconButton size="small" onClick={() => setComprobante(null)}>
-                          <CloseIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
-                        </IconButton>
-                      </Box>
-                    )}
-                  </Box>
-                )}
-              </>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3, pt: 1, justifyContent: 'flex-end', gap: 1.5 }}>
-          <Button onClick={closePagoDialog} disabled={submittingPago} sx={{ color: '#64748b', fontWeight: 700 }}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={handlePagarPedido}
-            variant="contained"
-            disabled={submittingPago || !mostrarConfirmacionPago}
-            sx={{ bgcolor: '#ff7a00', '&:hover': { bgcolor: '#f97316' }, fontWeight: 800, borderRadius: 2, px: 3 }}
-          >
-            {submittingPago ? 'Procesando...' : 'Confirmar pago'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        pago={pedidoPago ? {
+          _id: pedidoPago._id,
+          id: pedidoPago._id,
+          monto: getSaldoPendienteVisible(pedidoPago),
+          id_alumno: { habilitar_pago_cuotas: false },
+          recargo_aplicado_usd: 0,
+          precio: pedidoPago.precio,
+          saldo_pendiente: pedidoPago.saldo_pendiente,
+          moneda: pedidoPago.moneda
+        } : null}
+        currencyCode={normalizarMoneda(pedidoPago?.moneda)}
+        disableCuotas
+        allowedMethodIds={['pago-movil', 'transferencia']}
+        onSubmitPayment={handlePagarPedido}
+        onSuccess={() => {
+          closePagoDialog();
+          fetchPedidos();
+        }}
+      />
     </Grid>
   );
 }

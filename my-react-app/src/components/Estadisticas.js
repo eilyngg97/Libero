@@ -36,9 +36,9 @@ function Estadisticas() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resumen, setResumen] = useState({ anio: currentYear, meses: [], totales: { inscritos: 0, retirados: 0 } });
-  const [loadingIngresos, setLoadingIngresos] = useState(false);
-  const [errorIngresos, setErrorIngresos] = useState('');
-  const [resumenIngresos, setResumenIngresos] = useState({ anio: currentYear, meses: [], total_anual: 0 });
+  const [, setLoadingIngresos] = useState(false);
+  const [, setErrorIngresos] = useState('');
+  const [, setResumenIngresos] = useState({ anio: currentYear, meses: [], total_anual: 0 });
   const [loadingIngresosSede, setLoadingIngresosSede] = useState(false);
   const [errorIngresosSede, setErrorIngresosSede] = useState('');
   const [resumenIngresosSede, setResumenIngresosSede] = useState({ anio: currentYear, sedes: [], total_anual: 0 });
@@ -210,16 +210,6 @@ function Estadisticas() {
       };
     });
   }, [resumen.meses]);
-
-  const dataGraficaIngresos = useMemo(() => {
-    return LABELS_MESES.map((label, index) => {
-      const item = resumenIngresos.meses?.find((mes) => Number(mes?.mes) === index + 1) || {};
-      return {
-        mes: label,
-        total_pagado: Number(item?.total_pagado || 0)
-      };
-    });
-  }, [resumenIngresos.meses]);
 
   const dataComparativaSedes = useMemo(() => {
     const totalAnual = Number(resumenIngresosSede.total_anual || 0);

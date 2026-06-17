@@ -15,7 +15,7 @@ import HomeIcon from "@mui/icons-material/Home";
 import SportsVolleyballIcon from "@mui/icons-material/SportsVolleyball";
 import PersonIcon from "@mui/icons-material/Person";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Button, Typography, Paper, Avatar, Dialog, DialogTitle, DialogContent, Box, IconButton, Checkbox, FormControlLabel, CircularProgress, Collapse } from "@mui/material";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
@@ -104,7 +104,6 @@ function calcularIMC(peso, talla) {
 function AlumnoDetalle() {
   const [requisitosOpen, setRequisitosOpen] = useState(true);
   const { id } = useParams();
-  const navigate = useNavigate();
   const [alumno, setAlumno] = useState(null);
   const [representante, setRepresentante] = useState(null);
   const [loading, setLoading] = useState(true);

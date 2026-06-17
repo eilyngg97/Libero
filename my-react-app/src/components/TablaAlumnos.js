@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSede } from '../context/SedeContext';
 import Snackbar from '@mui/material/Snackbar';
 import MuiAlert from '@mui/material/Alert';
@@ -63,12 +63,6 @@ function obtenerEstadoAlumno(alumno) {
 
 function esAlumnoActivo(alumno) {
   return !(alumno?.dado_de_baja || alumno?.activo === false);
-}
-
-function obtenerDiaLimitePersonalizado(alumno) {
-  const valor = Number(alumno?.dia_limite_personalizado);
-  if (!Number.isInteger(valor) || valor < 1 || valor > 31) return null;
-  return valor;
 }
 
 function obtenerSexoAlumno(alumno) {

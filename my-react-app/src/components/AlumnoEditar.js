@@ -1,17 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Button, TextField, Typography, Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle } from '@mui/material';
+import { TextField, Typography, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle } from '@mui/material';
 import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { useSede } from '../context/SedeContext';
 import { mediaUrl } from '../utils/mediaUrl';
 import { getCategoriaPorFechaNacimiento, CATEGORIAS_DISPONIBLES } from '../utils/categoria';
 import './Alumnos.css';
 import { Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
-const ESTADOS_MENSUALIDAD = ['Pendiente', 'Pagado', 'Retrasado', 'Exonerado'];
 const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
 const SEXOS = ['Femenino', 'Masculino'];
@@ -30,7 +28,6 @@ function esFechaInicioCobroDelAnioActual(valor) {
 
 function AlumnoEditar({ locationState }) {
   const { id } = useParams();
-  const { sedeSeleccionada } = useSede();
   const token = localStorage.getItem('token');
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
   const esAdmin = rolActual === 'admin' || rolActual === 'administrador' || rolActual === 'super_admin';
@@ -51,7 +48,6 @@ function AlumnoEditar({ locationState }) {
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState('');
   const [successOpen, setSuccessOpen] = useState(false);
   const [initialMensualidadConfig, setInitialMensualidadConfig] = useState({
     tipo_mensualidad: 'monto_sede',
@@ -332,7 +328,6 @@ function AlumnoEditar({ locationState }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    setSuccessMessage('');
     setSuccessOpen(false);
     if (form.numero_franela) {
       const nro = Number(form.numero_franela);
@@ -449,7 +444,6 @@ function AlumnoEditar({ locationState }) {
         }
         throw new Error(errorMsg);
       }
-      setSuccessMessage('Alumno editado con exito.');
       setSuccessOpen(true);
       await fetchAlumnoFresco();
       setFotoFile(null);
