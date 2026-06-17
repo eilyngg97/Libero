@@ -21,6 +21,8 @@ const UniformePedidoSchema = new mongoose.Schema({
   saldo_pendiente: { type: Number, default: 0 },
   metodo_pago: { type: String },
   referencia: { type: String },
+  telefono_pago: { type: String },
+  cedula_titular: { type: String },
   comprobante_url: { type: String },
   fecha_pago: { type: Date },
   pagos_historial: {
@@ -30,6 +32,8 @@ const UniformePedidoSchema = new mongoose.Schema({
         monto_pagado_bs: { type: Number, default: 0 },
         metodo_pago: { type: String },
         referencia: { type: String },
+        telefono_pago: { type: String },
+        cedula_titular: { type: String },
         comprobante_url: { type: String },
         fecha_pago: { type: Date }
       }

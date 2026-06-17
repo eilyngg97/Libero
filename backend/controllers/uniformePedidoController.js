@@ -265,7 +265,7 @@ exports.cancelarPedido = async (req, res) => {
 exports.registrarPagoPedido = async (req, res) => {
   try {
     const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
-    const { metodo_pago, referencia, fecha_pago, monto_pagado, monto_pagado_bs } = req.body;
+    const { metodo_pago, referencia, fecha_pago, monto_pagado, monto_pagado_bs, telefono_pago, cedula_titular } = req.body;
     const pedido = await TenantUniformePedido.findOne({
       _id: req.params.id,
       solicitado_por: req.user?.id,
@@ -313,6 +313,8 @@ exports.registrarPagoPedido = async (req, res) => {
 
     pedido.metodo_pago = metodo_pago;
     pedido.referencia = referencia || undefined;
+    pedido.telefono_pago = telefono_pago || undefined;
+    pedido.cedula_titular = cedula_titular || undefined;
     pedido.fecha_pago = fecha_pago ? new Date(fecha_pago) : new Date();
     pedido.comprobante_url = buildComprobanteUrl(req.file, req.tenantId) || pedido.comprobante_url;
     pedido.monto_ultimo_pago = montoPagadoAplicado;
@@ -333,6 +335,8 @@ exports.registrarPagoPedido = async (req, res) => {
         monto_pagado_bs: montoPagadoBsAplicado,
         metodo_pago: pedido.metodo_pago,
         referencia: pedido.referencia,
+        telefono_pago: pedido.telefono_pago,
+        cedula_titular: pedido.cedula_titular,
         comprobante_url: pedido.comprobante_url,
         fecha_pago: pedido.fecha_pago
       });
@@ -395,6 +399,8 @@ exports.verificarPagoPedido = async (req, res) => {
       monto_pagado_bs: montoUltimoPagoBs,
       metodo_pago: pedido.metodo_pago,
       referencia: pedido.referencia,
+      telefono_pago: pedido.telefono_pago,
+      cedula_titular: pedido.cedula_titular,
       comprobante_url: pedido.comprobante_url,
       fecha_pago: pedido.fecha_pago
     });

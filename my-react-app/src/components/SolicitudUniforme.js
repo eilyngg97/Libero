@@ -445,7 +445,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     setPedidoPago(null);
   };
 
-  const handlePagarPedido = async ({ pago, metodoPago, fechaPago, referencia, comprobante, montoPagadoMoneda, montoPagadoBs, moneda }) => {
+  const handlePagarPedido = async ({ pago, metodoPago, fechaPago, referencia, comprobante, montoPagadoMoneda, montoPagadoBs, moneda, telefonoPago, cedulaTitular }) => {
     if (!pago?._id) return;
 
     const montoPagadoNum = Number(montoPagadoMoneda);
@@ -479,6 +479,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     formData.append('monto_pagado', montoPagadoFinal.toFixed(2));
     formData.append('monto_pagado_bs', Number(montoPagadoBsNum.toFixed(2)).toFixed(2));
     if (referencia) formData.append('referencia', referencia);
+    if (telefonoPago) formData.append('telefono_pago', telefonoPago);
+    if (cedulaTitular) formData.append('cedula_titular', cedulaTitular);
     formData.append('fecha_pago', fechaPago);
     if (comprobante) formData.append('comprobante', comprobante);
 
