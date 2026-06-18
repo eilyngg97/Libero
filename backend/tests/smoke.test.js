@@ -51,6 +51,12 @@ jest.mock('../models/PagoDetalle', () => ({
   create: jest.fn()
 }));
 
+jest.mock('../models/UniformePedido', () => ({
+  find: jest.fn(),
+  findById: jest.fn(),
+  create: jest.fn()
+}));
+
 jest.mock('../models/Reposo', () => ({
   find: jest.fn(),
   findOne: jest.fn()
@@ -79,6 +85,7 @@ jest.mock('../services/tenantModelService', () => ({
     const Representante = require('../models/Representante');
     const Mensualidad = require('../models/Mensualidad');
     const PagoDetalle = require('../models/PagoDetalle');
+    const UniformePedido = require('../models/UniformePedido');
     const Reposo = require('../models/Reposo');
     const TenantConfig = require('../models/TenantConfig');
 
@@ -93,7 +100,7 @@ jest.mock('../services/tenantModelService', () => ({
       Sede: { findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 100, nombre: 'TRINITARIAS' }) },
       Aspirante: { find: jest.fn(), findOne: jest.fn(), create: jest.fn() },
       Uniforme: { find: jest.fn(), findById: jest.fn() },
-      UniformePedido: { find: jest.fn(), create: jest.fn() },
+      UniformePedido,
       LandingAtletaFoto: { find: jest.fn() },
       Entrenador: { find: jest.fn(), findById: jest.fn() },
       HistorialEstadoAlumno: { create: jest.fn(), find: jest.fn() }
@@ -135,6 +142,7 @@ const Alumno = require('../models/Alumno');
 const Representante = require('../models/Representante');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const UniformePedido = require('../models/UniformePedido');
 const Reposo = require('../models/Reposo');
 const { app } = require('../app');
 
@@ -314,6 +322,248 @@ describe('Backend smoke tests', () => {
       monto_bs: 7075,
       alumno: 'Ana Lopez'
     }));
+  });
+
+  test('POST /api/conciliacion/previsualizar hace match por cedula en descripcion TRAV con bloque largo', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 20,
+      estatus: 'En revision',
+      id_alumno: {
+        nombres: 'Eugenia Valentina',
+        apellidos: 'Prado Torres'
+      }
+    };
+
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([mensualidadDoc])
+      })
+    });
+
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([
+        {
+          _id: 'p-eugenia',
+          id_mensualidad: 'm1',
+          referencia: '17011969',
+          telefono_pago: '4262509456',
+          cedula_titular: 'V-17011969',
+          monto_pagado_bs: 11935.65,
+          monto_esperado_bs: 11935.65,
+          monto_esperado_usd: 20,
+          fecha_pago: '2026-06-17'
+        }
+      ])
+    });
+
+    const archivoTxt = Buffer.from('Fecha;Descripcion;Monto\n17/06/2026;TRAV0017011969000008380;11935,65\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion_provincial.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.match_total).toHaveLength(1);
+    expect(response.body.match_total[0]).toEqual(expect.objectContaining({
+      match_por: 'cedula',
+      identificador_banco: '17011969'
+    }));
+  });
+
+  test('POST /api/conciliacion/previsualizar hace match por cedula extraida de descripcion ABO.DRV sin columna referencia', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 20,
+      estatus: 'En revision',
+      id_alumno: {
+        nombres: 'Claudia Sophia',
+        apellidos: 'Valderrama Moran'
+      }
+    };
+
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([mensualidadDoc])
+      })
+    });
+
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([
+        {
+          _id: 'p-claudia',
+          id_mensualidad: 'm1',
+          referencia: '18137500',
+          telefono_pago: '4129313853',
+          cedula_titular: 'V-18137500',
+          monto_pagado_bs: 11935.65,
+          monto_esperado_bs: 11935.65,
+          monto_esperado_usd: 20,
+          fecha_pago: '2026-06-17'
+        }
+      ])
+    });
+
+    const archivoTxt = Buffer.from('Fecha;Descripcion;Monto;Saldo\n17/06/2026;ABO.DRV0018137500;11.935,65;111.207,19\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion_abodrv.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.match_total).toHaveLength(1);
+    expect(response.body.match_total[0]).toEqual(expect.objectContaining({
+      match_por: 'cedula',
+      identificador_banco: '18137500'
+    }));
+  });
+
+  test('POST /api/conciliacion/previsualizar evita match cuando identificador en descripcion contradice cedula del sistema', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 20,
+      estatus: 'En revision',
+      id_alumno: {
+        nombres: 'Eugenia Valentina',
+        apellidos: 'Prado Torres'
+      }
+    };
+
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([mensualidadDoc])
+      })
+    });
+
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([
+        {
+          _id: 'p-eugenia',
+          id_mensualidad: 'm1',
+          referencia: '17011969',
+          telefono_pago: '4262509456',
+          cedula_titular: 'V-17011969',
+          monto_pagado_bs: 11935.65,
+          monto_esperado_bs: 11935.65,
+          monto_esperado_usd: 20,
+          fecha_pago: '2026-06-17'
+        }
+      ])
+    });
+
+    // Mismo monto/fecha, pero identificador embebido apunta a otra cedula.
+    const archivoTxt = Buffer.from('Fecha;Descripcion;Monto;Saldo\n17/06/2026;ABO.DRV0099999999;11.935,65;111.207,19\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion_identificador_invalido.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.match_total).toHaveLength(0);
+    expect(response.body.match_parcial).toHaveLength(0);
+  });
+
+  test('POST /api/conciliacion/previsualizar?tipo_conciliacion=uniformes retorna match total en pedidos pago_en_revision', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    UniformePedido.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([
+          {
+            _id: 'u1',
+            alumno: { nombres: 'Lia', apellidos: 'Mendoza' },
+            prenda: 'Franela',
+            referencia: '123456',
+            telefono_pago: '0412-1234567',
+            cedula_titular: 'V-12345678',
+            monto_ultimo_pago: 50,
+            monto_ultimo_pago_bs: 7075,
+            fecha_pago: '2026-03-06'
+          }
+        ])
+      })
+    });
+
+    const archivoTxt = Buffer.from('Referencia;Monto;Fecha\n123456;7075;06/03/2026\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar?tipo_conciliacion=uniformes')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion_uniformes.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.tipo_conciliacion).toBe('uniformes');
+    expect(response.body.match_total).toHaveLength(1);
+    expect(response.body.match_total[0].sistema).toEqual(expect.objectContaining({
+      registro_tipo: 'uniformes',
+      pedido_id: 'u1',
+      monto_esperado_bs: 7075,
+      monto_esperado_usd: 50,
+      monto_bs: 7075,
+      alumno: 'Lia Mendoza'
+    }));
+  });
+
+  test('POST /api/conciliacion/confirmar-match-total confirma pedidos uniformes en pago_en_revision', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const pedidoDoc = {
+      _id: 'u1',
+      estado: 'pago_en_revision',
+      precio: 100,
+      monto_pagado: 0,
+      monto_pagado_bs: 0,
+      monto_ultimo_pago: 100,
+      monto_ultimo_pago_bs: 7075,
+      saldo_pendiente: 100,
+      metodo_pago: 'Pago movil',
+      referencia: '123456',
+      telefono_pago: '04121234567',
+      cedula_titular: '12345678',
+      comprobante_url: '/uploads/test/comprobante.png',
+      fecha_pago: new Date('2026-03-06'),
+      pagos_historial: [],
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    UniformePedido.find.mockResolvedValue([pedidoDoc]);
+
+    const response = await request(app)
+      .post('/api/conciliacion/confirmar-match-total')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        tipo_conciliacion: 'uniformes',
+        pago_ids: ['u1']
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.tipo_conciliacion).toBe('uniformes');
+    expect(response.body.pedidos_actualizados).toBe(1);
+    expect(pedidoDoc.estado).toBe('verificado');
+    expect(Array.isArray(pedidoDoc.pagos_historial)).toBe(true);
+    expect(pedidoDoc.pagos_historial).toHaveLength(1);
+    expect(pedidoDoc.save).toHaveBeenCalled();
   });
 
   test('POST /api/pagos allows admin overpayment and generates saldo a favor', async () => {

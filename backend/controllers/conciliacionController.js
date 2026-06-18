@@ -2,10 +2,15 @@ const XLSX = require('xlsx');
 const path = require('path');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const UniformePedido = require('../models/UniformePedido');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 
 const MONTO_TOLERANCIA_BS = 100;
+const TIPO_CONCILIACION = {
+  MENSUALIDADES: 'mensualidades',
+  UNIFORMES: 'uniformes'
+};
 
 async function getTenantConciliacionModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -14,15 +19,25 @@ async function getTenantConciliacionModels(req) {
   return {
     connection,
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
-    PagoDetalle: getTenantModel(connection, 'PagoDetalle')
+    PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
+    UniformePedido: getTenantModel(connection, 'UniformePedido')
   };
 }
 
 function resolveConciliacionModels(models = {}) {
   return {
     Mensualidad: models.Mensualidad || Mensualidad,
-    PagoDetalle: models.PagoDetalle || PagoDetalle
+    PagoDetalle: models.PagoDetalle || PagoDetalle,
+    UniformePedido: models.UniformePedido || UniformePedido
   };
+}
+
+function resolveTipoConciliacion(rawTipo) {
+  const tipo = String(rawTipo || TIPO_CONCILIACION.MENSUALIDADES).trim().toLowerCase();
+  if (tipo === TIPO_CONCILIACION.MENSUALIDADES || tipo === TIPO_CONCILIACION.UNIFORMES) {
+    return tipo;
+  }
+  return null;
 }
 
 function normalizarTexto(value) {
@@ -69,23 +84,57 @@ function extraerIdentificadoresDesdeDescripcion(descripcion) {
 }
 
 function extraerTelefonoDesdeDescripcion(descripcion) {
-  const identificadores = extraerIdentificadoresDesdeDescripcion(descripcion);
-  if (!identificadores.length) return '';
+  const raw = String(descripcion || '');
+  if (!raw.trim()) return '';
 
-  // Soporta variantes comunes en estados Provincial:
-  // 0412xxxxxxx, 412xxxxxxx, +58412xxxxxxx, 58412xxxxxxx
-  const telefono = identificadores.find((item) => /^(?:58)?0?4\d{9}$|^4\d{9}$/.test(item));
-  if (!telefono) return '';
+  const tokens = raw.match(/\d+/g) || [];
 
-  return telefono;
+  for (const token of tokens) {
+    const matches = token.match(/(?:58)?0?4\d{9}/g) || [];
+    if (matches.length) return matches[0];
+  }
+
+  return '';
+}
+
+function extraerCedulasCandidatasDesdeDescripcion(descripcion) {
+  const raw = String(descripcion || '');
+  if (!raw.trim()) return [];
+
+  const tokens = raw.match(/\d+/g) || [];
+  const candidatos = new Set();
+  const longitudesPreferidas = [8, 7, 9, 6];
+
+  for (const token of tokens) {
+    const sinCeros = String(token || '').replace(/^0+/, '');
+    if (!sinCeros) continue;
+
+    if (sinCeros.length >= 6 && sinCeros.length <= 9) {
+      candidatos.add(sinCeros);
+      continue;
+    }
+
+    if (sinCeros.length > 9) {
+      for (const len of longitudesPreferidas) {
+        if (sinCeros.length < len) continue;
+
+        // En bloques largos con ruido, tomamos un candidato determinista
+        // (prefijo numerico plausible) para evitar falsos positivos por ventanas.
+        const candidato = sinCeros.slice(0, len);
+        if (/^\d+$/.test(candidato)) {
+          candidatos.add(candidato);
+          break;
+        }
+      }
+    }
+  }
+
+  return [...candidatos];
 }
 
 function extraerCedulaDesdeDescripcion(descripcion) {
-  const identificadores = extraerIdentificadoresDesdeDescripcion(descripcion);
-  if (!identificadores.length) return '';
-
-  const cedula = identificadores.find((item) => item.length >= 6 && item.length <= 9);
-  return cedula || '';
+  const candidatos = extraerCedulasCandidatasDesdeDescripcion(descripcion);
+  return candidatos[0] || '';
 }
 
 function referenciasCoinciden(valueBanco, valueSistema) {
@@ -287,10 +336,10 @@ function parseExcelRows(fileBuffer) {
   const dataRows = rows.slice(headerRowIndex + 1);
   const parsedRows = dataRows
     .map((row, idx) => {
+      const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
       const referencia = referenciaIdx !== null ? normalizarReferencia(row[referenciaIdx]) : null;
       const montoBs = parseMonto(row[montoIdx]);
       const fecha = fechaIdx !== null ? parseFecha(row[fechaIdx]) : null;
-      const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
       const telefonoDescripcion = extraerTelefonoDesdeDescripcion(descripcion);
 
       if (!referencia && !telefonoDescripcion && (montoBs === null || montoBs === undefined)) return null;
@@ -358,10 +407,10 @@ function parseTxtRows(fileBuffer) {
     const dataRows = rows.slice(1);
     const parsedRows = dataRows
       .map((row, idx) => {
-        const referencia = normalizarReferencia(row[referenciaIdx]);
+        const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
+        const referencia = referenciaIdx !== null ? normalizarReferencia(row[referenciaIdx]) : '';
         const montoBs = parseMonto(row[montoIdx]);
         const fecha = fechaIdx !== null ? parseFecha(row[fechaIdx]) : null;
-        const descripcion = descripcionIdx !== null ? String(row[descripcionIdx] || '').trim() : '';
         const telefonoDescripcion = extraerTelefonoDesdeDescripcion(descripcion);
 
         if (!referencia && !telefonoDescripcion && (montoBs === null || montoBs === undefined)) return null;
@@ -453,7 +502,10 @@ function buildMatchRecord({ banco, sistema, tipo, motivo = [], matchPor = '', id
     },
     sistema: {
       pago_id: String(sistema._id),
-      mensualidad_id: String(sistema.id_mensualidad),
+      registro_id: String(sistema._id),
+      registro_tipo: sistema.registro_tipo || TIPO_CONCILIACION.MENSUALIDADES,
+      mensualidad_id: sistema.id_mensualidad ? String(sistema.id_mensualidad) : null,
+      pedido_id: sistema.id_pedido ? String(sistema.id_pedido) : null,
       referencia: sistema.referencia || '-',
       telefono_pago: sistema.telefono_pago || '',
       cedula_pago: sistema.cedula_titular || '',
@@ -461,7 +513,8 @@ function buildMatchRecord({ banco, sistema, tipo, motivo = [], matchPor = '', id
       monto_esperado_bs: sistema.monto_esperado_bs,
       monto_esperado_usd: sistema.monto_esperado_usd,
       fecha: sistema.fecha_pago,
-      alumno: sistema.alumno
+      alumno: sistema.alumno,
+      contexto: sistema.contexto || ''
     }
   };
 }
@@ -500,7 +553,18 @@ async function generarReporteConciliacionCore({ models = {} } = {}) {
 exports.previsualizarConciliacion = async (req, res) => {
   try {
     const tenantModels = await getTenantConciliacionModels(req);
-    const { Mensualidad: TenantMensualidad, PagoDetalle: TenantPagoDetalle } = resolveConciliacionModels(tenantModels);
+    const {
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      UniformePedido: TenantUniformePedido
+    } = resolveConciliacionModels(tenantModels);
+
+    const tipoConciliacion = resolveTipoConciliacion(req.query?.tipo_conciliacion);
+    if (!tipoConciliacion) {
+      return res.status(400).json({
+        error: `tipo_conciliacion invalido. Usa ${TIPO_CONCILIACION.MENSUALIDADES} o ${TIPO_CONCILIACION.UNIFORMES}`
+      });
+    }
 
     if (!req.file?.buffer) {
       return res.status(400).json({ error: 'Debes subir un archivo de conciliacion' });
@@ -512,41 +576,76 @@ exports.previsualizarConciliacion = async (req, res) => {
       ? parseTxtRows(req.file.buffer)
       : parseExcelRows(req.file.buffer);
 
-    const mensualidadesRevision = await TenantMensualidad.find({ estatus: 'En revision' })
-      .populate('id_alumno', 'nombres apellidos')
-      .select('_id monto_esperado estatus id_alumno');
+    let sistemaRows = [];
 
-    const mensualidadMap = new Map(
-      mensualidadesRevision.map((m) => [String(m._id), m])
-    );
+    if (tipoConciliacion === TIPO_CONCILIACION.MENSUALIDADES) {
+      const mensualidadesRevision = await TenantMensualidad.find({ estatus: 'En revision' })
+        .populate('id_alumno', 'nombres apellidos')
+        .select('_id monto_esperado estatus id_alumno');
 
-    const pagosSistema = await TenantPagoDetalle.find({
-      id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) }
-    }).select('_id id_mensualidad referencia telefono_pago cedula_titular monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
+      const mensualidadMap = new Map(
+        mensualidadesRevision.map((m) => [String(m._id), m])
+      );
 
-    const sistemaRows = pagosSistema.map((pago) => {
-      const mensualidad = mensualidadMap.get(String(pago.id_mensualidad));
-      const alumnoNombre = mensualidad?.id_alumno
-        ? `${mensualidad.id_alumno.nombres || ''} ${mensualidad.id_alumno.apellidos || ''}`.trim()
-        : '-';
+      const pagosSistema = await TenantPagoDetalle.find({
+        id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) }
+      }).select('_id id_mensualidad referencia telefono_pago cedula_titular monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
 
-      return {
-        _id: pago._id,
-        id_mensualidad: pago.id_mensualidad,
-        referencia: normalizarReferencia(pago.referencia),
-        telefono_pago: String(pago.telefono_pago || '').trim(),
-        telefono_pago_cmp: telefonoComparable(pago.telefono_pago),
-        cedula_titular: String(pago.cedula_titular || '').trim(),
-        cedula_titular_cmp: cedulaComparable(pago.cedula_titular),
-        monto_pagado_bs: parseMonto(pago.monto_pagado_bs),
-        monto_esperado_bs: parseMonto(pago.monto_esperado_bs),
-        monto_esperado_usd: pago.monto_esperado_usd === null || pago.monto_esperado_usd === undefined
-          ? null
-          : Number(pago.monto_esperado_usd),
-        fecha_pago: parseFecha(pago.fecha_pago),
-        alumno: alumnoNombre
-      };
-    });
+      sistemaRows = pagosSistema.map((pago) => {
+        const mensualidad = mensualidadMap.get(String(pago.id_mensualidad));
+        const alumnoNombre = mensualidad?.id_alumno
+          ? `${mensualidad.id_alumno.nombres || ''} ${mensualidad.id_alumno.apellidos || ''}`.trim()
+          : '-';
+
+        return {
+          _id: pago._id,
+          registro_tipo: TIPO_CONCILIACION.MENSUALIDADES,
+          id_mensualidad: pago.id_mensualidad,
+          referencia: normalizarReferencia(pago.referencia),
+          telefono_pago: String(pago.telefono_pago || '').trim(),
+          telefono_pago_cmp: telefonoComparable(pago.telefono_pago),
+          cedula_titular: String(pago.cedula_titular || '').trim(),
+          cedula_titular_cmp: cedulaComparable(pago.cedula_titular),
+          monto_pagado_bs: parseMonto(pago.monto_pagado_bs),
+          monto_esperado_bs: parseMonto(pago.monto_esperado_bs),
+          monto_esperado_usd: pago.monto_esperado_usd === null || pago.monto_esperado_usd === undefined
+            ? null
+            : Number(pago.monto_esperado_usd),
+          fecha_pago: parseFecha(pago.fecha_pago),
+          alumno: alumnoNombre,
+          contexto: ''
+        };
+      });
+    } else {
+      const pedidosEnRevision = await TenantUniformePedido.find({ estado: 'pago_en_revision' })
+        .populate('alumno', 'nombres apellidos')
+        .select('_id alumno prenda referencia telefono_pago cedula_titular monto_ultimo_pago monto_ultimo_pago_bs fecha_pago');
+
+      sistemaRows = pedidosEnRevision.map((pedido) => {
+        const alumnoNombre = pedido?.alumno
+          ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim()
+          : '-';
+
+        return {
+          _id: pedido._id,
+          registro_tipo: TIPO_CONCILIACION.UNIFORMES,
+          id_pedido: pedido._id,
+          referencia: normalizarReferencia(pedido.referencia),
+          telefono_pago: String(pedido.telefono_pago || '').trim(),
+          telefono_pago_cmp: telefonoComparable(pedido.telefono_pago),
+          cedula_titular: String(pedido.cedula_titular || '').trim(),
+          cedula_titular_cmp: cedulaComparable(pedido.cedula_titular),
+          monto_pagado_bs: parseMonto(pedido.monto_ultimo_pago_bs),
+          monto_esperado_bs: parseMonto(pedido.monto_ultimo_pago_bs),
+          monto_esperado_usd: pedido.monto_ultimo_pago === null || pedido.monto_ultimo_pago === undefined
+            ? null
+            : Number(pedido.monto_ultimo_pago),
+          fecha_pago: parseFecha(pedido.fecha_pago),
+          alumno: alumnoNombre,
+          contexto: pedido.prenda ? `Prenda: ${pedido.prenda}` : ''
+        };
+      });
+    }
 
     const bancoDisponibles = new Set(bancoRows.map((_, idx) => idx));
     const sistemaDisponibles = new Set(sistemaRows.map((_, idx) => idx));
@@ -592,17 +691,28 @@ exports.previsualizarConciliacion = async (req, res) => {
       const candidatos = [...bancoDisponibles]
         .map((idx) => ({ idx, row: bancoRows[idx] }))
         .map(({ idx, row }) => {
-          const telefonoBancoComparable = telefonoComparable(row.telefono_movimiento);
-          const cedulaBancoComparable = cedulaComparable(row.cedula_movimiento);
-          const matchTelefono = Boolean(
-            telefonoBancoComparable
+          const telefonosCandidatos = [row.telefono_movimiento, ...((String(row.descripcion || '').match(/\d+/g) || [])
+            .flatMap((token) => token.match(/(?:58)?0?4\d{9}/g) || []))]
+            .filter(Boolean);
+          const cedulasCandidatas = extraerCedulasCandidatasDesdeDescripcion(row.descripcion || '');
+
+          const telefonoMatchRaw = telefonosCandidatos.find((telefono) => (
+            telefonoComparable(telefono)
             && sistema.telefono_pago_cmp
-            && telefonoBancoComparable === sistema.telefono_pago_cmp
+            && telefonoComparable(telefono) === sistema.telefono_pago_cmp
+          ));
+
+          const cedulaMatchRaw = cedulasCandidatas.find((cedula) => (
+            cedulaComparable(cedula)
+            && sistema.cedula_titular_cmp
+            && cedulaComparable(cedula) === sistema.cedula_titular_cmp
+          ));
+
+          const matchTelefono = Boolean(
+            telefonoMatchRaw
           );
           const matchCedula = Boolean(
-            cedulaBancoComparable
-            && sistema.cedula_titular_cmp
-            && cedulaBancoComparable === sistema.cedula_titular_cmp
+            cedulaMatchRaw
           );
 
           return {
@@ -610,7 +720,7 @@ exports.previsualizarConciliacion = async (req, res) => {
             row,
             fecha: row.fecha,
             matchPor: matchTelefono ? 'telefono' : (matchCedula ? 'cedula' : ''),
-            identificadorBanco: matchTelefono ? (row.telefono_movimiento || '') : (matchCedula ? (row.cedula_movimiento || '') : ''),
+            identificadorBanco: matchTelefono ? telefonoMatchRaw : (matchCedula ? cedulaMatchRaw : ''),
             identificadorSistema: matchTelefono ? (sistema.telefono_pago || '') : (matchCedula ? (sistema.cedula_titular || '') : '')
           };
         })
@@ -648,16 +758,27 @@ exports.previsualizarConciliacion = async (req, res) => {
         const banco = bancoRows[bancoIdx];
         if (!areAmountsEqual(banco.monto_bs, sistema.monto_pagado_bs)) continue;
 
-        const telefonoBancoComparable = telefonoComparable(banco.telefono_movimiento);
-        const cedulaBancoComparable = cedulaComparable(banco.cedula_movimiento);
+        const telefonosCandidatos = [banco.telefono_movimiento, ...((String(banco.descripcion || '').match(/\d+/g) || [])
+          .flatMap((token) => token.match(/(?:58)?0?4\d{9}/g) || []))]
+          .filter(Boolean);
+        const cedulasCandidatas = extraerCedulasCandidatasDesdeDescripcion(banco.descripcion || '');
+        const coincideTelefono = telefonosCandidatos.some((telefono) => (
+          telefonoComparable(telefono)
+          && sistema.telefono_pago_cmp
+          && telefonoComparable(telefono) === sistema.telefono_pago_cmp
+        ));
+        const coincideCedula = cedulasCandidatas.some((cedula) => (
+          cedulaComparable(cedula)
+          && sistema.cedula_titular_cmp
+          && cedulaComparable(cedula) === sistema.cedula_titular_cmp
+        ));
         const coincideIdentificador = Boolean(
-          (telefonoBancoComparable && sistema.telefono_pago_cmp && telefonoBancoComparable === sistema.telefono_pago_cmp)
-          || (cedulaBancoComparable && sistema.cedula_titular_cmp && cedulaBancoComparable === sistema.cedula_titular_cmp)
+          coincideTelefono || coincideCedula
         );
-        const bancoTraeIdentificador = Boolean(telefonoBancoComparable || cedulaBancoComparable);
+        const bancoTraeIdentificador = Boolean(telefonosCandidatos.length || cedulasCandidatas.length);
         const sistemaTieneDatoComparable = Boolean(
-          (telefonoBancoComparable && sistema.telefono_pago_cmp)
-          || (cedulaBancoComparable && sistema.cedula_titular_cmp)
+          (telefonosCandidatos.length && sistema.telefono_pago_cmp)
+          || (cedulasCandidatas.length && sistema.cedula_titular_cmp)
         );
 
         // Evita falsos parciales por fecha+monto cuando el banco trae identificador
@@ -721,7 +842,10 @@ exports.previsualizarConciliacion = async (req, res) => {
       return {
         sistema: {
           pago_id: String(row._id),
-          mensualidad_id: String(row.id_mensualidad),
+          registro_id: String(row._id),
+          registro_tipo: row.registro_tipo || TIPO_CONCILIACION.MENSUALIDADES,
+          mensualidad_id: row.id_mensualidad ? String(row.id_mensualidad) : null,
+          pedido_id: row.id_pedido ? String(row.id_pedido) : null,
           referencia: row.referencia || '-',
           telefono_pago: row.telefono_pago || '',
           cedula_pago: row.cedula_titular || '',
@@ -729,7 +853,8 @@ exports.previsualizarConciliacion = async (req, res) => {
           monto_esperado_bs: row.monto_esperado_bs,
           monto_esperado_usd: row.monto_esperado_usd,
           fecha: row.fecha_pago,
-          alumno: row.alumno
+          alumno: row.alumno,
+          contexto: row.contexto || ''
         }
       };
     });
@@ -737,6 +862,7 @@ exports.previsualizarConciliacion = async (req, res) => {
     const pagoIdsConfirmables = matchTotal.map((m) => m.sistema.pago_id);
 
     return res.json({
+      tipo_conciliacion: tipoConciliacion,
       summary: {
         total_excel: bancoRows.length,
         total_sistema_en_revision: sistemaRows.length,
@@ -759,11 +885,87 @@ exports.previsualizarConciliacion = async (req, res) => {
 exports.confirmarMatchTotal = async (req, res) => {
   try {
     const tenantModels = await getTenantConciliacionModels(req);
-    const { Mensualidad: TenantMensualidad, PagoDetalle: TenantPagoDetalle } = resolveConciliacionModels(tenantModels);
+    const {
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      UniformePedido: TenantUniformePedido
+    } = resolveConciliacionModels(tenantModels);
+
+    const tipoConciliacion = resolveTipoConciliacion(req.body?.tipo_conciliacion);
+    if (!tipoConciliacion) {
+      return res.status(400).json({
+        error: `tipo_conciliacion invalido. Usa ${TIPO_CONCILIACION.MENSUALIDADES} o ${TIPO_CONCILIACION.UNIFORMES}`
+      });
+    }
 
     const pagoIds = Array.isArray(req.body?.pago_ids) ? req.body.pago_ids : [];
     if (!pagoIds.length) {
       return res.status(400).json({ error: 'Debes enviar al menos un pago para confirmar' });
+    }
+
+    if (tipoConciliacion === TIPO_CONCILIACION.UNIFORMES) {
+      const pedidos = await TenantUniformePedido.find({
+        _id: { $in: pagoIds },
+        estado: 'pago_en_revision'
+      });
+
+      if (!pedidos.length) {
+        return res.status(404).json({ error: 'No se encontraron pedidos en pago_en_revision para confirmar' });
+      }
+
+      let actualizadas = 0;
+
+      for (const pedido of pedidos) {
+        const totalPedido = Number(pedido.precio) || 0;
+        const montoPrevioPagado = Number(pedido.monto_pagado) || 0;
+        const montoPrevioPagadoBs = Number(pedido.monto_pagado_bs) || 0;
+        const montoUltimoPagoRaw = Number(pedido.monto_ultimo_pago);
+        const montoUltimoPagoBsRaw = Number(pedido.monto_ultimo_pago_bs);
+        const saldoActual = Number(pedido.saldo_pendiente);
+        const saldoPendienteActual = Number.isFinite(saldoActual) && saldoActual > 0
+          ? saldoActual
+          : Math.max(totalPedido - montoPrevioPagado, 0);
+        const montoUltimoPago = Number.isFinite(montoUltimoPagoRaw) && montoUltimoPagoRaw > 0
+          ? Math.min(montoUltimoPagoRaw, saldoPendienteActual)
+          : saldoPendienteActual;
+        const factorAjusteUltimoPago = Number.isFinite(montoUltimoPagoRaw) && montoUltimoPagoRaw > 0
+          ? (montoUltimoPago / montoUltimoPagoRaw)
+          : 1;
+        const montoUltimoPagoBs = Number.isFinite(montoUltimoPagoBsRaw) && montoUltimoPagoBsRaw > 0
+          ? (montoUltimoPagoBsRaw * factorAjusteUltimoPago)
+          : 0;
+
+        const totalPagado = Math.min(totalPedido, montoPrevioPagado + montoUltimoPago);
+        const totalPagadoBs = montoPrevioPagadoBs + montoUltimoPagoBs;
+        const saldoPendiente = Math.max(totalPedido - totalPagado, 0);
+
+        pedido.pagos_historial = Array.isArray(pedido.pagos_historial) ? pedido.pagos_historial : [];
+        pedido.pagos_historial.push({
+          monto_pagado: montoUltimoPago,
+          monto_pagado_bs: montoUltimoPagoBs,
+          metodo_pago: pedido.metodo_pago,
+          referencia: pedido.referencia,
+          telefono_pago: pedido.telefono_pago,
+          cedula_titular: pedido.cedula_titular,
+          comprobante_url: pedido.comprobante_url,
+          fecha_pago: pedido.fecha_pago
+        });
+
+        pedido.monto_pagado = totalPagado;
+        pedido.monto_pagado_bs = totalPagadoBs;
+        pedido.saldo_pendiente = saldoPendiente;
+        pedido.estado = saldoPendiente > 0 ? 'abono' : 'verificado';
+        await pedido.save();
+        actualizadas += 1;
+      }
+
+      return res.json({
+        message: 'Conciliacion aplicada correctamente',
+        tipo_conciliacion: tipoConciliacion,
+        pedidos_actualizados: actualizadas,
+        registros_actualizados: actualizadas,
+        pagos_recibidos: pagoIds.length
+      });
     }
 
     const pagos = await TenantPagoDetalle.find({ _id: { $in: pagoIds } }).select('_id id_mensualidad');
@@ -796,7 +998,9 @@ exports.confirmarMatchTotal = async (req, res) => {
 
     return res.json({
       message: 'Conciliacion aplicada correctamente',
+      tipo_conciliacion: tipoConciliacion,
       mensualidades_actualizadas: actualizadas,
+      registros_actualizados: actualizadas,
       pagos_recibidos: pagoIds.length
     });
   } catch (err) {
