@@ -129,8 +129,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [nombrePersonalizadoInput, setNombrePersonalizadoInput] = useState(nombrePersonalizadoDefault);
   const prendaSeleccionada = prendas.find((item) => item.prenda === prenda);
   const esFranelaRepresentante = Boolean(prendaSeleccionada?.franela_representante);
-  const permiteEditarNombrePersonalizado = Boolean(prendaSeleccionada?.lleva_personalizacion_nombre);
-  const usaSelectorNombreRepresentante = esFranelaRepresentante && prendaSeleccionada?.lleva_personalizacion_nombre === false;
+  const llevaNombreAtleta = Boolean(prendaSeleccionada?.lleva_nombre_atleta);
+  const permitePersonalizacionNombre = Boolean(prendaSeleccionada?.lleva_personalizacion_nombre);
+  const usaSelectorNombreRepresentante = esFranelaRepresentante && !permitePersonalizacionNombre;
+  const mostrarCampoNombre = llevaNombreAtleta || esFranelaRepresentante;
   const ocultarNumeroFranela = Boolean(prendaSeleccionada) && prendaSeleccionada.lleva_numero_franela === false;
   const requiereNumeroFranela = !ocultarNumeroFranela;
 
@@ -177,6 +179,23 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const formatearMontoConMoneda = useCallback((monto, moneda) => {
     return `${normalizarMoneda(moneda)} ${formatMoney(monto)}`;
   }, []);
+
+  const uniformControlSx = {
+    '& .MuiOutlinedInput-root': {
+      height: 56
+    },
+    '& .MuiSelect-select': {
+      height: '56px !important',
+      display: 'flex',
+      alignItems: 'center',
+      boxSizing: 'border-box',
+      paddingTop: '0 !important',
+      paddingBottom: '0 !important'
+    },
+    '& .MuiInputBase-input': {
+      boxSizing: 'border-box'
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -283,13 +302,18 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   }, [alumno?._id, alumno?.numero_franela, alumno?.numeroFranela]);
 
   useEffect(() => {
-    if (permiteEditarNombrePersonalizado || usaSelectorNombreRepresentante) {
+    if (!mostrarCampoNombre) {
+      setNombrePersonalizadoInput(nombrePersonalizadoDefault);
+      return;
+    }
+
+    if (usaSelectorNombreRepresentante) {
       setNombrePersonalizadoInput('');
       return;
     }
 
     setNombrePersonalizadoInput(nombrePersonalizadoDefault);
-  }, [nombrePersonalizadoDefault, permiteEditarNombrePersonalizado, usaSelectorNombreRepresentante]);
+  }, [nombrePersonalizadoDefault, mostrarCampoNombre, usaSelectorNombreRepresentante]);
 
   useEffect(() => {
     if (!requiereNumeroFranela) {
@@ -374,8 +398,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return;
     }
 
-    if (usaSelectorNombreRepresentante && !String(nombrePersonalizadoInput || '').trim()) {
-      setErrorMessage('Debes seleccionar el nombre para la franela de representante');
+    if (mostrarCampoNombre && !String(nombrePersonalizadoInput || '').trim()) {
+      setErrorMessage(usaSelectorNombreRepresentante
+        ? 'Debes seleccionar el nombre para la franela de representante'
+        : 'Debes ingresar el nombre del atleta para continuar');
       return;
     }
 
@@ -387,7 +413,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       formData.append('sedeId', sedeId);
       formData.append('prenda', prenda);
       formData.append('talla', talla);
-      formData.append('nombrePersonalizado', String(nombrePersonalizadoInput || '').trim());
+      if (mostrarCampoNombre) {
+        formData.append('nombrePersonalizado', String(nombrePersonalizadoInput || '').trim());
+      }
       if (requiereNumeroFranela && numeroFranelaFinal) {
         formData.append('numeroFranela', numeroFranelaFinal);
       }
@@ -588,7 +616,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
             <Box component="form" onSubmit={handleSubmit} noValidate>
               <Grid container spacing={2} sx={{ mb: 2 }}>
                 <Grid item size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth required>
+                  <FormControl fullWidth required sx={uniformControlSx}>
                     <InputLabel id="prenda-label">Prenda</InputLabel>
                     <Select
                       labelId="prenda-label"
@@ -596,6 +624,12 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                       label="Prenda"
                       onChange={(event) => setPrenda(event.target.value)}
                       disabled={prendasLoading || !!prendasError}
+                      renderValue={(selected) => {
+                        if (!selected) return <em>Seleccione</em>;
+                        const item = prendas.find((p) => p.prenda === selected);
+                        if (!item) return selected;
+                        return `${item.prenda} - ${formatearMontoConMoneda(item.precio, item.moneda)}`;
+                      }}
                     >
                       <MenuItem value=""><em>Seleccione</em></MenuItem>
                       {prendas.map((item) => (
@@ -628,7 +662,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                 }}
                               />
                             )}
-                            <Typography sx={{ fontSize: 14, color: '#0f172a', whiteSpace: 'normal', lineHeight: 1.25 }}>
+                            <Typography sx={{ fontSize: 14, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                               {item.prenda} - {formatearMontoConMoneda(item.precio, item.moneda)}
                             </Typography>
                           </Box>
@@ -638,7 +672,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                   </FormControl>
                 </Grid>
                 <Grid item size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth required>
+                  <FormControl fullWidth required sx={uniformControlSx}>
                     <InputLabel id="talla-label">Talla</InputLabel>
                     <Select
                       labelId="talla-label"
@@ -653,49 +687,52 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item size={{ xs: 12, md: 6 }}>
-                  {usaSelectorNombreRepresentante ? (
-                    <FormControl fullWidth required>
-                      <InputLabel id="nombre-representante-label">Nombre para franela</InputLabel>
-                      <Select
-                        labelId="nombre-representante-label"
+                {mostrarCampoNombre && (
+                  <Grid item size={{ xs: 12, md: 6 }}>
+                    {usaSelectorNombreRepresentante ? (
+                      <FormControl fullWidth required sx={uniformControlSx}>
+                        <InputLabel id="nombre-representante-label">Nombre para franela</InputLabel>
+                        <Select
+                          labelId="nombre-representante-label"
+                          value={nombrePersonalizadoInput}
+                          label="Nombre para franela"
+                          onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
+                        >
+                          <MenuItem value=""><em>Seleccione</em></MenuItem>
+                          {OPCIONES_NOMBRE_REPRESENTANTE.map((opcion) => (
+                            <MenuItem key={opcion} value={opcion}>{opcion}</MenuItem>
+                          ))}
+                        </Select>
+                        <Typography variant="caption" sx={{ mt: 0.6, color: '#64748b', display: 'block' }}>
+                          Selecciona el texto que llevara la franela del representante
+                        </Typography>
+                      </FormControl>
+                    ) : (
+                      <TextField
+                        fullWidth
+                        label="Nombre del atleta"
+                        placeholder={`Ej: ${ejemploNombreJugador}`}
                         value={nombrePersonalizadoInput}
-                        label="Nombre para franela"
                         onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
-                      >
-                        <MenuItem value=""><em>Seleccione</em></MenuItem>
-                        {OPCIONES_NOMBRE_REPRESENTANTE.map((opcion) => (
-                          <MenuItem key={opcion} value={opcion}>{opcion}</MenuItem>
-                        ))}
-                      </Select>
-                      <Typography variant="caption" sx={{ mt: 0.6, color: '#64748b', display: 'block' }}>
-                        Selecciona el texto que llevara la franela del representante
-                      </Typography>
-                    </FormControl>
-                  ) : (
-                    <TextField
-                      fullWidth
-                      label="Nombre personalizado"
-                      placeholder={!esFranelaRepresentante ? `Ej: ${ejemploNombreJugador}` : ''}
-                      value={nombrePersonalizadoInput}
-                      onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
-                      disabled={!permiteEditarNombrePersonalizado}
-                      sx={{
-                        '& .MuiInputBase-input.Mui-disabled': {
-                          WebkitTextFillColor: '#64748b'
-                        },
-                        '& .MuiOutlinedInput-root.Mui-disabled': {
-                          backgroundColor: '#fdfdfd'
-                        }
-                      }}
-                      helperText={permiteEditarNombrePersonalizado
-                        ? (esFranelaRepresentante
-                          ? 'Escribe el nombre personalizado para la franela'
-                          : `Ejemplo: ${ejemploNombreJugador}`)
-                        : 'Sugerido: primer apellido + inicial del primer nombre'}
-                    />
+                        disabled={!permitePersonalizacionNombre}
+                        sx={{
+                          ...uniformControlSx,
+                          '& .MuiInputBase-input.Mui-disabled': {
+                            WebkitTextFillColor: '#64748b'
+                          },
+                          '& .MuiOutlinedInput-root.Mui-disabled': {
+                            backgroundColor: '#fdfdfd'
+                          }
+                        }}
+                        helperText={permitePersonalizacionNombre
+                          ? (esFranelaRepresentante
+                            ? 'Escribe el nombre personalizado para la franela de representante'
+                            : 'Escribe el nombre del atleta que llevará la prenda')
+                          : 'El sistema usa el nombre sugerido del atleta'}
+                      />
                   )}
-                </Grid>
+                  </Grid>
+                )}
                 {requiereNumeroFranela && (
                   <Grid item size={{ xs: 12, md: 6 }}>
                     {numeroFranelaAlumno ? (
@@ -715,7 +752,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         helperText="Se usa el numero asignado en la ficha del alumno"
                       />
                     ) : (
-                      <FormControl fullWidth required error={!!numeroFranelaError && !numeroFranelaLoading}>
+                      <FormControl fullWidth required error={!!numeroFranelaError && !numeroFranelaLoading} sx={uniformControlSx}>
                         <InputLabel id="numero-franela-label">Numero de franela</InputLabel>
                         <Select
                           labelId="numero-franela-label"
@@ -780,7 +817,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                 color="primary"
                 fullWidth
                 size="large"
-                disabled={guardando || (usaSelectorNombreRepresentante && !String(nombrePersonalizadoInput || '').trim()) || (requiereNumeroFranela && (!numeroFranelaAlumno && !numeroFranelaSeleccionado)) || (requiereNumeroFranela && numeroFranelaLoading) || (requiereNumeroFranela && !!numeroFranelaError)}
+                disabled={guardando || (mostrarCampoNombre && !String(nombrePersonalizadoInput || '').trim()) || (requiereNumeroFranela && (!numeroFranelaAlumno && !numeroFranelaSeleccionado)) || (requiereNumeroFranela && numeroFranelaLoading) || (requiereNumeroFranela && !!numeroFranelaError)}
               >
                 {guardando ? 'Guardando...' : 'Guardar pedido'}
               </Button>

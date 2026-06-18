@@ -4,7 +4,11 @@ import {
   Button,
   Chip,
   CircularProgress,
+  FormControl,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Snackbar,
   Table,
   TableBody,
@@ -28,6 +32,10 @@ import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded';
 import './ConciliacionBancaria.css';
 
 const MONTO_TOLERANCIA_BS = 100;
+const TIPO_CONCILIACION = {
+  MENSUALIDADES: 'mensualidades',
+  UNIFORMES: 'uniformes'
+};
 
 const formatMatchPor = (value) => {
   switch (String(value || '').toLowerCase()) {
@@ -123,6 +131,7 @@ export default function ConciliacionBancaria() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [resultado, setResultado] = useState(null);
+  const [tipoConciliacion, setTipoConciliacion] = useState(TIPO_CONCILIACION.MENSUALIDADES);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const theme = useTheme();
@@ -149,8 +158,9 @@ export default function ConciliacionBancaria() {
     try {
       const formData = new FormData();
       formData.append('archivo', fileToProcess);
+      const query = new URLSearchParams({ tipo_conciliacion: tipoConciliacion }).toString();
 
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/conciliacion/previsualizar`, {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/conciliacion/previsualizar?${query}`, {
         method: 'POST',
         headers,
         body: formData
@@ -184,13 +194,18 @@ export default function ConciliacionBancaria() {
           ...headers,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ pago_ids: ids })
+        body: JSON.stringify({
+          pago_ids: ids,
+          tipo_conciliacion: tipoConciliacion
+        })
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Error al confirmar pagos');
 
-      setSuccess(`Se actualizaron ${data.mensualidades_actualizadas || 0} mensualidades.`);
+      const actualizados = data.registros_actualizados ?? data.mensualidades_actualizadas ?? data.pedidos_actualizados ?? 0;
+      const etiqueta = tipoConciliacion === TIPO_CONCILIACION.UNIFORMES ? 'pedidos de uniforme' : 'mensualidades';
+      setSuccess(`Se actualizaron ${actualizados} ${etiqueta}.`);
       if (archivo) {
         await procesarArchivo(archivo);
       }
@@ -220,6 +235,7 @@ export default function ConciliacionBancaria() {
     const total = (resultado.match_total || []).map((row) => ({
       tipo: 'match_total',
       alumno: row.sistema?.alumno || '-',
+      contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
@@ -241,6 +257,7 @@ export default function ConciliacionBancaria() {
     const parcial = (resultado.match_parcial || []).map((row) => ({
       tipo: 'match_parcial',
       alumno: row.sistema?.alumno || '-',
+      contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
@@ -262,6 +279,7 @@ export default function ConciliacionBancaria() {
     const noSistema = (resultado.sin_coincidencia_sistema || []).map((row) => ({
       tipo: 'sin_coincidencia',
       alumno: row.sistema?.alumno || '-',
+      contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
@@ -283,6 +301,7 @@ export default function ConciliacionBancaria() {
     const noExcel = (resultado.sin_coincidencia_excel || []).map((row) => ({
       tipo: 'sin_coincidencia',
       alumno: '-',
+      contextoSistema: '',
       referenciaSistema: '-',
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: '-',
@@ -357,6 +376,22 @@ export default function ConciliacionBancaria() {
               Formatos: .xlsx, .xls, .txt
             </Typography>
           </div>
+
+          <FormControl size="small" fullWidth sx={{ mb: 1 }}>
+            <InputLabel id="tipo-conciliacion-label">Tipo de conciliacion</InputLabel>
+            <Select
+              labelId="tipo-conciliacion-label"
+              value={tipoConciliacion}
+              label="Tipo de conciliacion"
+              onChange={(event) => {
+                setTipoConciliacion(event.target.value);
+                setResultado(null);
+              }}
+            >
+              <MenuItem value={TIPO_CONCILIACION.MENSUALIDADES}>Mensualidades</MenuItem>
+              <MenuItem value={TIPO_CONCILIACION.UNIFORMES}>Uniformes</MenuItem>
+            </Select>
+          </FormControl>
 
           <div
             className={`conciliacionDropzone ${dragging ? 'isDragging' : ''}`}
@@ -438,7 +473,7 @@ export default function ConciliacionBancaria() {
 
           <div className="conciliacionMetricCard warn">
             <WarningAmberIcon sx={{ fontSize: 18, color: '#ea580c' }} />
-            <span>En revision</span>
+            <span>{tipoConciliacion === TIPO_CONCILIACION.UNIFORMES ? 'Pago en revision' : 'En revision'}</span>
             <strong>{totalRevision}</strong>
           </div>
 
@@ -466,6 +501,14 @@ export default function ConciliacionBancaria() {
                     <span className="label">Alumno</span>
                     <span className="value">{fila.alumno}</span>
                   </div>
+                  {!!fila.contextoSistema && (
+                    <div className="conciliacionMobileRow">
+                      <span className="label">Contexto</span>
+                      <span className="value">
+                        <Chip size="small" label={fila.contextoSistema} className="conciliacionContextChip" />
+                      </span>
+                    </div>
+                  )}
                   <div className="conciliacionMobileRow">
                     <span className="label">Ref. Sistema</span>
                     <span className="value">{fila.referenciaSistema}</span>
@@ -581,7 +624,14 @@ export default function ConciliacionBancaria() {
                   {filasPaginadas.map((fila, idx) => (
                     <TableRow key={`${fila.tipo}-${page * rowsPerPage + idx}`}>
                       <TableCell>{estadoChip(fila.tipo)}</TableCell>
-                      <TableCell>{fila.alumno}</TableCell>
+                      <TableCell>
+                        <div className="conciliacionAlumnoCell">
+                          <span>{fila.alumno}</span>
+                          {!!fila.contextoSistema && (
+                            <Chip size="small" label={fila.contextoSistema} className="conciliacionContextChip" />
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{fila.referenciaSistema}</TableCell>
                       <TableCell>{fila.referenciaExcel}</TableCell>
                       <TableCell>{fila.telefonoSistema || '-'}</TableCell>

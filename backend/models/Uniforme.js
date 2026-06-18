@@ -4,6 +4,7 @@ const UniformeSchema = new mongoose.Schema({
   prenda: { type: String, required: true },
   precio: { type: Number, required: true },
   moneda: { type: String, enum: ['USD', 'EUR'], default: 'USD' },
+  lleva_nombre_atleta: { type: Boolean, default: false },
   lleva_personalizacion_nombre: { type: Boolean, default: false },
   lleva_numero_franela: { type: Boolean, default: false },
   franela_representante: { type: Boolean, default: false },

@@ -43,6 +43,7 @@ const initialForm = {
   prenda: '',
   precio: '',
   moneda: 'USD',
+  lleva_nombre_atleta: false,
   lleva_personalizacion_nombre: false,
   lleva_numero_franela: false,
   franela_representante: false,
@@ -180,6 +181,7 @@ export default function Uniformes() {
         prenda: u.prenda,
         precio: u.precio,
         moneda: String(u.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD',
+        lleva_nombre_atleta: Boolean(u.lleva_nombre_atleta),
         lleva_personalizacion_nombre: Boolean(u.lleva_personalizacion_nombre),
         lleva_numero_franela: Boolean(u.lleva_numero_franela),
         franela_representante: Boolean(u.franela_representante),
@@ -301,6 +303,7 @@ export default function Uniformes() {
       formData.append('prenda', form.prenda);
       formData.append('precio', form.precio);
       formData.append('moneda', String(form.moneda || 'USD').toUpperCase());
+      formData.append('lleva_nombre_atleta', String(Boolean(form.lleva_nombre_atleta)));
       formData.append('lleva_personalizacion_nombre', String(Boolean(form.lleva_personalizacion_nombre)));
       formData.append('lleva_numero_franela', String(Boolean(form.lleva_numero_franela)));
       formData.append('franela_representante', String(Boolean(form.franela_representante)));
@@ -418,6 +421,7 @@ export default function Uniformes() {
               <Box sx={{ display: 'grid', gap: 0.35 }}>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Precio:</b> ${uniforme.precio}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Moneda:</b> {String(uniforme.moneda || 'USD').toUpperCase()}</Typography>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Nombre del atleta:</b> {uniforme.lleva_nombre_atleta ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Personalización nombre:</b> {uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Número de franela:</b> {uniforme.lleva_numero_franela ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Franela representante:</b> {uniforme.franela_representante ? 'Si' : 'No'}</Typography>
@@ -464,6 +468,7 @@ export default function Uniformes() {
                 <TableCell>Prenda</TableCell>
                 <TableCell>Precio</TableCell>
                 <TableCell>Moneda</TableCell>
+                <TableCell>Nombre del atleta</TableCell>
                 <TableCell>Personalizacion nombre</TableCell>
                 <TableCell>Numero de franela</TableCell>
                 <TableCell>Franela de representante</TableCell>
@@ -472,13 +477,14 @@ export default function Uniformes() {
             </TableHead>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={7} align="center">Cargando...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} align="center">Cargando...</TableCell></TableRow>
               ) : (
                 uniformes.map((uniforme) => (
                   <TableRow key={uniforme._id}>
                     <TableCell>{uniforme.prenda}</TableCell>
                     <TableCell>{uniforme.precio}</TableCell>
                     <TableCell>{String(uniforme.moneda || 'USD').toUpperCase()}</TableCell>
+                    <TableCell>{uniforme.lleva_nombre_atleta ? 'Si' : 'No'}</TableCell>
                     <TableCell>{uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</TableCell>
                     <TableCell>{uniforme.lleva_numero_franela ? 'Si' : 'No'}</TableCell>
                     <TableCell>{uniforme.franela_representante ? 'Si' : 'No'}</TableCell>
@@ -496,7 +502,7 @@ export default function Uniformes() {
               )}
               {!loading && uniformes.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">No hay uniformes registrados.</TableCell>
+                  <TableCell colSpan={8} align="center">No hay uniformes registrados.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -612,6 +618,20 @@ export default function Uniformes() {
               <MenuItem value="EUR">EUR</MenuItem>
             </Select>
           </FormControl>
+          <FormControlLabel
+            sx={{ mt: 0.5, mb: 0, color: '#475569' }}
+            control={(
+              <Checkbox
+                name="lleva_nombre_atleta"
+                checked={Boolean(form.lleva_nombre_atleta)}
+                onChange={handleChange}
+                disabled={!token}
+                size="small"
+                sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
+              />
+            )}
+            label="Prenda con nombre"
+          />
           <FormControlLabel
             sx={{ mt: 0.5, mb: 0, color: '#475569' }}
             control={(

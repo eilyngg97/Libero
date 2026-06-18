@@ -31,6 +31,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -73,15 +74,21 @@ function ListadoSolicitudesUniformes() {
   const [submittingVerificacion, setSubmittingVerificacion] = useState(false);
   const [confirmEntregarId, setConfirmEntregarId] = useState(null);
   const [entregandoId, setEntregandoId] = useState(null);
+  const [confirmEliminarId, setConfirmEliminarId] = useState(null);
+  const [eliminandoId, setEliminandoId] = useState(null);
   const [comprobanteDialogOpen, setComprobanteDialogOpen] = useState(false);
   const [comprobanteUrl, setComprobanteUrl] = useState('');
   const [comprobanteTipo, setComprobanteTipo] = useState('imagen');
+  const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [filtroPrenda, setFiltroPrenda] = useState('todas');
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(10);
   const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState(null);
   const [selectedPedidoIds, setSelectedPedidoIds] = useState([]);
   const [submittingSolicitudPagoLote, setSubmittingSolicitudPagoLote] = useState(false);
   const [confirmSolicitudPagoLoteOpen, setConfirmSolicitudPagoLoteOpen] = useState(false);
+  const [submittingEliminarLote, setSubmittingEliminarLote] = useState(false);
+  const [confirmEliminarLoteOpen, setConfirmEliminarLoteOpen] = useState(false);
 
   const token = localStorage.getItem('token');
   const theme = useTheme();
@@ -91,6 +98,48 @@ function ListadoSolicitudesUniformes() {
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
+  };
+
+  const formatTelefonoPago = (value) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.length >= 10 ? digits.slice(-10) : digits;
+  };
+
+  const getTelefonoPagoDesdeRegistro = (registro) => {
+    if (!registro) return '';
+    return formatTelefonoPago(
+      registro?.telefono_pago
+      ?? registro?.telefonoPago
+      ?? registro?.telefono
+      ?? registro?.telefono_de_pago
+      ?? ''
+    );
+  };
+
+  const formatCedulaPago = (value) => {
+    const raw = String(value || '').trim().toUpperCase();
+    if (!raw) return '';
+
+    const match = raw.match(/^([VEJG])\s*[-:]?\s*(\d+)$/i);
+    if (match) {
+      return `${match[1].toUpperCase()}-${match[2]}`;
+    }
+
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '';
+    return `V-${digits}`;
+  };
+
+  const getCedulaPagoDesdeRegistro = (registro) => {
+    if (!registro) return '';
+    return formatCedulaPago(
+      registro?.cedula_titular
+      ?? registro?.cedulaTitular
+      ?? registro?.cedula_pago
+      ?? registro?.cedulaPago
+      ?? ''
+    );
   };
 
   const normalizarMoneda = (moneda) => String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
@@ -134,6 +183,24 @@ function ListadoSolicitudesUniformes() {
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
   const esPedidoPendiente = (pedido) => String(pedido?.estado || '').toLowerCase() === 'pendiente';
 
+  const opcionesPrenda = Array.from(new Set(
+    pedidos
+      .map((pedido) => String(pedido?.prenda || '').trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+  const pedidosFiltrados = pedidos.filter((pedido) => {
+    const estadoOk = filtroEstado === 'todos'
+      ? true
+      : String(pedido?.estado || '').toLowerCase() === filtroEstado;
+
+    const prendaOk = filtroPrenda === 'todas'
+      ? true
+      : String(pedido?.prenda || '').trim().toLowerCase() === filtroPrenda;
+
+    return estadoOk && prendaOk;
+  });
+
   const pagosHistorialOrdenados = Array.isArray(pedidoSeleccionado?.pagos_historial)
     ? [...pedidoSeleccionado.pagos_historial].sort((a, b) => {
       const fechaA = parseFechaSinDesfase(a?.fecha_pago)?.getTime() || 0;
@@ -152,6 +219,8 @@ function ListadoSolicitudesUniformes() {
         monto_pagado_bs: pedidoSeleccionado?.monto_ultimo_pago_bs,
         metodo_pago: pedidoSeleccionado?.metodo_pago,
         referencia: pedidoSeleccionado?.referencia,
+        telefono_pago: pedidoSeleccionado?.telefono_pago,
+        cedula_titular: pedidoSeleccionado?.cedula_titular,
         comprobante_url: pedidoSeleccionado?.comprobante_url,
         fecha_pago: pedidoSeleccionado?.fecha_pago
       }
@@ -161,24 +230,22 @@ function ListadoSolicitudesUniformes() {
     ? pagosHistorialOrdenados
     : pagosHistorialOrdenados.slice(0, -1);
 
-  const pedidosPaginados = pedidos.slice(
+  const pedidosPaginados = pedidosFiltrados.slice(
     pagina * filasPorPagina,
     pagina * filasPorPagina + filasPorPagina
   );
 
-  const pedidosPaginadosPendientes = pedidosPaginados.filter((pedido) => esPedidoPendiente(pedido));
-  const pedidosPendientesIds = pedidos
-    .filter((pedido) => esPedidoPendiente(pedido))
-    .map((pedido) => String(pedido._id));
-  const pedidosPendientesSeleccionados = pedidos.filter((pedido) =>
-    selectedPedidoIds.includes(String(pedido._id)) && esPedidoPendiente(pedido)
+  const pedidosFiltradosIds = pedidosFiltrados.map((pedido) => String(pedido._id));
+  const pedidosFiltradosSeleccionados = pedidosFiltrados.filter((pedido) =>
+    selectedPedidoIds.includes(String(pedido._id))
   );
-  const todosPendientesSeleccionadosGlobal =
-    pedidosPendientesIds.length > 0 &&
-    pedidosPendientesIds.every((id) => selectedPedidoIds.includes(id));
-  const todosPendientesPaginaSeleccionados =
-    pedidosPaginadosPendientes.length > 0 &&
-    pedidosPaginadosPendientes.every((pedido) => selectedPedidoIds.includes(String(pedido._id)));
+  const pedidosPendientesSeleccionados = pedidosFiltradosSeleccionados.filter((pedido) => esPedidoPendiente(pedido));
+  const todosFiltradosSeleccionadosGlobal =
+    pedidosFiltradosIds.length > 0 &&
+    pedidosFiltradosIds.every((id) => selectedPedidoIds.includes(id));
+  const todosFiltradosPaginaSeleccionados =
+    pedidosPaginados.length > 0 &&
+    pedidosPaginados.every((pedido) => selectedPedidoIds.includes(String(pedido._id)));
 
   const buildExcelRows = (rows) => rows.map((pedido) => ({
     Alumno: pedido.alumno ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim() : '-',
@@ -190,8 +257,8 @@ function ListadoSolicitudesUniformes() {
 
   const exportPedidosExcel = async (mode) => {
     const baseRows = mode === 'verificados'
-      ? pedidos.filter((pedido) => String(pedido.estado || '').toLowerCase() === 'verificado')
-      : pedidos;
+      ? pedidosFiltrados.filter((pedido) => String(pedido.estado || '').toLowerCase() === 'verificado')
+      : pedidosFiltrados;
 
     const rows = buildExcelRows(baseRows);
     const suffix = mode === 'verificados' ? '_verificados' : '_todos';
@@ -209,8 +276,8 @@ function ListadoSolicitudesUniformes() {
 
     await exportToExcel(rows, fileName, ['Alumno', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela']);
     setSuccessMessage(mode === 'verificados'
-      ? 'Excel de solicitudes verificadas exportado'
-      : 'Excel de todas las solicitudes exportado');
+      ? 'Excel de solicitudes verificadas (segun filtros) exportado'
+      : 'Excel de solicitudes filtradas exportado');
   };
 
   const handleOpenExportMenu = (event) => {
@@ -298,10 +365,10 @@ function ListadoSolicitudesUniformes() {
   }, [fetchPedidos]);
 
   useEffect(() => {
-    if (pagina > 0 && pagina * filasPorPagina >= pedidos.length) {
+    if (pagina > 0 && pagina * filasPorPagina >= pedidosFiltrados.length) {
       setPagina(0);
     }
-  }, [pedidos.length, pagina, filasPorPagina]);
+  }, [pedidosFiltrados.length, pagina, filasPorPagina]);
 
   useEffect(() => {
     const idsValidos = new Set(pedidos.map((pedido) => String(pedido._id)));
@@ -372,33 +439,82 @@ function ListadoSolicitudesUniformes() {
     ));
   };
 
-  const handleToggleSeleccionPaginaPendientes = () => {
-    const idsPaginaPendientes = pedidosPaginadosPendientes.map((pedido) => String(pedido._id));
-    if (idsPaginaPendientes.length === 0) return;
+  const handleToggleSeleccionPaginaFiltrados = () => {
+    const idsPagina = pedidosPaginados.map((pedido) => String(pedido._id));
+    if (idsPagina.length === 0) return;
 
     setSelectedPedidoIds((prev) => {
-      if (todosPendientesPaginaSeleccionados) {
-        return prev.filter((id) => !idsPaginaPendientes.includes(String(id)));
+      if (todosFiltradosPaginaSeleccionados) {
+        return prev.filter((id) => !idsPagina.includes(String(id)));
       }
 
       const merged = new Set(prev.map((id) => String(id)));
-      idsPaginaPendientes.forEach((id) => merged.add(id));
+      idsPagina.forEach((id) => merged.add(id));
       return Array.from(merged);
     });
   };
 
-  const handleToggleSeleccionGlobalPendientes = () => {
-    if (pedidosPendientesIds.length === 0) return;
+  const handleToggleSeleccionGlobalFiltrados = () => {
+    if (pedidosFiltradosIds.length === 0) return;
 
     setSelectedPedidoIds((prev) => {
-      if (todosPendientesSeleccionadosGlobal) {
-        return prev.filter((id) => !pedidosPendientesIds.includes(String(id)));
+      if (todosFiltradosSeleccionadosGlobal) {
+        return prev.filter((id) => !pedidosFiltradosIds.includes(String(id)));
       }
 
       const merged = new Set(prev.map((id) => String(id)));
-      pedidosPendientesIds.forEach((id) => merged.add(id));
+      pedidosFiltradosIds.forEach((id) => merged.add(id));
       return Array.from(merged);
     });
+  };
+
+  const handleEliminarSolicitudesLote = async () => {
+    if (pedidosFiltradosSeleccionados.length === 0) {
+      setError('Selecciona al menos una solicitud para eliminar.');
+      return;
+    }
+
+    try {
+      setSubmittingEliminarLote(true);
+      setConfirmEliminarLoteOpen(false);
+
+      const resultados = await Promise.allSettled(
+        pedidosFiltradosSeleccionados.map(async (pedido) => {
+          const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedido._id}`, {
+            method: 'DELETE',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.error || 'Error al eliminar la solicitud');
+          }
+          return { id: String(pedido._id) };
+        })
+      );
+
+      const idsEliminados = resultados
+        .filter((resultado) => resultado.status === 'fulfilled')
+        .map((resultado) => resultado.value.id);
+
+      if (idsEliminados.length > 0) {
+        const idsSet = new Set(idsEliminados);
+        setPedidos((prev) => prev.filter((pedido) => !idsSet.has(String(pedido._id))));
+        setSelectedPedidoIds((prev) => prev.filter((id) => !idsSet.has(String(id))));
+      }
+
+      const exitos = idsEliminados.length;
+      const fallidos = resultados.length - exitos;
+
+      if (fallidos > 0) {
+        setError(`Eliminación por lote parcial: ${exitos} eliminadas, ${fallidos} no se pudieron eliminar.`);
+      } else {
+        setSuccessMessage(`Se eliminaron ${exitos} solicitud(es) correctamente.`);
+      }
+    } catch (err) {
+      setError(err.message || 'Error al eliminar solicitudes por lote');
+    } finally {
+      setSubmittingEliminarLote(false);
+    }
   };
 
   const handleSolicitarPagoPorLote = async () => {
@@ -522,6 +638,28 @@ function ListadoSolicitudesUniformes() {
     }
   };
 
+  const handleEliminarSolicitud = async (id) => {
+    if (!id) return;
+    setEliminandoId(id);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${id}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al eliminar la solicitud');
+
+      setPedidos((prev) => prev.filter((pedido) => String(pedido._id) !== String(id)));
+      setSelectedPedidoIds((prev) => prev.filter((pedidoId) => String(pedidoId) !== String(id)));
+      setSuccessMessage('Solicitud eliminada correctamente');
+    } catch (err) {
+      setError(err.message || 'Error al eliminar la solicitud');
+    } finally {
+      setEliminandoId(null);
+      setConfirmEliminarId(null);
+    }
+  };
+
   const renderAccion = (pedido, mobile = false) => {
     if (pedido.estado === 'pendiente') {
       return (
@@ -539,6 +677,53 @@ function ListadoSolicitudesUniformes() {
             >
               <RequestQuoteIcon fontSize="small" />
             </IconButton>
+          </Tooltip>
+          <Tooltip title={eliminandoId === pedido._id ? 'Eliminando...' : 'Eliminar solicitud'}>
+            <span>
+              <IconButton
+                size="small"
+                disabled={eliminandoId === pedido._id}
+                onClick={() => setConfirmEliminarId(pedido._id)}
+                aria-label="Eliminar solicitud"
+                sx={{
+                  bgcolor: '#fee2e2',
+                  color: '#b91c1c',
+                  '&:hover': { bgcolor: '#fecaca' },
+                  '&:disabled': { bgcolor: '#e5e7eb', color: '#94a3b8' }
+                }}
+              >
+                {eliminandoId === pedido._id
+                  ? <CircularProgress size={16} sx={{ color: '#b91c1c' }} />
+                  : <DeleteOutlineIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
+      );
+    }
+
+    if (pedido.estado === 'esperando_pago' || pedido.estado === 'cancelado') {
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          <Tooltip title={eliminandoId === pedido._id ? 'Eliminando...' : 'Eliminar solicitud'}>
+            <span>
+              <IconButton
+                size="small"
+                disabled={eliminandoId === pedido._id}
+                onClick={() => setConfirmEliminarId(pedido._id)}
+                aria-label="Eliminar solicitud"
+                sx={{
+                  bgcolor: '#fee2e2',
+                  color: '#b91c1c',
+                  '&:hover': { bgcolor: '#fecaca' },
+                  '&:disabled': { bgcolor: '#e5e7eb', color: '#94a3b8' }
+                }}
+              >
+                {eliminandoId === pedido._id
+                  ? <CircularProgress size={16} sx={{ color: '#b91c1c' }} />
+                  : <DeleteOutlineIcon fontSize="small" />}
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
       );
@@ -680,6 +865,27 @@ function ListadoSolicitudesUniformes() {
             </Button>
             <Button
               variant="outlined"
+              color="error"
+              startIcon={<DeleteOutlineIcon />}
+              disabled={pedidosFiltradosSeleccionados.length === 0 || submittingEliminarLote}
+              onClick={() => setConfirmEliminarLoteOpen(true)}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 600,
+                letterSpacing: '0.01em',
+                borderRadius: 2,
+                px: 1.8,
+                py: 0.85,
+                minHeight: 38,
+                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)'
+              }}
+            >
+              {submittingEliminarLote
+                ? 'Eliminando lote...'
+                : `Eliminar por lote (${pedidosFiltradosSeleccionados.length})`}
+            </Button>
+            <Button
+              variant="outlined"
               startIcon={<DownloadIcon />}
               onClick={handleOpenExportMenu}
               sx={{
@@ -720,11 +926,51 @@ function ListadoSolicitudesUniformes() {
         </Box>
       </Box>
 
+      <Box sx={{ mb: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <TextField
+          select
+          size="small"
+          label="Filtrar por estado"
+          value={filtroEstado}
+          onChange={(event) => {
+            setFiltroEstado(event.target.value);
+            setPagina(0);
+          }}
+          sx={{ minWidth: 220 }}
+        >
+          <MenuItem value="todos">Todos</MenuItem>
+          <MenuItem value="pendiente">Pendiente</MenuItem>
+          <MenuItem value="esperando_pago">Esperando pago</MenuItem>
+          <MenuItem value="abono">Abono</MenuItem>
+          <MenuItem value="pago_en_revision">Pago en revision</MenuItem>
+          <MenuItem value="verificado">Verificado</MenuItem>
+          <MenuItem value="entregado">Entregado</MenuItem>
+          <MenuItem value="cancelado">Cancelado</MenuItem>
+        </TextField>
+
+        <TextField
+          select
+          size="small"
+          label="Filtrar por prenda"
+          value={filtroPrenda}
+          onChange={(event) => {
+            setFiltroPrenda(event.target.value);
+            setPagina(0);
+          }}
+          sx={{ minWidth: 220 }}
+        >
+          <MenuItem value="todas">Todas</MenuItem>
+          {opcionesPrenda.map((prenda) => (
+            <MenuItem key={prenda} value={prenda.toLowerCase()}>{prenda}</MenuItem>
+          ))}
+        </TextField>
+      </Box>
+
       <Box sx={{ mb: 1.25 }}>
         <Button
           variant="text"
-          onClick={handleToggleSeleccionGlobalPendientes}
-          disabled={pedidosPendientesIds.length === 0 || submittingSolicitudPagoLote}
+          onClick={handleToggleSeleccionGlobalFiltrados}
+          disabled={pedidosFiltradosIds.length === 0 || submittingSolicitudPagoLote || submittingEliminarLote}
           sx={{
             textTransform: 'none',
             fontWeight: 600,
@@ -735,9 +981,9 @@ function ListadoSolicitudesUniformes() {
             '&:hover': { backgroundColor: '#f1f5f9' }
           }}
         >
-          {todosPendientesSeleccionadosGlobal
+          {todosFiltradosSeleccionadosGlobal
             ? 'Limpiar selección global'
-            : `Seleccionar todos los pendientes (${pedidosPendientesIds.length})`}
+            : `Seleccionar todos los resultados (${pedidosFiltradosIds.length})`}
         </Button>
       </Box>
 
@@ -760,13 +1006,11 @@ function ListadoSolicitudesUniformes() {
               >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
-                    {esPedidoPendiente(pedido) && (
-                      <Checkbox
-                        size="small"
-                        checked={selectedPedidoIds.includes(String(pedido._id))}
-                        onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
-                      />
-                    )}
+                    <Checkbox
+                      size="small"
+                      checked={selectedPedidoIds.includes(String(pedido._id))}
+                      onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
+                    />
                     <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
                       {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
                     </Typography>
@@ -819,7 +1063,7 @@ function ListadoSolicitudesUniformes() {
           >
             <TablePagination
               component="div"
-              count={pedidos.length}
+              count={pedidosFiltrados.length}
               page={pagina}
               onPageChange={handleChangePagina}
               rowsPerPage={filasPorPagina}
@@ -847,10 +1091,10 @@ function ListadoSolicitudesUniformes() {
                 <TableCell padding="checkbox" sx={{ color: '#64748b', fontSize: 12, fontWeight: 700 }}>
                   <Checkbox
                     size="small"
-                    indeterminate={!todosPendientesPaginaSeleccionados && pedidosPaginadosPendientes.some((pedido) => selectedPedidoIds.includes(String(pedido._id)))}
-                    checked={todosPendientesPaginaSeleccionados}
-                    onChange={handleToggleSeleccionPaginaPendientes}
-                    disabled={pedidosPaginadosPendientes.length === 0}
+                    indeterminate={!todosFiltradosPaginaSeleccionados && pedidosPaginados.some((pedido) => selectedPedidoIds.includes(String(pedido._id)))}
+                    checked={todosFiltradosPaginaSeleccionados}
+                    onChange={handleToggleSeleccionPaginaFiltrados}
+                    disabled={pedidosPaginados.length === 0}
                   />
                 </TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
@@ -869,13 +1113,11 @@ function ListadoSolicitudesUniformes() {
               {pedidosPaginados.map((pedido) => (
                 <TableRow key={pedido._id} sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}>
                   <TableCell padding="checkbox">
-                    {esPedidoPendiente(pedido) && (
-                      <Checkbox
-                        size="small"
-                        checked={selectedPedidoIds.includes(String(pedido._id))}
-                        onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
-                      />
-                    )}
+                    <Checkbox
+                      size="small"
+                      checked={selectedPedidoIds.includes(String(pedido._id))}
+                      onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
+                    />
                   </TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>{pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}</TableCell>
                   <TableCell sx={{ color: '#475569' }}>{pedido.sede?.nombre || '-'}</TableCell>
@@ -897,7 +1139,7 @@ function ListadoSolicitudesUniformes() {
           </Table>
           <TablePagination
             component="div"
-            count={pedidos.length}
+            count={pedidosFiltrados.length}
             page={pagina}
             onPageChange={handleChangePagina}
             rowsPerPage={filasPorPagina}
@@ -1084,6 +1326,20 @@ function ListadoSolicitudesUniformes() {
                     </Box>
                   </Box>
 
+                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Telefono de pago</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
+                      {getTelefonoPagoDesdeRegistro(ultimoPagoDetalle) || '-'}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Cedula de pago</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
+                      {getCedulaPagoDesdeRegistro(ultimoPagoDetalle) || '-'}
+                    </Typography>
+                  </Box>
+
                   <Box>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Comprobante</Typography>
                     {ultimoPagoDetalle?.comprobante_url ? (
@@ -1149,6 +1405,12 @@ function ListadoSolicitudesUniformes() {
                     <Box>
                       <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
                       <Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago?.referencia || '-'}</Typography>
+                      <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25, fontSize: 12 }}>
+                        Tel: {getTelefonoPagoDesdeRegistro(pago) || '-'}
+                      </Typography>
+                      <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25, fontSize: 12 }}>
+                        Ced: {getCedulaPagoDesdeRegistro(pago) || '-'}
+                      </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
                       {pago?.referencia && (
@@ -1232,6 +1494,31 @@ function ListadoSolicitudesUniformes() {
         </DialogActions>
       </Dialog>
 
+      <Dialog open={!!confirmEliminarId} onClose={() => setConfirmEliminarId(null)}>
+        <DialogTitle>Confirmar eliminación</DialogTitle>
+        <DialogContent>
+          ¿Deseas eliminar esta solicitud de pedido? Esta acción no se puede deshacer.
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmEliminarId(null)} disabled={eliminandoId === confirmEliminarId}>Cancelar</Button>
+          <Button
+            onClick={() => handleEliminarSolicitud(confirmEliminarId)}
+            variant="contained"
+            color="error"
+            disabled={eliminandoId === confirmEliminarId}
+            startIcon={eliminandoId === confirmEliminarId ? <CircularProgress size={14} sx={{ color: '#ffffff' }} /> : <DeleteOutlineIcon fontSize="small" />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              minWidth: 180,
+              '& .MuiButton-startIcon': { mr: 0.75 }
+            }}
+          >
+            {eliminandoId === confirmEliminarId ? 'Eliminando...' : 'Eliminar solicitud'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog
         open={confirmSolicitudPagoLoteOpen}
         onClose={() => {
@@ -1282,6 +1569,41 @@ function ListadoSolicitudesUniformes() {
             }}
           >
             {submittingSolicitudPagoLote ? 'Procesando...' : 'Confirmar solicitud'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={confirmEliminarLoteOpen}
+        onClose={() => {
+          if (!submittingEliminarLote) setConfirmEliminarLoteOpen(false);
+        }}
+      >
+        <DialogTitle>Confirmar eliminación por lote</DialogTitle>
+        <DialogContent>
+          Se intentará eliminar <b>{pedidosFiltradosSeleccionados.length}</b> solicitud(es) seleccionada(s) del filtro actual.
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setConfirmEliminarLoteOpen(false)}
+            disabled={submittingEliminarLote}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleEliminarSolicitudesLote}
+            variant="contained"
+            color="error"
+            disabled={submittingEliminarLote || pedidosFiltradosSeleccionados.length === 0}
+            startIcon={submittingEliminarLote ? <CircularProgress size={14} sx={{ color: '#ffffff' }} /> : <DeleteOutlineIcon fontSize="small" />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              minWidth: 180,
+              '& .MuiButton-startIcon': { mr: 0.75 }
+            }}
+          >
+            {submittingEliminarLote ? 'Eliminando...' : 'Eliminar seleccionadas'}
           </Button>
         </DialogActions>
       </Dialog>

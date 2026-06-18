@@ -68,6 +68,7 @@ exports.createUniforme = async (req, res) => {
       prenda,
       precio,
       moneda,
+      lleva_nombre_atleta,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
       franela_representante
@@ -90,6 +91,7 @@ exports.createUniforme = async (req, res) => {
       prenda,
       precio: precioNumerico,
       moneda: monedaNormalizada,
+      lleva_nombre_atleta: parseBooleanField(lleva_nombre_atleta),
       lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
       lleva_numero_franela: parseBooleanField(lleva_numero_franela),
       franela_representante: parseBooleanField(franela_representante),
@@ -110,6 +112,7 @@ exports.updateUniforme = async (req, res) => {
       prenda,
       precio,
       moneda,
+      lleva_nombre_atleta,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
       franela_representante
@@ -136,6 +139,7 @@ exports.updateUniforme = async (req, res) => {
         prenda,
         precio: precioNumerico,
         moneda: monedaNormalizada,
+        lleva_nombre_atleta: parseBooleanField(lleva_nombre_atleta),
         lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
         lleva_numero_franela: parseBooleanField(lleva_numero_franela),
         franela_representante: parseBooleanField(franela_representante),

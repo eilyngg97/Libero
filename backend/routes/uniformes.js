@@ -61,6 +61,7 @@ router.patch('/pedidos/:id/cancelar', authMiddleware, uniformePedidoController.c
 router.patch('/pedidos/:id/pagar', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.registrarPagoPedido);
 router.patch('/pedidos/:id/verificar-pago', authMiddleware, rolMiddleware('admin'), uniformePedidoController.verificarPagoPedido);
 router.patch('/pedidos/:id/entregado', authMiddleware, rolMiddleware('admin'), uniformePedidoController.marcarEntregado);
+router.delete('/pedidos/:id', authMiddleware, rolMiddleware('admin'), uniformePedidoController.eliminarPedidoUniforme);
 // Todas las rutas protegidas para admin
 router.get('/', authMiddleware, rolMiddleware('admin'), uniformeController.getUniformes);
 router.post('/', authMiddleware, rolMiddleware('admin'), uploadFotos.array('fotos', 2), imageProcessor({ fieldName: 'fotos' }), uniformeController.createUniforme);

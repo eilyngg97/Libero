@@ -86,6 +86,9 @@ exports.createPedidoUniforme = async (req, res) => {
     const uniforme = await TenantUniforme.findOne({ prenda });
     const precio = uniforme?.precio || 0;
     const moneda = String(uniforme?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+    const llevaNombreAtleta = uniforme?.lleva_nombre_atleta === true;
+    const esFranelaRepresentante = uniforme?.franela_representante === true;
+    const requiereNombrePersonalizado = llevaNombreAtleta || esFranelaRepresentante;
     const requiereNumeroFranela = uniforme?.lleva_numero_franela !== false;
     const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo');
 
@@ -131,7 +134,7 @@ exports.createPedidoUniforme = async (req, res) => {
       sede: sedeId || undefined,
       prenda,
       moneda,
-      nombre_personalizado: String(nombrePersonalizado || '').trim().toUpperCase() || undefined,
+      nombre_personalizado: requiereNombrePersonalizado ? (String(nombrePersonalizado || '').trim().toUpperCase() || undefined) : undefined,
       numero_franela: requiereNumeroFranela ? String(numeroFranelaPedido) : null,
       precio,
       talla,
@@ -435,5 +438,38 @@ exports.marcarEntregado = async (req, res) => {
     res.json(pedido);
   } catch (err) {
     res.status(400).json({ error: 'Error al marcar como entregado' });
+  }
+};
+
+exports.eliminarPedidoUniforme = async (req, res) => {
+  try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findById(req.params.id);
+
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    if (![ESTADOS_PEDIDO.PENDIENTE, ESTADOS_PEDIDO.ESPERANDO_PAGO, ESTADOS_PEDIDO.CANCELADO].includes(pedido.estado)) {
+      return res.status(400).json({
+        error: 'Solo se pueden eliminar pedidos en estado pendiente, esperando_pago o cancelado'
+      });
+    }
+
+    const tienePagosHistorial = Array.isArray(pedido.pagos_historial) && pedido.pagos_historial.length > 0;
+    const montoPagado = Number(pedido.monto_pagado) || 0;
+    const montoUltimoPago = Number(pedido.monto_ultimo_pago) || 0;
+
+    if (tienePagosHistorial || montoPagado > 0 || montoUltimoPago > 0) {
+      return res.status(400).json({
+        error: 'No se puede eliminar un pedido que tenga pagos registrados'
+      });
+    }
+
+    await pedido.deleteOne();
+
+    return res.json({ message: 'Solicitud de pedido eliminada correctamente' });
+  } catch (err) {
+    return res.status(400).json({ error: 'Error al eliminar la solicitud de pedido', detalle: err.message });
   }
 };
