@@ -9,6 +9,7 @@ import BloodtypeIcon from "@mui/icons-material/Bloodtype";
 import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
 import HealingIcon from "@mui/icons-material/Healing";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import DownloadIcon from '@mui/icons-material/Download';
 import BadgeIcon from "@mui/icons-material/Badge";
 import PhoneAndroidIcon from "@mui/icons-material/PhoneAndroid";
 import HomeIcon from "@mui/icons-material/Home";
@@ -114,6 +115,7 @@ function AlumnoDetalle() {
   const [historialEstados, setHistorialEstados] = useState([]);
   const [historialLoading, setHistorialLoading] = useState(false);
   const [historialError, setHistorialError] = useState(null);
+  const [descargandoFicha, setDescargandoFicha] = useState(false);
   const [rol, setRol] = useState('');
   const [requisitosChecklist, setRequisitosChecklist] = useState([]);
   const [requisitosSaving, setRequisitosSaving] = useState('');
@@ -148,6 +150,36 @@ function AlumnoDetalle() {
   const handleOpenHistorialEstados = async () => {
     setOpenHistorialEstados(true);
     await fetchHistorialEstados();
+  };
+
+  const handleDescargarFichaTecnica = async () => {
+    if (!id || descargandoFicha) return;
+
+    setDescargandoFicha(true);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/ficha-tecnica`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || 'No se pudo descargar la ficha tecnica');
+      }
+
+      const blob = await res.blob();
+      const tempUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = tempUrl;
+      anchor.download = `ficha_tecnica_${String(alumno?.nombres || '').trim()}_${String(alumno?.apellidos || '').trim()}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(tempUrl);
+    } catch (err) {
+      setError(err.message || 'No se pudo descargar la ficha tecnica');
+    } finally {
+      setDescargandoFicha(false);
+    }
   };
 
   useEffect(() => {
@@ -317,6 +349,30 @@ function AlumnoDetalle() {
                     fontWeight: 700
                   }}
                 />
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={handleDescargarFichaTecnica}
+                  startIcon={!descargandoFicha ? <DownloadIcon /> : null}
+                  disabled={descargandoFicha}
+                  sx={{
+                    mt: -0.25,
+                    minHeight: 30,
+                    px: 1.4,
+                    borderRadius: 999,
+                    backgroundColor: '#0f172a',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: '#ffffff',
+                    textTransform: 'none',
+                    letterSpacing: '0.02em',
+                    '&:hover': {
+                      backgroundColor: '#111827'
+                    }
+                  }}
+                >
+                  {descargandoFicha ? 'Generando ficha...' : 'Descargar ficha tecnica'}
+                </Button>
                 <Button
                   size="small"
                   variant="text"

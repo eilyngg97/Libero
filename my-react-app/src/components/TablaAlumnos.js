@@ -157,6 +157,7 @@ function TablaAlumnos() {
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [importPreviewData, setImportPreviewData] = useState(null);
   const [importPreviewLoading, setImportPreviewLoading] = useState(false);
+  const [descargandoFichaId, setDescargandoFichaId] = useState(null);
   const [importPendingFile, setImportPendingFile] = useState(null);
   const [previewCreatePage, setPreviewCreatePage] = useState(0);
   const [previewSkipPage, setPreviewSkipPage] = useState(0);
@@ -260,6 +261,42 @@ function TablaAlumnos() {
     }
     doc.save(`alumnos${nombreSede}.pdf`);
   };
+
+  const handleDescargarFichaTecnica = async (alumno) => {
+    const alumnoId = String(alumno?._id || '').trim();
+    if (!alumnoId || descargandoFichaId === alumnoId) return;
+
+    setDescargandoFichaId(alumnoId);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${alumnoId}/ficha-tecnica`, {
+        headers
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || 'No se pudo descargar la ficha tecnica');
+      }
+
+      const blob = await res.blob();
+      const tempUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeNombres = String(alumno?.nombres || '').trim().replace(/\s+/g, '_');
+      const safeApellidos = String(alumno?.apellidos || '').trim().replace(/\s+/g, '_');
+      link.href = tempUrl;
+      link.download = `ficha_tecnica_${safeNombres}_${safeApellidos}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(tempUrl);
+    } catch (err) {
+      setError(err.message || 'No se pudo descargar la ficha tecnica');
+    } finally {
+      setDescargandoFichaId(null);
+    }
+  };
+
   const handleDeleteAlumno = async () => {
     if (!deleteId) return;
     setDeleteLoading(true);
@@ -890,21 +927,21 @@ function TablaAlumnos() {
       ) : isMobile ? (
         <Box sx={{ display: 'grid', gap: 1.5, width: '100%', boxSizing: 'border-box' }}>
           {alumnosPaginados.map((alumno) => (
-            <Paper
-              key={alumno._id}
-              onClick={() => navigate(`/alumno/${alumno._id}`)}
-              sx={{
-                p: 1.5,
-                borderRadius: 3,
-                border: '1px solid #eef0f3',
-                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)',
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  overflow: 'hidden',
-                  overflowWrap: 'break-word',
-                  cursor: 'pointer'
-                }}
-            >
+            <Tooltip key={alumno._id} title={obtenerNombreCompletoAlumno(alumno)} arrow placement="top">
+              <Paper
+                onClick={() => navigate(`/alumno/${alumno._id}`)}
+                sx={{
+                  p: 1.5,
+                  borderRadius: 3,
+                  border: '1px solid #eef0f3',
+                  boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    overflowWrap: 'break-word',
+                    cursor: 'pointer'
+                  }}
+              >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.2, minWidth: 0 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, minWidth: 0, flex: 1 }}>
                   <Tooltip
@@ -978,6 +1015,20 @@ function TablaAlumnos() {
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
+                <Tooltip title={descargandoFichaId === alumno._id ? 'Generando ficha tecnica...' : 'Descargar ficha tecnica'}>
+                  <IconButton
+                    aria-label="descargar ficha tecnica"
+                    size="small"
+                    sx={{ color: '#64748b', bgcolor: '#f8fafc' }}
+                    disabled={descargandoFichaId === alumno._id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDescargarFichaTecnica(alumno);
+                    }}
+                  >
+                    <PictureAsPdfIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
                 {!(alumno.dado_de_baja || alumno.activo === false) && (
                   <Tooltip title="Dar de baja">
                     <IconButton aria-label="dar de baja" size="small" sx={{ color: '#64748b', bgcolor: '#fff7ed' }} onClick={(e) => {
@@ -1035,7 +1086,8 @@ function TablaAlumnos() {
                   </Tooltip>
                 )}
               </Box>
-            </Paper>
+              </Paper>
+            </Tooltip>
           ))}
 
           <Paper sx={{ borderRadius: 3, border: '1px solid #eef0f3' }}>
@@ -1089,11 +1141,11 @@ function TablaAlumnos() {
             </TableHead>
             <TableBody>
               {alumnosPaginados.map((alumno) => (
-                <TableRow
-                  key={alumno._id}
-                  onClick={() => navigate(`/alumno/${alumno._id}`)}
-                  sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2, px: 1 }, '&:hover': { backgroundColor: '#fafafa' }, cursor: 'pointer' }}
-                >
+                <Tooltip key={alumno._id} title={obtenerNombreCompletoAlumno(alumno)} arrow placement="top">
+                  <TableRow
+                    onClick={() => navigate(`/alumno/${alumno._id}`)}
+                    sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2, px: 1 }, '&:hover': { backgroundColor: '#fafafa' }, cursor: 'pointer' }}
+                  >
                   <TableCell sx={{ px: 1.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, minWidth: 0 }}>
                       <Tooltip
@@ -1150,6 +1202,20 @@ function TablaAlumnos() {
                       <Tooltip title="Editar">
                         <IconButton aria-label="editar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/editar/${alumno._id}`); }}>
                           <EditIcon />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title={descargandoFichaId === alumno._id ? 'Generando ficha tecnica...' : 'Descargar ficha tecnica'}>
+                        <IconButton
+                          aria-label="descargar ficha tecnica"
+                          size="small"
+                          sx={{ color: '#94a3b8', p: 0.5 }}
+                          disabled={descargandoFichaId === alumno._id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDescargarFichaTecnica(alumno);
+                          }}
+                        >
+                          <PictureAsPdfIcon />
                         </IconButton>
                       </Tooltip>
                       {!(alumno.dado_de_baja || alumno.activo === false) && (
@@ -1210,7 +1276,8 @@ function TablaAlumnos() {
                       )}
                     </Box>
                   </TableCell>
-                </TableRow>
+                  </TableRow>
+                </Tooltip>
               ))}
             </TableBody>
           </Table>

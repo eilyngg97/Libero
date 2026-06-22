@@ -52,10 +52,14 @@ const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
+const PDFDocument = require('pdfkit');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const XLSX = require('xlsx');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantCoreConnection } = require('../config/tenantCoreConnection');
+const { getTenantCoreModel } = require('../models/TenantCore');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { generarMensualidadesPendientesAlumno } = require('./mensualidadController');
@@ -1889,6 +1893,413 @@ exports.createAlumno = async (req, res) => {
   } catch (err) {
     console.error('Error al crear alumno:', err);
     res.status(400).json({ error: 'Error al crear alumno', detalle: err.message });
+  }
+};
+
+function formatFechaFicha(fechaRaw) {
+  if (!fechaRaw) return '-';
+
+  if (fechaRaw instanceof Date) {
+    if (Number.isNaN(fechaRaw.getTime())) return '-';
+    const dia = String(fechaRaw.getUTCDate()).padStart(2, '0');
+    const mes = String(fechaRaw.getUTCMonth() + 1).padStart(2, '0');
+    const anio = fechaRaw.getUTCFullYear();
+    return `${dia}/${mes}/${anio}`;
+  }
+
+  const raw = String(fechaRaw).trim();
+  const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymd) {
+    return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+  }
+
+  const fecha = new Date(raw);
+  if (Number.isNaN(fecha.getTime())) return '-';
+  const dia = String(fecha.getUTCDate()).padStart(2, '0');
+  const mes = String(fecha.getUTCMonth() + 1).padStart(2, '0');
+  const anio = fecha.getUTCFullYear();
+  return `${dia}/${mes}/${anio}`;
+}
+
+function calcularEdadFicha(fechaRaw) {
+  if (!fechaRaw) return '-';
+  const fecha = new Date(fechaRaw);
+  if (Number.isNaN(fecha.getTime())) return '-';
+
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - fecha.getFullYear();
+  const mes = hoy.getMonth() - fecha.getMonth();
+  if (mes < 0 || (mes === 0 && hoy.getDate() < fecha.getDate())) edad -= 1;
+  return String(Math.max(edad, 0));
+}
+
+function mapUploadUrlToLocalPath(url = '') {
+  const cleanUrl = String(url || '').trim();
+  if (!cleanUrl.startsWith('/uploads/')) return null;
+  const relativePath = cleanUrl.replace(/^\/+/, '');
+  return path.join(__dirname, '..', relativePath);
+}
+
+async function getBrandingFichaTecnica(req) {
+  try {
+    const tenantId = String(resolveRequestTenantId(req) || req?.tenant?.tenantId || '').trim().toLowerCase();
+    if (!tenantId) {
+      return { logoPath: null, academyName: '' };
+    }
+
+    const coreConnection = await getTenantCoreConnection();
+    const TenantCore = getTenantCoreModel(coreConnection);
+    const tenant = await TenantCore.findOne({ tenantId }).select('nombre branding.logoUrl branding.displayName').lean();
+
+    return {
+      logoPath: mapUploadUrlToLocalPath(tenant?.branding?.logoUrl),
+      academyName: String(tenant?.branding?.displayName || tenant?.nombre || '').trim()
+    };
+  } catch (_) {
+    return { logoPath: null, academyName: '' };
+  }
+}
+
+function renderEncabezadoFichaTecnica(doc, {
+  institucionNombre = 'ESCUELA DE VOLEIBOL',
+  subtitulo = '',
+  sedeNombre = '-',
+  logoPath = null,
+  academyName = ''
+} = {}) {
+  const left = doc.page.margins.left;
+  const right = doc.page.width - doc.page.margins.right;
+  const logoBoxSize = 68;
+  const logoY = 30;
+  const fallbackLogoPath = path.join(__dirname, '../assets/logo.png');
+
+  let logoRendered = false;
+  const drawLogo = (targetPath) => {
+    if (!targetPath) return false;
+    doc.image(targetPath, left, logoY, { fit: [logoBoxSize, logoBoxSize], align: 'center', valign: 'center' });
+    return true;
+  };
+
+  try {
+    logoRendered = drawLogo(logoPath);
+  } catch (_) {
+    logoRendered = false;
+  }
+
+  if (!logoRendered) {
+    try {
+      drawLogo(fallbackLogoPath);
+    } catch (_) {
+      // Continuar sin logo si falla fallback.
+    }
+  }
+
+  const textX = left + logoBoxSize + 12;
+  const textWidth = right - textX;
+  doc.font('Helvetica-Bold').fontSize(15).fillColor('#111827').text(
+    String(institucionNombre || 'ESCUELA DE VOLEIBOL').trim(),
+    textX,
+    logoY + 2,
+    { width: textWidth, align: 'center' }
+  );
+
+  if (subtitulo) {
+    doc.font('Helvetica').fontSize(11).fillColor('#374151').text(String(subtitulo).trim(), textX, doc.y + 1, {
+      width: textWidth,
+      align: 'center'
+    });
+  }
+
+  if (academyName) {
+    doc.font('Helvetica').fontSize(10).fillColor('#4b5563').text(String(academyName).trim(), textX, doc.y + 1, {
+      width: textWidth,
+      align: 'center'
+    });
+  }
+
+  doc.font('Helvetica').fontSize(10).fillColor('#4b5563').text(`SEDE "${String(sedeNombre || '-').trim().toUpperCase()}"`, textX, doc.y + 1, {
+    width: textWidth,
+    align: 'center'
+  });
+
+  doc.moveTo(left, Math.max(doc.y + 8, logoY + logoBoxSize + 8)).lineTo(right, Math.max(doc.y + 8, logoY + logoBoxSize + 8)).strokeColor('#e5e7eb').lineWidth(1).stroke();
+  doc.y = Math.max(doc.y + 12, logoY + logoBoxSize + 14);
+}
+
+function drawDatoFicha(doc, label, value, x, y, width) {
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151').text(String(label || ''), x, y, { width });
+  doc.font('Helvetica').fontSize(10).fillColor('#111827').text(String(value || '-'), x, y + 11, { width });
+}
+
+function normalizeFichaValue(value) {
+  const text = String(value ?? '').trim();
+  if (!text || text === '-') {
+    return {
+      text: 'No registrado',
+      muted: true
+    };
+  }
+
+  return {
+    text,
+    muted: false
+  };
+}
+
+function drawFichaFieldCell(doc, field, x, y, width) {
+  const label = String(field?.label || '').trim();
+  const meta = normalizeFichaValue(field?.value);
+
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#475569').text(label, x + 8, y + 7, {
+    width: width - 16,
+    align: 'left'
+  });
+
+  doc
+    .font(meta.muted ? 'Helvetica-Oblique' : 'Helvetica')
+    .fontSize(10)
+    .fillColor(meta.muted ? '#94a3b8' : '#0f172a')
+    .text(meta.text, x + 8, y + 19, {
+      width: width - 16,
+      align: 'left'
+    });
+}
+
+function estimateFichaFieldHeight(doc, field, width) {
+  const meta = normalizeFichaValue(field?.value);
+  const labelHeight = doc.font('Helvetica-Bold').fontSize(8.5).heightOfString(String(field?.label || ''), {
+    width: Math.max(20, width - 16)
+  });
+  const valueHeight = doc.font(meta.muted ? 'Helvetica-Oblique' : 'Helvetica').fontSize(10).heightOfString(meta.text, {
+    width: Math.max(20, width - 16)
+  });
+  return labelHeight + valueHeight + 18;
+}
+
+function drawFichaSectionGrid(doc, {
+  x,
+  y,
+  width,
+  title,
+  rows,
+  columns = 3,
+  gap = 8,
+  minRowHeight = 44
+}) {
+  const headerBandHeight = 12;
+  const titleTopOffset = 17;
+  const contentTopOffset = 40;
+  const colWidth = (width - (columns - 1) * gap) / columns;
+  let cursorY = y + contentTopOffset;
+
+  doc.save();
+  doc.fillColor('#f8fafc').strokeColor('#e2e8f0').lineWidth(1).rect(x, y, width, headerBandHeight).fillAndStroke();
+  doc.restore();
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(10.5)
+    .fillColor('#0f172a')
+    .text(String(title || '').trim(), x + 10, y + titleTopOffset, {
+      width: width - 20,
+      align: 'left'
+    });
+
+  rows.forEach((row) => {
+    const safeRow = Array.isArray(row) ? row.filter(Boolean) : [];
+    if (!safeRow.length) return;
+
+    let rowHeight = minRowHeight;
+    let colPointer = 0;
+    safeRow.forEach((field) => {
+      const colSpan = Math.max(1, Math.min(columns, Number(field?.colSpan) || 1));
+      if (colPointer + colSpan > columns) colPointer = 0;
+      const fieldWidth = colSpan * colWidth + (colSpan - 1) * gap;
+      const estimated = estimateFichaFieldHeight(doc, field, fieldWidth);
+      rowHeight = Math.max(rowHeight, estimated + 8);
+      colPointer += colSpan;
+      if (colPointer >= columns) colPointer = 0;
+    });
+
+    colPointer = 0;
+    safeRow.forEach((field) => {
+      let colSpan = Math.max(1, Math.min(columns, Number(field?.colSpan) || 1));
+      if (colPointer + colSpan > columns) {
+        colPointer = 0;
+      }
+      if (colPointer + colSpan > columns) {
+        colSpan = columns - colPointer;
+      }
+
+      const cellX = x + colPointer * (colWidth + gap);
+      const cellWidth = colSpan * colWidth + (colSpan - 1) * gap;
+
+      doc
+        .save()
+        .lineWidth(0.8)
+        .strokeColor('#e2e8f0')
+        .fillColor('#ffffff')
+        .rect(cellX, cursorY, cellWidth, rowHeight)
+        .fillAndStroke()
+        .restore();
+
+      drawFichaFieldCell(doc, field, cellX, cursorY, cellWidth);
+      colPointer += colSpan;
+    });
+
+    cursorY += rowHeight + gap;
+  });
+
+  const sectionHeight = cursorY - y + 2;
+  doc.save().lineWidth(1).strokeColor('#cbd5e1').rect(x, y, width, sectionHeight).stroke().restore();
+  return y + sectionHeight;
+}
+
+function buildFichaFilename(alumno = {}) {
+  const nombre = `${String(alumno?.nombres || '').trim()}_${String(alumno?.apellidos || '').trim()}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_\-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .toLowerCase();
+
+  return `ficha_tecnica_${nombre || 'atleta'}.pdf`;
+}
+
+exports.descargarFichaTecnica = async (req, res) => {
+  try {
+    const { Alumno: TenantAlumno, TenantConfig } = await getTenantAlumnoReadModels(req);
+    const alumno = await TenantAlumno.findById(req.params.id).populate('representante').populate('sede').lean();
+
+    if (!alumno) {
+      return res.status(404).json({ error: 'Alumno no encontrado' });
+    }
+
+    const config = await TenantConfig.findOne({ key: 'default' }).select('constancias').lean();
+    const institucionNombre = String(config?.constancias?.institucion_nombre || 'ESCUELA DE VOLEIBOL').trim();
+    const subtitulo = String(config?.constancias?.subtitulo || '').trim();
+    const sedeNombre = String(alumno?.sede?.nombre || '-').trim();
+    const representante = alumno?.representante && typeof alumno.representante === 'object' ? alumno.representante : null;
+    const atletaFotoPath = mapUploadUrlToLocalPath(alumno?.foto);
+    const branding = await getBrandingFichaTecnica(req);
+
+    const doc = new PDFDocument({ margin: 45, size: 'A4' });
+    const buffers = [];
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', () => {
+      const pdfData = Buffer.concat(buffers);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=${buildFichaFilename(alumno)}`);
+      res.send(pdfData);
+    });
+
+    renderEncabezadoFichaTecnica(doc, {
+      institucionNombre,
+      subtitulo,
+      sedeNombre,
+      logoPath: branding.logoPath,
+      academyName: branding.academyName
+    });
+
+    doc.font('Helvetica-Bold').fontSize(14).fillColor('#111827').text('FICHA TÉCNICA DEL ATLETA', doc.page.margins.left, doc.y, {
+      width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+      align: 'center'
+    });
+    doc.moveDown(0.9);
+
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const topY = doc.y;
+    const photoBoxWidth = 118;
+    const photoBoxHeight = 142;
+    const photoX = right - photoBoxWidth;
+    const photoY = topY;
+
+    doc.rect(photoX, photoY, photoBoxWidth, photoBoxHeight).lineWidth(1).strokeColor('#cbd5e1').stroke();
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#6b7280').text('FOTO DEL ATLETA', photoX, photoY + 4, {
+      width: photoBoxWidth,
+      align: 'center'
+    });
+
+    if (atletaFotoPath) {
+      try {
+        doc.image(atletaFotoPath, photoX + 6, photoY + 18, {
+          fit: [photoBoxWidth - 12, photoBoxHeight - 24],
+          align: 'center',
+          valign: 'center'
+        });
+      } catch (_) {
+        doc.font('Helvetica-Oblique').fontSize(9).fillColor('#9ca3af').text('No registrado', photoX, photoY + photoBoxHeight / 2 - 5, {
+          width: photoBoxWidth,
+          align: 'center'
+        });
+      }
+    } else {
+      doc.font('Helvetica-Oblique').fontSize(9).fillColor('#9ca3af').text('No registrado', photoX, photoY + photoBoxHeight / 2 - 5, {
+        width: photoBoxWidth,
+        align: 'center'
+      });
+    }
+
+    const sectionGap = 16;
+    const atletaSectionWidth = (photoX - left) - sectionGap;
+    const atletaEndY = drawFichaSectionGrid(doc, {
+      x: left,
+      y: topY,
+      width: atletaSectionWidth,
+      title: 'DATOS DEL ATLETA',
+      columns: 2,
+      rows: [
+        [
+          { label: 'Nombres', value: alumno?.nombres },
+          { label: 'Apellidos', value: alumno?.apellidos }
+        ],
+        [
+          { label: 'Cédula', value: alumno?.cedula },
+          { label: 'Fecha de nacimiento', value: formatFechaFicha(alumno?.fecha_nacimiento) },
+        ],
+        [
+          { label: 'Edad', value: `${calcularEdadFicha(alumno?.fecha_nacimiento)} años` },
+          { label: 'Teléfono', value: alumno?.telefono }
+        ],
+        [
+          { label: 'Fecha de ingreso', value: formatFechaFicha(alumno?.fecha_inscripcion) },
+          { label: 'Dirección', value: alumno?.domicilio }
+        ]
+      ]
+    });
+
+    const repStartY = Math.max(photoY + photoBoxHeight + 18, atletaEndY + 16);
+    drawFichaSectionGrid(doc, {
+      x: left,
+      y: repStartY,
+      width: right - left,
+      title: 'DATOS DEL REPRESENTANTE',
+      columns: 2,
+      rows: [
+        [
+          { label: 'Nombres', value: representante?.nombres },
+          { label: 'Apellidos', value: representante?.apellidos }
+        ],
+        [
+          { label: 'Cédula', value: representante?.cedula },
+          { label: 'Fecha de nacimiento', value: formatFechaFicha(representante?.fecha_nacimiento) },
+        ],
+        [
+          { label: 'Teléfono', value: representante?.telefono },
+          { label: 'Correo', value: representante?.correo }
+        ],
+        [
+          { label: 'Parentesco', value: alumno?.parentesco },
+          { label: 'Dirección', value: representante?.direccion || representante?.domicilio }
+        ]
+      ]
+    });
+
+    doc.end();
+  } catch (err) {
+    console.error('Error al generar ficha técnica del atleta:', err);
+    res.status(500).json({ error: 'Error al generar ficha técnica del atleta' });
   }
 };
 

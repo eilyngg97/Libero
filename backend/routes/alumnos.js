@@ -69,6 +69,7 @@ router.delete('/:id/reposos/:reposoId', authMiddleware, rolMiddleware('admin'), 
 // Ruta para asignar categorias masivamente (debe ir antes de /:id)
 router.put('/asignar-categorias', authMiddleware, superAdminMiddleware, alumnoController.asignarCategoriasMasivamente);
 
+router.get('/:id/ficha-tecnica', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.descargarFichaTecnica);
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
 router.patch('/:id/requisitos-recaudos', authMiddleware, rolMiddleware('admin'), alumnoController.actualizarEstadoRequisitoRecaudoAlumno);
 router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.updateAlumno);
