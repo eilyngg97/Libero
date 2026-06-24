@@ -107,6 +107,16 @@ function parseFechaLocal(fecha) {
   return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 }
 
+function normalizarCategoriaFiltro(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function TablaAlumnos() {
   // Estados para filtros
   const [filtroNombreApellido, setFiltroNombreApellido] = useState('');
@@ -615,8 +625,8 @@ function TablaAlumnos() {
     const sexoAlumno = String(obtenerSexoAlumno(a)).toLowerCase();
     const sexoMatch = filtroSexo === '' || sexoAlumno === filtroSexo.toLowerCase();
 
-    const categoriaAlumno = String(a.categoria || '').trim().toUpperCase();
-    const categoriasSeleccionadas = (filtroCategoria || []).map((item) => String(item).toUpperCase());
+    const categoriaAlumno = normalizarCategoriaFiltro(a.categoria);
+    const categoriasSeleccionadas = (filtroCategoria || []).map((item) => normalizarCategoriaFiltro(item));
     const categoriaMatch = categoriasSeleccionadas.length === 0 || categoriasSeleccionadas.includes(categoriaAlumno);
 
     const tipoMensualidad = obtenerTipoMensualidadKey(a);
