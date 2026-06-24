@@ -750,7 +750,7 @@ function ListadoSolicitudesUniformes() {
       );
     }
 
-    if (pedido.estado === 'verificado') {
+    if (pedido.estado === 'verificado' || pedido.estado === 'entregado') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
           <Tooltip title="Ver detalle de pago">
@@ -767,26 +767,28 @@ function ListadoSolicitudesUniformes() {
               <VisibilityIcon fontSize="small" />
             </IconButton>
           </Tooltip>
-          <Tooltip title={entregandoId === pedido._id ? 'Entregando...' : 'Marcar como entregado'}>
-            <span>
-              <IconButton
-                size="small"
-                disabled={entregandoId === pedido._id}
-                onClick={() => setConfirmEntregarId(pedido._id)}
-                aria-label="Marcar como entregado"
-                sx={{
-                  bgcolor: '#dcfce7',
-                  color: '#166534',
-                  '&:hover': { bgcolor: '#bbf7d0' },
-                  '&:disabled': { bgcolor: '#e5e7eb', color: '#94a3b8' }
-                }}
-              >
-                {entregandoId === pedido._id
-                  ? <CircularProgress size={16} sx={{ color: '#166534' }} />
-                  : <LocalShippingIcon fontSize="small" />}
-              </IconButton>
-            </span>
-          </Tooltip>
+          {pedido.estado === 'verificado' && (
+            <Tooltip title={entregandoId === pedido._id ? 'Entregando...' : 'Marcar como entregado'}>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={entregandoId === pedido._id}
+                  onClick={() => setConfirmEntregarId(pedido._id)}
+                  aria-label="Marcar como entregado"
+                  sx={{
+                    bgcolor: '#dcfce7',
+                    color: '#166534',
+                    '&:hover': { bgcolor: '#bbf7d0' },
+                    '&:disabled': { bgcolor: '#e5e7eb', color: '#94a3b8' }
+                  }}
+                >
+                  {entregandoId === pedido._id
+                    ? <CircularProgress size={16} sx={{ color: '#166534' }} />
+                    : <LocalShippingIcon fontSize="small" />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
         </Box>
       );
     }

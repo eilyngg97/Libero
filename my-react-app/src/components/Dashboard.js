@@ -25,6 +25,7 @@ function Dashboard() {
   const [cumpleaneros, setCumpleaneros] = useState([]);
   const [resumenMensualidades, setResumenMensualidades] = useState({ mes: null, anio: null, sedes: [] });
   const [dolaresPagadosPorSede, setDolaresPagadosPorSede] = useState({ mes: null, anio: null, sedes: [] });
+  const [dolaresMesActual, setDolaresMesActual] = useState({ mes: null, anio: null, sedes: [] });
   const [revisionPorSede, setRevisionPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [resumenLoading, setResumenLoading] = useState(false);
   const [dolaresLoading, setDolaresLoading] = useState(false);
@@ -226,6 +227,27 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
     fetchDolaresPagadosPorSede();
   }, [mesGraficaSeleccionado]);
+
+  useEffect(() => {
+    const fetchDolaresMesActual = async () => {
+      try {
+        const anioActual = new Date().getFullYear();
+        const res = await fetchConSesion(
+          `${apiBase}/api/mensualidades/dolares-pagados-por-sede?mes=${mesActual}&anio=${anioActual}`
+        );
+        const data = await res.json();
+        if (res.ok && data && Array.isArray(data.sedes)) {
+          setDolaresMesActual(data);
+        } else {
+          setDolaresMesActual({ mes: mesActual, anio: anioActual, sedes: [] });
+        }
+      } catch {
+        setDolaresMesActual({ mes: mesActual, anio: new Date().getFullYear(), sedes: [] });
+      }
+    };
+
+    fetchDolaresMesActual();
+  }, [apiBase, mesActual]);
 
   useEffect(() => {
     const fetchRevisionPorSede = async () => {
@@ -436,7 +458,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
   const totalAlumnos = Object.values(alumnosPorSede).reduce((acc, val) => acc + (Number(val) || 0), 0);
-  const totalIngresosMes = (dolaresPagadosPorSede.sedes || []).reduce(
+  const totalIngresosMes = (dolaresMesActual.sedes || []).reduce(
     (acc, sede) => acc + Number(sede.monto_pagado || 0),
     0
   );
@@ -498,7 +520,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
               </div>
               <div className="dashboard-kpi-inline-label">Ingresos del mes</div>
               <div className="dashboard-kpi-inline-value">${formatMontoBarra(totalIngresosMes).replace('$', '')}</div>
-              <div className="dashboard-kpi-inline-sub">USD recaudados en mayo</div>
+              <div className="dashboard-kpi-inline-sub">USD recaudados en {mesesAnio[mesActual - 1]?.label?.toLowerCase() || 'el mes actual'}</div>
             </div>
           </div>
 
