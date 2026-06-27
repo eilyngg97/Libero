@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getJwtVerificationSecrets } = require('../config/secrets');
+const { getDefaultPermissionsByLegacyRole } = require('../config/permissions');
 
 exports.authMiddleware = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -62,5 +63,33 @@ exports.superAdminMiddleware = (req, res, next) => {
   if (rolUsuario !== 'super_admin') {
     return res.status(403).json({ msg: 'Esta acción está permitida solo para super_admin' });
   }
+  return next();
+};
+
+exports.permisoMiddleware = (...permisos) => (req, res, next) => {
+  const requeridos = permisos
+    .map((permiso) => String(permiso || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  if (requeridos.length === 0) {
+    return next();
+  }
+
+  const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+  const permisosUsuario = Array.isArray(req.user?.permisos)
+    ? req.user.permisos
+    : getDefaultPermissionsByLegacyRole(rolUsuario);
+
+  const usuarioSet = new Set(
+    permisosUsuario
+      .map((permiso) => String(permiso || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const autorizado = requeridos.every((permiso) => usuarioSet.has(permiso));
+  if (!autorizado) {
+    return res.status(403).json({ msg: 'No tienes permisos suficientes para esta acción' });
+  }
+
   return next();
 };

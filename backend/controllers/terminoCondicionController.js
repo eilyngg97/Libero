@@ -3,6 +3,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { getDefaultPermissionsByLegacyRole } = require('../config/permissions');
 
 async function getTenantModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -18,6 +19,20 @@ async function getTenantModels(req) {
 
 function sanitizeNota(value = '') {
   return String(value || '').trim();
+}
+
+function userCanManageReglamento(req) {
+  const permisos = Array.isArray(req?.user?.permisos)
+    ? req.user.permisos
+    : getDefaultPermissionsByLegacyRole(req?.user?.rol);
+
+  const permisosSet = new Set(
+    permisos
+      .map((permiso) => String(permiso || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  return permisosSet.has('reglamento.manage');
 }
 
 function getFileAbsolutePathFromUploadUrl(archivoUrl = '') {
@@ -46,9 +61,9 @@ async function setLatestAsVigente(TenantTerminoCondicion) {
 exports.listarTerminos = async (req, res) => {
   try {
     const { TenantTerminoCondicion, TenantTerminoAceptacion } = await getTenantModels(req);
-    const role = String(req.user?.rol || '').toLowerCase();
+    const isManageView = userCanManageReglamento(req);
 
-    if (role === 'admin' || role === 'super_admin') {
+    if (isManageView) {
       const terminos = await TenantTerminoCondicion.find().sort({ version: -1, createdAt: -1 });
 
       const acceptanceSummary = await TenantTerminoAceptacion.aggregate([

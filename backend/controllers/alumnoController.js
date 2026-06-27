@@ -101,11 +101,18 @@ async function getTenantAlumnoWriteModels(req) {
     User: getTenantModel(connection, 'User'),
     Sede: getTenantModel(connection, 'Sede'),
     Reposo: getTenantModel(connection, 'Reposo'),
+    Role: getTenantModel(connection, 'Role'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
     TenantConfig: getTenantModel(connection, 'TenantConfig'),
     HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno')
   };
+}
+
+async function getUsuarioRoleId(RoleModel) {
+  if (!RoleModel || typeof RoleModel.findOne !== 'function') return null;
+  const roleUsuario = await RoleModel.findOne({ slug: 'usuario' }).select('_id');
+  return roleUsuario?._id || null;
 }
 
 function buildUploadUrl(req, file, folder) {
@@ -1151,11 +1158,12 @@ async function eliminarUsuarioSiQuedaHuerfano(userId, models = {}) {
   }
 }
 
-async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnterior, cedulaNueva, nombres, apellidos, UserModel = User }) {
+async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnterior, cedulaNueva, nombres, apellidos, UserModel = User, RoleModel = null }) {
   if (!representante || !cedulaNueva) return;
 
   const nombreCompleto = `${String(nombres || '').trim()} ${String(apellidos || '').trim()}`.trim();
   let user = null;
+  const usuarioRoleId = await getUsuarioRoleId(RoleModel);
 
   if (representante.usuario) {
     user = await UserModel.findById(representante.usuario);
@@ -1169,7 +1177,8 @@ async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnte
         nombre: nombreCompleto,
         email: cedulaNueva,
         password,
-        rol: 'usuario'
+        rol: 'usuario',
+        roleId: usuarioRoleId
       });
       await user.save();
     }
@@ -1425,12 +1434,14 @@ exports.importarAlumnosExcel = async (req, res) => {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
       User: TenantUser,
+      Role: TenantRole,
       Sede: TenantSede,
       Reposo: TenantReposo,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
       TenantConfig: TenantConfigModel
     } = await getTenantAlumnoWriteModels(req);
+    const usuarioRoleId = await getUsuarioRoleId(TenantRole);
 
     const sede = await TenantSede.findById(sedeIdRaw).select('_id nombre');
     if (!sede) {
@@ -1493,7 +1504,8 @@ exports.importarAlumnosExcel = async (req, res) => {
                 nombre: `${row.rep_nombres} ${row.rep_apellidos}`.trim(),
                 email: row.rep_cedula,
                 password,
-                rol: 'usuario'
+                rol: 'usuario',
+                roleId: usuarioRoleId
               });
               await user.save();
             }
@@ -1552,7 +1564,8 @@ exports.importarAlumnosExcel = async (req, res) => {
               nombre: `${row.nombres} ${row.apellidos}`.trim(),
               email: row.cedula,
               password: passwordAlumno,
-              rol: 'usuario'
+              rol: 'usuario',
+              roleId: usuarioRoleId
             });
             await userAlumno.save();
           }
@@ -1660,12 +1673,14 @@ exports.createAlumno = async (req, res) => {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
       User: TenantUser,
+      Role: TenantRole,
       Sede: TenantSede,
       Reposo: TenantReposo,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
       TenantConfig: TenantConfigModel
     } = await getTenantAlumnoWriteModels(req);
+    const usuarioRoleId = await getUsuarioRoleId(TenantRole);
     let sedeId = req.body.sede;
     if (typeof sedeId === 'string') {
       try {
@@ -1722,7 +1737,8 @@ exports.createAlumno = async (req, res) => {
           nombre: repData.nombres + ' ' + repData.apellidos,
           email: repData.cedula, // ahora el email es la cédula
           password,
-          rol: 'usuario'
+          rol: 'usuario',
+          roleId: usuarioRoleId
         });
         await user.save();
       }
@@ -1745,7 +1761,8 @@ exports.createAlumno = async (req, res) => {
             nombre: req.body.nombres + ' ' + req.body.apellidos,
             email: req.body.cedula,
             password,
-            rol: 'usuario'
+            rol: 'usuario',
+            roleId: usuarioRoleId
           });
           await user.save();
         }
@@ -2433,6 +2450,7 @@ exports.updateAlumno = async (req, res) => {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
       User: TenantUser,
+      Role: TenantRole,
       Sede: TenantSede,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
@@ -2564,7 +2582,8 @@ exports.updateAlumno = async (req, res) => {
           cedulaNueva: cedulaNuevaRepresentante,
           nombres: nombresNuevosRepresentante,
           apellidos: apellidosNuevosRepresentante,
-          UserModel: TenantUser
+          UserModel: TenantUser,
+          RoleModel: TenantRole
         });
 
         if (repTelefonoInput !== undefined) representanteActual.telefono = repTelefonoInput;
@@ -2609,7 +2628,8 @@ exports.updateAlumno = async (req, res) => {
           cedulaNueva: cedulaNuevaRepresentante,
           nombres: nombresNuevosRepresentante,
           apellidos: apellidosNuevosRepresentante,
-          UserModel: TenantUser
+          UserModel: TenantUser,
+          RoleModel: TenantRole
         });
         await representanteActual.save();
         updateData.sinRepresentante = false;
@@ -2737,6 +2757,7 @@ exports.updateAlumno = async (req, res) => {
 
     // Si el alumno no tiene representante, al completar cédula en edición se crea su usuario de portal.
     if (sinRepresentante && sinUsuario && cedulaObjetivo && nombresObjetivo && apellidosObjetivo) {
+      const usuarioRoleId = await getUsuarioRoleId(TenantRole);
       let user = await TenantUser.findOne({ email: cedulaObjetivo });
       if (!user) {
         const password = await bcrypt.hash(cedulaObjetivo, 10);
@@ -2744,7 +2765,8 @@ exports.updateAlumno = async (req, res) => {
           nombre: `${nombresObjetivo} ${apellidosObjetivo}`.trim(),
           email: cedulaObjetivo,
           password,
-          rol: 'usuario'
+          rol: 'usuario',
+          roleId: usuarioRoleId
         });
         await user.save();
       }

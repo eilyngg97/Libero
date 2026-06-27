@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const uniformeController = require('../controllers/uniformeController');
 const uniformePedidoController = require('../controllers/uniformePedidoController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -55,17 +55,16 @@ router.get('/public', uniformeController.getUniformes);
 // Pedidos de uniformes
 router.post('/pedidos', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.createPedidoUniforme);
 router.get('/pedidos/mis', authMiddleware, uniformePedidoController.getMisPedidosUniforme);
-router.get('/pedidos', authMiddleware, rolMiddleware('admin'), uniformePedidoController.getPedidosUniforme);
-router.patch('/pedidos/:id/solicitar-pago', authMiddleware, rolMiddleware('admin'), uniformePedidoController.solicitarPagoPedido);
+router.get('/pedidos', authMiddleware, permisoMiddleware('solicitudes_uniformes.view'), uniformePedidoController.getPedidosUniforme);
+router.patch('/pedidos/:id/solicitar-pago', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.solicitarPagoPedido);
 router.patch('/pedidos/:id/cancelar', authMiddleware, uniformePedidoController.cancelarPedido);
 router.patch('/pedidos/:id/pagar', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.registrarPagoPedido);
-router.patch('/pedidos/:id/verificar-pago', authMiddleware, rolMiddleware('admin'), uniformePedidoController.verificarPagoPedido);
-router.patch('/pedidos/:id/entregado', authMiddleware, rolMiddleware('admin'), uniformePedidoController.marcarEntregado);
-router.delete('/pedidos/:id', authMiddleware, rolMiddleware('admin'), uniformePedidoController.eliminarPedidoUniforme);
-// Todas las rutas protegidas para admin
-router.get('/', authMiddleware, rolMiddleware('admin'), uniformeController.getUniformes);
-router.post('/', authMiddleware, rolMiddleware('admin'), uploadFotos.array('fotos', 2), imageProcessor({ fieldName: 'fotos' }), uniformeController.createUniforme);
-router.put('/:id', authMiddleware, rolMiddleware('admin'), uploadFotos.array('fotos', 2), imageProcessor({ fieldName: 'fotos' }), uniformeController.updateUniforme);
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), uniformeController.deleteUniforme);
+router.patch('/pedidos/:id/verificar-pago', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.verificarPagoPedido);
+router.patch('/pedidos/:id/entregado', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.marcarEntregado);
+router.delete('/pedidos/:id', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.eliminarPedidoUniforme);
+router.get('/', authMiddleware, permisoMiddleware('tienda.view'), uniformeController.getUniformes);
+router.post('/', authMiddleware, permisoMiddleware('tienda.manage'), uploadFotos.array('fotos', 2), imageProcessor({ fieldName: 'fotos' }), uniformeController.createUniforme);
+router.put('/:id', authMiddleware, permisoMiddleware('tienda.manage'), uploadFotos.array('fotos', 2), imageProcessor({ fieldName: 'fotos' }), uniformeController.updateUniforme);
+router.delete('/:id', authMiddleware, permisoMiddleware('tienda.manage'), uniformeController.deleteUniforme);
 
 module.exports = router;

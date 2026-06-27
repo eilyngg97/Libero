@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const entrenadorController = require('../controllers/entrenadorController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -28,10 +28,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-router.get('/', authMiddleware, rolMiddleware('admin'), entrenadorController.listarEntrenadores);
-router.get('/staff-por-sede/:sedeId', authMiddleware, rolMiddleware('admin'), entrenadorController.listarStaffPorSede);
-router.patch('/:id/vincular-sede', authMiddleware, rolMiddleware('admin'), entrenadorController.vincularEntrenadorASede);
-router.patch('/:id/desvincular-sede', authMiddleware, rolMiddleware('admin'), entrenadorController.desvincularEntrenadorDeSede);
-router.post('/', authMiddleware, rolMiddleware('admin'), upload.single('foto'), entrenadorController.crearEntrenador);
+router.get('/', authMiddleware, permisoMiddleware('entrenadores.view'), entrenadorController.listarEntrenadores);
+router.get('/staff-por-sede/:sedeId', authMiddleware, permisoMiddleware('entrenadores.view'), entrenadorController.listarStaffPorSede);
+router.patch('/:id/vincular-sede', authMiddleware, permisoMiddleware('entrenadores.manage'), entrenadorController.vincularEntrenadorASede);
+router.patch('/:id/desvincular-sede', authMiddleware, permisoMiddleware('entrenadores.manage'), entrenadorController.desvincularEntrenadorDeSede);
+router.post('/', authMiddleware, permisoMiddleware('entrenadores.manage'), upload.single('foto'), entrenadorController.crearEntrenador);
 
 module.exports = router;

@@ -259,6 +259,7 @@ app.get('/api/tenant/health', authMiddleware, rolMiddleware('admin'), (req, res)
   return res.json(health);
 });
 app.use('/api/usuarios', require('./routes/usuarios'));
+app.use('/api/roles', require('./routes/roles'));
 app.use('/api/torneos', require('./routes/torneos'));
 app.use('/api/alumnos', require('./routes/alumnos'));
 app.use('/api/representantes', require('./routes/representantes'));
