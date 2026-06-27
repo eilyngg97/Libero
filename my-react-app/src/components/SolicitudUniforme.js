@@ -25,6 +25,7 @@ import {
   TextField,
   Typography
 } from '@mui/material';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import ModalPago from './ModalPago';
 import { useDolar } from '../context/DolarContext';
@@ -103,6 +104,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [prenda, setPrenda] = useState('');
   const [talla, setTalla] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [showPedidoSuccessDialog, setShowPedidoSuccessDialog] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pedidos, setPedidos] = useState([]);
@@ -433,7 +435,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       if (requiereNumeroFranela && !numeroFranelaAlumno) {
         setNumeroFranelaAsignado(numeroFranelaFinal);
       }
-      setSuccessMessage('Pedido realizado con exito');
+      setShowPedidoSuccessDialog(true);
       onGuardar && onGuardar(data);
       await fetchPedidos();
     } catch (err) {
@@ -1064,6 +1066,49 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
           <Button onClick={() => setConfirmCancelId(null)} disabled={cancelandoId === confirmCancelId}>Volver</Button>
           <Button onClick={() => handleCancelarPedido(confirmCancelId)} color="error" variant="contained" disabled={cancelandoId === confirmCancelId}>
             Confirmar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={showPedidoSuccessDialog}
+        onClose={() => setShowPedidoSuccessDialog(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            textAlign: 'center',
+            p: { xs: 2, sm: 2.5 }
+          }
+        }}
+      >
+        <DialogContent sx={{ pt: 1, pb: 1 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
+            <CheckCircleRoundedIcon sx={{ fontSize: 62, color: '#16a34a' }} />
+          </Box>
+          <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1, letterSpacing: 0.3 }}>
+            SOLICITUD DE UNIFORME ENVIADO
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#475569' }}>
+            Próximamente el administrador le solicitará el pago del uniforme. No se preocupe, le avisaremos por aquí en cuanto ocurra.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', pt: 1, pb: 0.5 }}>
+          <Button
+            variant="contained"
+            onClick={() => setShowPedidoSuccessDialog(false)}
+            sx={{
+              minWidth: 140,
+              fontWeight: 700,
+              textTransform: 'none',
+              bgcolor: '#0B0F2A',
+              '&:hover': {
+                bgcolor: '#11183d'
+              }
+            }}
+          >
+            Entendido
           </Button>
         </DialogActions>
       </Dialog>
