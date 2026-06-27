@@ -32,6 +32,7 @@ function Dashboard() {
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [nuevosAlumnosMes, setNuevosAlumnosMes] = useState(0);
+  const [resumenAlumnos, setResumenAlumnos] = useState({ total: 0, activos: 0, bajas: 0, becados: 0 });
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActual);
   const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(mesActual);
   const [mesRevisionSeleccionado, setMesRevisionSeleccionado] = useState(mesActual);
@@ -57,6 +58,16 @@ function Dashboard() {
 
     return res;
   };
+
+  const esAlumnoDeBaja = (alumno) => Boolean(
+    alumno?.dado_de_baja === true ||
+    alumno?.activo === false ||
+    String(alumno?.estado || '').trim().toLowerCase() === 'baja' ||
+    String(alumno?.estado || '').trim().toLowerCase() === 'inactivo'
+  );
+
+  const esAlumnoBecado = (alumno) => String(alumno?.tipo_mensualidad || '').trim().toLowerCase() === 'beca_completa';
+
   const mesesAnio = [
     { value: 1, label: 'Enero' },
     { value: 2, label: 'Febrero' },
@@ -151,18 +162,25 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   useEffect(() => {
     const fetchNuevosAlumnosMes = async () => {
       try {
-        const res = await fetchConSesion(`${apiBase}/api/alumnos`);
+        const res = await fetchConSesion(`${apiBase}/api/alumnos?incluirBajas=1`);
         const data = await res.json();
         if (!res.ok || !Array.isArray(data)) {
           setNuevosAlumnosMes(0);
+          setResumenAlumnos({ total: 0, activos: 0, bajas: 0, becados: 0 });
           return;
         }
+
+        const total = data.length;
+        const activos = data.filter((alumno) => !esAlumnoDeBaja(alumno)).length;
+        const bajas = data.filter((alumno) => esAlumnoDeBaja(alumno)).length;
+        const becados = data.filter((alumno) => esAlumnoBecado(alumno)).length;
+        setResumenAlumnos({ total, activos, bajas, becados });
 
         const ahora = new Date();
         const mesActualLocal = ahora.getMonth();
         const anioActualLocal = ahora.getFullYear();
 
-        const total = data.reduce((acc, alumno) => {
+        const nuevosEsteMes = data.reduce((acc, alumno) => {
           if (alumno?.activo === false) return acc;
           const fechaCreacion = alumno?.createdAt ? new Date(alumno.createdAt) : null;
           if (!fechaCreacion || Number.isNaN(fechaCreacion.getTime())) return acc;
@@ -172,9 +190,10 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
           return acc;
         }, 0);
 
-        setNuevosAlumnosMes(total);
+        setNuevosAlumnosMes(nuevosEsteMes);
       } catch {
         setNuevosAlumnosMes(0);
+        setResumenAlumnos({ total: 0, activos: 0, bajas: 0, becados: 0 });
       }
     };
 
@@ -457,7 +476,6 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     .sort((a, b) => b.enRevision - a.enRevision);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
-  const totalAlumnos = Object.values(alumnosPorSede).reduce((acc, val) => acc + (Number(val) || 0), 0);
   const totalIngresosMes = (dolaresMesActual.sedes || []).reduce(
     (acc, sede) => acc + Number(sede.monto_pagado || 0),
     0
@@ -491,8 +509,19 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 <span className="dashboard-kpi-inline-change">{variacionAlumnosReal}</span>
               </div>
               <div className="dashboard-kpi-inline-label">Total de alumnos</div>
-              <div className="dashboard-kpi-inline-value">{totalAlumnos}</div>
-              <div className="dashboard-kpi-inline-sub">Activos en la academia</div>
+              <div className="dashboard-kpi-inline-value">{resumenAlumnos.total}</div>
+              <div className="dashboard-kpi-inline-sub">Activos, bajas y becados</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#ecfdf5', color: '#166534', fontSize: 14, fontWeight: 800 }}>
+                  Activos: {resumenAlumnos.activos}
+                </div>
+                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#fef2f2', color: '#991b1b', fontSize: 14, fontWeight: 800 }}>
+                  Baja: {resumenAlumnos.bajas}
+                </div>
+                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', fontSize: 14, fontWeight: 800 }}>
+                  Becados: {resumenAlumnos.becados}
+                </div>
+              </div>
             </div>
 
             <div className="dashboard-kpi-inline-card">

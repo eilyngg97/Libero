@@ -37,6 +37,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { mediaUrl } from '../utils/mediaUrl';
+import { hasPermission } from '../utils/permissions';
 
 function formatDate(dateValue) {
   if (!dateValue) return '--';
@@ -187,8 +188,7 @@ function TerminosCondiciones() {
       }
 
       const payload = await res.json();
-      const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-      const esRolAdmin = rolActual === 'admin' || rolActual === 'super_admin';
+      const esRolAdmin = hasPermission('reglamento.manage');
       const payloadAdmin = Array.isArray(payload?.documentos) || Object.prototype.hasOwnProperty.call(payload || {}, 'vigente');
 
       if (esRolAdmin || payloadAdmin) {
@@ -503,7 +503,7 @@ function TerminosCondiciones() {
     setArchivo(file);
   };
 
-  const esAdmin = rol === 'admin' || rol === 'super_admin';
+  const esAdmin = hasPermission('reglamento.manage');
   const previewSrc = previewItem && isPdfFile(previewItem)
     ? (isMobile
       ? `${previewBlobUrl}#page=1&zoom=page-width&pagemode=none&toolbar=0&navpanes=0&scrollbar=0`

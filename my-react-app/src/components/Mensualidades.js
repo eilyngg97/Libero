@@ -54,7 +54,7 @@ const obtenerDiaLimitePersonalizado = (mensualidad) => {
 	return valor;
 };
 
-function Mensualidades() {
+function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyInsolventes = false }) {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
 	const theme = useTheme();
@@ -65,7 +65,7 @@ function Mensualidades() {
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
 	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
 	const [filtroAlumno, setFiltroAlumno] = useState('');
-	const [filtroEstado, setFiltroEstado] = useState('');
+	const [filtroEstado, setFiltroEstado] = useState(() => String(initialEstado || '').trim());
 	const [modalPago, setModalPago] = useState(false);
 	const [pagoInfo, setPagoInfo] = useState({});
 	const [comprobante, setComprobante] = useState(null);
@@ -383,6 +383,9 @@ function Mensualidades() {
 			});
 		}
 		if (filtroEstado) filtradas = filtradas.filter(m => m.estatus && m.estatus.toLowerCase() === filtroEstado.toLowerCase());
+		if (onlyInsolventes) {
+			filtradas = filtradas.filter((m) => String(m?.estatus || '').toLowerCase() === 'insolvente');
+		}
 
 		const filtradasOrdenadas = [...filtradas].sort((a, b) => {
 			const nombreA = String(a?.id_alumno?.nombres || '').trim();
@@ -397,7 +400,14 @@ function Mensualidades() {
 		});
 
 		setMensualidades(filtradasOrdenadas);
-	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD]);
+	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD, onlyInsolventes]);
+
+	React.useEffect(() => {
+		if (!onlyInsolventes) return;
+		if (String(filtroEstado || '').toLowerCase() !== 'insolvente') {
+			setFiltroEstado('Insolvente');
+		}
+	}, [onlyInsolventes, filtroEstado]);
 
 	// Registro de pago rápido
 	const handlePago = (m) => {
@@ -1698,14 +1708,21 @@ function Mensualidades() {
 
 	return (
 		<div>
-			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>Mensualidades</Typography>
+			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>{pageTitle}</Typography>
 			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
 				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
 					{[...Array(12)].map((_, i) => <MenuItem key={i + 1} value={i + 1}>{meses[i]}</MenuItem>)}
 				</TextField>
 				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
-				<TextField select label="Estado" value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
+				<TextField
+					select
+					label="Estado"
+					value={filtroEstado}
+					onChange={e => setFiltroEstado(e.target.value)}
+					sx={{ minWidth: 120, width: '100%' }}
+					disabled={onlyInsolventes}
+				>
 					<MenuItem value="">Todos</MenuItem>
 					{['Pendiente', 'Pagado', 'Insolvente', 'Exonerado', 'Becado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
@@ -3312,7 +3329,7 @@ function Mensualidades() {
 						onChange={e => setNotaPago(e.target.value.slice(0, 500))}
 						helperText="Usa este campo para justificar pagos cargados tarde en sistema."
 					/>
-					{Number(pagoInfo?.recargo_aplicado_usd || 0) > 0 && (
+					{!esAdmin && Number(pagoInfo?.recargo_aplicado_usd || 0) > 0 && (
 						<Box sx={{ mt: 0.4 }}>
 							<label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14 }}>
 								<input

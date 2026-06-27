@@ -32,6 +32,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { mediaUrl } from '../utils/mediaUrl';
+import { hasPermission } from '../utils/permissions';
 
 function formatBytes(bytes) {
   const value = Number(bytes || 0);
@@ -165,7 +166,7 @@ function Recaudos() {
 
   useEffect(() => {
     const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-    const puedeGestionarRequisitos = rolLs === 'admin' || rolLs === 'super_admin';
+    const puedeGestionarRequisitos = hasPermission('recaudos.manage');
     setRol(rolLs);
     cargarRecaudos();
     if (puedeGestionarRequisitos) {
@@ -405,7 +406,7 @@ function Recaudos() {
     setRecaudoAEliminar(null);
   };
 
-  const esAdmin = rol === 'admin' || rol === 'super_admin';
+  const esAdmin = hasPermission('recaudos.manage');
   const actionIconSx = {
     color: '#64748b',
     '&:hover': { color: '#475569', backgroundColor: 'rgba(100, 116, 139, 0.08)' }
