@@ -61,6 +61,8 @@ const ESTADO_STYLES = {
   cancelado: { bgcolor: '#fee2e2', color: '#b91c1c' }
 };
 
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
 function ListadoSolicitudesUniformes() {
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -79,6 +81,7 @@ function ListadoSolicitudesUniformes() {
   const [comprobanteDialogOpen, setComprobanteDialogOpen] = useState(false);
   const [comprobanteUrl, setComprobanteUrl] = useState('');
   const [comprobanteTipo, setComprobanteTipo] = useState('imagen');
+  const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [filtroPrenda, setFiltroPrenda] = useState('todas');
   const [pagina, setPagina] = useState(0);
@@ -190,6 +193,11 @@ function ListadoSolicitudesUniformes() {
   )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
   const pedidosFiltrados = pedidos.filter((pedido) => {
+    const fechaPedido = pedido?.createdAt || pedido?.fecha_solicitud || pedido?.fechaSolicitud;
+    const fechaPedidoDate = parseFechaSinDesfase(fechaPedido);
+    const mesPedido = fechaPedidoDate ? (fechaPedidoDate.getMonth() + 1) : null;
+    const mesOk = filtroMes ? mesPedido === Number(filtroMes) : true;
+
     const estadoOk = filtroEstado === 'todos'
       ? true
       : String(pedido?.estado || '').toLowerCase() === filtroEstado;
@@ -198,7 +206,7 @@ function ListadoSolicitudesUniformes() {
       ? true
       : String(pedido?.prenda || '').trim().toLowerCase() === filtroPrenda;
 
-    return estadoOk && prendaOk;
+    return mesOk && estadoOk && prendaOk;
   });
 
   const pagosHistorialOrdenados = Array.isArray(pedidoSeleccionado?.pagos_historial)
@@ -929,6 +937,22 @@ function ListadoSolicitudesUniformes() {
       </Box>
 
       <Box sx={{ mb: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <TextField
+          select
+          size="small"
+          label="Mes"
+          value={filtroMes}
+          onChange={(event) => {
+            setFiltroMes(event.target.value);
+            setPagina(0);
+          }}
+          sx={{ minWidth: 170 }}
+        >
+          {MESES.map((mes, index) => (
+            <MenuItem key={mes} value={(index + 1).toString()}>{mes}</MenuItem>
+          ))}
+        </TextField>
+
         <TextField
           select
           size="small"

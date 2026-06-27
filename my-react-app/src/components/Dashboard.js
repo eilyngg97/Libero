@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
-import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, PieChart, Pie } from 'recharts';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import CakeIcon from '@mui/icons-material/Cake';
@@ -17,6 +17,7 @@ function Dashboard() {
   const apiBase = process.env.REACT_APP_API_URL || '';
   const mesActual = new Date().getMonth() + 1;
   const chartFillColors = ['#d92b73', '#f59e0b', '#2563eb', '#10b981'];
+  const ingresosDonutColors = ['#2563eb', '#f28a3f'];
   const { setSedeSeleccionada } = useSede();
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
   const navigate = useNavigate();
@@ -26,9 +27,11 @@ function Dashboard() {
   const [resumenMensualidades, setResumenMensualidades] = useState({ mes: null, anio: null, sedes: [] });
   const [dolaresPagadosPorSede, setDolaresPagadosPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [dolaresMesActual, setDolaresMesActual] = useState({ mes: null, anio: null, sedes: [] });
+  const [ingresosUniformesMes, setIngresosUniformesMes] = useState(0);
   const [revisionPorSede, setRevisionPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [resumenLoading, setResumenLoading] = useState(false);
   const [dolaresLoading, setDolaresLoading] = useState(false);
+  const [uniformesLoading, setUniformesLoading] = useState(false);
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [nuevosAlumnosMes, setNuevosAlumnosMes] = useState(0);
@@ -269,6 +272,46 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   }, [apiBase, mesActual]);
 
   useEffect(() => {
+    const fetchIngresosUniformesMes = async () => {
+      setUniformesLoading(true);
+      try {
+        const anioActual = new Date().getFullYear();
+        const res = await fetchConSesion(`${apiBase}/api/uniformes/pedidos`);
+        const data = await res.json();
+
+        if (!res.ok || !Array.isArray(data)) {
+          setIngresosUniformesMes(0);
+          return;
+        }
+
+        const totalUniformes = data.reduce((accPedidos, pedido) => {
+          const pagosHistorial = Array.isArray(pedido?.pagos_historial) ? pedido.pagos_historial : [];
+
+          const montoHistorialMes = pagosHistorial.reduce((accPagos, pago) => {
+            if (!fechaPerteneceMesAnio(pago?.fecha_pago, mesGraficaSeleccionado, anioActual)) return accPagos;
+            return accPagos + (Number(pago?.monto_pagado) || 0);
+          }, 0);
+
+          const esPagoEnRevision = String(pedido?.estado || '').toLowerCase() === 'pago_en_revision';
+          const montoEnRevisionMes = esPagoEnRevision && fechaPerteneceMesAnio(pedido?.fecha_pago, mesGraficaSeleccionado, anioActual)
+            ? (Number(pedido?.monto_ultimo_pago) || 0)
+            : 0;
+
+          return accPedidos + montoHistorialMes + montoEnRevisionMes;
+        }, 0);
+
+        setIngresosUniformesMes(totalUniformes);
+      } catch {
+        setIngresosUniformesMes(0);
+      } finally {
+        setUniformesLoading(false);
+      }
+    };
+
+    fetchIngresosUniformesMes();
+  }, [apiBase, mesGraficaSeleccionado]);
+
+  useEffect(() => {
     const fetchRevisionPorSede = async () => {
       setRevisionLoading(true);
       try {
@@ -341,6 +384,32 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       dia: dia,
       mes: meses[mesIdx] || '--'
     };
+  };
+
+  const parseFechaSinDesfase = (fecha) => {
+    if (!fecha) return null;
+    if (fecha instanceof Date) {
+      return Number.isNaN(fecha.getTime()) ? null : fecha;
+    }
+
+    const raw = String(fecha).trim();
+    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+    if (fechaBase) {
+      const year = Number(fechaBase[1]);
+      const month = Number(fechaBase[2]) - 1;
+      const day = Number(fechaBase[3]);
+      const localDate = new Date(year, month, day);
+      return Number.isNaN(localDate.getTime()) ? null : localDate;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const fechaPerteneceMesAnio = (fecha, mes, anio) => {
+    const parsed = parseFechaSinDesfase(fecha);
+    if (!parsed) return false;
+    return parsed.getMonth() + 1 === Number(mes) && parsed.getFullYear() === Number(anio);
   };
 
   const handleExportExcel = async () => {
@@ -476,10 +545,16 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     .sort((a, b) => b.enRevision - a.enRevision);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
-  const totalIngresosMes = (dolaresMesActual.sedes || []).reduce(
+  const totalIngresosMensualidadesMes = (dolaresPagadosPorSede.sedes || []).reduce(
     (acc, sede) => acc + Number(sede.monto_pagado || 0),
     0
   );
+  const totalIngresosMes = totalIngresosMensualidadesMes + ingresosUniformesMes;
+  const mesIngresosLabel = mesesAnio.find((mes) => mes.value === mesGraficaSeleccionado)?.label || 'mes';
+  const ingresosDonutData = [
+    { name: 'Mensualidades', value: totalIngresosMensualidadesMes },
+    { name: 'Uniformes', value: ingresosUniformesMes }
+  ];
   const variacionAlumnosReal = `+${nuevosAlumnosMes} este mes`;
 
   return (
@@ -548,8 +623,47 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 </div>
               </div>
               <div className="dashboard-kpi-inline-label">Ingresos del mes</div>
-              <div className="dashboard-kpi-inline-value">${formatMontoBarra(totalIngresosMes).replace('$', '')}</div>
-              <div className="dashboard-kpi-inline-sub">USD recaudados en {mesesAnio[mesActual - 1]?.label?.toLowerCase() || 'el mes actual'}</div>
+              {dolaresLoading || uniformesLoading ? (
+                <div className="dashboard-kpi-inline-loading">Cargando...</div>
+              ) : (
+                <>
+                  <div className="dashboard-kpi-inline-income-row">
+                    <div className="dashboard-kpi-inline-value dashboard-kpi-inline-value-income">${formatMontoBarra(totalIngresosMes).replace('$', '')}</div>
+                    <div className="dashboard-kpi-inline-donut">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={ingresosDonutData}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={19}
+                            outerRadius={29}
+                            paddingAngle={2}
+                            stroke="none"
+                          >
+                            {ingresosDonutData.map((_, index) => (
+                              <Cell key={`ingresos-donut-${index}`} fill={ingresosDonutColors[index % ingresosDonutColors.length]} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="dashboard-kpi-inline-breakdown-list">
+                    <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
+                      <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-mensualidades" />
+                      Mensualidades: ${formatMoney(totalIngresosMensualidadesMes)}
+                    </div>
+                    <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
+                      <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-uniformes" />
+                      Uniformes: ${formatMoney(ingresosUniformesMes)}
+                    </div>
+                  </div>
+                  <div className="dashboard-kpi-inline-sub">USD recaudados en {mesIngresosLabel.toLowerCase()}</div>
+                </>
+              )}
             </div>
           </div>
 
@@ -858,6 +972,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       </div>
     </div>
   );
+
 }
 
 export default Dashboard;

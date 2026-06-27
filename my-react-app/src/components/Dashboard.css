@@ -252,6 +252,53 @@
   font-weight: 600;
 }
 
+.dashboard-kpi-inline-income-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.dashboard-kpi-inline-value-income {
+  margin-bottom: 0;
+}
+
+.dashboard-kpi-inline-donut {
+  width: 66px;
+  height: 66px;
+  flex: 0 0 66px;
+}
+
+.dashboard-kpi-inline-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 2px;
+}
+
+.dashboard-kpi-inline-sub-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-kpi-inline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 8px;
+}
+
+.dashboard-kpi-inline-dot-mensualidades {
+  background: #2563eb;
+}
+
+.dashboard-kpi-inline-dot-uniformes {
+  background: #f28a3f;
+}
+
 .dashboard-top-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -924,6 +971,12 @@
 
   .dashboard-kpis-inline-row {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-kpi-inline-donut {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
   }
 
   .dashboard-top-grid {
