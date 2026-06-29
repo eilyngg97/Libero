@@ -3237,7 +3237,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						{metodosPago.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
 					</TextField>
 					<TextField
-						label="Fecha de pago"
+						label="¿Cuándo se realizó el pago?"
 						type="date"
 						fullWidth
 						margin="normal"

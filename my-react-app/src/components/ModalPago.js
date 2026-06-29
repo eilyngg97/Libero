@@ -1075,7 +1075,7 @@ function ModalPago({
                   </Box>
                   <Box sx={{ height: 1, backgroundColor: '#e2e8f0', mb: 2 }} />
                   <TextField
-                    label="Fecha de pago"
+                    label="¿Cuándo hiciste el pago?"
                     type="date"
                     fullWidth
                     margin="dense"
