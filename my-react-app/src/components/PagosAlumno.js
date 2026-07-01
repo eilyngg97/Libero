@@ -269,6 +269,8 @@ function PagosAlumno(props) {
     (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
   );
 
+  const estadosBloqueantesOrdenPago = ['pendiente', 'retrasado', 'insolvente', 'abono'];
+
   const normalizarEstado = (value) => String(value || '').trim().toLowerCase();
   const esAlumnoBecado = String(alumno?.tipo_mensualidad || '').toLowerCase() === 'beca_completa';
   const tieneMensualidadBecado = mensualidades.some((m) => normalizarEstado(m?.estado) === 'becado');
@@ -973,6 +975,15 @@ function PagosAlumno(props) {
           const montoPagadoCard = Number(pago.total_pagado) || 0;
 
           const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
+          const fechaPeriodoActual = parseFechaSinDesfase(pago.fecha);
+          const bloqueadoPorMesAnterior = showPrimaryAction && Boolean(fechaPeriodoActual) && mensualidades.some((item) => {
+            if (String(item?.id || item?._id || '') === String(pago?.id || pago?._id || '')) return false;
+            const estadoItem = normalizarEstado(item?.estado);
+            if (!estadosBloqueantesOrdenPago.includes(estadoItem)) return false;
+            const fechaPeriodoItem = parseFechaSinDesfase(item?.fecha);
+            if (!fechaPeriodoItem) return false;
+            return fechaPeriodoItem.getTime() < fechaPeriodoActual.getTime();
+          });
 
           return (
             <Card
@@ -1060,23 +1071,38 @@ function PagosAlumno(props) {
                     )}
 
                     {showPrimaryAction ? (
-                      <Button
-                        variant="contained"
-                        size="small"
-                        onClick={() => { setPagoSeleccionado(pago); setOpenModalPago(true); }}
-                        sx={{
-                          borderRadius: 999,
-                          px: 2,
-                          py: 0.45,
-                          fontSize: 12,
-                          fontWeight: 800,
-                          textTransform: 'none',
-                          bgcolor: estadoUi.actionBg,
-                          '&:hover': { bgcolor: estadoUi.actionHover }
-                        }}
+                      <Tooltip
+                        title={bloqueadoPorMesAnterior ? 'Debes pagar primero la mensualidad más antigua con deuda.' : ''}
+                        arrow
+                        disableHoverListener={!bloqueadoPorMesAnterior}
+                        disableFocusListener={!bloqueadoPorMesAnterior}
+                        disableTouchListener={!bloqueadoPorMesAnterior}
                       >
-                        {estadoUi.actionLabel}
-                      </Button>
+                        <span>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            onClick={() => {
+                              if (bloqueadoPorMesAnterior) return;
+                              setPagoSeleccionado(pago);
+                              setOpenModalPago(true);
+                            }}
+                            disabled={bloqueadoPorMesAnterior}
+                            sx={{
+                              borderRadius: 999,
+                              px: 2,
+                              py: 0.45,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              textTransform: 'none',
+                              bgcolor: estadoUi.actionBg,
+                              '&:hover': { bgcolor: estadoUi.actionHover }
+                            }}
+                          >
+                            {estadoUi.actionLabel}
+                          </Button>
+                        </span>
+                      </Tooltip>
                     ) : (
                       <Button
                         variant="text"
