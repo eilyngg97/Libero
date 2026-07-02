@@ -23,6 +23,26 @@ const CobroSchema = new mongoose.Schema({
   recargo_usd: { type: Number, default: 0, min: 0, max: 100000 }
 }, { _id: false });
 
+const CategoriaRangoSchema = new mongoose.Schema({
+  etiqueta: { type: String, default: '' },
+  anio_nacimiento_desde: { type: Number, min: 1900, max: 3000 },
+  anio_nacimiento_hasta: { type: Number, min: 1900, max: 3000 },
+  orden: { type: Number, default: 0, min: 0 }
+}, { _id: false });
+
+const CategoriasSchema = new mongoose.Schema({
+  disciplina: { type: String, default: 'voleibol', trim: true, lowercase: true },
+  modo_asignacion: { type: String, default: 'anio_nacimiento', enum: ['anio_nacimiento'] },
+  fecha_corte: {
+    mes: { type: Number, default: 12, min: 1, max: 12 },
+    dia: { type: Number, default: 31, min: 1, max: 31 }
+  },
+  reglas: {
+    type: [CategoriaRangoSchema],
+    default: []
+  }
+}, { _id: false });
+
 const ConstanciaTemplateSchema = new mongoose.Schema({
   titulo: { type: String, default: '' },
   destinatario: { type: String, default: '' },
@@ -89,6 +109,7 @@ const TenantConfigSchema = new mongoose.Schema({
   key: { type: String, default: 'default', unique: true },
   pagos: { type: PagosSchema, default: () => ({}) },
   cobro: { type: CobroSchema, default: () => ({}) },
+  categorias: { type: CategoriasSchema, default: () => ({}) },
   constancias: { type: ConstanciasSchema, default: () => ({}) },
   requisitos_recaudos: {
     type: [{ type: String, trim: true }],

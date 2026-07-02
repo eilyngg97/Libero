@@ -24,6 +24,7 @@ import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import SportsIcon from '@mui/icons-material/Sports';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -105,7 +106,8 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
         icon: <SettingsIcon />,
         children: [
           { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' },
-          { text: 'General', icon: <SettingsIcon />, path: '/config-general' }
+          { text: 'Constancias', icon: <SettingsIcon />, path: '/config-general' },
+          { text: 'Categorias', icon: <Groups2OutlinedIcon />, path: '/config-categorias' }
         ]
       });
     }
