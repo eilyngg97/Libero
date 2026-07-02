@@ -66,8 +66,8 @@ const { generarMensualidadesPendientesAlumno } = require('./mensualidadControlle
 
 const MONTO_TOLERANCIA_BS = 100;
 
-const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 5, 1, 12, 0, 0));
-const IMPORT_FIXED_PERIODO_COBRO = { mes: 6, anio: 2026 };
+const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 6, 1, 12, 0, 0));
+const IMPORT_FIXED_PERIODO_COBRO = { mes: 7, anio: 2026 };
 
 async function getTenantAlumnoReadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -1442,6 +1442,8 @@ exports.importarAlumnosExcel = async (req, res) => {
       TenantConfig: TenantConfigModel
     } = await getTenantAlumnoWriteModels(req);
     const usuarioRoleId = await getUsuarioRoleId(TenantRole);
+    const configCategoriasImport = await TenantConfigModel.findOne({ key: 'default' }).select('categorias').lean();
+    const reglasCategoriasImport = normalizeReglasCategoriasSinFallback(configCategoriasImport?.categorias?.reglas || []);
 
     const sede = await TenantSede.findById(sedeIdRaw).select('_id nombre');
     if (!sede) {
@@ -1572,9 +1574,18 @@ exports.importarAlumnosExcel = async (req, res) => {
           alumnoData.usuario = userAlumno._id;
         }
 
-        if (row.categoria) {
-          alumnoData.categoria = normalizarCategoria(row.categoria);
+        const categoriaDesdeExcel = resolverCategoriaDesdeReglas(row.categoria, reglasCategoriasImport);
+        const categoriaDesdeFecha = row.fecha_nacimiento
+          ? getCategoriaPorFechaNacimiento(row.fecha_nacimiento, reglasCategoriasImport)
+          : '';
+        const categoriaFinal = categoriaDesdeExcel || categoriaDesdeFecha;
+
+        if (!categoriaFinal) {
+          skipped.push({ fila: row.excelRow, motivo: 'No se pudo determinar la categoria segun las reglas del tenant.' });
+          continue;
         }
+
+        alumnoData.categoria = categoriaFinal;
 
         const sexoNormalizado = normalizarSexo(row.sexo);
         if (sexoNormalizado === null) {
@@ -3604,6 +3615,34 @@ function normalizeReglasCategorias(reglas) {
     }))
     .filter((item) => item.etiqueta !== '')
     .sort((a, b) => a.orden - b.orden);
+}
+
+function normalizeReglasCategoriasSinFallback(reglas) {
+  if (!Array.isArray(reglas) || reglas.length === 0) {
+    return [];
+  }
+
+  return reglas
+    .map((item, index) => ({
+      etiqueta: String(item?.etiqueta || '').trim(),
+      anio_nacimiento_desde: parseOptionalYear(item?.anio_nacimiento_desde),
+      anio_nacimiento_hasta: parseOptionalYear(item?.anio_nacimiento_hasta),
+      orden: Number.isFinite(Number(item?.orden)) ? Number(item.orden) : (index + 1)
+    }))
+    .filter((item) => item.etiqueta !== '')
+    .sort((a, b) => a.orden - b.orden);
+}
+
+function normalizarCategoriaImportacion(valor) {
+  return normalizarClaveCategoria(valor);
+}
+
+function resolverCategoriaDesdeReglas(valor, reglasCategorias = []) {
+  const categoriaNormalizada = normalizarCategoriaImportacion(valor);
+  if (!categoriaNormalizada) return '';
+
+  const reglaCoincidente = reglasCategorias.find((regla) => normalizarCategoriaImportacion(regla.etiqueta) === categoriaNormalizada);
+  return reglaCoincidente?.etiqueta || '';
 }
 
 async function getCategoriasConfigTenant(TenantConfigModel) {
