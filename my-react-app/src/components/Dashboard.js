@@ -85,6 +85,7 @@ function Dashboard() {
     { value: 11, label: 'Noviembre' },
     { value: 12, label: 'Diciembre' }
   ];
+  const mesActualLabel = mesesAnio.find((mes) => mes.value === mesActual)?.label || 'Mes actual';
   // Paginación para cumpleañeros
   const [cumplePage, setCumplePage] = useState(1);
   const cumplePorPagina = 10;
@@ -562,7 +563,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       <div className="dashboard-header-row">
         <div className="dashboard-header-copy">
           <h2>Bienvenido, Admin</h2>
-          <p>Resumen de la actividad en tu academia · Mayo {new Date().getFullYear()}</p>
+          <p>Resumen de la actividad en tu academia · {mesActualLabel} {new Date().getFullYear()}</p>
         </div>
         <button
           type="button"
