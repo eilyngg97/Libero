@@ -14,7 +14,6 @@ import { MenuItem, FormControl, InputLabel, Select, TextField, Autocomplete, Cir
 import './Alumnos.css';
 import { useDolar } from '../context/DolarContext';
 import { metodoRequiereReferencia, normalizeMetodoPago } from '../utils/paymentMethod';
-import { getCategoriaPorFechaNacimiento, CATEGORIAS_DISPONIBLES } from '../utils/categoria';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -140,6 +139,7 @@ function Alumnos() {
   const [comprobantePagoInscripcion, setComprobantePagoInscripcion] = useState(null);
   // const [sedes, setSedes] = useState([]); // Eliminado porque no se usa
   const [categoria, setCategoria] = useState('');
+  const [categoriasDisponibles, setCategoriasDisponibles] = useState([]);
   const navigate = useNavigate();
   const { dolar } = useDolar();
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
@@ -176,6 +176,8 @@ function Alumnos() {
     }
   }, [requiereReferenciaInscripcion, referenciaPagoInscripcion, comprobantePagoInscripcion]);
 
+  const categoriaAutoRef = useRef('');
+
   const modalInputSx = {
     '& .MuiOutlinedInput-root': {
       borderRadius: 2,
@@ -188,12 +190,71 @@ function Alumnos() {
       color: '#64748b'
     }
   };
-    // Calcular categoria automaticamente segun ano de nacimiento
-    useEffect(() => {
-      const cat = getCategoriaPorFechaNacimiento(form.fecha_nacimiento);
-      setCategoria(cat);
-      setForm(prev => ({ ...prev, categoria: cat }));
-    }, [form.fecha_nacimiento]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchCategorias = async () => {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/categoria-sugerida`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudieron cargar categorias');
+        if (!cancelled) {
+          const lista = Array.isArray(data?.categorias_disponibles) ? data.categorias_disponibles : [];
+          setCategoriasDisponibles(lista);
+        }
+      } catch {
+        if (!cancelled) setCategoriasDisponibles([]);
+      }
+    };
+
+    fetchCategorias();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fechaNacimiento = String(form.fecha_nacimiento || '').trim();
+
+    if (!fechaNacimiento) {
+      setCategoria('');
+      categoriaAutoRef.current = '';
+      return;
+    }
+
+    const fetchCategoriaSugerida = async () => {
+      try {
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/alumnos/categoria-sugerida?fecha_nacimiento=${encodeURIComponent(fechaNacimiento)}`
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudo sugerir categoria');
+
+        if (!cancelled) {
+          const sugerida = String(data?.categoria_sugerida || '').trim();
+          const lista = Array.isArray(data?.categorias_disponibles) ? data.categorias_disponibles : [];
+          const autoAnterior = categoriaAutoRef.current;
+
+          setCategoriasDisponibles(lista);
+          setCategoria(sugerida);
+
+          setForm((prev) => {
+            const actual = String(prev.categoria || '').trim();
+            if (!actual || actual === autoAnterior) {
+              return { ...prev, categoria: sugerida };
+            }
+            return prev;
+          });
+
+          categoriaAutoRef.current = sugerida;
+        }
+      } catch {
+        if (!cancelled) setCategoria('');
+      }
+    };
+
+    fetchCategoriaSugerida();
+    return () => { cancelled = true; };
+  }, [form.fecha_nacimiento]);
   useEffect(() => {
     if (success && !showMensualidadModal) {
       const timer = setTimeout(() => {
@@ -916,10 +977,10 @@ function Alumnos() {
                 onChange={handleChange}
                 disabled={!esAdmin}
               >
-                {CATEGORIAS_DISPONIBLES.map((cat) => (
+                {categoriasDisponibles.map((cat) => (
                   <MenuItem key={cat} value={cat}>{cat}</MenuItem>
                 ))}
-                {!!(form.categoria || categoria) && !CATEGORIAS_DISPONIBLES.includes(form.categoria || categoria) && (
+                {!!(form.categoria || categoria) && !categoriasDisponibles.includes(form.categoria || categoria) && (
                   <MenuItem value={form.categoria || categoria}>{form.categoria || categoria}</MenuItem>
                 )}
               </Select>

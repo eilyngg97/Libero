@@ -32,6 +32,7 @@ import Aspirantes from './components/Aspirantes';
 import LandingConfig from './components/LandingConfig';
 import PaymentConfig from './components/PaymentConfig';
 import GeneralConfig from './components/GeneralConfig';
+import CategoriasConfig from './components/CategoriasConfig';
 import ConciliacionBancaria from './components/ConciliacionBancaria';
 import Estadisticas from './components/Estadisticas';
 import MiPerfil from './components/MiPerfil';
@@ -376,6 +377,7 @@ function App() {
                           <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['tienda.view']}><Uniformes /></ProtectedRoute>} />
                           <Route path="configuracion" element={<ProtectedRoute allowedRoles={adminOnly}><PaymentConfig /></ProtectedRoute>} />
                           <Route path="config-general" element={<ProtectedRoute allowedRoles={adminOnly}><GeneralConfig /></ProtectedRoute>} />
+                          <Route path="config-categorias" element={<ProtectedRoute allowedRoles={adminOnly}><CategoriasConfig /></ProtectedRoute>} />
                           <Route path="config-pagos" element={<Navigate to="/configuracion" replace />} />
                           <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><Aspirantes /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="estadisticas" element={<ProtectedRoute allowedRoles={adminOnly}><Estadisticas /></ProtectedRoute>} />

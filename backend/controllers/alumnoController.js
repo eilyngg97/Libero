@@ -3554,18 +3554,18 @@ exports.eliminarReposoAlumno = async (req, res) => {
 };
 
 // ======================= ASIGNACION MASIVA DE CATEGORIAS =======================
-const CATEGORIAS_DISPONIBLES = [
-  'U9/INICIACION',
-  'U11/FORMACION',
-  'U13/MINI',
-  'U15/INFANTIL',
-  'U17/JUVENIL',
-  'U19/JUVENIL LIBRE',
-  'U21',
-  'MAYORES / LIBRE'
+const REGLAS_CATEGORIA_DEFAULT = [
+  { etiqueta: 'U9/INICIACION', anio_nacimiento_desde: 2017, anio_nacimiento_hasta: null, orden: 1 },
+  { etiqueta: 'U11/FORMACION', anio_nacimiento_desde: 2015, anio_nacimiento_hasta: 2016, orden: 2 },
+  { etiqueta: 'U13/MINI', anio_nacimiento_desde: 2013, anio_nacimiento_hasta: 2014, orden: 3 },
+  { etiqueta: 'U15/INFANTIL', anio_nacimiento_desde: 2011, anio_nacimiento_hasta: 2012, orden: 4 },
+  { etiqueta: 'U17/JUVENIL', anio_nacimiento_desde: 2009, anio_nacimiento_hasta: 2010, orden: 5 },
+  { etiqueta: 'U19/JUVENIL LIBRE', anio_nacimiento_desde: 2007, anio_nacimiento_hasta: 2008, orden: 6 },
+  { etiqueta: 'U21', anio_nacimiento_desde: 2005, anio_nacimiento_hasta: 2006, orden: 7 },
+  { etiqueta: 'MAYORES / LIBRE', anio_nacimiento_desde: null, anio_nacimiento_hasta: 2004, orden: 8 }
 ];
 
-function getCategoriaPorFechaNacimiento(fechaNacimiento) {
+function getAnioNacimientoFromFecha(fechaNacimiento) {
   if (!fechaNacimiento) return '';
 
   let nacimiento = null;
@@ -3580,23 +3580,140 @@ function getCategoriaPorFechaNacimiento(fechaNacimiento) {
     }
   }
 
-  if (!nacimiento || Number.isNaN(nacimiento.getTime())) return '';
+  if (!nacimiento || Number.isNaN(nacimiento.getTime())) return null;
 
-  const anioNacimiento = nacimiento.getFullYear();
-
-  if (anioNacimiento >= 2017) return CATEGORIAS_DISPONIBLES[0];
-  if (anioNacimiento >= 2015 && anioNacimiento <= 2016) return CATEGORIAS_DISPONIBLES[1];
-  if (anioNacimiento >= 2013 && anioNacimiento <= 2014) return CATEGORIAS_DISPONIBLES[2];
-  if (anioNacimiento >= 2011 && anioNacimiento <= 2012) return CATEGORIAS_DISPONIBLES[3];
-  if (anioNacimiento >= 2009 && anioNacimiento <= 2010) return CATEGORIAS_DISPONIBLES[4];
-  if (anioNacimiento >= 2007 && anioNacimiento <= 2008) return CATEGORIAS_DISPONIBLES[5];
-  if (anioNacimiento >= 2005 && anioNacimiento <= 2006) return CATEGORIAS_DISPONIBLES[6];
-  return CATEGORIAS_DISPONIBLES[7];
+  return nacimiento.getFullYear();
 }
+
+function parseOptionalYear(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function normalizeReglasCategorias(reglas) {
+  const source = Array.isArray(reglas) && reglas.length > 0 ? reglas : REGLAS_CATEGORIA_DEFAULT;
+
+  return source
+    .map((item, index) => ({
+      etiqueta: String(item?.etiqueta || '').trim(),
+      anio_nacimiento_desde: parseOptionalYear(item?.anio_nacimiento_desde),
+      anio_nacimiento_hasta: parseOptionalYear(item?.anio_nacimiento_hasta),
+      orden: Number.isFinite(Number(item?.orden)) ? Number(item.orden) : (index + 1)
+    }))
+    .filter((item) => item.etiqueta !== '')
+    .sort((a, b) => a.orden - b.orden);
+}
+
+async function getCategoriasConfigTenant(TenantConfigModel) {
+  const configCategorias = await TenantConfigModel.findOne({ key: 'default' }).select('categorias').lean();
+  const disciplina = String(configCategorias?.categorias?.disciplina || 'voleibol').trim().toLowerCase() || 'voleibol';
+  const reglasCategorias = normalizeReglasCategorias(configCategorias?.categorias?.reglas || REGLAS_CATEGORIA_DEFAULT);
+  const categoriasDisponibles = reglasCategorias.map((item) => item.etiqueta).filter(Boolean);
+
+  return {
+    disciplina,
+    reglasCategorias,
+    categoriasDisponibles
+  };
+}
+
+function getCategoriaPorFechaNacimiento(fechaNacimiento, reglas) {
+  const anioNacimiento = getAnioNacimientoFromFecha(fechaNacimiento);
+  if (!Number.isFinite(anioNacimiento)) return '';
+
+  const reglasOrdenadas = normalizeReglasCategorias(reglas);
+  for (const regla of reglasOrdenadas) {
+    const cumpleDesde = regla.anio_nacimiento_desde === null || anioNacimiento >= regla.anio_nacimiento_desde;
+    const cumpleHasta = regla.anio_nacimiento_hasta === null || anioNacimiento <= regla.anio_nacimiento_hasta;
+    if (cumpleDesde && cumpleHasta) {
+      return regla.etiqueta;
+    }
+  }
+
+  return '';
+}
+
+exports.getCategoriaSugerida = async (req, res) => {
+  try {
+    const { TenantConfig } = await getTenantAlumnoWriteModels(req);
+    const { disciplina, reglasCategorias, categoriasDisponibles } = await getCategoriasConfigTenant(TenantConfig);
+
+    const fechaNacimiento = req.query.fecha_nacimiento || req.query.fechaNacimiento || '';
+    const categoriaSugerida = fechaNacimiento
+      ? getCategoriaPorFechaNacimiento(fechaNacimiento, reglasCategorias)
+      : '';
+
+    return res.json({
+      disciplina,
+      categoria_sugerida: categoriaSugerida,
+      categorias_disponibles: categoriasDisponibles
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al sugerir categoria.', detalle: err.message });
+  }
+};
+
+exports.previewAsignarCategoriasMasivamente = async (req, res) => {
+  try {
+    const { Alumno: TenantAlumno, TenantConfig } = await getTenantAlumnoWriteModels(req);
+    const { disciplina, reglasCategorias } = await getCategoriasConfigTenant(TenantConfig);
+
+    const alumnos = await TenantAlumno.find({
+      activo: { $ne: false },
+      dado_de_baja: { $ne: true }
+    }).select('_id nombres apellidos categoria fecha_nacimiento');
+
+    let evaluados = 0;
+    let conFechaNacimiento = 0;
+    let sinFechaNacimiento = 0;
+    let cambiosEstimados = 0;
+    const muestraCambios = [];
+
+    for (const alumno of alumnos) {
+      evaluados += 1;
+      if (!alumno.fecha_nacimiento) {
+        sinFechaNacimiento += 1;
+        continue;
+      }
+
+      conFechaNacimiento += 1;
+      const categoriaSugerida = getCategoriaPorFechaNacimiento(alumno.fecha_nacimiento, reglasCategorias);
+      const categoriaActual = String(alumno.categoria || '').trim();
+
+      if (categoriaSugerida && categoriaSugerida !== categoriaActual) {
+        cambiosEstimados += 1;
+        if (muestraCambios.length < 30) {
+          muestraCambios.push({
+            id: alumno._id,
+            alumno: `${String(alumno.nombres || '').trim()} ${String(alumno.apellidos || '').trim()}`.trim(),
+            fecha_nacimiento: alumno.fecha_nacimiento,
+            categoria_actual: categoriaActual,
+            categoria_sugerida: categoriaSugerida
+          });
+        }
+      }
+    }
+
+    return res.json({
+      disciplina,
+      evaluados,
+      con_fecha_nacimiento: conFechaNacimiento,
+      sin_fecha_nacimiento: sinFechaNacimiento,
+      cambios_estimados: cambiosEstimados,
+      muestra_cambios: muestraCambios
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al generar preview de asignacion de categorias.', detalle: err.message });
+  }
+};
 
 exports.asignarCategoriasMasivamente = async (req, res) => {
   try {
-    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
+    const { Alumno: TenantAlumno, TenantConfig } = await getTenantAlumnoWriteModels(req);
+    const { reglasCategorias } = await getCategoriasConfigTenant(TenantConfig);
+
     const alumnos = await TenantAlumno.find({ 
       activo: { $ne: false }, 
       dado_de_baja: { $ne: true } 
@@ -3605,7 +3722,7 @@ exports.asignarCategoriasMasivamente = async (req, res) => {
     
     for (const alumno of alumnos) {
       if (alumno.fecha_nacimiento) {
-        const nuevaCat = getCategoriaPorFechaNacimiento(alumno.fecha_nacimiento);
+        const nuevaCat = getCategoriaPorFechaNacimiento(alumno.fecha_nacimiento, reglasCategorias);
         const categoriaActual = String(alumno.categoria || '').trim();
         if (nuevaCat && categoriaActual !== nuevaCat) {
           operaciones.push({

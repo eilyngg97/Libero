@@ -5,7 +5,6 @@ import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { mediaUrl } from '../utils/mediaUrl';
-import { getCategoriaPorFechaNacimiento, CATEGORIAS_DISPONIBLES } from '../utils/categoria';
 import './Alumnos.css';
 import { Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -54,6 +53,7 @@ function AlumnoEditar({ locationState }) {
     monto_personalizado_valor: ''
   });
   const [categoria, setCategoria] = useState('');
+  const [categoriasDisponibles, setCategoriasDisponibles] = useState([]);
   const [numeroFranelaDuplicado, setNumeroFranelaDuplicado] = useState(false);
   const [numeroFranelaCheckLoading, setNumeroFranelaCheckLoading] = useState(false);
   const [numeroFranelaCheckMsg, setNumeroFranelaCheckMsg] = useState('');
@@ -62,6 +62,7 @@ function AlumnoEditar({ locationState }) {
   const [numerosFranelaOcupados, setNumerosFranelaOcupados] = useState([]);
   const inputRef = useRef(null);
   const inputCedulaRef = useRef(null);
+  const categoriaAutoRef = useRef('');
 
   const hidratarFormularioAlumno = (data) => {
     let { representante, ...rest } = data;
@@ -171,9 +172,78 @@ function AlumnoEditar({ locationState }) {
   }, [esAdmin, token]);
 
   useEffect(() => {
-    const cat = getCategoriaPorFechaNacimiento(form.fecha_nacimiento);
-    setCategoria(cat);
-    setForm(prev => ({ ...prev, categoria: cat }));
+    let cancelled = false;
+
+    const fetchCategorias = async () => {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/categoria-sugerida`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudieron cargar categorias');
+        if (!cancelled) {
+          const lista = Array.isArray(data?.categorias_disponibles) ? data.categorias_disponibles : [];
+          setCategoriasDisponibles(lista);
+        }
+      } catch {
+        if (!cancelled) setCategoriasDisponibles([]);
+      }
+    };
+
+    fetchCategorias();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fechaNacimiento = String(form.fecha_nacimiento || '').trim();
+
+    if (!fechaNacimiento) {
+      setCategoria('');
+      categoriaAutoRef.current = '';
+      return;
+    }
+
+    const fetchCategoriaSugerida = async () => {
+      try {
+        const res = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/alumnos/categoria-sugerida?fecha_nacimiento=${encodeURIComponent(fechaNacimiento)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudo sugerir categoria');
+
+        if (!cancelled) {
+          const sugerida = String(data?.categoria_sugerida || '').trim();
+          const lista = Array.isArray(data?.categorias_disponibles) ? data.categorias_disponibles : [];
+          const autoAnterior = categoriaAutoRef.current;
+
+          setCategoriasDisponibles(lista);
+          setCategoria(sugerida);
+
+          setForm((prev) => {
+            const actual = String(prev.categoria || '').trim();
+            if (!actual || actual === autoAnterior) {
+              return { ...prev, categoria: sugerida };
+            }
+            return prev;
+          });
+
+          categoriaAutoRef.current = sugerida;
+        }
+      } catch {
+        if (!cancelled) setCategoria('');
+      }
+    };
+
+    fetchCategoriaSugerida();
+
+    return () => {
+      cancelled = true;
+    };
   }, [form.fecha_nacimiento]);
 
   useEffect(() => {
@@ -781,10 +851,10 @@ function AlumnoEditar({ locationState }) {
                     onChange={handleChange}
                     disabled={!esAdmin}
                   >
-                    {CATEGORIAS_DISPONIBLES.map((cat) => (
+                    {categoriasDisponibles.map((cat) => (
                       <MenuItem key={cat} value={cat}>{cat}</MenuItem>
                     ))}
-                    {!!(form.categoria || categoria) && !CATEGORIAS_DISPONIBLES.includes(form.categoria || categoria) && (
+                    {!!(form.categoria || categoria) && !categoriasDisponibles.includes(form.categoria || categoria) && (
                       <MenuItem value={form.categoria || categoria}>{form.categoria || categoria}</MenuItem>
                     )}
                   </Select>
