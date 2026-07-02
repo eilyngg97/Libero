@@ -1000,6 +1000,68 @@ describe('Backend smoke tests', () => {
     expect(alumnoDoc.saldo_a_favor_mensualidades).toBe(25);
   });
 
+  test('POST /api/mensualidades/ajuste-sede omite conflicto de saldo y continua', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const alumnoDoc = {
+      _id: 'a1',
+      saldo_a_favor_mensualidades: 0,
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      id_alumno: 'a1',
+      monto_base: 100,
+      credito_aplicado: 0,
+      ajuste_extraordinario: 25,
+      monto_esperado: 75,
+      saldo_a_favor_generado: 25,
+      estatus: 'Pagado',
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    Alumno.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([alumnoDoc])
+    });
+    Alumno.findById.mockResolvedValue(alumnoDoc);
+    Mensualidad.find.mockResolvedValue([mensualidadDoc]);
+    PagoDetalle.find.mockResolvedValue([{ monto_pagado: 100 }]);
+
+    const response = await request(app)
+      .post('/api/mensualidades/ajuste-sede')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        id_sede: 's1',
+        mes: 3,
+        anio: 2026,
+        nuevo_monto: 100,
+        descripcion: 'Reverso ajuste'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe('Ajuste extraordinario aplicado parcialmente');
+    expect(response.body.mensualidades_actualizadas).toBe(0);
+    expect(response.body.mensualidades_omitidas).toBe(1);
+    expect(response.body.mensualidades_omitidas_conflicto_saldo).toBe(1);
+    expect(response.body.resumen_ajuste).toEqual(
+      expect.objectContaining({
+        procesadas_total: 1,
+        correctas: 0,
+        omitidas_total: 1,
+        omitidas_conflicto_saldo: 1
+      })
+    );
+    expect(Array.isArray(response.body.mensualidades_omitidas_detalle)).toBe(true);
+    expect(response.body.mensualidades_omitidas_detalle).toHaveLength(1);
+    expect(response.body.mensualidades_omitidas_detalle[0]).toEqual(
+      expect.objectContaining({
+        alumno_id: 'a1',
+        motivo_code: 'SALDO_A_FAVOR_CONSUMIDO'
+      })
+    );
+  });
+
   test('POST /api/mensualidades/ajuste-sede omite exonerados y reposo', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 

@@ -104,6 +104,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [previewAjuste, setPreviewAjuste] = useState(null);
 	const [previewAjusteLoading, setPreviewAjusteLoading] = useState(false);
 	const [previewAjusteError, setPreviewAjusteError] = useState('');
+	const [resumenAjusteSede, setResumenAjusteSede] = useState(null);
 	const [adelantandoAlumnoId, setAdelantandoAlumnoId] = useState('');
 	const [confirmarAdelantoOpen, setConfirmarAdelantoOpen] = useState(false);
 	const [mensualidadAAdelantar, setMensualidadAAdelantar] = useState(null);
@@ -174,6 +175,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		setAjusteAnio(String(new Date().getFullYear()));
 		setPreviewAjuste(null);
 		setPreviewAjusteError('');
+		setResumenAjusteSede(null);
 	};
 
 	const obtenerPreviewAjusteSede = React.useCallback(async () => {
@@ -1603,6 +1605,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 		try {
 			setAplicandoAjuste(true);
+			setResumenAjusteSede(null);
 			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/ajuste-sede`, {
 				method: 'POST',
 				headers: {
@@ -1619,10 +1622,20 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'No se pudo aplicar el ajuste');
-			resetAjusteSedeForm();
+			const resumen = data?.resumen_ajuste || {
+				procesadas_total: (data?.mensualidades_actualizadas || 0) + (data?.mensualidades_omitidas || 0),
+				correctas: data?.mensualidades_actualizadas || 0,
+				omitidas_total: data?.mensualidades_omitidas || 0,
+				omitidas_no_aplicables: data?.mensualidades_omitidas_no_aplicables || 0,
+				omitidas_conflicto_saldo: data?.mensualidades_omitidas_conflicto_saldo || 0,
+				omitidas_detalle: Array.isArray(data?.mensualidades_omitidas_detalle)
+					? data.mensualidades_omitidas_detalle
+					: []
+			};
+			setResumenAjusteSede(resumen);
 			await cargarMensualidades();
 			setSuccessMessage(
-				`Ajuste aplicado: ${data.mensualidades_actualizadas || 0} actualizadas, ${data.mensualidades_omitidas || 0} omitidas y ${data.alumnos_con_saldo_a_favor || 0} alumnos con saldo a favor.`
+				`Ajuste aplicado: ${resumen.correctas || 0} correctas, ${resumen.omitidas_total || 0} omitidas y ${data.alumnos_con_saldo_a_favor || 0} alumnos con saldo a favor.`
 			);
 		} catch (err) {
 			alert(err.message || 'No se pudo aplicar el ajuste');
@@ -3097,7 +3110,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						fullWidth
 						margin="normal"
 						value={ajusteAnio}
-						onChange={e => setAjusteAnio(e.target.value)}
+						onChange={e => {
+							setAjusteAnio(e.target.value);
+							setResumenAjusteSede(null);
+						}}
 						inputProps={{ min: 2000, step: 1 }}
 					/>
 					<TextField
@@ -3106,7 +3122,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						fullWidth
 						margin="normal"
 						value={ajusteNuevoMonto}
-						onChange={e => setAjusteNuevoMonto(e.target.value)}
+						onChange={e => {
+							setAjusteNuevoMonto(e.target.value);
+							setResumenAjusteSede(null);
+						}}
 						inputProps={{ min: 0, step: '0.01' }}
 						helperText="Ejemplo: si la sede cobra 35 y este mes se reconocerá una semana, coloca aquí el nuevo monto final del mes."
 					/>
@@ -3115,7 +3134,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						fullWidth
 						margin="normal"
 						value={ajusteDescripcion}
-						onChange={e => setAjusteDescripcion(e.target.value)}
+						onChange={e => {
+							setAjusteDescripcion(e.target.value);
+							setResumenAjusteSede(null);
+						}}
 						placeholder="Semana reconocida por suspensión de clases"
 					/>
 					{previewAjusteLoading && <Alert severity="info" sx={{ mt: 1.5 }}>Calculando vista previa...</Alert>}
@@ -3129,15 +3151,85 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							{previewAjuste.mensualidades_no_compatibles > 0 && ` ${previewAjuste.mensualidades_no_compatibles} no compatibles con este monto.`}
 						</Alert>
 					)}
+					{resumenAjusteSede && (
+						<Box sx={{ mt: 2 }}>
+							<Typography sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>
+								Resumen del ajuste aplicado
+							</Typography>
+							<TableContainer component={Paper} variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+								<Table size="small" aria-label="resumen ajuste sede">
+									<TableHead>
+										<TableRow>
+											<TableCell sx={{ fontWeight: 700 }}>Concepto</TableCell>
+											<TableCell align="right" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
+										</TableRow>
+									</TableHead>
+									<TableBody>
+										<TableRow>
+											<TableCell>Procesadas</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.procesadas_total || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Correctas</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.correctas || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Omitidas (total)</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.omitidas_total || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Omitidas por estatus no aplicable</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.omitidas_no_aplicables || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Omitidas por saldo consumido</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.omitidas_conflicto_saldo || 0)}</TableCell>
+										</TableRow>
+									</TableBody>
+								</Table>
+							</TableContainer>
+							{Array.isArray(resumenAjusteSede.omitidas_detalle) && resumenAjusteSede.omitidas_detalle.length > 0 && (
+								<Box sx={{ mt: 2 }}>
+									<Typography sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>
+										Detalle de omitidas
+									</Typography>
+									<TableContainer component={Paper} variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+										<Table size="small" aria-label="detalle omitidas ajuste sede">
+											<TableHead>
+												<TableRow>
+													<TableCell sx={{ fontWeight: 700 }}>Alumno</TableCell>
+													<TableCell sx={{ fontWeight: 700 }}>Cédula</TableCell>
+													<TableCell sx={{ fontWeight: 700 }}>Motivo</TableCell>
+												</TableRow>
+											</TableHead>
+											<TableBody>
+												{resumenAjusteSede.omitidas_detalle.map((item, index) => (
+													<TableRow key={`${item?.mensualidad_id || 'omitida'}-${index}`}>
+														<TableCell>{item?.alumno_nombre || 'Alumno no disponible'}</TableCell>
+														<TableCell>{item?.alumno_cedula || '-'}</TableCell>
+														<TableCell>{item?.motivo || 'Omitida'}</TableCell>
+													</TableRow>
+												))}
+											</TableBody>
+										</Table>
+									</TableContainer>
+								</Box>
+							)}
+						</Box>
+					)}
 				</DialogContent>
 				<DialogActions>
-					<Button variant="outlined" onClick={obtenerPreviewAjusteSede} disabled={aplicandoAjuste || previewAjusteLoading}>
+					<Button
+						variant="outlined"
+						onClick={obtenerPreviewAjusteSede}
+						disabled={aplicandoAjuste || previewAjusteLoading || !!resumenAjusteSede}
+					>
 						Recalcular impacto
 					</Button>
 					<Button
 						variant="contained"
 						onClick={aplicarAjusteSede}
-						disabled={aplicandoAjuste || previewAjusteLoading || (previewAjuste?.mensualidades_actualizables || 0) <= 0 || (previewAjuste?.mensualidades_no_compatibles || 0) > 0}
+						disabled={aplicandoAjuste || previewAjusteLoading || !!resumenAjusteSede || (previewAjuste?.mensualidades_actualizables || 0) <= 0 || (previewAjuste?.mensualidades_no_compatibles || 0) > 0}
 					>
 						{aplicandoAjuste ? 'Aplicando...' : 'Aplicar ajuste'}
 					</Button>
