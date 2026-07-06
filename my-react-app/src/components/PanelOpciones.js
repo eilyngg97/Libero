@@ -7,12 +7,17 @@ import SportsVolleyballIcon from '@mui/icons-material/SportsVolleyball';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import { hasPermission } from '../utils/permissions';
 
 function PanelOpciones() {
     const navigate = useNavigate();
     const { sedeSeleccionada, setSedeSeleccionada } = useSede();
     const [sedes, setSedes] = useState([]);
     const TODAS_SEDES_VALUE = '__all_sedes__';
+    const canViewAlumnos = hasPermission('alumnos.view');
+    const canViewEntrenadores = hasPermission('entrenadores.view');
+    const canViewMensualidades = hasPermission('mensualidades.view');
+    const canViewSolicitudesUniformes = hasPermission('solicitudes_uniformes.view');
 
     useEffect(() => {
         const fetchSedes = async () => {
@@ -89,6 +94,7 @@ function PanelOpciones() {
                     </Box>
                 )}
                 <Grid container spacing={2.5} mt={1} justifyContent="center">
+                    {canViewAlumnos && (
                     <Grid item size={{ xs: 12, sm: 6, md: 3 }}>
                         <Box sx={{
                             borderRadius: 3,
@@ -130,6 +136,8 @@ function PanelOpciones() {
                             />
                         </Box>
                     </Grid>
+                    )}
+                    {canViewEntrenadores && (
                     <Grid item size={{ xs: 12, sm: 6, md: 3 }}>
                         <Box sx={{
                             borderRadius: 3,
@@ -171,6 +179,8 @@ function PanelOpciones() {
                             />
                         </Box>
                     </Grid>
+                    )}
+                    {canViewMensualidades && (
                     <Grid item size={{ xs: 12, sm: 6, md: 3 }}>
                         <Box sx={{
                             borderRadius: 3,
@@ -212,6 +222,8 @@ function PanelOpciones() {
                             />
                         </Box>
                     </Grid>
+                    )}
+                    {canViewSolicitudesUniformes && (
                     <Grid item size={{ xs: 12, sm: 6, md: 3 }}>
                         <Box sx={{
                             borderRadius: 3,
@@ -253,6 +265,19 @@ function PanelOpciones() {
                             />
                         </Box>
                     </Grid>
+                    )}
+                    {!canViewAlumnos && !canViewEntrenadores && !canViewMensualidades && !canViewSolicitudesUniformes && (
+                    <Grid item xs={12}>
+                        <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 3, p: 2, bgcolor: '#fff' }}>
+                            <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.6 }}>
+                                Sin modulos operativos habilitados
+                            </Typography>
+                            <Typography sx={{ color: '#64748b' }}>
+                                Este rol no tiene acceso a alumnos, entrenadores, mensualidades ni solicitudes de uniformes.
+                            </Typography>
+                        </Box>
+                    </Grid>
+                    )}
                 </Grid>
             </Box>
         );

@@ -24,15 +24,17 @@ import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import SportsIcon from '@mui/icons-material/Sports';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
+import { hasAnyPermission, hasPermission } from '../utils/permissions';
 
 
 function getMenuOptions(handleLogout, handleDashboardNavigation) {
-  // Detectar el rol del usuario
   let rol = null;
   let tenantId = '';
   try {
@@ -44,27 +46,71 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
     : (rol === 'entrenador' ? '/sin-acceso' : '/dashboard');
   const options = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: dashboardPath, onClick: handleDashboardNavigation },
-    
   ];
-  if (rol === 'admin' || rol === 'super_admin') {
-    options.push(
-      { text: 'Sedes', icon: <LocationCityIcon />, path: '/sedes' },
-      { text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' },
-      { text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' },
-      { text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' },
-      { text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' },
-      {
+
+  const esAdminLegacy = rol === 'admin' || rol === 'super_admin';
+  const canViewConstancias = hasPermission('constancias.view') || esAdminLegacy;
+  const canViewRecaudos = hasPermission('recaudos.view') || esAdminLegacy;
+  const canViewReglamento = hasPermission('reglamento.view') || esAdminLegacy;
+  const canViewTienda = hasPermission('tienda.view') || esAdminLegacy;
+  const canViewSolicitudesConstancias = hasPermission('solicitudes_constancias.view') || esAdminLegacy;
+  const canManageUsers = rol === 'super_admin';
+  const canViewConfiguraciones = esAdminLegacy;
+  const canViewSedes = hasAnyPermission(['sedes.view', 'sedes.manage']) || esAdminLegacy;
+  const canViewEntrenadores = hasAnyPermission(['entrenadores.view', 'entrenadores.manage']) || esAdminLegacy;
+  const canViewEstadisticas = hasPermission('dashboard.stats') || esAdminLegacy;
+  const canViewConciliacion = hasPermission('dashboard.finance') || esAdminLegacy;
+
+  if (rol === 'usuario') {
+    options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
+    options.push({ text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' });
+  } else if (rol !== 'entrenador') {
+    if (canViewConstancias) {
+      options.push({ text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' });
+    }
+    if (tenantId === 'esporta' && canViewSolicitudesConstancias) {
+      options.push({ text: 'Solicitudes constancias', icon: <DescriptionIcon />, path: '/solicitudes-constancias' });
+    }
+    if (canViewRecaudos) {
+      options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
+    }
+    if (canViewReglamento) {
+      options.push({ text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' });
+    }
+    if (canViewTienda) {
+      options.push({ text: 'Tienda', icon: <CheckroomIcon />, path: '/uniformes' });
+    }
+    if (canManageUsers) {
+      options.push({ text: 'Usuarios', icon: <ManageAccountsIcon />, path: '/usuarios' });
+    }
+  }
+
+  if (canViewSedes) {
+    options.push({ text: 'Sedes', icon: <LocationCityIcon />, path: '/sedes' });
+  }
+  if (canViewEntrenadores) {
+    options.push({ text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' });
+  }
+  if (canViewEstadisticas) {
+    options.push({ text: 'Estadisticas', icon: <QueryStatsIcon />, path: '/estadisticas' });
+  }
+  if (canViewConciliacion) {
+    options.push({ text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' });
+  }
+
+  if (esAdminLegacy) {
+
+    if (canViewConfiguraciones) {
+      options.push({
         text: 'Configuraciones',
         icon: <SettingsIcon />,
         children: [
           { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' },
-          { text: 'General', icon: <SettingsIcon />, path: '/config-general' }
+          { text: 'Constancias', icon: <SettingsIcon />, path: '/config-general' },
+          { text: 'Categorias', icon: <Groups2OutlinedIcon />, path: '/config-categorias' }
         ]
-      },
-      { text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' },
-      { text: 'Estadisticas', icon: <QueryStatsIcon />, path: '/estadisticas' },
-      { text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' },
-    );
+      });
+    }
 
     if (tenantId === 'villasport') {
       options.push(
@@ -74,16 +120,9 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       );
     }
 
-    if (tenantId === 'esporta') {
-      options.push(
-        { text: 'Solicitudes constancias', icon: <DescriptionIcon />, path: '/solicitudes-constancias' }
-      );
+    if (tenantId === 'esporta' && !options.some((item) => item.path === '/solicitudes-constancias')) {
+      options.push({ text: 'Solicitudes constancias', icon: <DescriptionIcon />, path: '/solicitudes-constancias' });
     }
-  }
-
-  if (rol === 'usuario') {
-    options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
-    options.push({ text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' });
   }
 
   options.push({ text: 'Cerrar Sesión', icon: <LogoutIcon />, onClick: handleLogout });

@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Role = require('../models/Role');
 const Sede = require('../models/Sede');
 const Representante = require('../models/Representante');
 const Alumno = require('../models/Alumno');
@@ -19,6 +20,7 @@ const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
 
 const modelSchemaMap = {
   User: User.schema,
+  Role: Role.schema,
   Sede: Sede.schema,
   Representante: Representante.schema,
   Alumno: Alumno.schema,

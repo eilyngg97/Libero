@@ -5,7 +5,7 @@ const fs = require('fs');
 
 const router = express.Router();
 const recaudoController = require('../controllers/recaudoController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 function resolveTenantId(req) {
@@ -61,14 +61,14 @@ function uploadArchivo(req, res, next) {
   });
 }
 
-router.get('/', authMiddleware, rolMiddleware('admin', 'usuario'), recaudoController.listarRecaudos);
-router.get('/requisitos', authMiddleware, rolMiddleware('admin', 'usuario'), recaudoController.listarRequisitosRecaudos);
-router.put('/requisitos', authMiddleware, rolMiddleware('admin'), recaudoController.actualizarRequisitosRecaudos);
+router.get('/', authMiddleware, permisoMiddleware('recaudos.view'), recaudoController.listarRecaudos);
+router.get('/requisitos', authMiddleware, permisoMiddleware('recaudos.view'), recaudoController.listarRequisitosRecaudos);
+router.put('/requisitos', authMiddleware, permisoMiddleware('recaudos.manage'), recaudoController.actualizarRequisitosRecaudos);
 
 router.post(
   '/',
   authMiddleware,
-  rolMiddleware('admin'),
+  permisoMiddleware('recaudos.manage'),
   uploadArchivo,
   (req, res, next) => {
     if (req.file) {
@@ -80,6 +80,6 @@ router.post(
   recaudoController.crearRecaudo
 );
 
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), recaudoController.eliminarRecaudo);
+router.delete('/:id', authMiddleware, permisoMiddleware('recaudos.manage'), recaudoController.eliminarRecaudo);
 
 module.exports = router;

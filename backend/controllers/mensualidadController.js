@@ -11,6 +11,11 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const MONTO_TOLERANCIA_BS = 100;
+const SALDO_A_FAVOR_CONSUMIDO_ERROR = 'El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.';
+
+function esErrorSaldoAFavorConsumido(err) {
+  return String(err?.message || '').trim() === SALDO_A_FAVOR_CONSUMIDO_ERROR;
+}
 
 async function getTenantMensualidadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -818,7 +823,7 @@ async function recalcularMensualidadPorPagos(
       const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
 
       if (saldoResultante < 0) {
-        throw new Error('El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.');
+        throw new Error(SALDO_A_FAVOR_CONSUMIDO_ERROR);
       }
 
       alumnoDoc.saldo_a_favor_mensualidades = saldoResultante;
@@ -974,7 +979,7 @@ async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, 
       { tipo_mensualidad: 'monto_sede' },
       { tipo_mensualidad: { $exists: false } }
     ]
-  }).select('_id saldo_a_favor_mensualidades');
+  }).select('_id nombres apellidos cedula saldo_a_favor_mensualidades');
 
   if (alumnos.length === 0) {
     return { alumnos: [], mensualidades: [] };
@@ -989,14 +994,54 @@ async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, 
   return { alumnos, mensualidades };
 }
 
-function esMensualidadOmitidaAjusteSede(mensualidad) {
-  const estatusActual = String(mensualidad.estatus || '').toLowerCase();
-  if (estatusActual === 'exonerado' || estatusActual === 'exento por reposo') {
-    return true;
+function obtenerMotivoOmitirAjusteSede(mensualidad) {
+  const estatusActual = String(mensualidad?.estatus || '').toLowerCase();
+  if (estatusActual === 'exonerado') {
+    return {
+      code: 'NO_APLICABLE_EXONERADO',
+      message: 'Mensualidad exonerada'
+    };
+  }
+
+  if (estatusActual === 'exento por reposo') {
+    return {
+      code: 'NO_APLICABLE_REPOSO',
+      message: 'Mensualidad exenta por reposo'
+    };
   }
 
   const montoBase = obtenerMontoBaseMensualidad(mensualidad);
-  return montoBase <= 0;
+  if (montoBase <= 0) {
+    return {
+      code: 'NO_APLICABLE_MONTO_BASE_CERO',
+      message: 'Monto base no ajustable'
+    };
+  }
+
+  return null;
+}
+
+function construirDetalleOmitidaAjusteSede(mensualidad, alumnoMap, motivo) {
+  const alumnoRef = mensualidad?.id_alumno;
+  const alumnoId = String(alumnoRef?._id || alumnoRef || '');
+  const alumnoInfo = alumnoMap.get(alumnoId);
+  const nombres = String(alumnoRef?.nombres || alumnoInfo?.nombres || '').trim();
+  const apellidos = String(alumnoRef?.apellidos || alumnoInfo?.apellidos || '').trim();
+  const nombreCompleto = `${nombres} ${apellidos}`.trim();
+
+  return {
+    mensualidad_id: String(mensualidad?._id || ''),
+    alumno_id: alumnoId,
+    alumno_nombre: nombreCompleto || 'Alumno sin nombre',
+    alumno_cedula: String(alumnoRef?.cedula || alumnoInfo?.cedula || ''),
+    estatus: String(mensualidad?.estatus || ''),
+    motivo_code: String(motivo?.code || ''),
+    motivo: String(motivo?.message || 'Omitida por regla de negocio')
+  };
+}
+
+function esMensualidadOmitidaAjusteSede(mensualidad) {
+  return Boolean(obtenerMotivoOmitirAjusteSede(mensualidad));
 }
 
 function generarVistaPreviaAjusteSede(mensualidades, nuevoMonto) {
@@ -1497,13 +1542,19 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
     }
 
     let actualizadas = 0;
-    let omitidas = 0;
+    let omitidasNoAplicables = 0;
+    let omitidasConflictoSaldo = 0;
     let saldoTotalGenerado = 0;
     let alumnosConSaldoAFavor = 0;
+    const omitidasDetalle = [];
 
     for (const mensualidad of mensualidades) {
-      if (esMensualidadOmitidaAjusteSede(mensualidad)) {
-        omitidas += 1;
+      const motivoNoAplicable = obtenerMotivoOmitirAjusteSede(mensualidad);
+      if (motivoNoAplicable) {
+        omitidasNoAplicables += 1;
+        omitidasDetalle.push(
+          construirDetalleOmitidaAjusteSede(mensualidad, alumnoMap, motivoNoAplicable)
+        );
         continue;
       }
 
@@ -1517,13 +1568,28 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
         Math.max(0, montoBase - (Number(mensualidad.credito_aplicado) || 0) - mensualidad.ajuste_extraordinario)
       );
 
-      const resultado = await recalcularMensualidadPorPagos(mensualidad, {
-        models: tenantModels,
-        actorRol: 'admin',
-        estatusAnterior: mensualidad.estatus,
-        preservarPagadoSinPagos: true,
-        preservarInsolventeSinPagosCuandoMontoCero: true
-      });
+      let resultado;
+      try {
+        resultado = await recalcularMensualidadPorPagos(mensualidad, {
+          models: tenantModels,
+          actorRol: 'admin',
+          estatusAnterior: mensualidad.estatus,
+          preservarPagadoSinPagos: true,
+          preservarInsolventeSinPagosCuandoMontoCero: true
+        });
+      } catch (errorAjuste) {
+        if (esErrorSaldoAFavorConsumido(errorAjuste)) {
+          omitidasConflictoSaldo += 1;
+          omitidasDetalle.push(
+            construirDetalleOmitidaAjusteSede(mensualidad, alumnoMap, {
+              code: 'SALDO_A_FAVOR_CONSUMIDO',
+              message: 'Saldo a favor consumido en meses posteriores'
+            })
+          );
+          continue;
+        }
+        throw errorAjuste;
+      }
 
       actualizadas += 1;
       saldoTotalGenerado = redondearMonto(saldoTotalGenerado + resultado.saldoAFavorGenerado);
@@ -1537,17 +1603,40 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       }
     }
 
+    const omitidasTotales = omitidasNoAplicables + omitidasConflictoSaldo;
+    const fueParcial = omitidasTotales > 0;
+
     res.json({
-      message: 'Ajuste extraordinario aplicado correctamente',
+      message: fueParcial
+        ? 'Ajuste extraordinario aplicado parcialmente'
+        : 'Ajuste extraordinario aplicado correctamente',
       mensualidades_actualizadas: actualizadas,
-      mensualidades_omitidas: omitidas,
+      mensualidades_omitidas: omitidasTotales,
+      mensualidades_omitidas_no_aplicables: omitidasNoAplicables,
+      mensualidades_omitidas_conflicto_saldo: omitidasConflictoSaldo,
+      mensualidades_omitidas_detalle: omitidasDetalle,
       alumnos_con_saldo_a_favor: alumnosConSaldoAFavor,
       saldo_total_generado: saldoTotalGenerado,
       nuevo_monto: nuevoMonto,
       mes: mesNumero,
-      anio: anioNumero
+      anio: anioNumero,
+      resumen_ajuste: {
+        procesadas_total: mensualidades.length,
+        correctas: actualizadas,
+        omitidas_total: omitidasTotales,
+        omitidas_no_aplicables: omitidasNoAplicables,
+        omitidas_conflicto_saldo: omitidasConflictoSaldo,
+        omitidas_detalle: omitidasDetalle
+      }
     });
   } catch (err) {
+    if (esErrorSaldoAFavorConsumido(err)) {
+      return res.status(409).json({
+        error: err.message,
+        code: 'SALDO_A_FAVOR_CONSUMIDO'
+      });
+    }
+
     res.status(500).json({ error: err.message });
   }
 };

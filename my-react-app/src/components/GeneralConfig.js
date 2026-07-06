@@ -104,6 +104,50 @@ const EMPTY_CONSTANCIAS_CONFIG = {
   }
 };
 
+const EMPTY_CATEGORIAS_CONFIG = {
+  disciplina: 'voleibol',
+  modo_asignacion: 'anio_nacimiento',
+  fecha_corte: {
+    mes: 12,
+    dia: 31
+  },
+  reglas: [
+    { etiqueta: 'U9/INICIACION', anio_nacimiento_desde: 2017, anio_nacimiento_hasta: null, orden: 1 },
+    { etiqueta: 'U11/FORMACION', anio_nacimiento_desde: 2015, anio_nacimiento_hasta: 2016, orden: 2 },
+    { etiqueta: 'U13/MINI', anio_nacimiento_desde: 2013, anio_nacimiento_hasta: 2014, orden: 3 },
+    { etiqueta: 'U15/INFANTIL', anio_nacimiento_desde: 2011, anio_nacimiento_hasta: 2012, orden: 4 },
+    { etiqueta: 'U17/JUVENIL', anio_nacimiento_desde: 2009, anio_nacimiento_hasta: 2010, orden: 5 },
+    { etiqueta: 'U19/JUVENIL LIBRE', anio_nacimiento_desde: 2007, anio_nacimiento_hasta: 2008, orden: 6 },
+    { etiqueta: 'U21', anio_nacimiento_desde: 2005, anio_nacimiento_hasta: 2006, orden: 7 },
+    { etiqueta: 'MAYORES / LIBRE', anio_nacimiento_desde: null, anio_nacimiento_hasta: 2004, orden: 8 }
+  ]
+};
+
+function buildCategoriasConfig(data = {}) {
+  const reglas = Array.isArray(data?.reglas) && data.reglas.length
+    ? data.reglas
+    : EMPTY_CATEGORIAS_CONFIG.reglas;
+
+  return {
+    disciplina: String(data?.disciplina || EMPTY_CATEGORIAS_CONFIG.disciplina).trim().toLowerCase(),
+    modo_asignacion: 'anio_nacimiento',
+    fecha_corte: {
+      mes: Number(data?.fecha_corte?.mes) || EMPTY_CATEGORIAS_CONFIG.fecha_corte.mes,
+      dia: Number(data?.fecha_corte?.dia) || EMPTY_CATEGORIAS_CONFIG.fecha_corte.dia
+    },
+    reglas: reglas.map((regla, index) => ({
+      etiqueta: String(regla?.etiqueta || '').trim(),
+      anio_nacimiento_desde: regla?.anio_nacimiento_desde === null || regla?.anio_nacimiento_desde === undefined
+        ? null
+        : Number(regla.anio_nacimiento_desde),
+      anio_nacimiento_hasta: regla?.anio_nacimiento_hasta === null || regla?.anio_nacimiento_hasta === undefined
+        ? null
+        : Number(regla.anio_nacimiento_hasta),
+      orden: Number(regla?.orden) || (index + 1)
+    }))
+  };
+}
+
 const TEMPLATE_SECTIONS = [
   { key: 'simple', title: 'Constancia simple' },
   { key: 'retiro', title: 'Carta de retiro' },
@@ -176,6 +220,7 @@ function GeneralConfig() {
   const [subiendoLogosConstancias, setSubiendoLogosConstancias] = useState(false);
   const [subiendoLogosRetiro, setSubiendoLogosRetiro] = useState(false);
   const [guardandoConstancias, setGuardandoConstancias] = useState(false);
+  const [guardandoCategoriasConfig, setGuardandoCategoriasConfig] = useState(false);
   const [cargandoConfigAdmin, setCargandoConfigAdmin] = useState(true);
   const [logoFile, setLogoFile] = useState(null);
   const [logosConstanciasFiles, setLogosConstanciasFiles] = useState([]);
@@ -184,9 +229,13 @@ function GeneralConfig() {
   const [logoPreview, setLogoPreview] = useState('');
   const [dragLogoActive, setDragLogoActive] = useState(false);
   const [constanciasConfig, setConstanciasConfig] = useState(EMPTY_CONSTANCIAS_CONFIG);
+  const [categoriasConfig, setCategoriasConfig] = useState(EMPTY_CATEGORIAS_CONFIG);
   const [expandedTemplate, setExpandedTemplate] = useState(TEMPLATE_SECTIONS[0].key);
   const [expandedRetiroSubAccordion, setExpandedRetiroSubAccordion] = useState('global');
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [previewCategoriasLoading, setPreviewCategoriasLoading] = useState(false);
+  const [previewCategoriasData, setPreviewCategoriasData] = useState(null);
+  const [previewCategoriasError, setPreviewCategoriasError] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const logoInputRef = useRef(null);
@@ -275,6 +324,24 @@ function GeneralConfig() {
     }
   };
 
+  const cargarPreviewAsignarCategorias = async () => {
+    try {
+      setPreviewCategoriasLoading(true);
+      setPreviewCategoriasError('');
+      setPreviewCategoriasData(null);
+      const res = await fetch(`${API_BASE}/api/alumnos/asignar-categorias/preview`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'No se pudo generar el preview de categorias');
+      setPreviewCategoriasData(data);
+    } catch (err) {
+      setPreviewCategoriasError(err.message || 'No se pudo generar el preview de categorias');
+    } finally {
+      setPreviewCategoriasLoading(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
@@ -317,6 +384,7 @@ function GeneralConfig() {
         const payload = await res.json().catch(() => ({}));
         if (!active || !res.ok) return;
         setConstanciasConfig(buildConstanciasConfig(payload?.constancias));
+        setCategoriasConfig(buildCategoriasConfig(payload?.categorias));
       } catch (_) {
         if (active) {
           setError((prev) => prev || 'No se pudo cargar la configuracion de constancias.');
@@ -471,6 +539,99 @@ function GeneralConfig() {
       return null;
     } finally {
       setGuardandoConstancias(false);
+    }
+  };
+
+  const updateCategoriasField = (field, value) => {
+    setCategoriasConfig((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateCategoriasFechaCorte = (field, value) => {
+    const parsed = value === '' ? '' : Number.parseInt(String(value), 10);
+    setCategoriasConfig((prev) => ({
+      ...prev,
+      fecha_corte: {
+        ...prev.fecha_corte,
+        [field]: Number.isFinite(parsed) ? parsed : ''
+      }
+    }));
+  };
+
+  const updateCategoriaRegla = (index, field, value) => {
+    setCategoriasConfig((prev) => ({
+      ...prev,
+      reglas: prev.reglas.map((regla, idx) => {
+        if (idx !== index) return regla;
+        if (field === 'etiqueta') {
+          return { ...regla, etiqueta: value };
+        }
+        if (value === '' || value === null || value === undefined) {
+          return { ...regla, [field]: null };
+        }
+        const parsed = Number.parseInt(String(value), 10);
+        return { ...regla, [field]: Number.isFinite(parsed) ? parsed : null };
+      })
+    }));
+  };
+
+  const agregarCategoriaRegla = () => {
+    setCategoriasConfig((prev) => ({
+      ...prev,
+      reglas: [
+        ...prev.reglas,
+        {
+          etiqueta: '',
+          anio_nacimiento_desde: null,
+          anio_nacimiento_hasta: null,
+          orden: prev.reglas.length + 1
+        }
+      ]
+    }));
+  };
+
+  const eliminarCategoriaRegla = (index) => {
+    setCategoriasConfig((prev) => ({
+      ...prev,
+      reglas: prev.reglas.filter((_, idx) => idx !== index).map((regla, idx) => ({ ...regla, orden: idx + 1 }))
+    }));
+  };
+
+  const guardarCategoriasConfig = async () => {
+    try {
+      setGuardandoCategoriasConfig(true);
+      setError('');
+      const payloadCategorias = {
+        ...categoriasConfig,
+        disciplina: String(categoriasConfig.disciplina || '').trim().toLowerCase(),
+        reglas: (categoriasConfig.reglas || []).map((regla, idx) => ({
+          etiqueta: String(regla?.etiqueta || '').trim(),
+          anio_nacimiento_desde: regla?.anio_nacimiento_desde === '' ? null : regla?.anio_nacimiento_desde,
+          anio_nacimiento_hasta: regla?.anio_nacimiento_hasta === '' ? null : regla?.anio_nacimiento_hasta,
+          orden: idx + 1
+        })),
+        fecha_corte: {
+          mes: Number(categoriasConfig?.fecha_corte?.mes) || 12,
+          dia: Number(categoriasConfig?.fecha_corte?.dia) || 31
+        }
+      };
+
+      const res = await fetch(`${apiBase}/api/configuracion`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ categorias: payloadCategorias })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.detalle || 'No se pudo guardar la configuracion de categorias.');
+
+      setCategoriasConfig(buildCategoriasConfig(data?.categorias));
+      setSuccessMessage('Configuracion de categorias actualizada.');
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar la configuracion de categorias.');
+    } finally {
+      setGuardandoCategoriasConfig(false);
     }
   };
 
@@ -681,41 +842,6 @@ function GeneralConfig() {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
       )}
-
-      {esSuperAdmin && (
-        <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
-          <Box sx={sectionHeaderSx}>
-            <Box sx={sectionIconWrapSx}>
-              <Groups2OutlinedIcon sx={{ fontSize: 22 }} />
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.25 }}>Categorías de alumnos</Typography>
-              <Typography sx={{ color: '#637086', fontSize: 13 }}>
-                Recalcula y asigna categorías para todos los alumnos activos de la academia según el año de nacimiento.
-              </Typography>
-            </Box>
-          </Box>
-          <Button
-            variant="contained"
-            onClick={() => setConfirmDialogOpen(true)}
-            disabled={asignandoCategorias}
-            sx={{
-              textTransform: 'none',
-              fontWeight: 800,
-              bgcolor: '#0f172a',
-              px: 2.8,
-              '&:hover': { bgcolor: '#111b31' },
-              '&.Mui-disabled': {
-                bgcolor: '#e6eaf2',
-                color: '#a8b0bf'
-              }
-            }}
-          >
-            {asignandoCategorias ? 'Asignando categorías...' : 'Asignar categorías'}
-          </Button>
-        </Paper>
-      )}
-      
 
       <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
         <Box sx={sectionHeaderSx}>
@@ -1353,43 +1479,6 @@ function GeneralConfig() {
         )}
       </Paper>
 
-      {esSuperAdmin && (
-        <Dialog
-          open={confirmDialogOpen}
-          onClose={() => !asignandoCategorias && setConfirmDialogOpen(false)}
-          fullWidth
-          maxWidth="xs"
-        >
-          <DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>
-            Asignar categorias
-          </DialogTitle>
-          <DialogContent>
-            <Typography sx={{ color: '#475569', fontSize: 14 }}>
-              Esta accion actualizara las categorias de todos los alumnos activos de la academia segun su fecha de nacimiento.
-            </Typography>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button
-              onClick={() => setConfirmDialogOpen(false)}
-              disabled={asignandoCategorias}
-              sx={{ textTransform: 'none' }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="contained"
-              onClick={async () => {
-                await asignarCategorias();
-                setConfirmDialogOpen(false);
-              }}
-              disabled={asignandoCategorias}
-              sx={{ textTransform: 'none', fontWeight: 700 }}
-            >
-              {asignandoCategorias ? 'Asignando...' : 'Confirmar'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      )}
     </Box>
   );
 }

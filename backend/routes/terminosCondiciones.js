@@ -5,7 +5,7 @@ const fs = require('fs');
 
 const router = express.Router();
 const terminoCondicionController = require('../controllers/terminoCondicionController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, rolMiddleware, permisoMiddleware } = require('../middleware/auth');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 function resolveTenantId(req) {
@@ -54,12 +54,12 @@ function uploadArchivo(req, res, next) {
   });
 }
 
-router.get('/', authMiddleware, rolMiddleware('admin', 'usuario'), terminoCondicionController.listarTerminos);
+router.get('/', authMiddleware, permisoMiddleware('reglamento.view'), terminoCondicionController.listarTerminos);
 
 router.post(
   '/',
   authMiddleware,
-  rolMiddleware('admin'),
+  permisoMiddleware('reglamento.manage'),
   uploadArchivo,
   (req, res, next) => {
     if (req.file) {
@@ -72,7 +72,7 @@ router.post(
 );
 
 router.post('/aceptar', authMiddleware, rolMiddleware('usuario'), terminoCondicionController.aceptarTerminoVigente);
-router.get('/:id/aceptaciones', authMiddleware, rolMiddleware('admin'), terminoCondicionController.listarEstadoAceptacionesTermino);
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), terminoCondicionController.eliminarTermino);
+router.get('/:id/aceptaciones', authMiddleware, permisoMiddleware('reglamento.manage'), terminoCondicionController.listarEstadoAceptacionesTermino);
+router.delete('/:id', authMiddleware, permisoMiddleware('reglamento.manage'), terminoCondicionController.eliminarTermino);
 
 module.exports = router;

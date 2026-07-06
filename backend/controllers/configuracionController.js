@@ -31,6 +31,24 @@ const DEFAULT_CONFIG = {
     dias_gracia: 0,
     recargo_usd: 0
   },
+  categorias: {
+    disciplina: 'voleibol',
+    modo_asignacion: 'anio_nacimiento',
+    fecha_corte: {
+      mes: 12,
+      dia: 31
+    },
+    reglas: [
+      { etiqueta: 'U9/INICIACION', anio_nacimiento_desde: 2017, anio_nacimiento_hasta: null, orden: 1 },
+      { etiqueta: 'U11/FORMACION', anio_nacimiento_desde: 2015, anio_nacimiento_hasta: 2016, orden: 2 },
+      { etiqueta: 'U13/MINI', anio_nacimiento_desde: 2013, anio_nacimiento_hasta: 2014, orden: 3 },
+      { etiqueta: 'U15/INFANTIL', anio_nacimiento_desde: 2011, anio_nacimiento_hasta: 2012, orden: 4 },
+      { etiqueta: 'U17/JUVENIL', anio_nacimiento_desde: 2009, anio_nacimiento_hasta: 2010, orden: 5 },
+      { etiqueta: 'U19/JUVENIL LIBRE', anio_nacimiento_desde: 2007, anio_nacimiento_hasta: 2008, orden: 6 },
+      { etiqueta: 'U21', anio_nacimiento_desde: 2005, anio_nacimiento_hasta: 2006, orden: 7 },
+      { etiqueta: 'MAYORES / LIBRE', anio_nacimiento_desde: null, anio_nacimiento_hasta: 2004, orden: 8 }
+    ]
+  },
   constancias: {
     institucion_nombre: '',
     subtitulo: '',
@@ -187,6 +205,126 @@ function normalizeTemplatePayload(template = {}, fallback = {}) {
   };
 }
 
+function normalizeDisciplina(value, fallback = DEFAULT_CONFIG.categorias.disciplina) {
+  const normalized = cleanValue(value || fallback).toLowerCase();
+  return normalized || DEFAULT_CONFIG.categorias.disciplina;
+}
+
+function normalizeReglasCategoriasList(reglas, fallback = DEFAULT_CONFIG.categorias.reglas) {
+  const source = Array.isArray(reglas) ? reglas : fallback;
+
+  function parseOptionalYear(value) {
+    if (value === undefined || value === null || String(value).trim() === '') {
+      return null;
+    }
+
+    const parsed = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed;
+  }
+
+  return source
+    .map((item, index) => {
+      const etiqueta = cleanValue(item?.etiqueta);
+      const desdeRaw = item?.anio_nacimiento_desde;
+      const hastaRaw = item?.anio_nacimiento_hasta;
+      const ordenRaw = item?.orden;
+
+      const anio_nacimiento_desde = parseOptionalYear(desdeRaw);
+      const anio_nacimiento_hasta = parseOptionalYear(hastaRaw);
+      const ordenCalculado = Number.isInteger(Number(ordenRaw)) ? Number(ordenRaw) : (index + 1);
+      const orden = ordenCalculado < 1 ? 1 : ordenCalculado;
+
+      if (!etiqueta) return null;
+
+      return {
+        etiqueta,
+        anio_nacimiento_desde,
+        anio_nacimiento_hasta,
+        orden
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.orden - b.orden)
+    .map((item, index) => ({ ...item, orden: index + 1 }));
+}
+
+function validarReglasCategorias(reglas = []) {
+  if (!Array.isArray(reglas) || reglas.length === 0) {
+    throw new Error('Debes definir al menos una regla de categoria.');
+  }
+
+  const intervalos = reglas.map((regla, index) => {
+    const etiqueta = cleanValue(regla?.etiqueta);
+    const desde = regla?.anio_nacimiento_desde;
+    const hasta = regla?.anio_nacimiento_hasta;
+
+    if (!etiqueta) {
+      throw new Error(`La regla #${index + 1} no tiene etiqueta valida.`);
+    }
+
+    const tieneDesde = Number.isInteger(desde);
+    const tieneHasta = Number.isInteger(hasta);
+
+    if (!tieneDesde && !tieneHasta) {
+      throw new Error(`La regla "${etiqueta}" debe definir al menos un limite (desde u hasta).`);
+    }
+
+    if (tieneDesde && (desde < 1900 || desde > 3000)) {
+      throw new Error(`La regla "${etiqueta}" tiene anio_nacimiento_desde fuera de rango.`);
+    }
+
+    if (tieneHasta && (hasta < 1900 || hasta > 3000)) {
+      throw new Error(`La regla "${etiqueta}" tiene anio_nacimiento_hasta fuera de rango.`);
+    }
+
+    const min = tieneDesde ? desde : Number.NEGATIVE_INFINITY;
+    const max = tieneHasta ? hasta : Number.POSITIVE_INFINITY;
+
+    if (min > max) {
+      throw new Error(`La regla "${etiqueta}" tiene rango invalido (desde mayor que hasta).`);
+    }
+
+    return { etiqueta, min, max };
+  });
+
+  const ordenados = [...intervalos].sort((a, b) => a.min - b.min);
+  for (let i = 1; i < ordenados.length; i += 1) {
+    const anterior = ordenados[i - 1];
+    const actual = ordenados[i];
+    if (anterior.max >= actual.min) {
+      throw new Error(
+        `Las reglas "${anterior.etiqueta}" y "${actual.etiqueta}" se solapan. Ajusta los rangos para evitar cruces.`
+      );
+    }
+  }
+}
+
+function normalizeFechaCorte(fechaCorte = {}, fallback = DEFAULT_CONFIG.categorias.fecha_corte) {
+  const mes = clampInteger(fechaCorte?.mes, fallback?.mes ?? 12, 1, 12);
+  const diaInicial = clampInteger(fechaCorte?.dia, fallback?.dia ?? 31, 1, 31);
+  const maxDiaMes = new Date(Date.UTC(2024, mes, 0)).getUTCDate();
+  const dia = diaInicial > maxDiaMes ? maxDiaMes : diaInicial;
+  return { mes, dia };
+}
+
+function normalizeCategoriasPayload(categorias = {}, fallback = DEFAULT_CONFIG.categorias) {
+  const root = categorias && typeof categorias === 'object' ? categorias : {};
+  const fechaCorte = root?.fecha_corte && typeof root.fecha_corte === 'object'
+    ? root.fecha_corte
+    : {};
+
+  const categoriasNormalizadas = {
+    disciplina: normalizeDisciplina(root.disciplina, fallback.disciplina),
+    modo_asignacion: 'anio_nacimiento',
+    fecha_corte: normalizeFechaCorte(fechaCorte, fallback?.fecha_corte),
+    reglas: normalizeReglasCategoriasList(root.reglas, fallback.reglas)
+  };
+
+  validarReglasCategorias(categoriasNormalizadas.reglas);
+  return categoriasNormalizadas;
+}
+
 function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG.constancias) {
   const root = constancias && typeof constancias === 'object' ? constancias : {};
   const retiroRoot = root?.retiro_personalizado && typeof root.retiro_personalizado === 'object'
@@ -236,6 +374,7 @@ function normalizeConfigPayload(payload = {}) {
   const root = payload && typeof payload === 'object' ? payload : {};
   const pagos = root.pagos && typeof root.pagos === 'object' ? root.pagos : root;
   const cobro = root.cobro && typeof root.cobro === 'object' ? root.cobro : {};
+  const categorias = root.categorias && typeof root.categorias === 'object' ? root.categorias : {};
   const constancias = root.constancias && typeof root.constancias === 'object' ? root.constancias : {};
   const recargoUsdRaw = cobro.recargo_usd ?? cobro.recargo_porcentaje;
 
@@ -267,6 +406,7 @@ function normalizeConfigPayload(payload = {}) {
       dias_gracia: clampInteger(cobro.dias_gracia, DEFAULT_CONFIG.cobro.dias_gracia, 0, 31),
       recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000)
     },
+    categorias: normalizeCategoriasPayload(categorias),
     constancias: normalizeConstanciasPayload(constancias)
   };
 }
@@ -332,6 +472,21 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
     if (Object.keys(cobroPatch).length > 0) {
       patch.cobro = cobroPatch;
     }
+  }
+
+  if (root.categorias && typeof root.categorias === 'object') {
+    const existingCategorias = normalizeCategoriasPayload(existingConfig?.categorias || {}, DEFAULT_CONFIG.categorias);
+    const mergedCategoriasInput = {
+      ...existingCategorias,
+      ...root.categorias,
+      fecha_corte: {
+        ...existingCategorias.fecha_corte,
+        ...(root.categorias.fecha_corte || {})
+      },
+      reglas: root.categorias.reglas !== undefined ? root.categorias.reglas : existingCategorias.reglas
+    };
+
+    patch.categorias = normalizeCategoriasPayload(mergedCategoriasInput, DEFAULT_CONFIG.categorias);
   }
 
   if (root.constancias && typeof root.constancias === 'object') {
@@ -401,6 +556,7 @@ function serializeConfig(doc) {
 
   const pagos = doc?.pagos || {};
   const cobro = doc?.cobro || {};
+  const categorias = doc?.categorias || {};
   const constancias = doc?.constancias || {};
   const recargoUsdRaw = cobro?.recargo_usd ?? cobro?.recargo_porcentaje;
 
@@ -428,6 +584,7 @@ function serializeConfig(doc) {
       dias_gracia: clampInteger(cobro?.dias_gracia, DEFAULT_CONFIG.cobro.dias_gracia, 0, 31),
       recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000)
     },
+    categorias: normalizeCategoriasPayload(categorias),
     constancias: normalizeConstanciasPayload(constancias),
     is_default: false,
     updatedAt: doc.updatedAt
@@ -515,7 +672,7 @@ exports.upsertConfiguracionAdmin = async (req, res) => {
 exports.patchConfiguracionAdmin = async (req, res) => {
   try {
     const TenantConfig = await getTenantConfigModel(req);
-    const currentConfig = await TenantConfig.findOne({ key: 'default' }).select('constancias').lean();
+    const currentConfig = await TenantConfig.findOne({ key: 'default' }).select('categorias constancias').lean();
     const normalizedPatch = normalizeConfigPatchPayload(req.body || {}, currentConfig || {});
 
     if (Object.keys(normalizedPatch).length === 0) {
@@ -542,6 +699,10 @@ exports.patchConfiguracionAdmin = async (req, res) => {
       Object.entries(normalizedPatch.cobro).forEach(([key, value]) => {
         setPayload[`cobro.${key}`] = value;
       });
+    }
+
+    if (normalizedPatch.categorias) {
+      setPayload.categorias = normalizedPatch.categorias;
     }
 
     if (normalizedPatch.constancias) {

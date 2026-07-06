@@ -22,7 +22,9 @@
     "alumnos:migrate:inicio-cobro": "node scripts/migrar_fecha_inicio_cobro.js --all-tenants --apply",
     "mensualidades:repair:sin-detalle:dry": "node scripts/reparar_mensualidades_sin_detalle_a_insolvente.js",
     "mensualidades:repair:sin-detalle": "node scripts/reparar_mensualidades_sin_detalle_a_insolvente.js --apply",
-    "tenant:seed:core": "node scripts/seedTenantCore.js"
+    "tenant:seed:core": "node scripts/seedTenantCore.js",
+    "usuarios:migrate:roleid-usuario:dry": "node scripts/migrar_usuarios_roleid_usuario.js --all-tenants",
+    "usuarios:migrate:roleid-usuario": "node scripts/migrar_usuarios_roleid_usuario.js --all-tenants --apply"
   },
   "keywords": [],
   "author": "",

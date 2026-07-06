@@ -81,14 +81,16 @@ function PagosAlumno(props) {
   const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
   const [pagoAEliminar, setPagoAEliminar] = useState(null);
   const [metodoPago, setMetodoPago] = useState(metodosPago[0]);
-  const [montoPago, setMontoPago] = useState('');
+  const [montoPagoBs, setMontoPagoBs] = useState('');
   const [fechaPago, setFechaPago] = useState(() => new Date().toISOString().slice(0, 10));
   const [referencia, setReferencia] = useState('');
   const [notaPago, setNotaPago] = useState('');
   const [solicitaRevisionRecargo, setSolicitaRevisionRecargo] = useState(false);
+  const [telefonoPago, setTelefonoPago] = useState('');
   const [tipoCedulaTitular, setTipoCedulaTitular] = useState('V');
   const [cedulaTitular, setCedulaTitular] = useState('');
   const [errorRef, setErrorRef] = useState('');
+  const [errorEdicion, setErrorEdicion] = useState('');
   const [comprobante, setComprobante] = useState(null);
   const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
   const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
@@ -267,12 +269,14 @@ function PagosAlumno(props) {
     (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
   );
 
+  const estadosBloqueantesOrdenPago = ['pendiente', 'retrasado', 'insolvente', 'abono'];
+
   const normalizarEstado = (value) => String(value || '').trim().toLowerCase();
   const esAlumnoBecado = String(alumno?.tipo_mensualidad || '').toLowerCase() === 'beca_completa';
   const tieneMensualidadBecado = mensualidades.some((m) => normalizarEstado(m?.estado) === 'becado');
   const bloqueaAdelantoPorBeca = esAlumnoBecado || tieneMensualidadBecado;
   const estadoMensualidadDetalle = normalizarEstado(mensualidadDetalle?.estado);
-  const usuarioPuedeEditarEliminarPago = ['insolvente', 'retrasado', 'pendiente'].includes(estadoMensualidadDetalle);
+  const usuarioPuedeEditarEliminarPago = ['insolvente', 'retrasado', 'pendiente', 'en revision'].includes(estadoMensualidadDetalle);
 
   const pagosFiltrados = pagosOrdenados.filter(pago => {
     const estado = normalizarEstado(pago.estado);
@@ -454,15 +458,24 @@ function PagosAlumno(props) {
   const abrirModalEditarPago = (pago) => {
     setEditandoPago(pago);
     setMetodoPago(normalizeMetodoPago(pago?.metodo_pago));
-    setMontoPago(Number(pago?.monto_pagado) || '');
+    const montoPagoBsInicial = Number(pago?.monto_pagado_bs);
+    if (Number.isFinite(montoPagoBsInicial) && montoPagoBsInicial > 0) {
+      setMontoPagoBs(montoPagoBsInicial);
+    } else {
+      const montoUsdInicial = Number(pago?.monto_pagado);
+      const tasaActual = Number(tasa) || 0;
+      setMontoPagoBs(montoUsdInicial > 0 && tasaActual > 0 ? (montoUsdInicial * tasaActual).toFixed(2) : '');
+    }
     setFechaPago(pago?.fecha_pago ? new Date(pago.fecha_pago).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
     setReferencia(pago?.referencia ? String(pago.referencia) : '');
+    setTelefonoPago(formatTelefonoPago(pago?.telefono_pago));
     const cedulaEditada = descomponerCedulaTitular(pago?.cedula_titular);
     setTipoCedulaTitular(cedulaEditada.tipo || 'V');
     setCedulaTitular(cedulaEditada.numero || '');
     setNotaPago(pago?.nota ? String(pago.nota) : '');
     setSolicitaRevisionRecargo(Boolean(pago?.solicita_revision_recargo));
     setErrorRef('');
+    setErrorEdicion('');
     setComprobante(null);
     setQuitarComprobanteActual(false);
     setTasaPagoHistorica(Number(tasa) || null);
@@ -471,33 +484,50 @@ function PagosAlumno(props) {
 
   const guardarEdicionPago = async () => {
     if (!editandoPago?._id || !mensualidadDetalle?.id) return;
-    if (metodoRequiereReferencia(metodoPago) && referencia.length !== 6) {
-      setErrorRef('Debes ingresar los 6 ultimos digitos de la referencia');
+    if (!camposObligatoriosEdicionCompletos) {
+      const msg = 'Completa todos los campos obligatorios para guardar el pago.';
+      setError(msg);
+      setErrorEdicion(msg);
       return;
     }
 
-    const monto = Number(montoPago);
-    if (!monto || Number.isNaN(monto) || monto <= 0) {
-      setError('Monto invalido');
+    if (metodoRequiereReferencia(metodoPago) && referenciaNormalizada.length !== 6) {
+      const msg = 'Debes ingresar los 6 ultimos digitos de la referencia';
+      setErrorRef(msg);
+      setErrorEdicion(msg);
+      return;
+    }
+
+    const monto = equivalenteUsdDesdeBs;
+    if (!Number.isFinite(monto) || monto <= 0) {
+      const msg = 'Monto equivalente en USD invalido para la tasa y monto en bolivares ingresados';
+      setError(msg);
+      setErrorEdicion(msg);
       return;
     }
 
     try {
       setGuardandoEdicion(true);
       setErrorRef('');
+      setErrorEdicion('');
 
       const formData = new FormData();
       formData.append('monto_pagado', monto);
       formData.append('fecha_pago', fechaPago);
       formData.append('metodo_pago', normalizeMetodoPago(metodoPago));
-      formData.append('referencia', metodoRequiereReferencia(metodoPago) ? referencia : '');
-      const cedulaTitularNormalizada = String(cedulaTitular || '').replace(/\D/g, '');
+      formData.append('referencia', metodoRequiereReferencia(metodoPago) ? referenciaNormalizada : '');
+      formData.append('telefono_pago', telefonoPagoNormalizado);
       formData.append('cedula_titular', cedulaTitularNormalizada ? `${String(tipoCedulaTitular || 'V').toUpperCase()}-${cedulaTitularNormalizada}` : '');
       formData.append('nota', String(notaPago || '').trim());
       formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
 
-      const montoBs = tasaPagoHistorica ? (monto * Number(tasaPagoHistorica)).toFixed(2) : '';
-      if (montoBs) formData.append('monto_pagado_bs', montoBs);
+      if (!Number.isFinite(montoPagoBsNumerico) || montoPagoBsNumerico <= 0) {
+        const msg = 'Monto en bolivares invalido';
+        setError(msg);
+        setErrorEdicion(msg);
+        return;
+      }
+      formData.append('monto_pagado_bs', montoPagoBsNumerico.toFixed(2));
 
       if (comprobante) {
         formData.append('comprobante', comprobante);
@@ -511,18 +541,28 @@ function PagosAlumno(props) {
         headers: getAuthHeaders(),
         body: formData
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Error al actualizar pago');
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || 'Error al actualizar pago');
+      }
 
       setModalEditarOpen(false);
       setEditandoPago(null);
       setNotaPago('');
       setSolicitaRevisionRecargo(false);
+      setErrorEdicion('');
       await fetchMensualidades();
       await actualizarDetalleMensualidad(mensualidadDetalle, true);
       setSuccessMessage('Pago actualizado correctamente');
     } catch (err) {
-      setError(err.message || 'Error al actualizar pago');
+      const msg = err.message || 'Error al actualizar pago';
+      setError(msg);
+      setErrorEdicion(msg);
     } finally {
       setGuardandoEdicion(false);
     }
@@ -559,6 +599,28 @@ function PagosAlumno(props) {
   // Paginación
   const totalPaginas = Math.ceil(pagosFiltrados.length / pagosPorPagina);
   const pagosPagina = pagosFiltrados.slice((pagina - 1) * pagosPorPagina, pagina * pagosPorPagina);
+
+  const referenciaNormalizada = String(referencia || '').replace(/\D/g, '');
+  const telefonoPagoNormalizado = String(telefonoPago || '').replace(/\D/g, '');
+  const cedulaTitularNormalizada = String(cedulaTitular || '').replace(/\D/g, '');
+  const montoPagoBsNumerico = Number(montoPagoBs);
+  const metodoPagoNormalizado = normalizeMetodoPago(metodoPago);
+  const equivalenteUsdDesdeBs =
+    Number.isFinite(montoPagoBsNumerico) && montoPagoBsNumerico > 0 && Number.isFinite(Number(tasaPagoHistorica)) && Number(tasaPagoHistorica) > 0
+      ? montoPagoBsNumerico / Number(tasaPagoHistorica)
+      : null;
+  const camposObligatoriosEdicionCompletos =
+    Boolean(editandoPago?._id && mensualidadDetalle?.id) &&
+    Boolean(metodoPagoNormalizado) &&
+    Boolean(fechaPago) &&
+    Number.isFinite(montoPagoBsNumerico) &&
+    montoPagoBsNumerico > 0 &&
+    Number.isFinite(equivalenteUsdDesdeBs) &&
+    equivalenteUsdDesdeBs > 0 &&
+    (!metodoRequiereReferencia(metodoPagoNormalizado) || referenciaNormalizada.length === 6) &&
+    telefonoPagoNormalizado.length === 10 &&
+    Boolean(String(tipoCedulaTitular || '').trim()) &&
+    cedulaTitularNormalizada.length > 0;
 
   const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -913,6 +975,15 @@ function PagosAlumno(props) {
           const montoPagadoCard = Number(pago.total_pagado) || 0;
 
           const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
+          const fechaPeriodoActual = parseFechaSinDesfase(pago.fecha);
+          const bloqueadoPorMesAnterior = showPrimaryAction && Boolean(fechaPeriodoActual) && mensualidades.some((item) => {
+            if (String(item?.id || item?._id || '') === String(pago?.id || pago?._id || '')) return false;
+            const estadoItem = normalizarEstado(item?.estado);
+            if (!estadosBloqueantesOrdenPago.includes(estadoItem)) return false;
+            const fechaPeriodoItem = parseFechaSinDesfase(item?.fecha);
+            if (!fechaPeriodoItem) return false;
+            return fechaPeriodoItem.getTime() < fechaPeriodoActual.getTime();
+          });
 
           return (
             <Card
@@ -1000,23 +1071,38 @@ function PagosAlumno(props) {
                     )}
 
                     {showPrimaryAction ? (
-                      <Button
-                        variant="contained"
-                        size="small"
-                        onClick={() => { setPagoSeleccionado(pago); setOpenModalPago(true); }}
-                        sx={{
-                          borderRadius: 999,
-                          px: 2,
-                          py: 0.45,
-                          fontSize: 12,
-                          fontWeight: 800,
-                          textTransform: 'none',
-                          bgcolor: estadoUi.actionBg,
-                          '&:hover': { bgcolor: estadoUi.actionHover }
-                        }}
+                      <Tooltip
+                        title={bloqueadoPorMesAnterior ? 'Debes pagar primero la mensualidad más antigua con deuda.' : ''}
+                        arrow
+                        disableHoverListener={!bloqueadoPorMesAnterior}
+                        disableFocusListener={!bloqueadoPorMesAnterior}
+                        disableTouchListener={!bloqueadoPorMesAnterior}
                       >
-                        {estadoUi.actionLabel}
-                      </Button>
+                        <span>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            onClick={() => {
+                              if (bloqueadoPorMesAnterior) return;
+                              setPagoSeleccionado(pago);
+                              setOpenModalPago(true);
+                            }}
+                            disabled={bloqueadoPorMesAnterior}
+                            sx={{
+                              borderRadius: 999,
+                              px: 2,
+                              py: 0.45,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              textTransform: 'none',
+                              bgcolor: estadoUi.actionBg,
+                              '&:hover': { bgcolor: estadoUi.actionHover }
+                            }}
+                          >
+                            {estadoUi.actionLabel}
+                          </Button>
+                        </span>
+                      </Tooltip>
                     ) : (
                       <Button
                         variant="text"
@@ -1217,7 +1303,7 @@ function PagosAlumno(props) {
       <Dialog
         open={modalDetalle}
         onClose={() => setModalDetalle(false)}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
         PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
       >
@@ -1510,7 +1596,12 @@ function PagosAlumno(props) {
       />
       <Dialog
         open={modalEditarOpen}
-        onClose={() => { if (!guardandoEdicion) setModalEditarOpen(false); }}
+        onClose={() => {
+          if (!guardandoEdicion) {
+            setModalEditarOpen(false);
+            setErrorEdicion('');
+          }
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -1547,6 +1638,11 @@ function PagosAlumno(props) {
           </Box>
         </DialogTitle>
         <DialogContent sx={{ p: 3, pt: 1.5, bgcolor: '#f8fafc' }}>
+          {!!errorEdicion && (
+            <Alert severity="error" sx={{ mb: 1.5 }}>
+              {errorEdicion}
+            </Alert>
+          )}
           <TextField
             select
             label="Método de pago"
@@ -1567,7 +1663,7 @@ function PagosAlumno(props) {
             ))}
           </TextField>
           <TextField
-            label="Fecha de pago"
+            label="¿Cuándo hiciste el pago?"
             type="date"
             value={fechaPago}
             onChange={(e) => setFechaPago(e.target.value)}
@@ -1581,16 +1677,21 @@ function PagosAlumno(props) {
             Tasa aplicada: {tasaPagoHistorica ? `${formatMoney(tasaPagoHistorica)} Bs/USD` : 'No disponible'}
           </Typography>
           <TextField
-            label="Monto a pagar"
+            label="Monto pagado (Bs)"
             type="number"
-            value={montoPago}
-            onChange={(e) => setMontoPago(e.target.value)}
+            value={montoPagoBs}
+            onChange={(e) => setMontoPagoBs(e.target.value)}
             fullWidth
             margin="normal"
             size="small"
             sx={inputSx}
             inputProps={{ min: 0, step: '0.01' }}
           />
+          <Typography variant="caption" sx={{ color: '#64748b', mt: -0.35, mb: 0.5, display: 'block' }}>
+            {equivalenteUsdDesdeBs
+              ? `Con tasa de ${formatMoney(tasaPagoHistorica)} Bs/USD, este monto equivale a $${formatMoney(equivalenteUsdDesdeBs)} USD.`
+              : 'Equivalente no disponible hasta tener una tasa valida para la fecha seleccionada.'}
+          </Typography>
           {metodoRequiereReferencia(metodoPago) && (
             <TextField
               label="6 últimos dígitos de referencia"
@@ -1605,6 +1706,19 @@ function PagosAlumno(props) {
               helperText={errorRef}
             />
           )}
+          <TextField
+            label="Teléfono de pago"
+            value={telefonoPago}
+            onChange={(e) => setTelefonoPago(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            fullWidth
+            margin="normal"
+            size="small"
+            sx={inputSx}
+            inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', maxLength: 10 }}
+          />
+          <Typography variant="caption" sx={{ color: '#64748b', mt: -0.35, mb: 0.5, display: 'block' }}>
+            Sin el 0 adelante. Este campo es obligatorio.
+          </Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '76px 1fr' }, gap: 1, mt: 1 }}>
             <TextField
               select
@@ -1717,11 +1831,20 @@ function PagosAlumno(props) {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3, pt: 1, justifyContent: 'flex-end', gap: 1.5 }}>
-          <Button onClick={() => setModalEditarOpen(false)} disabled={guardandoEdicion} sx={{ color: '#64748b', fontWeight: 700 }}>Cancelar</Button>
+          <Button
+            onClick={() => {
+              setModalEditarOpen(false);
+              setErrorEdicion('');
+            }}
+            disabled={guardandoEdicion}
+            sx={{ color: '#64748b', fontWeight: 700 }}
+          >
+            Cancelar
+          </Button>
           <Button
             variant="contained"
             onClick={guardarEdicionPago}
-            disabled={guardandoEdicion}
+            disabled={guardandoEdicion || !camposObligatoriosEdicionCompletos}
             sx={{ bgcolor: '#ff7a00', '&:hover': { bgcolor: '#f97316' }, fontWeight: 800, borderRadius: 2, px: 3 }}
           >
             {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}

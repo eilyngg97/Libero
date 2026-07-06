@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const sedeController = require('../controllers/sedeController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 
-router.get('/', authMiddleware, sedeController.getSedes);
-router.post('/', authMiddleware, rolMiddleware('admin'), sedeController.createSede);
-router.get('/:id', authMiddleware, sedeController.getSedeById);
-router.put('/:id', authMiddleware, rolMiddleware('admin'), sedeController.updateSede);
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), sedeController.deleteSede);
+router.get('/', authMiddleware, permisoMiddleware('sedes.view'), sedeController.getSedes);
+router.post('/', authMiddleware, permisoMiddleware('sedes.manage'), sedeController.createSede);
+router.get('/:id', authMiddleware, permisoMiddleware('sedes.view'), sedeController.getSedeById);
+router.put('/:id', authMiddleware, permisoMiddleware('sedes.manage'), sedeController.updateSede);
+router.delete('/:id', authMiddleware, permisoMiddleware('sedes.manage'), sedeController.deleteSede);
 
 module.exports = router;

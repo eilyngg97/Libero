@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
-import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LabelList, PieChart, Pie } from 'recharts';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import CakeIcon from '@mui/icons-material/Cake';
@@ -17,6 +17,7 @@ function Dashboard() {
   const apiBase = process.env.REACT_APP_API_URL || '';
   const mesActual = new Date().getMonth() + 1;
   const chartFillColors = ['#d92b73', '#f59e0b', '#2563eb', '#10b981'];
+  const ingresosDonutColors = ['#2563eb', '#f28a3f'];
   const { setSedeSeleccionada } = useSede();
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
   const navigate = useNavigate();
@@ -25,12 +26,16 @@ function Dashboard() {
   const [cumpleaneros, setCumpleaneros] = useState([]);
   const [resumenMensualidades, setResumenMensualidades] = useState({ mes: null, anio: null, sedes: [] });
   const [dolaresPagadosPorSede, setDolaresPagadosPorSede] = useState({ mes: null, anio: null, sedes: [] });
+  const [dolaresMesActual, setDolaresMesActual] = useState({ mes: null, anio: null, sedes: [] });
+  const [ingresosUniformesMes, setIngresosUniformesMes] = useState(0);
   const [revisionPorSede, setRevisionPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [resumenLoading, setResumenLoading] = useState(false);
   const [dolaresLoading, setDolaresLoading] = useState(false);
+  const [uniformesLoading, setUniformesLoading] = useState(false);
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [nuevosAlumnosMes, setNuevosAlumnosMes] = useState(0);
+  const [resumenAlumnos, setResumenAlumnos] = useState({ total: 0, activos: 0, bajas: 0, becados: 0 });
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActual);
   const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(mesActual);
   const [mesRevisionSeleccionado, setMesRevisionSeleccionado] = useState(mesActual);
@@ -56,6 +61,16 @@ function Dashboard() {
 
     return res;
   };
+
+  const esAlumnoDeBaja = (alumno) => Boolean(
+    alumno?.dado_de_baja === true ||
+    alumno?.activo === false ||
+    String(alumno?.estado || '').trim().toLowerCase() === 'baja' ||
+    String(alumno?.estado || '').trim().toLowerCase() === 'inactivo'
+  );
+
+  const esAlumnoBecado = (alumno) => String(alumno?.tipo_mensualidad || '').trim().toLowerCase() === 'beca_completa';
+
   const mesesAnio = [
     { value: 1, label: 'Enero' },
     { value: 2, label: 'Febrero' },
@@ -70,6 +85,7 @@ function Dashboard() {
     { value: 11, label: 'Noviembre' },
     { value: 12, label: 'Diciembre' }
   ];
+  const mesActualLabel = mesesAnio.find((mes) => mes.value === mesActual)?.label || 'Mes actual';
   // Paginación para cumpleañeros
   const [cumplePage, setCumplePage] = useState(1);
   const cumplePorPagina = 10;
@@ -150,18 +166,25 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
   useEffect(() => {
     const fetchNuevosAlumnosMes = async () => {
       try {
-        const res = await fetchConSesion(`${apiBase}/api/alumnos`);
+        const res = await fetchConSesion(`${apiBase}/api/alumnos?incluirBajas=1`);
         const data = await res.json();
         if (!res.ok || !Array.isArray(data)) {
           setNuevosAlumnosMes(0);
+          setResumenAlumnos({ total: 0, activos: 0, bajas: 0, becados: 0 });
           return;
         }
+
+        const total = data.length;
+        const activos = data.filter((alumno) => !esAlumnoDeBaja(alumno)).length;
+        const bajas = data.filter((alumno) => esAlumnoDeBaja(alumno)).length;
+        const becados = data.filter((alumno) => esAlumnoBecado(alumno)).length;
+        setResumenAlumnos({ total, activos, bajas, becados });
 
         const ahora = new Date();
         const mesActualLocal = ahora.getMonth();
         const anioActualLocal = ahora.getFullYear();
 
-        const total = data.reduce((acc, alumno) => {
+        const nuevosEsteMes = data.reduce((acc, alumno) => {
           if (alumno?.activo === false) return acc;
           const fechaCreacion = alumno?.createdAt ? new Date(alumno.createdAt) : null;
           if (!fechaCreacion || Number.isNaN(fechaCreacion.getTime())) return acc;
@@ -171,9 +194,10 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
           return acc;
         }, 0);
 
-        setNuevosAlumnosMes(total);
+        setNuevosAlumnosMes(nuevosEsteMes);
       } catch {
         setNuevosAlumnosMes(0);
+        setResumenAlumnos({ total: 0, activos: 0, bajas: 0, becados: 0 });
       }
     };
 
@@ -226,6 +250,67 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
     fetchDolaresPagadosPorSede();
   }, [mesGraficaSeleccionado]);
+
+  useEffect(() => {
+    const fetchDolaresMesActual = async () => {
+      try {
+        const anioActual = new Date().getFullYear();
+        const res = await fetchConSesion(
+          `${apiBase}/api/mensualidades/dolares-pagados-por-sede?mes=${mesActual}&anio=${anioActual}`
+        );
+        const data = await res.json();
+        if (res.ok && data && Array.isArray(data.sedes)) {
+          setDolaresMesActual(data);
+        } else {
+          setDolaresMesActual({ mes: mesActual, anio: anioActual, sedes: [] });
+        }
+      } catch {
+        setDolaresMesActual({ mes: mesActual, anio: new Date().getFullYear(), sedes: [] });
+      }
+    };
+
+    fetchDolaresMesActual();
+  }, [apiBase, mesActual]);
+
+  useEffect(() => {
+    const fetchIngresosUniformesMes = async () => {
+      setUniformesLoading(true);
+      try {
+        const anioActual = new Date().getFullYear();
+        const res = await fetchConSesion(`${apiBase}/api/uniformes/pedidos`);
+        const data = await res.json();
+
+        if (!res.ok || !Array.isArray(data)) {
+          setIngresosUniformesMes(0);
+          return;
+        }
+
+        const totalUniformes = data.reduce((accPedidos, pedido) => {
+          const pagosHistorial = Array.isArray(pedido?.pagos_historial) ? pedido.pagos_historial : [];
+
+          const montoHistorialMes = pagosHistorial.reduce((accPagos, pago) => {
+            if (!fechaPerteneceMesAnio(pago?.fecha_pago, mesGraficaSeleccionado, anioActual)) return accPagos;
+            return accPagos + (Number(pago?.monto_pagado) || 0);
+          }, 0);
+
+          const esPagoEnRevision = String(pedido?.estado || '').toLowerCase() === 'pago_en_revision';
+          const montoEnRevisionMes = esPagoEnRevision && fechaPerteneceMesAnio(pedido?.fecha_pago, mesGraficaSeleccionado, anioActual)
+            ? (Number(pedido?.monto_ultimo_pago) || 0)
+            : 0;
+
+          return accPedidos + montoHistorialMes + montoEnRevisionMes;
+        }, 0);
+
+        setIngresosUniformesMes(totalUniformes);
+      } catch {
+        setIngresosUniformesMes(0);
+      } finally {
+        setUniformesLoading(false);
+      }
+    };
+
+    fetchIngresosUniformesMes();
+  }, [apiBase, mesGraficaSeleccionado]);
 
   useEffect(() => {
     const fetchRevisionPorSede = async () => {
@@ -300,6 +385,32 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       dia: dia,
       mes: meses[mesIdx] || '--'
     };
+  };
+
+  const parseFechaSinDesfase = (fecha) => {
+    if (!fecha) return null;
+    if (fecha instanceof Date) {
+      return Number.isNaN(fecha.getTime()) ? null : fecha;
+    }
+
+    const raw = String(fecha).trim();
+    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+    if (fechaBase) {
+      const year = Number(fechaBase[1]);
+      const month = Number(fechaBase[2]) - 1;
+      const day = Number(fechaBase[3]);
+      const localDate = new Date(year, month, day);
+      return Number.isNaN(localDate.getTime()) ? null : localDate;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const fechaPerteneceMesAnio = (fecha, mes, anio) => {
+    const parsed = parseFechaSinDesfase(fecha);
+    if (!parsed) return false;
+    return parsed.getMonth() + 1 === Number(mes) && parsed.getFullYear() === Number(anio);
   };
 
   const handleExportExcel = async () => {
@@ -435,11 +546,16 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     .sort((a, b) => b.enRevision - a.enRevision);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
-  const totalAlumnos = Object.values(alumnosPorSede).reduce((acc, val) => acc + (Number(val) || 0), 0);
-  const totalIngresosMes = (dolaresPagadosPorSede.sedes || []).reduce(
+  const totalIngresosMensualidadesMes = (dolaresPagadosPorSede.sedes || []).reduce(
     (acc, sede) => acc + Number(sede.monto_pagado || 0),
     0
   );
+  const totalIngresosMes = totalIngresosMensualidadesMes + ingresosUniformesMes;
+  const mesIngresosLabel = mesesAnio.find((mes) => mes.value === mesGraficaSeleccionado)?.label || 'mes';
+  const ingresosDonutData = [
+    { name: 'Mensualidades', value: totalIngresosMensualidadesMes },
+    { name: 'Uniformes', value: ingresosUniformesMes }
+  ];
   const variacionAlumnosReal = `+${nuevosAlumnosMes} este mes`;
 
   return (
@@ -447,7 +563,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       <div className="dashboard-header-row">
         <div className="dashboard-header-copy">
           <h2>Bienvenido, Admin</h2>
-          <p>Resumen de la actividad en tu academia · Mayo {new Date().getFullYear()}</p>
+          <p>Resumen de la actividad en tu academia · {mesActualLabel} {new Date().getFullYear()}</p>
         </div>
         <button
           type="button"
@@ -469,8 +585,19 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 <span className="dashboard-kpi-inline-change">{variacionAlumnosReal}</span>
               </div>
               <div className="dashboard-kpi-inline-label">Total de alumnos</div>
-              <div className="dashboard-kpi-inline-value">{totalAlumnos}</div>
-              <div className="dashboard-kpi-inline-sub">Activos en la academia</div>
+              <div className="dashboard-kpi-inline-value">{resumenAlumnos.total}</div>
+              <div className="dashboard-kpi-inline-sub">Activos, bajas y becados</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#ecfdf5', color: '#166534', fontSize: 14, fontWeight: 800 }}>
+                  Activos: {resumenAlumnos.activos}
+                </div>
+                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#fef2f2', color: '#991b1b', fontSize: 14, fontWeight: 800 }}>
+                  Baja: {resumenAlumnos.bajas}
+                </div>
+                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#eff6ff', color: '#1d4ed8', fontSize: 14, fontWeight: 800 }}>
+                  Becados: {resumenAlumnos.becados}
+                </div>
+              </div>
             </div>
 
             <div className="dashboard-kpi-inline-card">
@@ -497,8 +624,47 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 </div>
               </div>
               <div className="dashboard-kpi-inline-label">Ingresos del mes</div>
-              <div className="dashboard-kpi-inline-value">${formatMontoBarra(totalIngresosMes).replace('$', '')}</div>
-              <div className="dashboard-kpi-inline-sub">USD recaudados en mayo</div>
+              {dolaresLoading || uniformesLoading ? (
+                <div className="dashboard-kpi-inline-loading">Cargando...</div>
+              ) : (
+                <>
+                  <div className="dashboard-kpi-inline-income-row">
+                    <div className="dashboard-kpi-inline-value dashboard-kpi-inline-value-income">${formatMontoBarra(totalIngresosMes).replace('$', '')}</div>
+                    <div className="dashboard-kpi-inline-donut">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={ingresosDonutData}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={19}
+                            outerRadius={29}
+                            paddingAngle={2}
+                            stroke="none"
+                          >
+                            {ingresosDonutData.map((_, index) => (
+                              <Cell key={`ingresos-donut-${index}`} fill={ingresosDonutColors[index % ingresosDonutColors.length]} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="dashboard-kpi-inline-breakdown-list">
+                    <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
+                      <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-mensualidades" />
+                      Mensualidades: ${formatMoney(totalIngresosMensualidadesMes)}
+                    </div>
+                    <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
+                      <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-uniformes" />
+                      Uniformes: ${formatMoney(ingresosUniformesMes)}
+                    </div>
+                  </div>
+                  <div className="dashboard-kpi-inline-sub">USD recaudados en {mesIngresosLabel.toLowerCase()}</div>
+                </>
+              )}
             </div>
           </div>
 
@@ -807,6 +973,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       </div>
     </div>
   );
+
 }
 
 export default Dashboard;

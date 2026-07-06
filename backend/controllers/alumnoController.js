@@ -66,8 +66,8 @@ const { generarMensualidadesPendientesAlumno } = require('./mensualidadControlle
 
 const MONTO_TOLERANCIA_BS = 100;
 
-const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 5, 1, 12, 0, 0));
-const IMPORT_FIXED_PERIODO_COBRO = { mes: 6, anio: 2026 };
+const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 6, 1, 12, 0, 0));
+const IMPORT_FIXED_PERIODO_COBRO = { mes: 7, anio: 2026 };
 
 async function getTenantAlumnoReadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -101,11 +101,18 @@ async function getTenantAlumnoWriteModels(req) {
     User: getTenantModel(connection, 'User'),
     Sede: getTenantModel(connection, 'Sede'),
     Reposo: getTenantModel(connection, 'Reposo'),
+    Role: getTenantModel(connection, 'Role'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
     TenantConfig: getTenantModel(connection, 'TenantConfig'),
     HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno')
   };
+}
+
+async function getUsuarioRoleId(RoleModel) {
+  if (!RoleModel || typeof RoleModel.findOne !== 'function') return null;
+  const roleUsuario = await RoleModel.findOne({ slug: 'usuario' }).select('_id');
+  return roleUsuario?._id || null;
 }
 
 function buildUploadUrl(req, file, folder) {
@@ -1151,11 +1158,12 @@ async function eliminarUsuarioSiQuedaHuerfano(userId, models = {}) {
   }
 }
 
-async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnterior, cedulaNueva, nombres, apellidos, UserModel = User }) {
+async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnterior, cedulaNueva, nombres, apellidos, UserModel = User, RoleModel = null }) {
   if (!representante || !cedulaNueva) return;
 
   const nombreCompleto = `${String(nombres || '').trim()} ${String(apellidos || '').trim()}`.trim();
   let user = null;
+  const usuarioRoleId = await getUsuarioRoleId(RoleModel);
 
   if (representante.usuario) {
     user = await UserModel.findById(representante.usuario);
@@ -1169,7 +1177,8 @@ async function sincronizarUsuarioPortalRepresentante({ representante, cedulaAnte
         nombre: nombreCompleto,
         email: cedulaNueva,
         password,
-        rol: 'usuario'
+        rol: 'usuario',
+        roleId: usuarioRoleId
       });
       await user.save();
     }
@@ -1425,12 +1434,16 @@ exports.importarAlumnosExcel = async (req, res) => {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
       User: TenantUser,
+      Role: TenantRole,
       Sede: TenantSede,
       Reposo: TenantReposo,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
       TenantConfig: TenantConfigModel
     } = await getTenantAlumnoWriteModels(req);
+    const usuarioRoleId = await getUsuarioRoleId(TenantRole);
+    const configCategoriasImport = await TenantConfigModel.findOne({ key: 'default' }).select('categorias').lean();
+    const reglasCategoriasImport = normalizeReglasCategoriasSinFallback(configCategoriasImport?.categorias?.reglas || []);
 
     const sede = await TenantSede.findById(sedeIdRaw).select('_id nombre');
     if (!sede) {
@@ -1493,7 +1506,8 @@ exports.importarAlumnosExcel = async (req, res) => {
                 nombre: `${row.rep_nombres} ${row.rep_apellidos}`.trim(),
                 email: row.rep_cedula,
                 password,
-                rol: 'usuario'
+                rol: 'usuario',
+                roleId: usuarioRoleId
               });
               await user.save();
             }
@@ -1552,16 +1566,26 @@ exports.importarAlumnosExcel = async (req, res) => {
               nombre: `${row.nombres} ${row.apellidos}`.trim(),
               email: row.cedula,
               password: passwordAlumno,
-              rol: 'usuario'
+              rol: 'usuario',
+              roleId: usuarioRoleId
             });
             await userAlumno.save();
           }
           alumnoData.usuario = userAlumno._id;
         }
 
-        if (row.categoria) {
-          alumnoData.categoria = normalizarCategoria(row.categoria);
+        const categoriaDesdeExcel = resolverCategoriaDesdeReglas(row.categoria, reglasCategoriasImport);
+        const categoriaDesdeFecha = row.fecha_nacimiento
+          ? getCategoriaPorFechaNacimiento(row.fecha_nacimiento, reglasCategoriasImport)
+          : '';
+        const categoriaFinal = categoriaDesdeExcel || categoriaDesdeFecha;
+
+        if (!categoriaFinal) {
+          skipped.push({ fila: row.excelRow, motivo: 'No se pudo determinar la categoria segun las reglas del tenant.' });
+          continue;
         }
+
+        alumnoData.categoria = categoriaFinal;
 
         const sexoNormalizado = normalizarSexo(row.sexo);
         if (sexoNormalizado === null) {
@@ -1660,12 +1684,14 @@ exports.createAlumno = async (req, res) => {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
       User: TenantUser,
+      Role: TenantRole,
       Sede: TenantSede,
       Reposo: TenantReposo,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
       TenantConfig: TenantConfigModel
     } = await getTenantAlumnoWriteModels(req);
+    const usuarioRoleId = await getUsuarioRoleId(TenantRole);
     let sedeId = req.body.sede;
     if (typeof sedeId === 'string') {
       try {
@@ -1722,7 +1748,8 @@ exports.createAlumno = async (req, res) => {
           nombre: repData.nombres + ' ' + repData.apellidos,
           email: repData.cedula, // ahora el email es la cédula
           password,
-          rol: 'usuario'
+          rol: 'usuario',
+          roleId: usuarioRoleId
         });
         await user.save();
       }
@@ -1745,7 +1772,8 @@ exports.createAlumno = async (req, res) => {
             nombre: req.body.nombres + ' ' + req.body.apellidos,
             email: req.body.cedula,
             password,
-            rol: 'usuario'
+            rol: 'usuario',
+            roleId: usuarioRoleId
           });
           await user.save();
         }
@@ -2433,6 +2461,7 @@ exports.updateAlumno = async (req, res) => {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
       User: TenantUser,
+      Role: TenantRole,
       Sede: TenantSede,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
@@ -2564,7 +2593,8 @@ exports.updateAlumno = async (req, res) => {
           cedulaNueva: cedulaNuevaRepresentante,
           nombres: nombresNuevosRepresentante,
           apellidos: apellidosNuevosRepresentante,
-          UserModel: TenantUser
+          UserModel: TenantUser,
+          RoleModel: TenantRole
         });
 
         if (repTelefonoInput !== undefined) representanteActual.telefono = repTelefonoInput;
@@ -2609,7 +2639,8 @@ exports.updateAlumno = async (req, res) => {
           cedulaNueva: cedulaNuevaRepresentante,
           nombres: nombresNuevosRepresentante,
           apellidos: apellidosNuevosRepresentante,
-          UserModel: TenantUser
+          UserModel: TenantUser,
+          RoleModel: TenantRole
         });
         await representanteActual.save();
         updateData.sinRepresentante = false;
@@ -2737,6 +2768,7 @@ exports.updateAlumno = async (req, res) => {
 
     // Si el alumno no tiene representante, al completar cédula en edición se crea su usuario de portal.
     if (sinRepresentante && sinUsuario && cedulaObjetivo && nombresObjetivo && apellidosObjetivo) {
+      const usuarioRoleId = await getUsuarioRoleId(TenantRole);
       let user = await TenantUser.findOne({ email: cedulaObjetivo });
       if (!user) {
         const password = await bcrypt.hash(cedulaObjetivo, 10);
@@ -2744,7 +2776,8 @@ exports.updateAlumno = async (req, res) => {
           nombre: `${nombresObjetivo} ${apellidosObjetivo}`.trim(),
           email: cedulaObjetivo,
           password,
-          rol: 'usuario'
+          rol: 'usuario',
+          roleId: usuarioRoleId
         });
         await user.save();
       }
@@ -3532,18 +3565,18 @@ exports.eliminarReposoAlumno = async (req, res) => {
 };
 
 // ======================= ASIGNACION MASIVA DE CATEGORIAS =======================
-const CATEGORIAS_DISPONIBLES = [
-  'U9/INICIACION',
-  'U11/FORMACION',
-  'U13/MINI',
-  'U15/INFANTIL',
-  'U17/JUVENIL',
-  'U19/JUVENIL LIBRE',
-  'U21',
-  'MAYORES / LIBRE'
+const REGLAS_CATEGORIA_DEFAULT = [
+  { etiqueta: 'U9/INICIACION', anio_nacimiento_desde: 2017, anio_nacimiento_hasta: null, orden: 1 },
+  { etiqueta: 'U11/FORMACION', anio_nacimiento_desde: 2015, anio_nacimiento_hasta: 2016, orden: 2 },
+  { etiqueta: 'U13/MINI', anio_nacimiento_desde: 2013, anio_nacimiento_hasta: 2014, orden: 3 },
+  { etiqueta: 'U15/INFANTIL', anio_nacimiento_desde: 2011, anio_nacimiento_hasta: 2012, orden: 4 },
+  { etiqueta: 'U17/JUVENIL', anio_nacimiento_desde: 2009, anio_nacimiento_hasta: 2010, orden: 5 },
+  { etiqueta: 'U19/JUVENIL LIBRE', anio_nacimiento_desde: 2007, anio_nacimiento_hasta: 2008, orden: 6 },
+  { etiqueta: 'U21', anio_nacimiento_desde: 2005, anio_nacimiento_hasta: 2006, orden: 7 },
+  { etiqueta: 'MAYORES / LIBRE', anio_nacimiento_desde: null, anio_nacimiento_hasta: 2004, orden: 8 }
 ];
 
-function getCategoriaPorFechaNacimiento(fechaNacimiento) {
+function getAnioNacimientoFromFecha(fechaNacimiento) {
   if (!fechaNacimiento) return '';
 
   let nacimiento = null;
@@ -3558,23 +3591,168 @@ function getCategoriaPorFechaNacimiento(fechaNacimiento) {
     }
   }
 
-  if (!nacimiento || Number.isNaN(nacimiento.getTime())) return '';
+  if (!nacimiento || Number.isNaN(nacimiento.getTime())) return null;
 
-  const anioNacimiento = nacimiento.getFullYear();
-
-  if (anioNacimiento >= 2017) return CATEGORIAS_DISPONIBLES[0];
-  if (anioNacimiento >= 2015 && anioNacimiento <= 2016) return CATEGORIAS_DISPONIBLES[1];
-  if (anioNacimiento >= 2013 && anioNacimiento <= 2014) return CATEGORIAS_DISPONIBLES[2];
-  if (anioNacimiento >= 2011 && anioNacimiento <= 2012) return CATEGORIAS_DISPONIBLES[3];
-  if (anioNacimiento >= 2009 && anioNacimiento <= 2010) return CATEGORIAS_DISPONIBLES[4];
-  if (anioNacimiento >= 2007 && anioNacimiento <= 2008) return CATEGORIAS_DISPONIBLES[5];
-  if (anioNacimiento >= 2005 && anioNacimiento <= 2006) return CATEGORIAS_DISPONIBLES[6];
-  return CATEGORIAS_DISPONIBLES[7];
+  return nacimiento.getFullYear();
 }
+
+function parseOptionalYear(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function normalizeReglasCategorias(reglas) {
+  const source = Array.isArray(reglas) && reglas.length > 0 ? reglas : REGLAS_CATEGORIA_DEFAULT;
+
+  return source
+    .map((item, index) => ({
+      etiqueta: String(item?.etiqueta || '').trim(),
+      anio_nacimiento_desde: parseOptionalYear(item?.anio_nacimiento_desde),
+      anio_nacimiento_hasta: parseOptionalYear(item?.anio_nacimiento_hasta),
+      orden: Number.isFinite(Number(item?.orden)) ? Number(item.orden) : (index + 1)
+    }))
+    .filter((item) => item.etiqueta !== '')
+    .sort((a, b) => a.orden - b.orden);
+}
+
+function normalizeReglasCategoriasSinFallback(reglas) {
+  if (!Array.isArray(reglas) || reglas.length === 0) {
+    return [];
+  }
+
+  return reglas
+    .map((item, index) => ({
+      etiqueta: String(item?.etiqueta || '').trim(),
+      anio_nacimiento_desde: parseOptionalYear(item?.anio_nacimiento_desde),
+      anio_nacimiento_hasta: parseOptionalYear(item?.anio_nacimiento_hasta),
+      orden: Number.isFinite(Number(item?.orden)) ? Number(item.orden) : (index + 1)
+    }))
+    .filter((item) => item.etiqueta !== '')
+    .sort((a, b) => a.orden - b.orden);
+}
+
+function normalizarCategoriaImportacion(valor) {
+  return normalizarClaveCategoria(valor);
+}
+
+function resolverCategoriaDesdeReglas(valor, reglasCategorias = []) {
+  const categoriaNormalizada = normalizarCategoriaImportacion(valor);
+  if (!categoriaNormalizada) return '';
+
+  const reglaCoincidente = reglasCategorias.find((regla) => normalizarCategoriaImportacion(regla.etiqueta) === categoriaNormalizada);
+  return reglaCoincidente?.etiqueta || '';
+}
+
+async function getCategoriasConfigTenant(TenantConfigModel) {
+  const configCategorias = await TenantConfigModel.findOne({ key: 'default' }).select('categorias').lean();
+  const disciplina = String(configCategorias?.categorias?.disciplina || 'voleibol').trim().toLowerCase() || 'voleibol';
+  const reglasCategorias = normalizeReglasCategorias(configCategorias?.categorias?.reglas || REGLAS_CATEGORIA_DEFAULT);
+  const categoriasDisponibles = reglasCategorias.map((item) => item.etiqueta).filter(Boolean);
+
+  return {
+    disciplina,
+    reglasCategorias,
+    categoriasDisponibles
+  };
+}
+
+function getCategoriaPorFechaNacimiento(fechaNacimiento, reglas) {
+  const anioNacimiento = getAnioNacimientoFromFecha(fechaNacimiento);
+  if (!Number.isFinite(anioNacimiento)) return '';
+
+  const reglasOrdenadas = normalizeReglasCategorias(reglas);
+  for (const regla of reglasOrdenadas) {
+    const cumpleDesde = regla.anio_nacimiento_desde === null || anioNacimiento >= regla.anio_nacimiento_desde;
+    const cumpleHasta = regla.anio_nacimiento_hasta === null || anioNacimiento <= regla.anio_nacimiento_hasta;
+    if (cumpleDesde && cumpleHasta) {
+      return regla.etiqueta;
+    }
+  }
+
+  return '';
+}
+
+exports.getCategoriaSugerida = async (req, res) => {
+  try {
+    const { TenantConfig } = await getTenantAlumnoWriteModels(req);
+    const { disciplina, reglasCategorias, categoriasDisponibles } = await getCategoriasConfigTenant(TenantConfig);
+
+    const fechaNacimiento = req.query.fecha_nacimiento || req.query.fechaNacimiento || '';
+    const categoriaSugerida = fechaNacimiento
+      ? getCategoriaPorFechaNacimiento(fechaNacimiento, reglasCategorias)
+      : '';
+
+    return res.json({
+      disciplina,
+      categoria_sugerida: categoriaSugerida,
+      categorias_disponibles: categoriasDisponibles
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al sugerir categoria.', detalle: err.message });
+  }
+};
+
+exports.previewAsignarCategoriasMasivamente = async (req, res) => {
+  try {
+    const { Alumno: TenantAlumno, TenantConfig } = await getTenantAlumnoWriteModels(req);
+    const { disciplina, reglasCategorias } = await getCategoriasConfigTenant(TenantConfig);
+
+    const alumnos = await TenantAlumno.find({
+      activo: { $ne: false },
+      dado_de_baja: { $ne: true }
+    }).select('_id nombres apellidos categoria fecha_nacimiento');
+
+    let evaluados = 0;
+    let conFechaNacimiento = 0;
+    let sinFechaNacimiento = 0;
+    let cambiosEstimados = 0;
+    const muestraCambios = [];
+
+    for (const alumno of alumnos) {
+      evaluados += 1;
+      if (!alumno.fecha_nacimiento) {
+        sinFechaNacimiento += 1;
+        continue;
+      }
+
+      conFechaNacimiento += 1;
+      const categoriaSugerida = getCategoriaPorFechaNacimiento(alumno.fecha_nacimiento, reglasCategorias);
+      const categoriaActual = String(alumno.categoria || '').trim();
+
+      if (categoriaSugerida && categoriaSugerida !== categoriaActual) {
+        cambiosEstimados += 1;
+        if (muestraCambios.length < 30) {
+          muestraCambios.push({
+            id: alumno._id,
+            alumno: `${String(alumno.nombres || '').trim()} ${String(alumno.apellidos || '').trim()}`.trim(),
+            fecha_nacimiento: alumno.fecha_nacimiento,
+            categoria_actual: categoriaActual,
+            categoria_sugerida: categoriaSugerida
+          });
+        }
+      }
+    }
+
+    return res.json({
+      disciplina,
+      evaluados,
+      con_fecha_nacimiento: conFechaNacimiento,
+      sin_fecha_nacimiento: sinFechaNacimiento,
+      cambios_estimados: cambiosEstimados,
+      muestra_cambios: muestraCambios
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Error al generar preview de asignacion de categorias.', detalle: err.message });
+  }
+};
 
 exports.asignarCategoriasMasivamente = async (req, res) => {
   try {
-    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
+    const { Alumno: TenantAlumno, TenantConfig } = await getTenantAlumnoWriteModels(req);
+    const { reglasCategorias } = await getCategoriasConfigTenant(TenantConfig);
+
     const alumnos = await TenantAlumno.find({ 
       activo: { $ne: false }, 
       dado_de_baja: { $ne: true } 
@@ -3583,7 +3761,7 @@ exports.asignarCategoriasMasivamente = async (req, res) => {
     
     for (const alumno of alumnos) {
       if (alumno.fecha_nacimiento) {
-        const nuevaCat = getCategoriaPorFechaNacimiento(alumno.fecha_nacimiento);
+        const nuevaCat = getCategoriaPorFechaNacimiento(alumno.fecha_nacimiento, reglasCategorias);
         const categoriaActual = String(alumno.categoria || '').trim();
         if (nuevaCat && categoriaActual !== nuevaCat) {
           operaciones.push({

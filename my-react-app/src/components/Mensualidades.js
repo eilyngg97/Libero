@@ -54,7 +54,7 @@ const obtenerDiaLimitePersonalizado = (mensualidad) => {
 	return valor;
 };
 
-function Mensualidades() {
+function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyInsolventes = false }) {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
 	const theme = useTheme();
@@ -65,7 +65,7 @@ function Mensualidades() {
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
 	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
 	const [filtroAlumno, setFiltroAlumno] = useState('');
-	const [filtroEstado, setFiltroEstado] = useState('');
+	const [filtroEstado, setFiltroEstado] = useState(() => String(initialEstado || '').trim());
 	const [modalPago, setModalPago] = useState(false);
 	const [pagoInfo, setPagoInfo] = useState({});
 	const [comprobante, setComprobante] = useState(null);
@@ -104,6 +104,7 @@ function Mensualidades() {
 	const [previewAjuste, setPreviewAjuste] = useState(null);
 	const [previewAjusteLoading, setPreviewAjusteLoading] = useState(false);
 	const [previewAjusteError, setPreviewAjusteError] = useState('');
+	const [resumenAjusteSede, setResumenAjusteSede] = useState(null);
 	const [adelantandoAlumnoId, setAdelantandoAlumnoId] = useState('');
 	const [confirmarAdelantoOpen, setConfirmarAdelantoOpen] = useState(false);
 	const [mensualidadAAdelantar, setMensualidadAAdelantar] = useState(null);
@@ -174,6 +175,7 @@ function Mensualidades() {
 		setAjusteAnio(String(new Date().getFullYear()));
 		setPreviewAjuste(null);
 		setPreviewAjusteError('');
+		setResumenAjusteSede(null);
 	};
 
 	const obtenerPreviewAjusteSede = React.useCallback(async () => {
@@ -383,6 +385,9 @@ function Mensualidades() {
 			});
 		}
 		if (filtroEstado) filtradas = filtradas.filter(m => m.estatus && m.estatus.toLowerCase() === filtroEstado.toLowerCase());
+		if (onlyInsolventes) {
+			filtradas = filtradas.filter((m) => String(m?.estatus || '').toLowerCase() === 'insolvente');
+		}
 
 		const filtradasOrdenadas = [...filtradas].sort((a, b) => {
 			const nombreA = String(a?.id_alumno?.nombres || '').trim();
@@ -397,7 +402,14 @@ function Mensualidades() {
 		});
 
 		setMensualidades(filtradasOrdenadas);
-	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD]);
+	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD, onlyInsolventes]);
+
+	React.useEffect(() => {
+		if (!onlyInsolventes) return;
+		if (String(filtroEstado || '').toLowerCase() !== 'insolvente') {
+			setFiltroEstado('Insolvente');
+		}
+	}, [onlyInsolventes, filtroEstado]);
 
 	// Registro de pago rápido
 	const handlePago = (m) => {
@@ -1593,6 +1605,7 @@ function Mensualidades() {
 
 		try {
 			setAplicandoAjuste(true);
+			setResumenAjusteSede(null);
 			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/ajuste-sede`, {
 				method: 'POST',
 				headers: {
@@ -1609,10 +1622,20 @@ function Mensualidades() {
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'No se pudo aplicar el ajuste');
-			resetAjusteSedeForm();
+			const resumen = data?.resumen_ajuste || {
+				procesadas_total: (data?.mensualidades_actualizadas || 0) + (data?.mensualidades_omitidas || 0),
+				correctas: data?.mensualidades_actualizadas || 0,
+				omitidas_total: data?.mensualidades_omitidas || 0,
+				omitidas_no_aplicables: data?.mensualidades_omitidas_no_aplicables || 0,
+				omitidas_conflicto_saldo: data?.mensualidades_omitidas_conflicto_saldo || 0,
+				omitidas_detalle: Array.isArray(data?.mensualidades_omitidas_detalle)
+					? data.mensualidades_omitidas_detalle
+					: []
+			};
+			setResumenAjusteSede(resumen);
 			await cargarMensualidades();
 			setSuccessMessage(
-				`Ajuste aplicado: ${data.mensualidades_actualizadas || 0} actualizadas, ${data.mensualidades_omitidas || 0} omitidas y ${data.alumnos_con_saldo_a_favor || 0} alumnos con saldo a favor.`
+				`Ajuste aplicado: ${resumen.correctas || 0} correctas, ${resumen.omitidas_total || 0} omitidas y ${data.alumnos_con_saldo_a_favor || 0} alumnos con saldo a favor.`
 			);
 		} catch (err) {
 			alert(err.message || 'No se pudo aplicar el ajuste');
@@ -1698,14 +1721,21 @@ function Mensualidades() {
 
 	return (
 		<div>
-			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>Mensualidades</Typography>
+			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>{pageTitle}</Typography>
 			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
 				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
 					{[...Array(12)].map((_, i) => <MenuItem key={i + 1} value={i + 1}>{meses[i]}</MenuItem>)}
 				</TextField>
 				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
-				<TextField select label="Estado" value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
+				<TextField
+					select
+					label="Estado"
+					value={filtroEstado}
+					onChange={e => setFiltroEstado(e.target.value)}
+					sx={{ minWidth: 120, width: '100%' }}
+					disabled={onlyInsolventes}
+				>
 					<MenuItem value="">Todos</MenuItem>
 					{['Pendiente', 'Pagado', 'Insolvente', 'Exonerado', 'Becado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
 				</TextField>
@@ -3080,7 +3110,10 @@ function Mensualidades() {
 						fullWidth
 						margin="normal"
 						value={ajusteAnio}
-						onChange={e => setAjusteAnio(e.target.value)}
+						onChange={e => {
+							setAjusteAnio(e.target.value);
+							setResumenAjusteSede(null);
+						}}
 						inputProps={{ min: 2000, step: 1 }}
 					/>
 					<TextField
@@ -3089,7 +3122,10 @@ function Mensualidades() {
 						fullWidth
 						margin="normal"
 						value={ajusteNuevoMonto}
-						onChange={e => setAjusteNuevoMonto(e.target.value)}
+						onChange={e => {
+							setAjusteNuevoMonto(e.target.value);
+							setResumenAjusteSede(null);
+						}}
 						inputProps={{ min: 0, step: '0.01' }}
 						helperText="Ejemplo: si la sede cobra 35 y este mes se reconocerá una semana, coloca aquí el nuevo monto final del mes."
 					/>
@@ -3098,7 +3134,10 @@ function Mensualidades() {
 						fullWidth
 						margin="normal"
 						value={ajusteDescripcion}
-						onChange={e => setAjusteDescripcion(e.target.value)}
+						onChange={e => {
+							setAjusteDescripcion(e.target.value);
+							setResumenAjusteSede(null);
+						}}
 						placeholder="Semana reconocida por suspensión de clases"
 					/>
 					{previewAjusteLoading && <Alert severity="info" sx={{ mt: 1.5 }}>Calculando vista previa...</Alert>}
@@ -3112,15 +3151,85 @@ function Mensualidades() {
 							{previewAjuste.mensualidades_no_compatibles > 0 && ` ${previewAjuste.mensualidades_no_compatibles} no compatibles con este monto.`}
 						</Alert>
 					)}
+					{resumenAjusteSede && (
+						<Box sx={{ mt: 2 }}>
+							<Typography sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>
+								Resumen del ajuste aplicado
+							</Typography>
+							<TableContainer component={Paper} variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+								<Table size="small" aria-label="resumen ajuste sede">
+									<TableHead>
+										<TableRow>
+											<TableCell sx={{ fontWeight: 700 }}>Concepto</TableCell>
+											<TableCell align="right" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
+										</TableRow>
+									</TableHead>
+									<TableBody>
+										<TableRow>
+											<TableCell>Procesadas</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.procesadas_total || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Correctas</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.correctas || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Omitidas (total)</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.omitidas_total || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Omitidas por estatus no aplicable</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.omitidas_no_aplicables || 0)}</TableCell>
+										</TableRow>
+										<TableRow>
+											<TableCell>Omitidas por saldo consumido</TableCell>
+											<TableCell align="right">{Number(resumenAjusteSede.omitidas_conflicto_saldo || 0)}</TableCell>
+										</TableRow>
+									</TableBody>
+								</Table>
+							</TableContainer>
+							{Array.isArray(resumenAjusteSede.omitidas_detalle) && resumenAjusteSede.omitidas_detalle.length > 0 && (
+								<Box sx={{ mt: 2 }}>
+									<Typography sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>
+										Detalle de omitidas
+									</Typography>
+									<TableContainer component={Paper} variant="outlined" sx={{ borderColor: '#e2e8f0' }}>
+										<Table size="small" aria-label="detalle omitidas ajuste sede">
+											<TableHead>
+												<TableRow>
+													<TableCell sx={{ fontWeight: 700 }}>Alumno</TableCell>
+													<TableCell sx={{ fontWeight: 700 }}>Cédula</TableCell>
+													<TableCell sx={{ fontWeight: 700 }}>Motivo</TableCell>
+												</TableRow>
+											</TableHead>
+											<TableBody>
+												{resumenAjusteSede.omitidas_detalle.map((item, index) => (
+													<TableRow key={`${item?.mensualidad_id || 'omitida'}-${index}`}>
+														<TableCell>{item?.alumno_nombre || 'Alumno no disponible'}</TableCell>
+														<TableCell>{item?.alumno_cedula || '-'}</TableCell>
+														<TableCell>{item?.motivo || 'Omitida'}</TableCell>
+													</TableRow>
+												))}
+											</TableBody>
+										</Table>
+									</TableContainer>
+								</Box>
+							)}
+						</Box>
+					)}
 				</DialogContent>
 				<DialogActions>
-					<Button variant="outlined" onClick={obtenerPreviewAjusteSede} disabled={aplicandoAjuste || previewAjusteLoading}>
+					<Button
+						variant="outlined"
+						onClick={obtenerPreviewAjusteSede}
+						disabled={aplicandoAjuste || previewAjusteLoading || !!resumenAjusteSede}
+					>
 						Recalcular impacto
 					</Button>
 					<Button
 						variant="contained"
 						onClick={aplicarAjusteSede}
-						disabled={aplicandoAjuste || previewAjusteLoading || (previewAjuste?.mensualidades_actualizables || 0) <= 0 || (previewAjuste?.mensualidades_no_compatibles || 0) > 0}
+						disabled={aplicandoAjuste || previewAjusteLoading || !!resumenAjusteSede || (previewAjuste?.mensualidades_actualizables || 0) <= 0 || (previewAjuste?.mensualidades_no_compatibles || 0) > 0}
 					>
 						{aplicandoAjuste ? 'Aplicando...' : 'Aplicar ajuste'}
 					</Button>
@@ -3220,7 +3329,7 @@ function Mensualidades() {
 						{metodosPago.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
 					</TextField>
 					<TextField
-						label="Fecha de pago"
+						label="¿Cuándo se realizó el pago?"
 						type="date"
 						fullWidth
 						margin="normal"
@@ -3312,7 +3421,7 @@ function Mensualidades() {
 						onChange={e => setNotaPago(e.target.value.slice(0, 500))}
 						helperText="Usa este campo para justificar pagos cargados tarde en sistema."
 					/>
-					{Number(pagoInfo?.recargo_aplicado_usd || 0) > 0 && (
+					{!esAdmin && Number(pagoInfo?.recargo_aplicado_usd || 0) > 0 && (
 						<Box sx={{ mt: 0.4 }}>
 							<label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14 }}>
 								<input
