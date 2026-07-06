@@ -18,7 +18,7 @@ import {
   TableRow,
   Typography
 } from '@mui/material';
-import { Bar, BarChart, Cell, CartesianGrid, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, Cell, CartesianGrid, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { mediaUrl } from '../utils/mediaUrl';
 import './Estadisticas.css';
 
@@ -36,9 +36,14 @@ function Estadisticas() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resumen, setResumen] = useState({ anio: currentYear, meses: [], totales: { inscritos: 0, retirados: 0 } });
-  const [, setLoadingIngresos] = useState(false);
-  const [, setErrorIngresos] = useState('');
-  const [, setResumenIngresos] = useState({ anio: currentYear, meses: [], total_anual: 0 });
+  const [loadingIngresos, setLoadingIngresos] = useState(false);
+  const [errorIngresos, setErrorIngresos] = useState('');
+  const [resumenIngresos, setResumenIngresos] = useState({
+    anio: currentYear,
+    meses: [],
+    total_anual: 0,
+    totales: { mensualidades: 0, inscripciones: 0, uniformes: 0 }
+  });
   const [loadingIngresosSede, setLoadingIngresosSede] = useState(false);
   const [errorIngresosSede, setErrorIngresosSede] = useState('');
   const [resumenIngresosSede, setResumenIngresosSede] = useState({ anio: currentYear, sedes: [], total_anual: 0 });
@@ -127,30 +132,106 @@ function Estadisticas() {
 
       try {
         const token = localStorage.getItem('token');
-        const query = new URLSearchParams({ anio: String(anio) });
+        const queryBase = new URLSearchParams({ anio: String(anio) });
         if (sedeSeleccionada !== 'all') {
-          query.set('id_sede', sedeSeleccionada);
+          queryBase.set('id_sede', sedeSeleccionada);
         }
 
-        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/ingresos-por-mes?${query.toString()}`, {
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          }
+        const [respMensualidades, respInscripciones, respUniformes] = await Promise.all([
+          fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/ingresos-por-mes?${queryBase.toString()}&tipo=mensualidades`, {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            }
+          }),
+          fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/ingresos-por-mes?${queryBase.toString()}&tipo=inscripciones`, {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            }
+          }),
+          fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            }
+          })
+        ]);
+
+        const dataMensualidades = await respMensualidades.json().catch(() => ({}));
+        const dataInscripciones = await respInscripciones.json().catch(() => ({}));
+        const dataUniformes = await respUniformes.json().catch(() => ([]));
+
+        if (!respMensualidades.ok) {
+          throw new Error(dataMensualidades?.error || 'No se pudieron cargar los ingresos de mensualidades.');
+        }
+        if (!respInscripciones.ok) {
+          throw new Error(dataInscripciones?.error || 'No se pudieron cargar los ingresos de inscripciones.');
+        }
+        if (!respUniformes.ok) {
+          throw new Error(dataUniformes?.error || 'No se pudieron cargar los ingresos de uniformes.');
+        }
+
+        const mensualidadesPorMes = new Map(
+          (Array.isArray(dataMensualidades?.meses) ? dataMensualidades.meses : [])
+            .map((item) => [Number(item?.mes), Number(item?.total_pagado || 0)])
+        );
+        const inscripcionesPorMes = new Map(
+          (Array.isArray(dataInscripciones?.meses) ? dataInscripciones.meses : [])
+            .map((item) => [Number(item?.mes), Number(item?.total_pagado || 0)])
+        );
+
+        const uniformesPorMes = new Map();
+        const pedidosUniformes = Array.isArray(dataUniformes) ? dataUniformes : [];
+        pedidosUniformes.forEach((pedido) => {
+          const sedePedido = String(pedido?.sede?._id || pedido?.sede || '');
+          if (sedeSeleccionada !== 'all' && sedePedido !== String(sedeSeleccionada)) return;
+
+          const pagosHistorial = Array.isArray(pedido?.pagos_historial) ? pedido.pagos_historial : [];
+          pagosHistorial.forEach((pago) => {
+            const fecha = new Date(pago?.fecha_pago || 0);
+            if (Number.isNaN(fecha.getTime()) || fecha.getUTCFullYear() !== Number(anio)) return;
+            const mes = fecha.getUTCMonth() + 1;
+            const previo = Number(uniformesPorMes.get(mes) || 0);
+            uniformesPorMes.set(mes, previo + Number(pago?.monto_pagado || 0));
+          });
         });
 
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.error || 'No se pudieron cargar los ingresos.');
-        }
+        const meses = LABELS_MESES.map((_, index) => {
+          const mes = index + 1;
+          const mensualidades = Number(mensualidadesPorMes.get(mes) || 0);
+          const inscripciones = Number(inscripcionesPorMes.get(mes) || 0);
+          const uniformes = Number(uniformesPorMes.get(mes) || 0);
+          const total = mensualidades + inscripciones + uniformes;
+          return {
+            mes,
+            mensualidades,
+            inscripciones,
+            uniformes,
+            total
+          };
+        });
+
+        const totalMensualidades = meses.reduce((acc, item) => acc + Number(item.mensualidades || 0), 0);
+        const totalInscripciones = meses.reduce((acc, item) => acc + Number(item.inscripciones || 0), 0);
+        const totalUniformes = meses.reduce((acc, item) => acc + Number(item.uniformes || 0), 0);
+        const totalAnual = totalMensualidades + totalInscripciones + totalUniformes;
 
         setResumenIngresos({
-          anio: data?.anio || anio,
-          meses: Array.isArray(data?.meses) ? data.meses : [],
-          total_anual: Number(data?.total_anual || 0)
+          anio,
+          meses,
+          total_anual: Number(totalAnual.toFixed(2)),
+          totales: {
+            mensualidades: Number(totalMensualidades.toFixed(2)),
+            inscripciones: Number(totalInscripciones.toFixed(2)),
+            uniformes: Number(totalUniformes.toFixed(2))
+          }
         });
       } catch (err) {
         setErrorIngresos(err?.message || 'No se pudieron cargar los ingresos.');
-        setResumenIngresos({ anio, meses: [], total_anual: 0 });
+        setResumenIngresos({
+          anio,
+          meses: [],
+          total_anual: 0,
+          totales: { mensualidades: 0, inscripciones: 0, uniformes: 0 }
+        });
       } finally {
         setLoadingIngresos(false);
       }
@@ -228,6 +309,19 @@ function Estadisticas() {
     const value = Number(monto || 0);
     return `$${value.toFixed(2)} USD`;
   };
+
+  const dataGraficaIngresos = useMemo(() => {
+    return LABELS_MESES.map((label, index) => {
+      const item = (resumenIngresos.meses || []).find((mes) => Number(mes?.mes) === index + 1) || {};
+      return {
+        mes: label,
+        mensualidades: Number(item?.mensualidades || 0),
+        inscripciones: Number(item?.inscripciones || 0),
+        uniformes: Number(item?.uniformes || 0),
+        total: Number(item?.total || 0)
+      };
+    });
+  }, [resumenIngresos.meses]);
 
   const mostrarComparativaPorSede = (sedes || []).length > 1;
   const tieneComparativaSedes = (resumenIngresosSede.sedes || []).length > 1;
@@ -349,6 +443,61 @@ function Estadisticas() {
                         </Button>
                       </Box>
                     </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </>
+        )}
+      </Paper>
+
+      <Paper className="estadisticas-card" elevation={0}>
+        <Box className="estadisticas-header-inline">
+          <Typography variant="h6" sx={{ fontWeight: 800, color: '#0b0f2a' }}>
+            Dinero entrante por mes (comparativa)
+          </Typography>
+        </Box>
+
+
+        {loadingIngresos ? (
+          <Typography sx={{ color: '#64748b', py: 3 }}>Cargando comparativa mensual de ingresos...</Typography>
+        ) : errorIngresos ? (
+          <Typography sx={{ color: '#dc2626', py: 3 }}>{errorIngresos}</Typography>
+        ) : (
+          <>
+            <Box sx={{ width: '100%', height: 330, mt: 0.5 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dataGraficaIngresos} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 12 }} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
+                  <Tooltip formatter={(value, name) => [formatMoney(value), name]} />
+                  <Legend />
+                  <Bar dataKey="mensualidades" stackId="ingresos" name="Mensualidades" fill="#0B0F2A" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="inscripciones" stackId="ingresos" name="Inscripciones" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="uniformes" stackId="ingresos" name="Uniformes" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+
+            <Table size="small" sx={{ mt: 1 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Mes</TableCell>
+                  <TableCell align="right">Mensualidades</TableCell>
+                  <TableCell align="right">Inscripciones</TableCell>
+                  <TableCell align="right">Uniformes</TableCell>
+                  <TableCell align="right">Total</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {dataGraficaIngresos.map((item) => (
+                  <TableRow key={`ingresos-mes-${item.mes}`}>
+                    <TableCell>{item.mes}</TableCell>
+                    <TableCell align="right">{formatMoney(item.mensualidades)}</TableCell>
+                    <TableCell align="right">{formatMoney(item.inscripciones)}</TableCell>
+                    <TableCell align="right">{formatMoney(item.uniformes)}</TableCell>
+                    <TableCell align="right">{formatMoney(item.total)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
