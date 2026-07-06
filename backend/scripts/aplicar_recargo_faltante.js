@@ -59,7 +59,8 @@ async function getTenantModels(tenant) {
 
 function buildMensualidadFilter({ mes, anio, alumnoId }) {
   const filtro = {
-    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono', 'En revision'] },
+    // El recargo solo debe evaluarse en deudas activas, no en pagos bajo revisión.
+    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono'] },
     monto_esperado: { $gt: 0 },
     $or: [
       { recargo_aplicado_usd: { $exists: false } },
@@ -72,6 +73,44 @@ function buildMensualidadFilter({ mes, anio, alumnoId }) {
   if (alumnoId) filtro.id_alumno = alumnoId;
 
   return filtro;
+}
+
+function normalizarDiaMes(value, fallback = null) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) return fallback;
+  return parsed;
+}
+
+function construirFechaCortePeriodo(mes, anio, dia) {
+  const mesNum = Number(mes);
+  const anioNum = Number(anio);
+  const diaNum = normalizarDiaMes(dia, null);
+
+  if (!Number.isInteger(mesNum) || mesNum < 1 || mesNum > 12) return null;
+  if (!Number.isInteger(anioNum) || anioNum < 1900) return null;
+  if (!diaNum) return null;
+
+  const ultimoDiaMes = new Date(Date.UTC(anioNum, mesNum, 0)).getUTCDate();
+  const diaAjustado = Math.min(diaNum, ultimoDiaMes);
+
+  return new Date(Date.UTC(anioNum, mesNum - 1, diaAjustado, 23, 59, 59, 999));
+}
+
+function obtenerFechaCortePagoMensualidad(mensualidad) {
+  const diaPersonalizado = normalizarDiaMes(mensualidad?.id_alumno?.dia_limite_personalizado, null);
+  const fechaPorPeriodo = construirFechaCortePeriodo(mensualidad?.mes, mensualidad?.anio, diaPersonalizado);
+  if (fechaPorPeriodo) return fechaPorPeriodo;
+
+  const fechaVencimiento = mensualidad?.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) : null;
+  if (!fechaVencimiento || Number.isNaN(fechaVencimiento.getTime())) return null;
+  return fechaVencimiento;
+}
+
+function recargoYaAplicado(mensualidad) {
+  const recargoMonto = Number(mensualidad?.recargo_aplicado_usd || 0) > 0;
+  const flagRecargo = mensualidad?.aplica_recargo === true;
+  const fechaAplicacion = !!mensualidad?.fecha_aplicacion_recargo;
+  return recargoMonto || flagRecargo || fechaAplicacion;
 }
 
 async function procesarTenant(tenant, args, hoy) {
@@ -88,12 +127,68 @@ async function procesarTenant(tenant, args, hoy) {
     tenantId: tenant.tenantId,
     nombre: tenant.nombre,
     total: candidatas.length,
+    estatusCorregidos: 0,
     aplicadas: 0,
     noAplicadas: 0,
     detallesNoAplicadas: []
   };
 
   for (const mensualidad of candidatas) {
+    const estatusActual = String(mensualidad?.estatus || '').toLowerCase();
+    if (estatusActual === 'pendiente') {
+      const fechaCortePago = obtenerFechaCortePagoMensualidad(mensualidad);
+      if (fechaCortePago && fechaCortePago < hoy) {
+        mensualidad.estatus = 'Insolvente';
+        resultadoTenant.estatusCorregidos += 1;
+
+        if (args.apply) {
+          await mensualidad.save();
+        }
+
+        if (args.verbose) {
+          console.log(`TENANT ${tenant.tenantId} ESTATUS AJUSTADO: ${mensualidad._id} pendiente -> insolvente fechaCorte=${fechaCortePago.toISOString()}`);
+        }
+      }
+    }
+
+    if (String(mensualidad?.estatus || '').toLowerCase() === 'en revision') {
+      resultadoTenant.noAplicadas += 1;
+      resultadoTenant.detallesNoAplicadas.push({
+        id: String(mensualidad._id),
+        periodo: `${mensualidad.mes}/${mensualidad.anio}`,
+        alumnoId: String(mensualidad.id_alumno?._id || mensualidad.id_alumno),
+        estatus: mensualidad.estatus,
+        monto_esperado: mensualidad.monto_esperado,
+        recargo_aplicado_usd: mensualidad.recargo_aplicado_usd,
+        fechaRecargo: null,
+        motivo: 'pago en revision'
+      });
+
+      if (args.verbose) {
+        console.log(`TENANT ${tenant.tenantId} NO APLICADO: ${mensualidad._id} motivo=pago en revision`);
+      }
+      continue;
+    }
+
+    if (recargoYaAplicado(mensualidad)) {
+      resultadoTenant.noAplicadas += 1;
+      resultadoTenant.detallesNoAplicadas.push({
+        id: String(mensualidad._id),
+        periodo: `${mensualidad.mes}/${mensualidad.anio}`,
+        alumnoId: String(mensualidad.id_alumno?._id || mensualidad.id_alumno),
+        estatus: mensualidad.estatus,
+        monto_esperado: mensualidad.monto_esperado,
+        recargo_aplicado_usd: mensualidad.recargo_aplicado_usd,
+        fechaRecargo: mensualidad.fecha_aplicacion_recargo || null,
+        motivo: 'recargo ya aplicado previamente'
+      });
+
+      if (args.verbose) {
+        console.log(`TENANT ${tenant.tenantId} NO APLICADO: ${mensualidad._id} motivo=recargo ya aplicado previamente`);
+      }
+      continue;
+    }
+
     const resultado = await aplicarRecargoMensualidadSegunConfig(mensualidad, {
       fechaReferencia: hoy,
       persistir: args.apply,
@@ -156,6 +251,7 @@ async function main() {
 
   const hoy = new Date();
   let totalCandidatas = 0;
+  let totalEstatusCorregidos = 0;
   let totalAplicadas = 0;
   let totalNoAplicadas = 0;
   const reporte = [];
@@ -191,16 +287,18 @@ async function main() {
     }
 
     totalCandidatas += resultado.total;
+    totalEstatusCorregidos += resultado.estatusCorregidos;
     totalAplicadas += resultado.aplicadas;
     totalNoAplicadas += resultado.noAplicadas;
     reporte.push(resultado);
 
-    console.log(`TENANT ${tenant.tenantId} (${tenant.nombre || 'sin nombre'}) -> candidatas=${resultado.total} aplicadas=${resultado.aplicadas} noAplicadas=${resultado.noAplicadas}`);
+    console.log(`TENANT ${tenant.tenantId} (${tenant.nombre || 'sin nombre'}) -> candidatas=${resultado.total} estatusCorregidos=${resultado.estatusCorregidos} aplicadas=${resultado.aplicadas} noAplicadas=${resultado.noAplicadas}`);
   }
 
   console.log('---');
   console.log(`Total tenants procesados: ${tenantsToProcess.length}`);
   console.log(`Total candidatas: ${totalCandidatas}`);
+  console.log(`Total estatus corregidos a Insolvente: ${totalEstatusCorregidos}`);
   console.log(`Total recargos aplicados: ${totalAplicadas}`);
   console.log(`Total no aplicados: ${totalNoAplicadas}`);
 
