@@ -3,7 +3,7 @@ import { useSede } from '../context/SedeContext';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Grid, IconButton, Select, MenuItem } from '@mui/material';
 import SchoolIcon from '@mui/icons-material/School';
-import SportsVolleyballIcon from '@mui/icons-material/SportsVolleyball';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
@@ -15,7 +15,7 @@ function PanelOpciones() {
     const [sedes, setSedes] = useState([]);
     const TODAS_SEDES_VALUE = '__all_sedes__';
     const canViewAlumnos = hasPermission('alumnos.view');
-    const canViewEntrenadores = hasPermission('entrenadores.view');
+    const canViewInscripciones = hasPermission('mensualidades.view');
     const canViewMensualidades = hasPermission('mensualidades.view');
     const canViewSolicitudesUniformes = hasPermission('solicitudes_uniformes.view');
 
@@ -43,13 +43,8 @@ function PanelOpciones() {
         if (selected) setSedeSeleccionada(selected);
     };
 
-    const handleEntrenadoresClick = () => {
-        if (sedeSeleccionada?._id) {
-            navigate('/entrenadores-sede');
-            return;
-        }
-
-        navigate('/entrenadores');
+    const handleInscripcionesClick = () => {
+        navigate('/inscripciones');
     };
         return (
             <Box maxWidth={1200} mx="auto" mt={2}>
@@ -137,14 +132,14 @@ function PanelOpciones() {
                         </Box>
                     </Grid>
                     )}
-                    {canViewEntrenadores && (
+                    {canViewInscripciones && (
                     <Grid item size={{ xs: 12, sm: 6, md: 3 }}>
                         <Box sx={{
                             borderRadius: 3,
                             minWidth: 160,
                             minHeight: 200,
                             boxShadow: 4,
-                            background: 'linear-gradient(135deg, #27c86b 0%, #0ea577 100%)',
+                            background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                             color: 'white',
                             p: 2,
                             display: 'flex',
@@ -157,16 +152,16 @@ function PanelOpciones() {
                             transition: 'transform 0.2s',
                             '& > *:not(.bg-icon)': { position: 'relative', zIndex: 1 },
                             '&:hover': { transform: 'scale(1.04)' }
-                        }} onClick={handleEntrenadoresClick}>
+                        }} onClick={handleInscripcionesClick}>
                             <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 1 }}>
-                                <SportsVolleyballIcon sx={{ fontSize: 32, color: 'white' }} />
+                                <AssignmentTurnedInIcon sx={{ fontSize: 32, color: 'white' }} />
                             </IconButton>
-                            <Typography variant="h6" sx={{ fontWeight: 700 }}>Entrenadores</Typography>
-                            <Typography variant="body2">Gestión de entrenadores</Typography>
+                            <Typography variant="h6" sx={{ fontWeight: 700 }}>Pagos de inscripciones</Typography>
+                            <Typography variant="body2">Gestion de inscripciones</Typography>
                             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                Gestionar equipo →
+                                Ver modulo →
                             </Typography>
-                            <SportsVolleyballIcon
+                            <AssignmentTurnedInIcon
                                 className="bg-icon"
                                 sx={{
                                     position: 'absolute',
@@ -204,7 +199,7 @@ function PanelOpciones() {
                             <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 1 }}>
                                 <PaymentsIcon sx={{ fontSize: 32, color: 'white' }} />
                             </IconButton>
-                            <Typography variant="h6" sx={{ fontWeight: 700 }}>Mensualidades</Typography>
+                            <Typography variant="h6" sx={{ fontWeight: 700 }}>Pagos de mensualidades</Typography>
                             <Typography variant="body2">Gestión de pagos</Typography>
                             <Typography variant="body2" sx={{ fontWeight: 600 }}>
                                 Ver finanzas →
@@ -266,14 +261,14 @@ function PanelOpciones() {
                         </Box>
                     </Grid>
                     )}
-                    {!canViewAlumnos && !canViewEntrenadores && !canViewMensualidades && !canViewSolicitudesUniformes && (
+                    {!canViewAlumnos && !canViewInscripciones && !canViewMensualidades && !canViewSolicitudesUniformes && (
                     <Grid item xs={12}>
                         <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 3, p: 2, bgcolor: '#fff' }}>
                             <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.6 }}>
                                 Sin modulos operativos habilitados
                             </Typography>
                             <Typography sx={{ color: '#64748b' }}>
-                                Este rol no tiene acceso a alumnos, entrenadores, mensualidades ni solicitudes de uniformes.
+                                Este rol no tiene acceso a alumnos, inscripciones, mensualidades ni solicitudes de uniformes.
                             </Typography>
                         </Box>
                     </Grid>

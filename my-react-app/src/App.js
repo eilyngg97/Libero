@@ -127,6 +127,7 @@ function SedeBreadcrumb() {
   const rutaLabels = [
     { startsWith: '/tabla-alumnos', label: 'Alumnos' },
     { startsWith: '/alumnos', label: 'Alumnos' },
+    { startsWith: '/inscripciones', label: 'Inscripciones' },
     { startsWith: '/mensualidades', label: 'Mensualidades' },
     { startsWith: '/solicitud-uniforme', label: 'Solicitud de uniformes' },
     { startsWith: '/listado-solicitudes-uniformes', label: 'Solicitud de uniformes' }
@@ -352,6 +353,14 @@ function App() {
                           <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly}><Horarios /></ProtectedRoute>} />
                           <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['solicitudes_uniformes.view']}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
                           <Route path="pagos-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={adminAndUser}><PagosAlumno /></ProtectedRoute>} />
+                          <Route
+                            path="inscripciones"
+                            element={(
+                              <ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['mensualidades.view']}>
+                                <Mensualidades pageTitle="Inscripciones" viewMode="inscripciones" />
+                              </ProtectedRoute>
+                            )}
+                          />
                           <Route path="mensualidades" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['mensualidades.view']}><Mensualidades /></ProtectedRoute>} />
                           <Route
                             path="mensualidades/insolventes"
@@ -362,7 +371,7 @@ function App() {
                             )}
                           />
                           <Route path="sedes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['sedes.view']}><Sedes /></ProtectedRoute>} />
-                          <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view', 'entrenadores.view', 'mensualidades.view', 'solicitudes_uniformes.view']} requireAllPermissions={false}><PanelOpciones /></ProtectedRoute>} />
+                          <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view', 'mensualidades.view', 'solicitudes_uniformes.view']} requireAllPermissions={false}><PanelOpciones /></ProtectedRoute>} />
                           <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><TablaAlumnos /></ProtectedRoute>} />
                           <Route path="alumno/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}>{React.createElement(require('./components/AlumnoDetalle').default)}</ProtectedRoute>} />
                           <Route path="alumno/editar/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}>{React.createElement(require('./components/AlumnoEditar').default)}</ProtectedRoute>} />

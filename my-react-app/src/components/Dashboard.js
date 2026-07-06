@@ -28,10 +28,13 @@ function Dashboard() {
   const [dolaresPagadosPorSede, setDolaresPagadosPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [dolaresMesActual, setDolaresMesActual] = useState({ mes: null, anio: null, sedes: [] });
   const [ingresosUniformesMes, setIngresosUniformesMes] = useState(0);
+  const [ingresosMensualidadesMes, setIngresosMensualidadesMes] = useState(0);
+  const [ingresosInscripcionesMes, setIngresosInscripcionesMes] = useState(0);
   const [revisionPorSede, setRevisionPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [resumenLoading, setResumenLoading] = useState(false);
   const [dolaresLoading, setDolaresLoading] = useState(false);
   const [uniformesLoading, setUniformesLoading] = useState(false);
+  const [ingresosMesLoading, setIngresosMesLoading] = useState(false);
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [nuevosAlumnosMes, setNuevosAlumnosMes] = useState(0);
@@ -233,7 +236,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       try {
         const anioActual = new Date().getFullYear();
         const res = await fetchConSesion(
-          `${apiBase}/api/mensualidades/dolares-pagados-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}`
+          `${apiBase}/api/mensualidades/dolares-pagados-por-sede?mes=${mesGraficaSeleccionado}&anio=${anioActual}&tipo=mensualidades`
         );
         const data = await res.json();
         if (res.ok && data && Array.isArray(data.sedes)) {
@@ -256,7 +259,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       try {
         const anioActual = new Date().getFullYear();
         const res = await fetchConSesion(
-          `${apiBase}/api/mensualidades/dolares-pagados-por-sede?mes=${mesActual}&anio=${anioActual}`
+          `${apiBase}/api/mensualidades/dolares-pagados-por-sede?mes=${mesActual}&anio=${anioActual}&tipo=mensualidades`
         );
         const data = await res.json();
         if (res.ok && data && Array.isArray(data.sedes)) {
@@ -293,12 +296,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
             return accPagos + (Number(pago?.monto_pagado) || 0);
           }, 0);
 
-          const esPagoEnRevision = String(pedido?.estado || '').toLowerCase() === 'pago_en_revision';
-          const montoEnRevisionMes = esPagoEnRevision && fechaPerteneceMesAnio(pedido?.fecha_pago, mesGraficaSeleccionado, anioActual)
-            ? (Number(pedido?.monto_ultimo_pago) || 0)
-            : 0;
-
-          return accPedidos + montoHistorialMes + montoEnRevisionMes;
+          return accPedidos + montoHistorialMes;
         }, 0);
 
         setIngresosUniformesMes(totalUniformes);
@@ -310,6 +308,47 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     };
 
     fetchIngresosUniformesMes();
+  }, [apiBase, mesGraficaSeleccionado]);
+
+  useEffect(() => {
+    const fetchIngresosMes = async () => {
+      setIngresosMesLoading(true);
+      try {
+        const anioActual = new Date().getFullYear();
+        const [resMensualidades, resInscripciones] = await Promise.all([
+          fetchConSesion(
+            `${apiBase}/api/mensualidades/ingresos-por-mes?anio=${anioActual}&tipo=mensualidades`
+          ),
+          fetchConSesion(
+            `${apiBase}/api/mensualidades/ingresos-por-mes?anio=${anioActual}&tipo=inscripciones`
+          )
+        ]);
+
+        const dataMensualidades = await resMensualidades.json();
+        const dataInscripciones = await resInscripciones.json();
+
+        if (!resMensualidades.ok || !Array.isArray(dataMensualidades?.meses)) {
+          setIngresosMensualidadesMes(0);
+        } else {
+          const itemMes = dataMensualidades.meses.find((item) => Number(item?.mes) === Number(mesGraficaSeleccionado));
+          setIngresosMensualidadesMes(Number(itemMes?.total_pagado || 0));
+        }
+
+        if (!resInscripciones.ok || !Array.isArray(dataInscripciones?.meses)) {
+          setIngresosInscripcionesMes(0);
+        } else {
+          const itemMes = dataInscripciones.meses.find((item) => Number(item?.mes) === Number(mesGraficaSeleccionado));
+          setIngresosInscripcionesMes(Number(itemMes?.total_pagado || 0));
+        }
+      } catch {
+        setIngresosMensualidadesMes(0);
+        setIngresosInscripcionesMes(0);
+      } finally {
+        setIngresosMesLoading(false);
+      }
+    };
+
+    fetchIngresosMes();
   }, [apiBase, mesGraficaSeleccionado]);
 
   useEffect(() => {
@@ -546,11 +585,9 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     .sort((a, b) => b.enRevision - a.enRevision);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
-  const totalIngresosMensualidadesMes = (dolaresPagadosPorSede.sedes || []).reduce(
-    (acc, sede) => acc + Number(sede.monto_pagado || 0),
-    0
-  );
-  const totalIngresosMes = totalIngresosMensualidadesMes + ingresosUniformesMes;
+  const totalIngresosMensualidadesMes = Number(ingresosMensualidadesMes || 0);
+  const totalIngresosInscripcionesMes = Number(ingresosInscripcionesMes || 0);
+  const totalIngresosMes = totalIngresosMensualidadesMes + totalIngresosInscripcionesMes + ingresosUniformesMes;
   const mesIngresosLabel = mesesAnio.find((mes) => mes.value === mesGraficaSeleccionado)?.label || 'mes';
   const ingresosDonutData = [
     { name: 'Mensualidades', value: totalIngresosMensualidadesMes },
@@ -624,7 +661,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 </div>
               </div>
               <div className="dashboard-kpi-inline-label">Ingresos del mes</div>
-              {dolaresLoading || uniformesLoading ? (
+              {dolaresLoading || uniformesLoading || ingresosMesLoading ? (
                 <div className="dashboard-kpi-inline-loading">Cargando...</div>
               ) : (
                 <>
@@ -656,6 +693,10 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                     <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
                       <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-mensualidades" />
                       Mensualidades: ${formatMoney(totalIngresosMensualidadesMes)}
+                    </div>
+                    <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
+                      <span className="dashboard-kpi-inline-dot" style={{ background: '#10b981' }} />
+                      Inscripciones: ${formatMoney(totalIngresosInscripcionesMes)}
                     </div>
                     <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
                       <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-uniformes" />
@@ -703,8 +744,8 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                 <div className="pagos-sede-title-wrap">
                   <div className="pagos-sede-title-icon">$</div>
                   <div className="pagos-sede-title-block">
-                    <h3>Dólares pagados por sede</h3>
-                    <span className="pagos-sede-subtitle">Comparativa de ingresos por ubicación</span>
+                    <h3>Mensualidades confirmadas por sede</h3>
+                    <span className="pagos-sede-subtitle">Solo mensualidades, con fecha real del pago y estado confirmado</span>
                   </div>
                 </div>
                 <select
