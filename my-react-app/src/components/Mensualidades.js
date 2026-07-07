@@ -54,11 +54,13 @@ const obtenerDiaLimitePersonalizado = (mensualidad) => {
 	return valor;
 };
 
-function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyInsolventes = false }) {
+function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyInsolventes = false, viewMode = 'mensualidades' }) {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
 	const theme = useTheme();
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+	const esVistaInscripciones = String(viewMode || '').toLowerCase() === 'inscripciones';
+	const tipoAjusteSede = esVistaInscripciones ? 'inscripciones' : 'mensualidades';
 	const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
 	const esAdmin = rolActual === 'admin' || rolActual === 'super_admin';
 	const [mensualidades, setMensualidades] = useState([]);
@@ -207,7 +209,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					id_sede: sedeSeleccionada._id,
 					mes: Number(filtroMes),
 					anio,
-					nuevo_monto: nuevoMonto
+					nuevo_monto: nuevoMonto,
+					tipo: tipoAjusteSede
 				})
 			});
 			const data = await res.json();
@@ -219,7 +222,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		} finally {
 			setPreviewAjusteLoading(false);
 		}
-	}, [sedeSeleccionada?._id, filtroMes, ajusteNuevoMonto, ajusteAnio]);
+	}, [sedeSeleccionada?._id, filtroMes, ajusteNuevoMonto, ajusteAnio, tipoAjusteSede]);
 
 	React.useEffect(() => {
 		if (!modalAjusteSede) return;
@@ -259,7 +262,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const cargarMensualidades = React.useCallback(async () => {
 		try {
 			const token = localStorage.getItem('token');
-			let url = `${process.env.REACT_APP_API_URL}/api/mensualidades`;
+			const endpointBase = esVistaInscripciones
+				? `${process.env.REACT_APP_API_URL}/api/mensualidades/inscripciones`
+				: `${process.env.REACT_APP_API_URL}/api/mensualidades`;
+			let url = endpointBase;
 			const params = [];
 			if (sedeSeleccionada && sedeSeleccionada._id) params.push(`id_sede=${sedeSeleccionada._id}`);
 			if (filtroMes) params.push(`mes=${filtroMes}`);
@@ -273,7 +279,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			setMensualidadesBD([]);
 			setMensualidades([]);
 		}
-	}, [sedeSeleccionada, filtroMes]);
+	}, [sedeSeleccionada, filtroMes, esVistaInscripciones]);
 
 	const cargarPagosMensualidad = async (mensualidadId) => {
 		const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${mensualidadId}`, {
@@ -373,6 +379,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	// Filtros
 	React.useEffect(() => {
 		let filtradas = mensualidadesBD;
+		if (esVistaInscripciones) {
+			filtradas = filtradas.filter((m) => Number(m?.monto_inscripcion || m?.monto_reingreso || 0) > 0);
+		}
 		if (filtroMes) filtradas = filtradas.filter(m => m.mes === Number(filtroMes) || m.mes === filtroMes);
 		if (filtroAlumno) {
 			const filtroTexto = String(filtroAlumno || '').toLowerCase().trim();
@@ -402,7 +411,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		});
 
 		setMensualidades(filtradasOrdenadas);
-	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD, onlyInsolventes]);
+	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD, onlyInsolventes, esVistaInscripciones]);
 
 	React.useEffect(() => {
 		if (!onlyInsolventes) return;
@@ -1281,7 +1290,31 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		};
 	};
 
-	const obtenerMontoTablaMensualidad = (mensualidad) => {
+	const obtenerMontoInscripcionVisual = (mensualidad) => {
+		const montoInscripcion = Number(mensualidad?.monto_inscripcion);
+		if (Number.isFinite(montoInscripcion) && montoInscripcion > 0) {
+			return montoInscripcion;
+		}
+
+		const montoReingreso = Number(mensualidad?.monto_reingreso);
+		if (Number.isFinite(montoReingreso) && montoReingreso > 0) {
+			return montoReingreso;
+		}
+
+		return 0;
+	};
+
+	const obtenerMontoMensualidadVisual = (mensualidad) => {
+		const montoPrimeraMensualidad = Number(mensualidad?.monto_primera_mensualidad);
+		if (Number.isFinite(montoPrimeraMensualidad) && montoPrimeraMensualidad >= 0) {
+			return montoPrimeraMensualidad;
+		}
+
+		const montoMensualidadReingreso = Number(mensualidad?.monto_mensualidad_reingreso);
+		if (Number.isFinite(montoMensualidadReingreso) && montoMensualidadReingreso >= 0) {
+			return montoMensualidadReingreso;
+		}
+
 		const montoConRecargo = mensualidad?.monto_con_recargo_usd;
 		const aplicaRecargo = mensualidad?.aplica_recargo === true || Number(mensualidad?.recargo_aplicado_usd) > 0;
 		if (
@@ -1298,17 +1331,18 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			return Number(montoEsperado);
 		}
 
-		const montoPrimeraMensualidad = mensualidad?.monto_primera_mensualidad;
-		if (
-			montoPrimeraMensualidad !== undefined &&
-			montoPrimeraMensualidad !== null &&
-			!Number.isNaN(Number(montoPrimeraMensualidad))
-		) {
-			return Number(montoPrimeraMensualidad);
-		}
-
 		return 0;
 	};
+
+	const obtenerMontoTablaMensualidad = (mensualidad) => (
+		esVistaInscripciones
+			? obtenerMontoInscripcionVisual(mensualidad)
+			: obtenerMontoMensualidadVisual(mensualidad)
+	);
+
+	const esPagoMixtoMensualidad = (mensualidad) => (
+		obtenerMontoInscripcionVisual(mensualidad) > 0 && obtenerMontoMensualidadVisual(mensualidad) > 0
+	);
 
 	const renderEstatusChip = (estatusRaw) => {
 		const estado = (estatusRaw || '').toLowerCase();
@@ -1617,7 +1651,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					mes: Number(filtroMes),
 					anio,
 					nuevo_monto: nuevoMonto,
-					descripcion: ajusteDescripcion.trim()
+					descripcion: ajusteDescripcion.trim(),
+					tipo: tipoAjusteSede
 				})
 			});
 			const data = await res.json();
@@ -1645,7 +1680,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const mensualidadesPaginadas = mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina);
+	const tituloVerDetalle = esVistaInscripciones ? 'Ver detalle mixto' : 'Ver detalle';
 	const desgloseRecargoDetalle = obtenerDesgloseRecargo(mensualidadDetalle);
+	const detalleEsMixto = esPagoMixtoMensualidad(mensualidadDetalle);
 	const historialNotasDetalle = (Array.isArray(mensualidadDetalle?.historial_ediciones)
 		? mensualidadDetalle.historial_ediciones
 		: [])
@@ -1862,26 +1899,26 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 								</Box>
 								<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
-									<Tooltip title="Ver detalle">
+									<Tooltip title={tituloVerDetalle}>
 										<IconButton onClick={(e) => { e.stopPropagation(); handleVerDetalle(m); }} sx={actionIconButtonSx}>
 											<VisibilityIcon fontSize="small" />
 										</IconButton>
 									</Tooltip>
-									{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
+									{!esVistaInscripciones && esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
 										<Tooltip title="Editar mensualidad">
 											<IconButton onClick={(e) => { e.stopPropagation(); abrirModalEditarMensualidad(m); }} sx={actionIconButtonSx}>
 												<EditIcon fontSize="small" />
 											</IconButton>
 										</Tooltip>
 									)}
-									{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+									{!esVistaInscripciones && ['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 										<Tooltip title="Registrar pago">
 											<IconButton onClick={(e) => { e.stopPropagation(); handlePago(m); }} sx={actionIconButtonSx}>
 												<PaidIcon fontSize="small" />
 											</IconButton>
 										</Tooltip>
 									)}
-									{esAdmin && !esMensualidadDeBecado(m) && (
+									{!esVistaInscripciones && esAdmin && !esMensualidadDeBecado(m) && (
 										<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
 											<span>
 												<IconButton
@@ -1894,7 +1931,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											</span>
 										</Tooltip>
 									)}
-									{esAdmin && (
+									{!esVistaInscripciones && esAdmin && (
 										<Tooltip title="Eliminar mensualidad">
 											<IconButton
 													onClick={(e) => { e.stopPropagation(); solicitarEliminarMensualidad(m); }}
@@ -1999,26 +2036,26 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
 										<TableCell>
 											<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
-												<Tooltip title="Ver detalle">
+												<Tooltip title={tituloVerDetalle}>
 													<IconButton size="small" onClick={(e) => { e.stopPropagation(); handleVerDetalle(m); }} sx={actionIconButtonSx}>
 														<VisibilityIcon fontSize="small" />
 													</IconButton>
 												</Tooltip>
-												{esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
+												{!esVistaInscripciones && esAdmin && !esMensualidadDeBecado(m) && esMensualidadEditable(m) && (
 													<Tooltip title="Editar mensualidad">
 														<IconButton size="small" onClick={(e) => { e.stopPropagation(); abrirModalEditarMensualidad(m); }} sx={actionIconButtonSx}>
 															<EditIcon fontSize="small" />
 														</IconButton>
 													</Tooltip>
 												)}
-												{['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+												{!esVistaInscripciones && ['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
 													<Tooltip title="Registrar pago">
 														<IconButton size="small" onClick={(e) => { e.stopPropagation(); handlePago(m); }} sx={actionIconButtonSx}>
 															<PaidIcon fontSize="small" />
 														</IconButton>
 													</Tooltip>
 												)}
-												{esAdmin && !esMensualidadDeBecado(m) && (
+												{!esVistaInscripciones && esAdmin && !esMensualidadDeBecado(m) && (
 													<Tooltip title={adelantandoAlumnoId === String(m.id_alumno?._id || m.id_alumno) ? 'Creando mensualidad' : 'Adelantar proximo mes'}>
 														<span>
 															<IconButton
@@ -2032,7 +2069,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 														</span>
 													</Tooltip>
 												)}
-												{esAdmin && (
+												{!esVistaInscripciones && esAdmin && (
 													<Tooltip title="Eliminar mensualidad">
 														<IconButton
 															size="small"
@@ -2089,7 +2126,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				<DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 17, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
 						<Typography sx={{ fontWeight: 800, fontSize: 17, color: '#0b2a57' }}>
-							Detalle del Pago -
+							{esVistaInscripciones ? 'Detalle mixto del pago -' : 'Detalle del pago -'}
 						</Typography>
 						{mensualidadDetalle?.id_alumno && (
 							<Typography sx={{ color: '#516b94', fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: { xs: 160, sm: 260 } }}>
@@ -2171,6 +2208,11 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											}
 										}}
 									>
+											{	detalleEsMixto && (
+												<Alert severity="info" sx={{ mt: 1.75, mb: 1.4 }}>
+													Este es un pago mixto: se registra en una sola transacción que combina mensualidad e inscripción. Es decir, es un pago de mensualidad que incluye inscripción y viceversa.
+												</Alert>
+											)}
 										<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, columnGap: 4.5, rowGap: 2.25, pt: 1.75 }}>
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Metodo de pago</Typography>

@@ -334,6 +334,53 @@ function normalizarEstatusKey(estatus) {
     .trim();
 }
 
+function esEstatusIngresoConfirmado(estatus) {
+  const normalizado = normalizarEstatusKey(estatus);
+  return normalizado === 'pagado' || normalizado === 'abono';
+}
+
+function obtenerComponentesMensualidad(mensualidad = {}) {
+  const montoInscripcion = Number(mensualidad?.monto_inscripcion);
+  const montoReingreso = Number(mensualidad?.monto_reingreso);
+  const montoPrimeraMensualidad = Number(mensualidad?.monto_primera_mensualidad);
+  const montoMensualidadReingreso = Number(mensualidad?.monto_mensualidad_reingreso);
+  const montoEsperado = Number(mensualidad?.monto_esperado);
+
+  const componenteInscripcion = Number.isFinite(montoInscripcion) && montoInscripcion > 0
+    ? redondearMonto(montoInscripcion)
+    : (Number.isFinite(montoReingreso) && montoReingreso > 0 ? redondearMonto(montoReingreso) : 0);
+
+  let componenteMensualidad = 0;
+  if (Number.isFinite(montoPrimeraMensualidad) && montoPrimeraMensualidad >= 0) {
+    componenteMensualidad = redondearMonto(montoPrimeraMensualidad);
+  } else if (Number.isFinite(montoMensualidadReingreso) && montoMensualidadReingreso >= 0) {
+    componenteMensualidad = redondearMonto(montoMensualidadReingreso);
+  } else if (Number.isFinite(montoEsperado) && montoEsperado >= 0) {
+    componenteMensualidad = redondearMonto(montoEsperado);
+  }
+
+  const esMixto = componenteInscripcion > 0 && componenteMensualidad > 0;
+
+  return {
+    componenteInscripcion,
+    componenteMensualidad,
+    esMixto
+  };
+}
+
+function distribuirPagoPorConcepto(totalPagado, componentes = {}) {
+  const total = redondearMonto(totalPagado || 0);
+  const componenteInscripcion = redondearMonto(componentes.componenteInscripcion || 0);
+  const pagadoInscripcion = redondearMonto(Math.min(total, Math.max(0, componenteInscripcion)));
+  const pagadoMensualidad = redondearMonto(Math.max(0, total - pagadoInscripcion));
+
+  return {
+    pagadoInscripcion,
+    pagadoMensualidad,
+    pagadoTotal: total
+  };
+}
+
 function esTipoMensualidadBecaCompleta(tipoMensualidad) {
   return String(tipoMensualidad || '').toLowerCase() === 'beca_completa';
 }
@@ -965,31 +1012,43 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
   };
 }
 
-async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, models = {}) {
+async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero, tipo = 'mensualidades' }, models = {}) {
   const {
     Alumno: AlumnoModel,
     Mensualidad: MensualidadModel
   } = resolveMensualidadModels(models);
 
-  const alumnos = await AlumnoModel.find({
+  const filtroAlumnos = {
     sede: id_sede,
     activo: { $ne: false },
-    dado_de_baja: { $ne: true },
-    $or: [
+    dado_de_baja: { $ne: true }
+  };
+
+  if (tipo !== 'inscripciones') {
+    filtroAlumnos.$or = [
       { tipo_mensualidad: 'monto_sede' },
       { tipo_mensualidad: { $exists: false } }
-    ]
-  }).select('_id nombres apellidos cedula saldo_a_favor_mensualidades');
+    ];
+  }
+
+  const alumnos = await AlumnoModel.find(filtroAlumnos).select('_id nombres apellidos cedula saldo_a_favor_mensualidades');
 
   if (alumnos.length === 0) {
     return { alumnos: [], mensualidades: [] };
   }
 
-  const mensualidades = await MensualidadModel.find({
+  const mensualidadesBase = await MensualidadModel.find({
     id_alumno: { $in: alumnos.map((alumno) => alumno._id) },
     mes: mesNumero,
     anio: anioNumero
   });
+
+  const mensualidades = tipo === 'inscripciones'
+    ? mensualidadesBase.filter((mensualidad) => {
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      return Number(componentes?.componenteInscripcion || 0) > 0;
+    })
+    : mensualidadesBase;
 
   return { alumnos, mensualidades };
 }
@@ -1448,7 +1507,7 @@ exports.aplicarRecargoMensualidadSegunConfig = aplicarRecargoMensualidadSegunCon
 exports.previewAjusteExtraordinarioSede = async (req, res) => {
   try {
     const tenantModels = await getTenantMensualidadModels(req);
-    const { id_sede, mes, anio, nuevo_monto } = req.body;
+    const { id_sede, mes, anio, nuevo_monto, tipo } = req.body;
 
     if (!id_sede || !mes || !anio || nuevo_monto === undefined || nuevo_monto === null || nuevo_monto === '') {
       return res.status(400).json({ error: 'id_sede, mes, anio y nuevo_monto son requeridos' });
@@ -1457,6 +1516,7 @@ exports.previewAjusteExtraordinarioSede = async (req, res) => {
     const mesNumero = Number(mes);
     const anioNumero = Number(anio);
     const nuevoMonto = redondearMonto(nuevo_monto);
+    const tipoAjuste = String(tipo || 'mensualidades').toLowerCase();
 
     if (!Number.isInteger(mesNumero) || mesNumero < 1 || mesNumero > 12) {
       return res.status(400).json({ error: 'Mes inválido' });
@@ -1470,14 +1530,26 @@ exports.previewAjusteExtraordinarioSede = async (req, res) => {
       return res.status(400).json({ error: 'El nuevo monto no puede ser negativo' });
     }
 
-    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, tenantModels);
+    if (!['mensualidades', 'inscripciones'].includes(tipoAjuste)) {
+      return res.status(400).json({ error: 'Tipo de ajuste inválido. Usa mensualidades o inscripciones.' });
+    }
+
+    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero, tipo: tipoAjuste }, tenantModels);
 
     if (alumnos.length === 0) {
-      return res.status(404).json({ error: 'No hay alumnos activos con monto por sede en esta sede' });
+      return res.status(404).json({
+        error: tipoAjuste === 'inscripciones'
+          ? 'No hay alumnos activos en esta sede'
+          : 'No hay alumnos activos con monto por sede en esta sede'
+      });
     }
 
     if (mensualidades.length === 0) {
-      return res.status(404).json({ error: 'No hay mensualidades generadas para esa sede en el periodo indicado' });
+      return res.status(404).json({
+        error: tipoAjuste === 'inscripciones'
+          ? 'No hay inscripciones generadas para esa sede en el periodo indicado'
+          : 'No hay mensualidades generadas para esa sede en el periodo indicado'
+      });
     }
 
     const preview = generarVistaPreviaAjusteSede(mensualidades, nuevoMonto);
@@ -1488,7 +1560,8 @@ exports.previewAjusteExtraordinarioSede = async (req, res) => {
       ...preview,
       nuevo_monto: nuevoMonto,
       mes: mesNumero,
-      anio: anioNumero
+      anio: anioNumero,
+      tipo: tipoAjuste
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -1498,7 +1571,7 @@ exports.previewAjusteExtraordinarioSede = async (req, res) => {
 exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
   try {
     const tenantModels = await getTenantMensualidadModels(req);
-    const { id_sede, mes, anio, nuevo_monto, descripcion } = req.body;
+    const { id_sede, mes, anio, nuevo_monto, descripcion, tipo } = req.body;
 
     if (!id_sede || !mes || !anio || nuevo_monto === undefined || nuevo_monto === null || nuevo_monto === '') {
       return res.status(400).json({ error: 'id_sede, mes, anio y nuevo_monto son requeridos' });
@@ -1507,6 +1580,7 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
     const mesNumero = Number(mes);
     const anioNumero = Number(anio);
     const nuevoMonto = redondearMonto(nuevo_monto);
+    const tipoAjuste = String(tipo || 'mensualidades').toLowerCase();
 
     if (!Number.isInteger(mesNumero) || mesNumero < 1 || mesNumero > 12) {
       return res.status(400).json({ error: 'Mes inválido' });
@@ -1520,16 +1594,28 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       return res.status(400).json({ error: 'El nuevo monto no puede ser negativo' });
     }
 
-    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero }, tenantModels);
+    if (!['mensualidades', 'inscripciones'].includes(tipoAjuste)) {
+      return res.status(400).json({ error: 'Tipo de ajuste inválido. Usa mensualidades o inscripciones.' });
+    }
+
+    const { alumnos, mensualidades } = await obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero, tipo: tipoAjuste }, tenantModels);
 
     if (alumnos.length === 0) {
-      return res.status(404).json({ error: 'No hay alumnos activos con monto por sede en esta sede' });
+      return res.status(404).json({
+        error: tipoAjuste === 'inscripciones'
+          ? 'No hay alumnos activos en esta sede'
+          : 'No hay alumnos activos con monto por sede en esta sede'
+      });
     }
 
     const alumnoMap = new Map(alumnos.map((alumno) => [String(alumno._id), alumno]));
 
     if (mensualidades.length === 0) {
-      return res.status(404).json({ error: 'No hay mensualidades generadas para esa sede en el periodo indicado' });
+      return res.status(404).json({
+        error: tipoAjuste === 'inscripciones'
+          ? 'No hay inscripciones generadas para esa sede en el periodo indicado'
+          : 'No hay mensualidades generadas para esa sede en el periodo indicado'
+      });
     }
 
     const preview = generarVistaPreviaAjusteSede(mensualidades, nuevoMonto);
@@ -1620,6 +1706,7 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       nuevo_monto: nuevoMonto,
       mes: mesNumero,
       anio: anioNumero,
+      tipo: tipoAjuste,
       resumen_ajuste: {
         procesadas_total: mensualidades.length,
         correctas: actualizadas,
@@ -1736,10 +1823,14 @@ exports.getMensualidades = async (req, res) => {
       const raw = m.toObject ? m.toObject() : m;
       const totalPagado = totalPagadoMap.get(String(raw._id)) || 0;
       const saldoPendiente = redondearMonto(Math.max(0, (Number(raw.monto_esperado) || 0) - totalPagado));
+      const componentes = obtenerComponentesMensualidad(raw);
 
       raw.total_pagado = totalPagado;
       raw.saldo_pendiente = saldoPendiente;
       raw.monto_total = redondearMonto(raw.monto_esperado || 0);
+      raw.monto_mensualidad_visual = componentes.componenteMensualidad;
+      raw.monto_inscripcion_visual = componentes.componenteInscripcion;
+      raw.es_pago_mixto = componentes.esMixto;
 
       if (esEstatusInsolvente(raw.estatus)) {
         raw.estatus = 'Insolvente';
@@ -1750,6 +1841,121 @@ exports.getMensualidades = async (req, res) => {
     res.json(mensualidadesCompat);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getInscripciones = async (req, res) => {
+  try {
+    const {
+      Representante: TenantRepresentante,
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle
+    } = await getTenantMensualidadModels(req);
+
+    const filtro = {};
+    let ownedAlumnoIds = null;
+
+    if (req.user?.rol === 'usuario') {
+      const representantes = await TenantRepresentante.find({ usuario: req.user.id }).select('_id');
+      const representanteIds = representantes.map((r) => r._id);
+      const filtroPropio = [{ usuario: req.user.id }];
+      if (representanteIds.length > 0) {
+        filtroPropio.push({ representante: { $in: representanteIds } });
+      }
+
+      const alumnosPropios = await TenantAlumno.find({ $or: filtroPropio }).select('_id');
+      ownedAlumnoIds = alumnosPropios.map((a) => String(a._id));
+      if (ownedAlumnoIds.length === 0) {
+        return res.json([]);
+      }
+    }
+
+    if (req.query.id_alumno) filtro.id_alumno = req.query.id_alumno;
+    if (req.query.mes) filtro.mes = Number(req.query.mes);
+    if (req.query.anio) filtro.anio = Number(req.query.anio);
+    if (req.query.id_sede) {
+      let idSede;
+      try {
+        idSede = new mongoose.Types.ObjectId(req.query.id_sede);
+      } catch (_) {
+        return res.status(400).json({ error: 'id_sede inválido' });
+      }
+      const alumnos = await TenantAlumno.find({ sede: idSede });
+      filtro.id_alumno = { $in: alumnos.map((a) => a._id) };
+    }
+
+    if (ownedAlumnoIds) {
+      if (!filtro.id_alumno) {
+        filtro.id_alumno = { $in: ownedAlumnoIds };
+      } else if (typeof filtro.id_alumno === 'string') {
+        if (!ownedAlumnoIds.includes(String(filtro.id_alumno))) {
+          return res.json([]);
+        }
+      } else if (filtro.id_alumno.$in) {
+        const permitidos = filtro.id_alumno.$in
+          .map((id) => String(id))
+          .filter((id) => ownedAlumnoIds.includes(id));
+
+        if (permitidos.length === 0) {
+          return res.json([]);
+        }
+        filtro.id_alumno = { $in: permitidos };
+      }
+    }
+
+    const mensualidades = await TenantMensualidad.find(filtro).populate({
+      path: 'id_alumno',
+      populate: {
+        path: 'representante',
+        select: 'nombres apellidos'
+      }
+    });
+
+    const mensualidadIds = mensualidades.map((m) => m._id);
+    const pagosPorMensualidad = mensualidadIds.length > 0
+      ? await TenantPagoDetalle.aggregate([
+          { $match: { id_mensualidad: { $in: mensualidadIds } } },
+          {
+            $group: {
+              _id: '$id_mensualidad',
+              total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } }
+            }
+          }
+        ])
+      : [];
+
+    const totalPagadoMap = new Map(
+      pagosPorMensualidad.map((item) => [String(item._id), redondearMonto(item.total_pagado)])
+    );
+
+    const inscripciones = mensualidades
+      .map((m) => {
+        const raw = m.toObject ? m.toObject() : m;
+        const totalPagado = totalPagadoMap.get(String(raw._id)) || 0;
+        const componentes = obtenerComponentesMensualidad(raw);
+        const reparto = distribuirPagoPorConcepto(totalPagado, componentes);
+
+        raw.total_pagado = totalPagado;
+        raw.total_pagado_inscripcion = reparto.pagadoInscripcion;
+        raw.total_pagado_mensualidad = reparto.pagadoMensualidad;
+        raw.monto_mensualidad_visual = componentes.componenteMensualidad;
+        raw.monto_inscripcion_visual = componentes.componenteInscripcion;
+        raw.es_pago_mixto = componentes.esMixto;
+        raw.monto_total = redondearMonto(raw.monto_esperado || 0);
+        raw.saldo_pendiente = redondearMonto(Math.max(0, (Number(raw.monto_esperado) || 0) - totalPagado));
+
+        if (esEstatusInsolvente(raw.estatus)) {
+          raw.estatus = 'Insolvente';
+        }
+
+        return raw;
+      })
+      .filter((m) => Number(m.monto_inscripcion_visual || 0) > 0);
+
+    return res.json(inscripciones);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 };
 
@@ -2026,10 +2232,16 @@ exports.getResumenMensualidadesPorSede = async (req, res) => {
 // Dolares pagados por sede para el mes/anio seleccionado
 exports.getDolaresPagadosPorSede = async (req, res) => {
   try {
-    const { Mensualidad: TenantMensualidad } = await getTenantMensualidadModels(req);
+    const {
+      PagoDetalle: TenantPagoDetalle,
+      Mensualidad: TenantMensualidad,
+      Alumno: TenantAlumno,
+      Sede: TenantSede
+    } = await getTenantMensualidadModels(req);
     const hoy = new Date();
     const mes = req.query.mes ? Number(req.query.mes) : hoy.getMonth() + 1;
     const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
+    const tipo = String(req.query.tipo || 'mensualidades').trim().toLowerCase();
 
     if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
       return res.status(400).json({ error: 'Mes inválido' });
@@ -2037,82 +2249,150 @@ exports.getDolaresPagadosPorSede = async (req, res) => {
     if (!Number.isInteger(anio) || anio < 2000) {
       return res.status(400).json({ error: 'Año inválido' });
     }
+    if (!['total', 'mensualidades', 'inscripciones'].includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo inválido. Usa total, mensualidades o inscripciones.' });
+    }
 
-    const pipeline = [
-      buildPeriodoMatchStage(mes, anio),
-      {
-        $lookup: {
-          from: 'alumnos',
-          localField: 'id_alumno',
-          foreignField: '_id',
-          as: 'alumno'
-        }
-      },
-      { $unwind: '$alumno' },
-      {
-        $lookup: {
-          from: 'sedes',
-          localField: 'alumno.sede',
-          foreignField: '_id',
-          as: 'sede'
-        }
-      },
-      { $unwind: { path: '$sede', preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: 'pagodetalles',
-          let: { mensualidadId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ['$id_mensualidad', '$$mensualidadId'] }
-              }
-            },
-            {
-              $group: {
-                _id: null,
-                total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } }
-              }
-            }
-          ],
-          as: 'pagos'
-        }
-      },
-      {
-        $addFields: {
-          total_pagado_mensualidad: {
-            $ifNull: [{ $arrayElemAt: ['$pagos.total_pagado', 0] }, 0]
-          }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            sedeId: '$sede._id',
-            sedeNombre: '$sede.nombre'
-          },
-          monto_pagado: { $sum: '$total_pagado_mensualidad' }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          sedeId: '$_id.sedeId',
-          sedeNombre: { $ifNull: ['$_id.sedeNombre', 'Sin sede'] },
-          monto_pagado: 1
-        }
-      },
-      { $sort: { sedeNombre: 1 } }
-    ];
+    const inicioMes = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
+    const finMes = new Date(Date.UTC(anio, mes, 1, 0, 0, 0, 0));
 
-    const data = await TenantMensualidad.aggregate(pipeline);
-    const sedes = data.map((item) => ({
-      sedeId: item.sedeId,
-      sedeNombre: item.sedeNombre,
-      monto_pagado: redondearMonto(item.monto_pagado)
-    }));
+    const pagos = await TenantPagoDetalle.find({
+      $or: [
+        { fecha_pago: { $gte: inicioMes, $lt: finMes } },
+        {
+          fecha_pago: { $in: [null, undefined] },
+          createdAt: { $gte: inicioMes, $lt: finMes }
+        }
+      ]
+    })
+      .select('id_mensualidad monto_pagado fecha_pago createdAt')
+      .lean();
 
-    return res.json({ mes, anio, sedes });
+    const mensualidadIdsPagos = Array.from(
+      new Set(pagos.map((pago) => String(pago.id_mensualidad || '')).filter(Boolean))
+    );
+
+    const mensualidadesPagos = mensualidadIdsPagos.length > 0
+      ? await TenantMensualidad.find({ _id: { $in: mensualidadIdsPagos } })
+        .select('_id id_alumno estatus monto_esperado monto_inscripcion monto_reingreso monto_primera_mensualidad monto_mensualidad_reingreso')
+        .lean()
+      : [];
+
+    const mensualidadMap = new Map(
+      mensualidadesPagos.map((mensualidad) => [String(mensualidad._id), mensualidad])
+    );
+
+    const alumnoIdsPagos = Array.from(
+      new Set(mensualidadesPagos.map((item) => String(item.id_alumno || '')).filter(Boolean))
+    );
+
+    let alumnoToSede = new Map();
+    if (alumnoIdsPagos.length > 0) {
+      const alumnos = await TenantAlumno
+        .find({ _id: { $in: alumnoIdsPagos } })
+        .select('_id sede')
+        .lean();
+      alumnoToSede = new Map(alumnos.map((alumno) => [String(alumno._id), String(alumno.sede || '')]));
+    }
+
+    const pagosOrdenados = pagos
+      .map((pago) => {
+        const fechaReferencia = pago?.fecha_pago ? new Date(pago.fecha_pago) : new Date(pago.createdAt || 0);
+        return { ...pago, __fechaReferencia: fechaReferencia };
+      })
+      .filter((pago) => !Number.isNaN(pago.__fechaReferencia?.getTime?.()))
+      .sort((a, b) => a.__fechaReferencia.getTime() - b.__fechaReferencia.getTime());
+
+    const acumuladoSede = new Map();
+    const idsMensualidadesConPago = new Set();
+    const saldoInscripcionPorMensualidad = new Map();
+
+    for (const pago of pagosOrdenados) {
+      const mensualidadId = String(pago.id_mensualidad || '');
+      const mensualidad = mensualidadMap.get(mensualidadId);
+      if (!mensualidad) continue;
+      if (!esEstatusIngresoConfirmado(mensualidad.estatus)) continue;
+
+      const sedeId = alumnoToSede.get(String(mensualidad.id_alumno || '')) || '';
+      const montoPagado = redondearMonto(Number(pago?.monto_pagado) || 0);
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      const saldoInscripcionActual = saldoInscripcionPorMensualidad.has(mensualidadId)
+        ? Number(saldoInscripcionPorMensualidad.get(mensualidadId) || 0)
+        : Number(componentes.componenteInscripcion || 0);
+      const montoInscripcionPago = redondearMonto(Math.min(montoPagado, Math.max(0, saldoInscripcionActual)));
+      const montoMensualidadPago = redondearMonto(Math.max(0, montoPagado - montoInscripcionPago));
+
+      saldoInscripcionPorMensualidad.set(
+        mensualidadId,
+        redondearMonto(Math.max(0, saldoInscripcionActual - montoInscripcionPago))
+      );
+
+      const valor = tipo === 'inscripciones'
+        ? montoInscripcionPago
+        : (tipo === 'total' ? montoPagado : montoMensualidadPago);
+
+      const previo = acumuladoSede.get(sedeId) || 0;
+      acumuladoSede.set(sedeId, redondearMonto(previo + valor));
+      idsMensualidadesConPago.add(mensualidadId);
+    }
+
+    const mensualidadesLegacy = await TenantMensualidad.find({
+      fecha_pago: { $gte: inicioMes, $lt: finMes }
+    })
+      .select('_id id_alumno estatus fecha_pago monto_esperado monto_inscripcion monto_reingreso monto_primera_mensualidad monto_mensualidad_reingreso')
+      .lean();
+
+    const alumnoIdsLegacy = Array.from(
+      new Set(mensualidadesLegacy.map((item) => String(item.id_alumno || '')).filter(Boolean))
+    );
+
+    if (alumnoIdsLegacy.length > 0) {
+      const alumnosLegacy = await TenantAlumno
+        .find({ _id: { $in: alumnoIdsLegacy } })
+        .select('_id sede')
+        .lean();
+      for (const alumno of alumnosLegacy) {
+        if (!alumnoToSede.has(String(alumno._id))) {
+          alumnoToSede.set(String(alumno._id), String(alumno.sede || ''));
+        }
+      }
+    }
+
+    for (const mensualidad of mensualidadesLegacy) {
+      const mensualidadId = String(mensualidad._id || '');
+      if (idsMensualidadesConPago.has(mensualidadId)) continue;
+      if (!esEstatusIngresoConfirmado(mensualidad.estatus)) continue;
+
+      const sedeId = alumnoToSede.get(String(mensualidad.id_alumno || '')) || '';
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      const totalComponentes = redondearMonto(componentes.componenteInscripcion + componentes.componenteMensualidad);
+      const totalLegacy = totalComponentes > 0
+        ? totalComponentes
+        : redondearMonto(Number(mensualidad?.monto_esperado) || 0);
+
+      const valor = tipo === 'inscripciones'
+        ? componentes.componenteInscripcion
+        : (tipo === 'total' ? totalLegacy : componentes.componenteMensualidad);
+
+      const previo = acumuladoSede.get(sedeId) || 0;
+      acumuladoSede.set(sedeId, redondearMonto(previo + valor));
+    }
+
+    const sedeIds = [...acumuladoSede.keys()].filter(Boolean);
+    const sedesDocs = sedeIds.length > 0
+      ? await TenantSede.find({ _id: { $in: sedeIds } }).select('_id nombre').lean()
+      : [];
+    const nombreSedeMap = new Map(sedesDocs.map((sede) => [String(sede._id), sede.nombre || 'Sin sede']));
+
+    const sedes = [...acumuladoSede.entries()]
+      .map(([sedeId, monto]) => ({
+        sedeId: sedeId || null,
+        sedeNombre: nombreSedeMap.get(sedeId) || 'Sin sede',
+        monto_pagado: redondearMonto(monto)
+      }))
+      .sort((a, b) => String(a.sedeNombre || '').localeCompare(String(b.sedeNombre || ''), 'es', { sensitivity: 'base' }));
+
+    return res.json({ mes, anio, tipo, sedes });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -2123,13 +2403,19 @@ exports.getIngresosPorMes = async (req, res) => {
   try {
     const {
       PagoDetalle: TenantPagoDetalle,
-      Mensualidad: TenantMensualidad
+      Mensualidad: TenantMensualidad,
+      Alumno: TenantAlumno
     } = await getTenantMensualidadModels(req);
     const hoy = new Date();
     const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
+    const tipo = String(req.query.tipo || 'total').trim().toLowerCase();
 
     if (!Number.isInteger(anio) || anio < 2000) {
       return res.status(400).json({ error: 'Año inválido' });
+    }
+
+    if (!['total', 'mensualidades', 'inscripciones'].includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo inválido. Usa total, mensualidades o inscripciones.' });
     }
 
     const idSede = String(req.query.id_sede || '').trim();
@@ -2140,142 +2426,151 @@ exports.getIngresosPorMes = async (req, res) => {
     const inicioAnio = new Date(Date.UTC(anio, 0, 1, 0, 0, 0, 0));
     const finAnio = new Date(Date.UTC(anio + 1, 0, 1, 0, 0, 0, 0));
 
-    const pipeline = [
-      {
-        $addFields: {
-          fecha_referencia: { $ifNull: ['$fecha_pago', '$createdAt'] }
+    const pagos = await TenantPagoDetalle.find({
+      $or: [
+        { fecha_pago: { $gte: inicioAnio, $lt: finAnio } },
+        {
+          fecha_pago: { $in: [null, undefined] },
+          createdAt: { $gte: inicioAnio, $lt: finAnio }
         }
-      },
-      {
-        $match: {
-          fecha_referencia: { $gte: inicioAnio, $lt: finAnio }
-        }
-      }
-    ];
+      ]
+    })
+      .select('id_mensualidad monto_pagado fecha_pago createdAt')
+      .lean();
 
-    if (idSede && idSede !== 'all') {
-      pipeline.push(
-        {
-          $lookup: {
-            from: 'mensualidades',
-            localField: 'id_mensualidad',
-            foreignField: '_id',
-            as: 'mensualidad'
-          }
-        },
-        { $unwind: { path: '$mensualidad', preserveNullAndEmptyArrays: false } },
-        {
-          $lookup: {
-            from: 'alumnos',
-            localField: 'mensualidad.id_alumno',
-            foreignField: '_id',
-            as: 'alumno'
-          }
-        },
-        { $unwind: { path: '$alumno', preserveNullAndEmptyArrays: false } },
-        { $match: { 'alumno.sede': new mongoose.Types.ObjectId(idSede) } }
-      );
+    const mensualidadIdsPagos = Array.from(
+      new Set(pagos.map((pago) => String(pago.id_mensualidad || '')).filter(Boolean))
+    );
+
+    const mensualidadesPagos = mensualidadIdsPagos.length > 0
+      ? await TenantMensualidad.find({ _id: { $in: mensualidadIdsPagos } })
+        .select('_id id_alumno estatus monto_esperado monto_inscripcion monto_reingreso monto_primera_mensualidad monto_mensualidad_reingreso')
+        .lean()
+      : [];
+
+    const mensualidadMap = new Map(
+      mensualidadesPagos.map((mensualidad) => [String(mensualidad._id), mensualidad])
+    );
+
+    let alumnoIds = Array.from(
+      new Set(mensualidadesPagos.map((item) => String(item.id_alumno || '')).filter(Boolean))
+    );
+
+    let alumnosMap = new Map();
+    if (alumnoIds.length > 0) {
+      const alumnos = await TenantAlumno
+        .find({ _id: { $in: alumnoIds } })
+        .select('_id sede')
+        .lean();
+      alumnosMap = new Map(alumnos.map((alumno) => [String(alumno._id), String(alumno.sede || '')]));
     }
 
-    pipeline.push({
-      $group: {
-        _id: { $month: '$fecha_referencia' },
-        total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } }
-      }
-    });
-    pipeline.push({ $sort: { _id: 1 } });
+    const sedeFiltro = idSede && idSede !== 'all' ? String(idSede) : null;
+    const acumuladoMes = new Map();
+    const idsMensualidadesConPago = new Set();
+    const saldoInscripcionPorMensualidad = new Map();
 
-    const data = await TenantPagoDetalle.aggregate(pipeline);
-    const dataPagosMap = new Map(
-      data.map((item) => [Number(item._id), redondearMonto(item.total_pagado)])
-    );
+    const pagosOrdenados = pagos
+      .map((pago) => {
+        const fechaReferencia = pago?.fecha_pago ? new Date(pago.fecha_pago) : new Date(pago.createdAt || 0);
+        return {
+          ...pago,
+          __fechaReferencia: fechaReferencia
+        };
+      })
+      .filter((pago) => !Number.isNaN(pago.__fechaReferencia?.getTime?.()))
+      .sort((a, b) => a.__fechaReferencia.getTime() - b.__fechaReferencia.getTime());
 
-    const pipelineLegacy = [
-      {
-        $match: {
-          fecha_pago: { $gte: inicioAnio, $lt: finAnio }
-        }
-      }
-    ];
+    for (const pago of pagosOrdenados) {
+      const mensualidadId = String(pago.id_mensualidad || '');
+      const mensualidad = mensualidadMap.get(mensualidadId);
+      if (!mensualidad) continue;
+      if (!esEstatusIngresoConfirmado(mensualidad.estatus)) continue;
 
-    if (idSede && idSede !== 'all') {
-      pipelineLegacy.push(
-        {
-          $lookup: {
-            from: 'alumnos',
-            localField: 'id_alumno',
-            foreignField: '_id',
-            as: 'alumno'
-          }
-        },
-        { $unwind: { path: '$alumno', preserveNullAndEmptyArrays: false } },
-        { $match: { 'alumno.sede': new mongoose.Types.ObjectId(idSede) } }
+      const alumnoId = String(mensualidad.id_alumno || '');
+      const sedeAlumno = alumnosMap.get(alumnoId) || '';
+      if (sedeFiltro && sedeAlumno !== sedeFiltro) continue;
+
+      const fechaReferencia = pago.__fechaReferencia;
+      const mes = fechaReferencia.getUTCMonth() + 1;
+      if (mes < 1 || mes > 12) continue;
+
+      const montoPagado = redondearMonto(Number(pago?.monto_pagado) || 0);
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      const saldoInscripcionActual = saldoInscripcionPorMensualidad.has(mensualidadId)
+        ? Number(saldoInscripcionPorMensualidad.get(mensualidadId) || 0)
+        : Number(componentes.componenteInscripcion || 0);
+      const montoInscripcionPago = redondearMonto(Math.min(montoPagado, Math.max(0, saldoInscripcionActual)));
+      const montoMensualidadPago = redondearMonto(Math.max(0, montoPagado - montoInscripcionPago));
+      saldoInscripcionPorMensualidad.set(
+        mensualidadId,
+        redondearMonto(Math.max(0, saldoInscripcionActual - montoInscripcionPago))
       );
+
+      const monto = tipo === 'mensualidades'
+        ? montoMensualidadPago
+        : (tipo === 'inscripciones' ? montoInscripcionPago : montoPagado);
+
+      const previo = acumuladoMes.get(mes) || 0;
+      acumuladoMes.set(mes, redondearMonto(previo + monto));
+      idsMensualidadesConPago.add(mensualidadId);
     }
 
-    pipelineLegacy.push(
-      {
-        $lookup: {
-          from: 'pagodetalles',
-          let: { mensualidadId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ['$id_mensualidad', '$$mensualidadId'] }
-              }
-            },
-            { $limit: 1 }
-          ],
-          as: 'pagos'
-        }
-      },
-      {
-        $match: {
-          'pagos.0': { $exists: false }
-        }
-      },
-      {
-        $addFields: {
-          monto_legacy: {
-            $let: {
-              vars: {
-                montoRegistroInicial: {
-                  $add: [
-                    { $ifNull: ['$monto_inscripcion', 0] },
-                    { $ifNull: ['$monto_primera_mensualidad', 0] }
-                  ]
-                }
-              },
-              in: {
-                $cond: [
-                  { $gt: ['$$montoRegistroInicial', 0] },
-                  '$$montoRegistroInicial',
-                  { $ifNull: ['$monto_esperado', 0] }
-                ]
-              }
-            }
-          }
-        }
-      },
-      {
-        $group: {
-          _id: { $month: '$fecha_pago' },
-          total_pagado: { $sum: '$monto_legacy' }
-        }
-      },
-      { $sort: { _id: 1 } }
+    const mensualidadesLegacy = await TenantMensualidad.find({
+      fecha_pago: { $gte: inicioAnio, $lt: finAnio }
+    })
+      .select('_id id_alumno estatus fecha_pago monto_esperado monto_inscripcion monto_reingreso monto_primera_mensualidad monto_mensualidad_reingreso')
+      .lean();
+
+    const alumnoIdsLegacy = Array.from(
+      new Set(mensualidadesLegacy.map((item) => String(item.id_alumno || '')).filter(Boolean))
     );
 
-    const dataLegacy = await TenantMensualidad.aggregate(pipelineLegacy);
-    const dataLegacyMap = new Map(
-      dataLegacy.map((item) => [Number(item._id), redondearMonto(item.total_pagado)])
-    );
+    if (alumnoIdsLegacy.length > 0) {
+      const alumnosLegacy = await TenantAlumno
+        .find({ _id: { $in: alumnoIdsLegacy } })
+        .select('_id sede')
+        .lean();
+      for (const alumno of alumnosLegacy) {
+        if (!alumnosMap.has(String(alumno._id))) {
+          alumnosMap.set(String(alumno._id), String(alumno.sede || ''));
+        }
+      }
+    }
+
+    for (const mensualidad of mensualidadesLegacy) {
+      const mensualidadId = String(mensualidad._id || '');
+      if (idsMensualidadesConPago.has(mensualidadId)) continue;
+      if (!esEstatusIngresoConfirmado(mensualidad.estatus)) continue;
+
+      const alumnoId = String(mensualidad.id_alumno || '');
+      const sedeAlumno = alumnosMap.get(alumnoId) || '';
+      if (sedeFiltro && sedeAlumno !== sedeFiltro) continue;
+
+      const fechaPagoLegacy = new Date(mensualidad.fecha_pago || 0);
+      if (Number.isNaN(fechaPagoLegacy.getTime())) continue;
+      const mes = fechaPagoLegacy.getUTCMonth() + 1;
+      if (mes < 1 || mes > 12) continue;
+
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      const totalComponentes = redondearMonto(componentes.componenteInscripcion + componentes.componenteMensualidad);
+      const totalLegacy = totalComponentes > 0
+        ? totalComponentes
+        : redondearMonto(Number(mensualidad?.monto_esperado) || 0);
+
+      const monto = tipo === 'mensualidades'
+        ? componentes.componenteMensualidad
+        : (tipo === 'inscripciones' ? componentes.componenteInscripcion : totalLegacy);
+
+      const previo = acumuladoMes.get(mes) || 0;
+      acumuladoMes.set(mes, redondearMonto(previo + monto));
+    }
 
     const meses = Array.from({ length: 12 }, (_, index) => {
       const mes = index + 1;
       return {
         mes,
-        total_pagado: redondearMonto((dataPagosMap.get(mes) || 0) + (dataLegacyMap.get(mes) || 0))
+        total_pagado: redondearMonto(acumuladoMes.get(mes) || 0)
       };
     });
 
@@ -2283,7 +2578,7 @@ exports.getIngresosPorMes = async (req, res) => {
       meses.reduce((acc, item) => acc + (Number(item.total_pagado) || 0), 0)
     );
 
-    return res.json({ anio, meses, total_anual: totalAnual });
+    return res.json({ anio, tipo, meses, total_anual: totalAnual });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
