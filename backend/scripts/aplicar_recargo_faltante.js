@@ -61,6 +61,7 @@ function buildMensualidadFilter({ mes, anio, alumnoId }) {
   const filtro = {
     // El recargo solo debe evaluarse en deudas activas, no en pagos bajo revisión.
     estatus: { $in: ['Pendiente', 'Insolvente', 'Abono'] },
+    bloqueo_recargo_automatico: { $ne: true },
     monto_esperado: { $gt: 0 },
     $or: [
       { recargo_aplicado_usd: { $exists: false } },

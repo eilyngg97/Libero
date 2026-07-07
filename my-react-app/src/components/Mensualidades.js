@@ -802,6 +802,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				},
 				body: JSON.stringify({
 					monto_esperado: Number(montoBaseSinRecargo.toFixed(2)),
+					bloquear_recargo_automatico: true,
 					nota: 'Correccion administrativa de recargo desde pago detalle'
 				})
 			});
