@@ -1159,7 +1159,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     estatus: { $in: ['Pendiente', 'Insolvente'] },
     monto_esperado: { $gt: 0 }
   })
-    .select('_id id_alumno fecha_vencimiento mes anio')
+    .select('_id id_alumno fecha_vencimiento mes anio estatus')
     .populate({
       path: 'id_alumno',
       select: 'dia_limite_personalizado'
