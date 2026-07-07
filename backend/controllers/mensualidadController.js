@@ -471,7 +471,7 @@ async function aplicarRecargoMensualidadSegunConfig(
   const esBecado = esTipoMensualidadBecaCompleta(alumno?.tipo_mensualidad);
   const estatusActual = String(mensualidad.estatus || '').toLowerCase();
 
-  const elegibleEstatus = ['pendiente', 'insolvente', 'retrasado', 'abono', 'en revision'];
+  const elegibleEstatus = ['pendiente', 'insolvente', 'abono'];
   const montoActual = redondearMonto(mensualidad.monto_esperado || 0);
   const montoSinRecargoActual = redondearMonto(
     mensualidad.monto_sin_recargo_usd !== undefined && mensualidad.monto_sin_recargo_usd !== null
@@ -1200,7 +1200,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
   }
 
   const candidatasRecargo = await MensualidadModel.find({
-    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono', 'En revision'] },
+    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono'] },
     monto_esperado: { $gt: 0 },
     $or: [
       { recargo_aplicado_usd: { $exists: false } },
