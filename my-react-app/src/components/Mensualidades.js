@@ -802,6 +802,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				},
 				body: JSON.stringify({
 					monto_esperado: Number(montoBaseSinRecargo.toFixed(2)),
+					bloquear_recargo_automatico: true,
 					nota: 'Correccion administrativa de recargo desde pago detalle'
 				})
 			});
@@ -1778,7 +1779,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				</TextField>
 			</Box>
 			<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', mb: 2, mt: 2 }}>
-				{esAdmin && (
+				{esAdmin && !esVistaInscripciones && (
 					<Button
 						variant="outlined"
 						onClick={() => setModalAjusteSede(true)}
@@ -1808,7 +1809,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					Exportar Excel
 				</Button>
 			</Box>
-			{esAdmin && !sedeSeleccionada?._id && (
+			{esAdmin && !esVistaInscripciones && !sedeSeleccionada?._id && (
 				<Alert severity="info" sx={{ mb: 2 }}>
 					Selecciona una sede para poder aplicar un ajuste extraordinario al monto del mes.
 				</Alert>

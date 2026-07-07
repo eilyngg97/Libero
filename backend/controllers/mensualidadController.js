@@ -113,7 +113,8 @@ function construirSnapshotEdicionMensualidad(mensualidad) {
     estatus: String(mensualidad?.estatus || ''),
     ajuste_extraordinario: redondearMonto(mensualidad?.ajuste_extraordinario || 0),
     ajuste_descripcion: String(mensualidad?.ajuste_descripcion || ''),
-    saldo_a_favor_generado: redondearMonto(mensualidad?.saldo_a_favor_generado || 0)
+    saldo_a_favor_generado: redondearMonto(mensualidad?.saldo_a_favor_generado || 0),
+    bloqueo_recargo_automatico: mensualidad?.bloqueo_recargo_automatico === true
   };
 }
 
@@ -517,8 +518,9 @@ async function aplicarRecargoMensualidadSegunConfig(
   const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
   const esBecado = esTipoMensualidadBecaCompleta(alumno?.tipo_mensualidad);
   const estatusActual = String(mensualidad.estatus || '').toLowerCase();
+  const recargoBloqueadoManual = mensualidad?.bloqueo_recargo_automatico === true;
 
-  const elegibleEstatus = ['pendiente', 'insolvente', 'retrasado', 'abono', 'en revision'];
+  const elegibleEstatus = ['pendiente', 'insolvente', 'abono'];
   const montoActual = redondearMonto(mensualidad.monto_esperado || 0);
   const montoSinRecargoActual = redondearMonto(
     mensualidad.monto_sin_recargo_usd !== undefined && mensualidad.monto_sin_recargo_usd !== null
@@ -531,6 +533,7 @@ async function aplicarRecargoMensualidadSegunConfig(
   const correspondeRecargo =
     aplicaRecargoAlumno &&
     !esBecado &&
+    !recargoBloqueadoManual &&
     elegibleEstatus.includes(estatusActual) &&
     montoSinRecargoActual > 0 &&
     (Number(configCobro.recargo_usd) || 0) > 0 &&
@@ -1218,7 +1221,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     estatus: { $in: ['Pendiente', 'Insolvente'] },
     monto_esperado: { $gt: 0 }
   })
-    .select('_id id_alumno fecha_vencimiento mes anio')
+    .select('_id id_alumno fecha_vencimiento mes anio estatus')
     .populate({
       path: 'id_alumno',
       select: 'dia_limite_personalizado'
@@ -1259,7 +1262,8 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
   }
 
   const candidatasRecargo = await MensualidadModel.find({
-    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono', 'En revision'] },
+    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono'] },
+    bloqueo_recargo_automatico: { $ne: true },
     monto_esperado: { $gt: 0 },
     $or: [
       { recargo_aplicado_usd: { $exists: false } },
@@ -1991,6 +1995,7 @@ exports.editarMensualidadIndividual = async (req, res) => {
     const montoEsperadoInput = req.body?.monto_esperado;
     const estatusInput = req.body?.estatus;
     const notaEdicion = normalizarNotaEdicion(req.body?.nota);
+    const bloquearRecargoAutomatico = req.body?.bloquear_recargo_automatico === true;
 
     const montoEsperadoNormalizado = normalizarMontoOpcional(montoEsperadoInput);
     const estatusNormalizado = typeof estatusInput === 'string' ? estatusInput.trim().toLowerCase() : '';
@@ -2035,6 +2040,13 @@ exports.editarMensualidadIndividual = async (req, res) => {
       mensualidad.fecha_aplicacion_recargo = null;
       mensualidad.ajuste_descripcion = 'Ajuste manual individual de mensualidad';
       mensualidad.ajuste_fecha = new Date();
+
+      if (bloquearRecargoAutomatico) {
+        mensualidad.bloqueo_recargo_automatico = true;
+        mensualidad.bloqueo_recargo_automatico_fecha = new Date();
+        mensualidad.bloqueo_recargo_automatico_actor_id = req.user?.id || null;
+        mensualidad.bloqueo_recargo_automatico_nota = notaEdicion;
+      }
     }
 
     if (estatusNormalizado === 'exonerado') {
@@ -2107,7 +2119,7 @@ exports.editarMensualidadIndividual = async (req, res) => {
     });
 
     registrarHistorialEdicionMensualidad(mensualidad, req, {
-      accion: 'edicion_manual',
+      accion: bloquearRecargoAutomatico ? 'retiro_manual_recargo' : 'edicion_manual',
       nota: notaEdicion,
       anterior: snapshotAnterior,
       nuevo: construirSnapshotEdicionMensualidad(mensualidad)
