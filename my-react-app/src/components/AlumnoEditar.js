@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { TextField, Typography, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle } from '@mui/material';
+import { TextField, Typography, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle, CircularProgress } from '@mui/material';
 import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -60,9 +60,29 @@ function AlumnoEditar({ locationState }) {
   const [sedesDisponibles, setSedesDisponibles] = useState([]);
   const [numerosFranelaDisponibles, setNumerosFranelaDisponibles] = useState([]);
   const [numerosFranelaOcupados, setNumerosFranelaOcupados] = useState([]);
+  const [opcionesRepresentantes, setOpcionesRepresentantes] = useState([]);
+  const [loadingOpciones, setLoadingOpciones] = useState(false);
   const inputRef = useRef(null);
   const inputCedulaRef = useRef(null);
   const categoriaAutoRef = useRef('');
+
+  const buscarOpcionesRepresentantes = async (cedula) => {
+    if (!cedula || cedula.length < 4) {
+      setOpcionesRepresentantes([]);
+      return;
+    }
+    setLoadingOpciones(true);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/representantes?cedula=${cedula}`);
+      if (!res.ok) throw new Error('Error buscando representantes');
+      const data = await res.json();
+      setOpcionesRepresentantes(data.filter(r => r.cedula.includes(cedula)));
+    } catch (err) {
+      setOpcionesRepresentantes([]);
+    } finally {
+      setLoadingOpciones(false);
+    }
+  };
 
   const hidratarFormularioAlumno = (data) => {
     let { representante, ...rest } = data;
@@ -1085,7 +1105,58 @@ function AlumnoEditar({ locationState }) {
                 <TextField id="outlined-basic-rep-apellidos" label="Apellidos del representante *" name="rep_apellidos" variant="outlined" value={form.rep_apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
               </div>
               <div className="form-row">
-                <TextField id="outlined-basic-rep-cedula" label="Cédula del representante *" name="rep_cedula" variant="outlined" value={form.rep_cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+                <Autocomplete
+                  freeSolo
+                  id="autocomplete-rep-cedula-editar"
+                  options={opcionesRepresentantes}
+                  getOptionLabel={option => option.cedula ? `${option.cedula} - ${option.nombres} ${option.apellidos}` : ''}
+                  inputValue={form.rep_cedula || ''}
+                  onInputChange={(event, newInputValue, reason) => {
+                    if (reason === 'input') {
+                      setForm(prev => ({ ...prev, rep_cedula: newInputValue }));
+                      buscarOpcionesRepresentantes(newInputValue);
+                    }
+                    if (reason === 'reset' && newInputValue) {
+                      const cedulaSolo = newInputValue.split(' - ')[0];
+                      setForm(prev => ({ ...prev, rep_cedula: cedulaSolo }));
+                    }
+                  }}
+                  onChange={(event, value) => {
+                    if (value && value.cedula) {
+                      setForm(prev => ({
+                        ...prev,
+                        rep_cedula: value.cedula,
+                        rep_nombres: value.nombres,
+                        rep_apellidos: value.apellidos,
+                        rep_telefono: value.telefono,
+                        rep_fecha_nacimiento: value.fecha_nacimiento ? String(value.fecha_nacimiento).slice(0, 10) : '',
+                        rep_correo: value.correo || '',
+                        rep_direccion: value.direccion || value.domicilio || '',
+                      }));
+                    }
+                  }}
+                  loading={loadingOpciones}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Cédula del representante *"
+                      name="rep_cedula"
+                      variant="outlined"
+                      fullWidth
+                      size="small"
+                      sx={{ my: 1 }}
+                      InputProps={{
+                        ...params.InputProps,
+                        endAdornment: (
+                          <>
+                            {loadingOpciones ? <CircularProgress color="inherit" size={18} /> : null}
+                            {params.InputProps.endAdornment}
+                          </>
+                        )
+                      }}
+                    />
+                  )}
+                />
                 <TextField
                   id="outlined-basic-rep-fecha-nacimiento"
                   label="Fecha de nacimiento del representante"

@@ -489,22 +489,11 @@ function parseAlumnoExcelRows(fileBuffer) {
   const idxNombres = findColumnIndexByCandidates(headerRow, ['NOMBRES', 'NOMBRE', 'NOMBRES DEL ALUMNO']);
   const idxApellidos = findColumnIndexByCandidates(headerRow, ['APELLIDOS', 'APELLIDO']);
   const idxRepresentante = findColumnIndexByCandidates(headerRow, ['REPRESENTANTE', 'NOMBRE REPRESENTANTE']);
-  const cedulaIndexes = findColumnIndexesByCandidates(headerRow, ['CEDULA', 'CEDULA ALUMNO', 'CEDULA ESTUDIANTE', 'CEDULA REPRESENTANTE']);
   const fechaNacIndexes = findColumnIndexesByCandidates(headerRow, ['FECHA NAC', 'FECHA NACIMIENTO', 'FECHA DE NACIMIENTO']);
 
-  let idxCedula = findColumnIndexByCandidates(headerRow, ['CEDULA ALUMNO', 'CEDULA ESTUDIANTE']);
-  if (idxCedula < 0 && cedulaIndexes.length > 0) {
-    idxCedula = idxRepresentante >= 0
-      ? (cedulaIndexes.find((idx) => idx < idxRepresentante) ?? cedulaIndexes[0])
-      : cedulaIndexes[0];
-  }
+  const idxCedula = findColumnIndexByCandidates(headerRow, ['CEDULA ALUMNO', 'CEDULA ESTUDIANTE', 'CEDULA']);
 
-  let idxRepCedula = findColumnIndexByCandidates(headerRow, ['CEDULA REPRESENTANTE']);
-  if (idxRepCedula < 0 && cedulaIndexes.length > 1) {
-    idxRepCedula = idxRepresentante >= 0
-      ? (cedulaIndexes.find((idx) => idx > idxRepresentante) ?? cedulaIndexes[cedulaIndexes.length - 1])
-      : cedulaIndexes[1];
-  }
+  let idxRepCedula = findColumnIndexByCandidates(headerRow, ['CEDULA REPRESENTANTE', 'CEDULA DEL REPRESENTANTE']);
 
   const idxSexo = findColumnIndexByCandidates(headerRow, ['SEXO']);
   let idxFechaNac = findColumnIndexByCandidates(headerRow, ['FECHA NAC ALUMNO']);
@@ -1579,13 +1568,9 @@ exports.importarAlumnosExcel = async (req, res) => {
           ? getCategoriaPorFechaNacimiento(row.fecha_nacimiento, reglasCategoriasImport)
           : '';
         const categoriaFinal = categoriaDesdeExcel || categoriaDesdeFecha;
-
-        if (!categoriaFinal) {
-          skipped.push({ fila: row.excelRow, motivo: 'No se pudo determinar la categoria segun las reglas del tenant.' });
-          continue;
+        if (categoriaFinal) {
+          alumnoData.categoria = categoriaFinal;
         }
-
-        alumnoData.categoria = categoriaFinal;
 
         const sexoNormalizado = normalizarSexo(row.sexo);
         if (sexoNormalizado === null) {
@@ -1627,11 +1612,12 @@ exports.importarAlumnosExcel = async (req, res) => {
                 TenantConfig: TenantConfigModel
               },
               periodoInicio: IMPORT_FIXED_PERIODO_COBRO,
-              periodoFin: IMPORT_FIXED_PERIODO_COBRO
+              periodoFin: IMPORT_FIXED_PERIODO_COBRO,
+              esInscripcionOverride: false
             });
           } catch (errMensualidad) {
             await alumno.deleteOne().catch(() => {});
-            throw new Error(`No se pudo crear mensualidad inicial de junio 2026: ${errMensualidad.message}`);
+            throw new Error(`No se pudo crear mensualidad inicial de julio 2026: ${errMensualidad.message}`);
           }
 
           created.push({
