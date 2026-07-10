@@ -202,6 +202,8 @@ function DashboardOperativo() {
 
   const totalAlumnos = Object.values(alumnosPorSede).reduce((acc, val) => acc + (Number(val) || 0), 0);
   const variacionAlumnosReal = `+${nuevosAlumnosMes} este mes`;
+  const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const nombreMonedaActiva = monedaActiva === 'EUR' ? 'euro' : 'dolar';
   const cumplePorPagina = 8;
   const totalPaginasCumple = Math.ceil(cumpleaneros.length / cumplePorPagina);
   const cumpleanerosPagina = cumpleaneros.slice((cumplePage - 1) * cumplePorPagina, cumplePage * cumplePorPagina);
@@ -229,7 +231,7 @@ function DashboardOperativo() {
                   <AttachMoneyIcon sx={{ fontSize: 16 }} />
                 </div>
               </div>
-              <div className="dashboard-kpi-inline-label">Tasa del dólar BCV</div>
+              <div className="dashboard-kpi-inline-label">Tasa del {nombreMonedaActiva} BCV</div>
               {dolarLoading && <div className="dashboard-kpi-inline-loading">Cargando...</div>}
               {dolarError && <div className="dashboard-kpi-inline-loading">No disponible</div>}
               {!dolarLoading && !dolarError && (

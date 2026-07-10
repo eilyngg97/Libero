@@ -15,9 +15,13 @@ import CloseIcon from '@mui/icons-material/Close';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
 import AddIcon from '@mui/icons-material/Add';
+import { useDolar } from '../context/DolarContext';
 
 
 function Sedes() {
+  const { dolar } = useDolar();
+  const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
   const [sedes, setSedes] = useState([]);
   const [open, setOpen] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
@@ -158,7 +162,9 @@ function Sedes() {
                 <Typography sx={{ color: '#64748b', fontSize: 14 }}>{sede.direccion || '-'}</Typography>
                 <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Chip label={sede.estado} size="small" sx={{ bgcolor: sede.estado === 'Activa' ? '#dcfce7' : '#fee2e2', color: sede.estado === 'Activa' ? '#16a34a' : '#dc2626', fontWeight: 700 }} />
-                  <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>Mensualidad: ${sede.costo || '-'}</Typography>
+                  <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>
+                    Mensualidad: {simboloMonedaActiva}{sede.costo || '-'}
+                  </Typography>
                 </Box>
               </Box>
               <Box sx={{ flex: 1, minWidth: 180 }}>

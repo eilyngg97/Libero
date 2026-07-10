@@ -29,7 +29,8 @@ const DEFAULT_CONFIG = {
     dia_cobro: 1,
     dia_vencimiento: 5,
     dias_gracia: 0,
-    recargo_usd: 0
+    recargo_usd: 0,
+    moneda: 'USD'
   },
   categorias: {
     disciplina: 'voleibol',
@@ -181,6 +182,11 @@ function clampDecimal(value, fallback, min, max) {
   if (number < min) return min;
   if (number > max) return max;
   return number;
+}
+
+function normalizeCobroMoneda(value, fallback = DEFAULT_CONFIG.cobro.moneda) {
+  const normalized = cleanValue(value || fallback).toUpperCase();
+  return normalized === 'EUR' ? 'EUR' : 'USD';
 }
 
 function normalizeLogosList(logos, maxItems = 3) {
@@ -404,7 +410,8 @@ function normalizeConfigPayload(payload = {}) {
       dia_cobro: clampInteger(cobro.dia_cobro, DEFAULT_CONFIG.cobro.dia_cobro, 1, 31),
       dia_vencimiento: clampInteger(cobro.dia_vencimiento, DEFAULT_CONFIG.cobro.dia_vencimiento, 1, 31),
       dias_gracia: clampInteger(cobro.dias_gracia, DEFAULT_CONFIG.cobro.dias_gracia, 0, 31),
-      recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000)
+      recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000),
+      moneda: normalizeCobroMoneda(cobro.moneda, DEFAULT_CONFIG.cobro.moneda)
     },
     categorias: normalizeCategoriasPayload(categorias),
     constancias: normalizeConstanciasPayload(constancias)
@@ -467,6 +474,10 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
     if (root.cobro.recargo_usd !== undefined || root.cobro.recargo_porcentaje !== undefined) {
       const recargoUsdRaw = root.cobro.recargo_usd ?? root.cobro.recargo_porcentaje;
       cobroPatch.recargo_usd = clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000);
+    }
+
+    if (root.cobro.moneda !== undefined) {
+      cobroPatch.moneda = normalizeCobroMoneda(root.cobro.moneda, DEFAULT_CONFIG.cobro.moneda);
     }
 
     if (Object.keys(cobroPatch).length > 0) {
@@ -559,6 +570,9 @@ function serializeConfig(doc) {
   const categorias = doc?.categorias || {};
   const constancias = doc?.constancias || {};
   const recargoUsdRaw = cobro?.recargo_usd ?? cobro?.recargo_porcentaje;
+  const categoriasParaRespuesta = Array.isArray(categorias?.reglas) && categorias.reglas.length > 0
+    ? categorias
+    : DEFAULT_CONFIG.categorias;
 
   return {
     pagos: {
@@ -582,9 +596,10 @@ function serializeConfig(doc) {
       dia_cobro: clampInteger(cobro?.dia_cobro, DEFAULT_CONFIG.cobro.dia_cobro, 1, 31),
       dia_vencimiento: clampInteger(cobro?.dia_vencimiento, DEFAULT_CONFIG.cobro.dia_vencimiento, 1, 31),
       dias_gracia: clampInteger(cobro?.dias_gracia, DEFAULT_CONFIG.cobro.dias_gracia, 0, 31),
-      recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000)
+      recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000),
+      moneda: normalizeCobroMoneda(cobro?.moneda, DEFAULT_CONFIG.cobro.moneda)
     },
-    categorias: normalizeCategoriasPayload(categorias),
+    categorias: normalizeCategoriasPayload(categoriasParaRespuesta, DEFAULT_CONFIG.categorias),
     constancias: normalizeConstanciasPayload(constancias),
     is_default: false,
     updatedAt: doc.updatedAt
@@ -595,11 +610,13 @@ function serializePagosConfig(doc) {
   if (!doc) {
     return {
       pagos: { ...DEFAULT_CONFIG.pagos },
+      cobro: { moneda: DEFAULT_CONFIG.cobro.moneda },
       is_default: true
     };
   }
 
   const pagos = doc?.pagos || {};
+  const cobro = doc?.cobro || {};
   return {
     pagos: {
       pago_movil: {
@@ -618,6 +635,9 @@ function serializePagosConfig(doc) {
         instrucciones: cleanValue(pagos?.deposito_usd?.instrucciones)
       }
     },
+    cobro: {
+      moneda: normalizeCobroMoneda(cobro?.moneda, DEFAULT_CONFIG.cobro.moneda)
+    },
     is_default: false,
     updatedAt: doc.updatedAt
   };
@@ -626,7 +646,7 @@ function serializePagosConfig(doc) {
 exports.getConfiguracionPagos = async (req, res) => {
   try {
     const TenantConfig = await getTenantConfigModel(req);
-    const config = await TenantConfig.findOne({ key: 'default' }).select('pagos updatedAt').lean();
+    const config = await TenantConfig.findOne({ key: 'default' }).select('pagos cobro updatedAt').lean();
     return res.json(serializePagosConfig(config));
   } catch {
     return res.status(500).json({ error: 'Error al obtener metodos de pago.' });

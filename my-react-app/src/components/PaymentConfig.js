@@ -5,6 +5,7 @@ import {
   Button,
   Divider,
   InputAdornment,
+  MenuItem,
   Paper,
   Snackbar,
   TextField,
@@ -39,7 +40,8 @@ const EMPTY_CONFIG = {
     dia_cobro: 1,
     dia_vencimiento: 5,
     dias_gracia: 0,
-    recargo_usd: 0
+    recargo_usd: 0,
+    moneda: 'USD'
   }
 };
 
@@ -72,6 +74,8 @@ function PaymentConfig() {
   const [savingCobro, setSavingCobro] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const monedaCobro = String(config?.cobro?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
 
   const buildFechaInicioRecargoTexto = () => {
     const diaVencimiento = Number(config?.cobro?.dia_vencimiento);
@@ -357,7 +361,19 @@ function PaymentConfig() {
             <Typography sx={{ fontWeight: 800, color: '#2a374d', fontSize: 22 }}>Cobro mensual</Typography>
           </Box>
           <Divider sx={{ my: 1.4, borderColor: '#e6ebf3' }} />
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.25 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(5, minmax(0, 1fr))' }, gap: 1.25 }}>
+            <TextField
+              label="Moneda de cobro"
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              select
+              sx={fieldSx}
+              value={monedaCobro}
+              onChange={(e) => updateCobroField('moneda', e.target.value)}
+            >
+              <MenuItem value="USD">Dolar (USD)</MenuItem>
+              <MenuItem value="EUR">Euro (EUR)</MenuItem>
+            </TextField>
             <TextField
               label="Dia de cobro"
               placeholder="1"
@@ -392,13 +408,13 @@ function PaymentConfig() {
               onChange={(e) => updateCobroField('dias_gracia', e.target.value)}
             />
             <TextField
-              label="Recargo (USD)"
+              label={`Recargo (${monedaCobro})`}
               placeholder="0.00"
               InputLabelProps={{ shrink: true }}
               size="small"
               sx={fieldSx}
               InputProps={{
-                startAdornment: <InputAdornment position="start">$</InputAdornment>
+                startAdornment: <InputAdornment position="start">{simboloMonedaCobro}</InputAdornment>
               }}
               type="number"
               inputProps={{ min: 0, max: 100000, step: '0.01' }}

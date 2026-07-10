@@ -19,7 +19,7 @@ import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalance
 import PaymentsIcon from '@mui/icons-material/Payments';
 import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
 import { useDolar } from '../context/DolarContext';
-import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
+import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
 
 // Eliminar pagosEjemplo, usaremos datos reales
@@ -57,6 +57,9 @@ function PagosAlumno(props) {
   const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo'];
 
   const { dolar } = useDolar();
+  const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaConfigurada = monedaConfigurada === 'EUR' ? '€' : '$';
+  const etiquetaTasa = `Bs/${monedaConfigurada}`;
   const tasa = Number(dolar?.promedio);
   const [openModalPago, setOpenModalPago] = useState(false);
   const [pagoSeleccionado, setPagoSeleccionado] = useState(null);
@@ -247,7 +250,9 @@ function PagosAlumno(props) {
 
     const cargarTasaHistorica = async () => {
       try {
-        const tasaHistorica = await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
+        const tasaHistorica = monedaConfigurada === 'EUR'
+          ? await obtenerTasaEuroOficialPorFecha(fechaPago, Number(tasa) || null)
+          : await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
         if (!cancelled) {
           setTasaPagoHistorica(Number(tasaHistorica) || null);
         }
@@ -263,7 +268,7 @@ function PagosAlumno(props) {
     return () => {
       cancelled = true;
     };
-  }, [modalEditarOpen, fechaPago, tasa]);
+  }, [modalEditarOpen, fechaPago, tasa, monedaConfigurada]);
 
   const pagosOrdenados = [...mensualidades].sort(
     (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
@@ -348,7 +353,7 @@ function PagosAlumno(props) {
       return `Bs ${formatMoney(montoBs)}`;
     }
 
-    return `$${formatMoney(pago?.monto_pagado)} USD`;
+    return `${simboloMonedaConfigurada}${formatMoney(pago?.monto_pagado)} ${monedaConfigurada}`;
   };
 
   const formatMontoEsperado = (pago, fallbackMontoUsd = null, preferirMontoActual = false) => {
@@ -363,10 +368,10 @@ function PagosAlumno(props) {
 
         if (Number.isFinite(tasaAplicada) && tasaAplicada > 0) {
           const montoActualBs = montoActualUsd * tasaAplicada;
-          return `Bs ${formatMoney(montoActualBs)} / $${formatMoney(montoActualUsd)} USD`;
+          return `Bs ${formatMoney(montoActualBs)} / ${simboloMonedaConfigurada}${formatMoney(montoActualUsd)} ${monedaConfigurada}`;
         }
 
-        return `$${formatMoney(montoActualUsd)} USD`;
+        return `${simboloMonedaConfigurada}${formatMoney(montoActualUsd)} ${monedaConfigurada}`;
       }
     }
 
@@ -376,7 +381,7 @@ function PagosAlumno(props) {
       : Number(fallbackMontoUsd);
 
     if (Number.isFinite(montoBs) && montoBs > 0 && Number.isFinite(montoUsd) && montoUsd > 0) {
-      return `Bs ${formatMoney(montoBs)} / $${formatMoney(montoUsd)} USD`;
+      return `Bs ${formatMoney(montoBs)} / ${simboloMonedaConfigurada}${formatMoney(montoUsd)} ${monedaConfigurada}`;
     }
 
     if (Number.isFinite(montoBs) && montoBs > 0) {
@@ -384,7 +389,7 @@ function PagosAlumno(props) {
     }
 
     if (Number.isFinite(montoUsd) && montoUsd > 0) {
-      return `$${formatMoney(montoUsd)} USD`;
+      return `${simboloMonedaConfigurada}${formatMoney(montoUsd)} ${monedaConfigurada}`;
     }
 
     return '-';
@@ -403,7 +408,7 @@ function PagosAlumno(props) {
       return null;
     }
 
-    return `$${formatMoney(montoBs / tasaAplicada)} USD`;
+    return `${simboloMonedaConfigurada}${formatMoney(montoBs / tasaAplicada)} ${monedaConfigurada}`;
   };
 
   const formatTasaAplicada = (pago) => {
@@ -412,7 +417,7 @@ function PagosAlumno(props) {
     if (!montoUsd || Number.isNaN(montoUsd) || !montoBs || Number.isNaN(montoBs)) {
       return '-';
     }
-    return `${formatMoney(montoBs / montoUsd)} Bs/USD`;
+    return `${formatMoney(montoBs / montoUsd)} Bs/${monedaConfigurada}`;
   };
 
   const formatFechaBonita = (value) => {
@@ -1039,7 +1044,7 @@ function PagosAlumno(props) {
                       <Box sx={{ mt: 0.6, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                         <Chip
                           size="small"
-                          label={`Recargo aplicado: +$${formatMoney(recargoAplicado)} USD`}
+                          label={`Recargo aplicado: +${simboloMonedaConfigurada}${formatMoney(recargoAplicado)} ${monedaConfigurada}`}
                           sx={{
                             height: 22,
                             bgcolor: '#fee2e2',
@@ -1049,7 +1054,7 @@ function PagosAlumno(props) {
                           }}
                         />
                         <Typography sx={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>
-                          Base: ${formatMoney(montoBaseSinRecargo)} USD{fechaRecargoTexto ? ` | Aplicado: ${fechaRecargoTexto}` : ''}
+                          Base: {simboloMonedaConfigurada}{formatMoney(montoBaseSinRecargo)} {monedaConfigurada}{fechaRecargoTexto ? ` | Aplicado: ${fechaRecargoTexto}` : ''}
                         </Typography>
                       </Box>
                     )}
@@ -1057,16 +1062,16 @@ function PagosAlumno(props) {
 
                   <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.7 }}>
                     <Typography sx={{ color: estadoUi.amountColor, fontWeight: 900, fontSize: { xs: 25, md: 27 }, lineHeight: 1 }}>
-                      ${formatMoney(montoCard)}
+                      {simboloMonedaConfigurada}{formatMoney(montoCard)}
                     </Typography>
                     {mostrarMontoEsperado && (
                       <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-                        Monto esperado (USD)
+                        Monto esperado ({monedaConfigurada})
                       </Typography>
                     )}
                     {mostrarMontoEsperado && (
                       <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-                        Pagado: ${formatMoney(montoPagadoCard)} USD
+                        Pagado: {simboloMonedaConfigurada}{formatMoney(montoPagadoCard)} {monedaConfigurada}
                       </Typography>
                     )}
 
@@ -1199,9 +1204,9 @@ function PagosAlumno(props) {
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 1.2 }}>
                 <Typography sx={{ fontSize: { xs: 40, md: 42 }, lineHeight: 1, fontWeight: 900 }}>
-                  ${formatMoney(balancePendiente)}
+                  {simboloMonedaConfigurada}{formatMoney(balancePendiente)}
                 </Typography>
-                <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>USD</Typography>
+                <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>{monedaConfigurada}</Typography>
               </Box>
 
               <Box
@@ -1256,9 +1261,9 @@ function PagosAlumno(props) {
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 1.2 }}>
                 <Typography sx={{ fontSize: { xs: 40, md: 42 }, lineHeight: 1, fontWeight: 900 }}>
-                  ${formatMoney(saldoAFavorDisponible)}
+                  {simboloMonedaConfigurada}{formatMoney(saldoAFavorDisponible)}
                 </Typography>
-                <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>USD</Typography>
+                <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>{monedaConfigurada}</Typography>
               </Box>
 
               <Box
@@ -1328,7 +1333,7 @@ function PagosAlumno(props) {
                 Desglose de recargo
               </Typography>
               <Typography sx={{ mt: 0.6, color: '#7c2d12', fontWeight: 700, fontSize: 13 }}>
-                Monto base: ${formatMoney(mensualidadDetalle.monto_sin_recargo_usd || 0)} USD | Recargo: ${formatMoney(mensualidadDetalle.recargo_aplicado_usd || 0)} USD | Total: ${formatMoney(mensualidadDetalle.monto_con_recargo_usd || mensualidadDetalle.monto_total || 0)} USD
+                Monto base: {simboloMonedaConfigurada}{formatMoney(mensualidadDetalle.monto_sin_recargo_usd || 0)} {monedaConfigurada} | Recargo: {simboloMonedaConfigurada}{formatMoney(mensualidadDetalle.recargo_aplicado_usd || 0)} {monedaConfigurada} | Total: {simboloMonedaConfigurada}{formatMoney(mensualidadDetalle.monto_con_recargo_usd || mensualidadDetalle.monto_total || 0)} {monedaConfigurada}
               </Typography>
               {mensualidadDetalle.fecha_aplicacion_recargo && (
                 <Typography sx={{ mt: 0.4, color: '#9a3412', fontSize: 12, fontWeight: 600 }}>
@@ -1674,7 +1679,7 @@ function PagosAlumno(props) {
             InputLabelProps={{ shrink: true }}
           />
           <Typography variant="caption" sx={{ mt: 0.25, mb: 1, color: '#94a3b8', display: 'block' }}>
-            Tasa aplicada: {tasaPagoHistorica ? `${formatMoney(tasaPagoHistorica)} Bs/USD` : 'No disponible'}
+            Tasa aplicada: {tasaPagoHistorica ? `${formatMoney(tasaPagoHistorica)} ${etiquetaTasa}` : 'No disponible'}
           </Typography>
           <TextField
             label="Monto pagado (Bs)"
@@ -1689,7 +1694,7 @@ function PagosAlumno(props) {
           />
           <Typography variant="caption" sx={{ color: '#64748b', mt: -0.35, mb: 0.5, display: 'block' }}>
             {equivalenteUsdDesdeBs
-              ? `Con tasa de ${formatMoney(tasaPagoHistorica)} Bs/USD, este monto equivale a $${formatMoney(equivalenteUsdDesdeBs)} USD.`
+              ? `Con tasa de ${formatMoney(tasaPagoHistorica)} ${etiquetaTasa}, este monto equivale a $${formatMoney(equivalenteUsdDesdeBs)} ${monedaConfigurada}.`
               : 'Equivalente no disponible hasta tener una tasa valida para la fecha seleccionada.'}
           </Typography>
           {metodoRequiereReferencia(metodoPago) && (

@@ -11,7 +11,7 @@ import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useDolar } from '../context/DolarContext';
-import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
+import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
@@ -92,7 +92,7 @@ function ModalPago({
   pago,
   onSuccess,
   onSubmitPayment,
-  currencyCode = 'USD',
+  currencyCode = '',
   disableCuotas = false,
   allowedMethodIds = null
 }) {
@@ -125,9 +125,13 @@ function ModalPago({
   const [tipoCedulaConfirmacionCantevista, setTipoCedulaConfirmacionCantevista] = useState('V');
   const mostrarPasoConfirmacionCantevista = true;
   const monto = pago?.monto;
-  const moneda = String(currencyCode || 'USD').trim().toUpperCase();
   const cuotasHabilitadas = !disableCuotas && pago?.id_alumno?.habilitar_pago_cuotas === true;
   const { dolar } = useDolar();
+  const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const monedaDesdeProps = String(currencyCode || '').trim().toUpperCase();
+  const moneda = (monedaDesdeProps === 'USD' || monedaDesdeProps === 'EUR')
+    ? monedaDesdeProps
+    : monedaConfigurada;
   const tasa = dolar?.promedio;
   const montoBs = (monto !== undefined && monto !== null && tasaPago) ? Number(monto) * Number(tasaPago) : null;
   const esAbonoParcial = preferenciaCuota === 'parcial';
@@ -309,7 +313,9 @@ function ModalPago({
 
     const actualizarMontoConHistorico = async () => {
       try {
-        const tasaHistorica = await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
+        const tasaHistorica = monedaConfigurada === 'EUR'
+          ? await obtenerTasaEuroOficialPorFecha(fechaPago, Number(tasa) || null)
+          : await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
         if (cancelled) return;
         const tasaNormalizada = Number(tasaHistorica) || null;
         setTasaPago(tasaNormalizada);
@@ -331,7 +337,7 @@ function ModalPago({
     return () => {
       cancelled = true;
     };
-  }, [open, mostrarFormularioPago, fechaPago, monto, tasa, cuotasHabilitadas, preferenciaCuota]);
+  }, [open, mostrarFormularioPago, fechaPago, monto, tasa, cuotasHabilitadas, preferenciaCuota, monedaConfigurada]);
 
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);

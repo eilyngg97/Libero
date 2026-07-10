@@ -9,9 +9,12 @@ import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
+import { useDolar } from '../context/DolarContext';
 
 
 function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
+	const { dolar } = useDolar();
+	const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
 	const token = localStorage.getItem('token');
 	const authHeaders = {
 		...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -123,7 +126,7 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 					margin="normal"
 				/>
 				<TextField
-					label="Monto Mensualidad"
+					label={`Monto Mensualidad (${monedaActiva})`}
 					type="number"
 					value={costo}
 					onChange={e => setCosto(e.target.value)}

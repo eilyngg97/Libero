@@ -12,6 +12,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
+import { useDolar } from '../context/DolarContext';
 
 const normalizarDiaMes = (value) => {
   const numero = Number(value);
@@ -64,6 +65,9 @@ function PanelOpcionesUsuario() {
   const esUsuarioEsporta = tenantId === 'esporta';
   const sizeTarjetaOpciones = { xs: 12, sm: 6, md: 6 };
   const saldoAFavorActual = Number(alumno?.saldo_a_favor_mensualidades) || 0;
+  const { dolar } = useDolar();
+  const monedaCobro = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
 
   // Utilidad para obtener partidos futuros donde el alumno está convocado
   const fetchProximosJuegos = async (alumnoId, torneos) => {
@@ -567,9 +571,9 @@ function PanelOpcionesUsuario() {
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 1.2 }}>
                   <Typography sx={{ fontSize: { xs: 40, md: 42 }, lineHeight: 1, fontWeight: 900 }}>
-                    ${saldoAFavorActual.toFixed(2)}
+                    {simboloMonedaCobro}{saldoAFavorActual.toFixed(2)}
                   </Typography>
-                  <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>USD</Typography>
+                  <Typography sx={{ fontSize: 22, fontWeight: 600, opacity: 0.9 }}>{monedaCobro}</Typography>
                 </Box>
 
                 <Box

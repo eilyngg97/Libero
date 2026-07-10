@@ -120,6 +120,7 @@ function Login({ onLogin }) {
       localStorage.setItem('token', data.token);
       localStorage.setItem('usuario', JSON.stringify(data.user));
       localStorage.setItem('rol', data.user.rol);
+      window.dispatchEvent(new Event('auth-changed'));
       if (onLogin) onLogin(data);
 
       if (redirectAfterLogin) {

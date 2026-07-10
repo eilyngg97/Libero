@@ -42,6 +42,9 @@ function Dashboard() {
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActual);
   const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(mesActual);
   const [mesRevisionSeleccionado, setMesRevisionSeleccionado] = useState(mesActual);
+  const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
+  const nombreMonedaActiva = monedaActiva === 'EUR' ? 'euro' : 'dolar';
 
   const fetchConSesion = async (url, options = {}, retryOn401 = true) => {
     const token = localStorage.getItem('token');
@@ -386,7 +389,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
   const formatMontoBarra = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '$0';
-    return `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    return `${simboloMonedaActiva}${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
   const formatFechaNacimiento = (iso) => {
@@ -643,7 +646,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                   <AttachMoneyIcon sx={{ fontSize: 16 }} />
                 </div>
               </div>
-              <div className="dashboard-kpi-inline-label">Tasa del dólar BCV</div>
+              <div className="dashboard-kpi-inline-label">Tasa del {nombreMonedaActiva} BCV</div>
               {dolarLoading && <div className="dashboard-kpi-inline-loading">Cargando...</div>}
               {dolarError && <div className="dashboard-kpi-inline-loading">No disponible</div>}
               {!dolarLoading && !dolarError && (
@@ -666,7 +669,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
               ) : (
                 <>
                   <div className="dashboard-kpi-inline-income-row">
-                    <div className="dashboard-kpi-inline-value dashboard-kpi-inline-value-income">${formatMontoBarra(totalIngresosMes).replace('$', '')}</div>
+                    <div className="dashboard-kpi-inline-value dashboard-kpi-inline-value-income">{formatMontoBarra(totalIngresosMes)}</div>
                     <div className="dashboard-kpi-inline-donut">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -692,18 +695,18 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                   <div className="dashboard-kpi-inline-breakdown-list">
                     <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
                       <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-mensualidades" />
-                      Mensualidades: ${formatMoney(totalIngresosMensualidadesMes)}
+                      Mensualidades: {simboloMonedaActiva}{formatMoney(totalIngresosMensualidadesMes)}
                     </div>
                     <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
                       <span className="dashboard-kpi-inline-dot" style={{ background: '#10b981' }} />
-                      Inscripciones: ${formatMoney(totalIngresosInscripcionesMes)}
+                      Inscripciones: {simboloMonedaActiva}{formatMoney(totalIngresosInscripcionesMes)}
                     </div>
                     <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
                       <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-uniformes" />
-                      Uniformes: ${formatMoney(ingresosUniformesMes)}
+                      Uniformes: {simboloMonedaActiva}{formatMoney(ingresosUniformesMes)}
                     </div>
                   </div>
-                  <div className="dashboard-kpi-inline-sub">USD recaudados en {mesIngresosLabel.toLowerCase()}</div>
+                  <div className="dashboard-kpi-inline-sub">{monedaActiva} recaudados en {mesIngresosLabel.toLowerCase()}</div>
                 </>
               )}
             </div>
@@ -783,7 +786,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
                         domain={[0, (dataMax) => Math.max(10, Math.ceil(Number(dataMax || 0) * 1.15))]}
                       />
                       <Tooltip
-                        formatter={(value) => [`$${formatMoney(value)}`, 'Pagado']}
+                        formatter={(value) => [`${simboloMonedaActiva}${formatMoney(value)}`, 'Pagado']}
                         labelFormatter={(label) => `Sede: ${label}`}
                       />
                       <Bar dataKey="monto_pagado" radius={[6, 6, 0, 0]}>

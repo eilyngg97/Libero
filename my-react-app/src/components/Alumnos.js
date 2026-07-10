@@ -150,6 +150,8 @@ function Alumnos() {
   const montoPagadoInscripcionNum = Number(montoPagadoInscripcion) || 0;
   const totalInscripcionUsd = Number((montoInscripcionNum + montoPrimeraMensualidadNum).toFixed(2));
   const tasaBCV = Number(dolar?.promedio) || 0;
+  const monedaCobro = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
   const totalInscripcionBs = tasaBCV > 0
     ? Number((totalInscripcionUsd * tasaBCV).toFixed(2))
     : null;
@@ -480,7 +482,7 @@ function Alumnos() {
     if (form.habilitar_pago_cuotas) {
       const montoPagado = Number(montoPagadoInscripcion);
       if (!Number.isFinite(montoPagado) || montoPagado <= 0) {
-        setErrorMensualidad('Debes ingresar un monto pagado en USD mayor a 0 para registrar el abono.');
+        setErrorMensualidad(`Debes ingresar un monto pagado en ${monedaCobro} mayor a 0 para registrar el abono.`);
         setLoadingMensualidad(false);
         return;
       }
@@ -1363,7 +1365,7 @@ function Alumnos() {
               </Typography>
               <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
                 {form.sede?.costo !== undefined && form.sede?.costo !== null && form.sede?.costo !== ''
-                  ? `$${Number(form.sede.costo).toFixed(2)}`
+                  ? `${simboloMonedaCobro}${Number(form.sede.costo).toFixed(2)} ${monedaCobro}`
                   : 'No disponible'}
               </Typography>
             </Box>
@@ -1378,7 +1380,7 @@ function Alumnos() {
               size="small"
               sx={modalInputSx}
               inputProps={{ min: 0, step: '0.01' }}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start">{simboloMonedaCobro}</InputAdornment> }}
             />
             <TextField
               label="Monto de primera mensualidad"
@@ -1389,7 +1391,7 @@ function Alumnos() {
               size="small"
               sx={modalInputSx}
               inputProps={{ min: 0, step: '0.01' }}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start">{simboloMonedaCobro}</InputAdornment> }}
             />
           </Box>
 
@@ -1407,10 +1409,10 @@ function Alumnos() {
             </Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.75, alignItems: 'center' }}>
               <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>
-                Total USD
+                Total {monedaCobro}
               </Typography>
               <Typography sx={{ color: '#ffffff', fontWeight: 900, fontSize: 20, lineHeight: 1.1 }}>
-                ${totalInscripcionUsd.toFixed(2)}
+                {simboloMonedaCobro}{totalInscripcionUsd.toFixed(2)}
               </Typography>
               <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>
                 Equivalente Bs
@@ -1449,7 +1451,7 @@ function Alumnos() {
 
           {form.habilitar_pago_cuotas && (
             <TextField
-              label="Monto pagado (USD)"
+              label={`Monto pagado (${monedaCobro})`}
               type="number"
               value={montoPagadoInscripcion}
               onChange={e => setMontoPagadoInscripcion(e.target.value)}
@@ -1457,7 +1459,7 @@ function Alumnos() {
               size="small"
               sx={{ ...modalInputSx, mb: 1.5 }}
               inputProps={{ min: 0, step: '0.01' }}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start">{simboloMonedaCobro}</InputAdornment> }}
               helperText="Monto abonado en este primer pago."
             />
           )}
