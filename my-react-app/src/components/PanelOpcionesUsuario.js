@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Alert } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
@@ -177,14 +177,14 @@ function PanelOpcionesUsuario() {
     fetchPedidosUniforme();
   }, [alumno?._id, token]);
 
-  const obtenerFechaVencimientoVisible = (mensualidad) => {
+  const obtenerFechaVencimientoVisible = useCallback((mensualidad) => {
     const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado);
     if (diaLimitePersonalizado) {
       return construirFechaPeriodoConDia(mensualidad?.mes, mensualidad?.anio, diaLimitePersonalizado);
     }
 
     return parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
-  };
+  }, [alumno?.dia_limite_personalizado]);
 
   const resumenPago = useMemo(() => {
     if (mensualidadesLoading) {
@@ -242,7 +242,7 @@ function PanelOpcionesUsuario() {
       detalle: 'Todas las mensualidades estan al dia',
       proximo: ''
     };
-  }, [mensualidades, mensualidadesError, mensualidadesLoading]);
+  }, [mensualidades, mensualidadesError, mensualidadesLoading, obtenerFechaVencimientoVisible]);
 
   const uniformesPendientesPago = useMemo(
     () => pedidosUniforme.filter((pedido) => pedido.estado === 'esperando_pago' || pedido.estado === 'abono'),

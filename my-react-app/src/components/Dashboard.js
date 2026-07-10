@@ -26,7 +26,7 @@ function Dashboard() {
   const [cumpleaneros, setCumpleaneros] = useState([]);
   const [resumenMensualidades, setResumenMensualidades] = useState({ mes: null, anio: null, sedes: [] });
   const [dolaresPagadosPorSede, setDolaresPagadosPorSede] = useState({ mes: null, anio: null, sedes: [] });
-  const [dolaresMesActual, setDolaresMesActual] = useState({ mes: null, anio: null, sedes: [] });
+  const [, setDolaresMesActual] = useState({ mes: null, anio: null, sedes: [] });
   const [ingresosUniformesMes, setIngresosUniformesMes] = useState(0);
   const [ingresosMensualidadesMes, setIngresosMensualidadesMes] = useState(0);
   const [ingresosInscripcionesMes, setIngresosInscripcionesMes] = useState(0);
@@ -131,7 +131,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       }
     };
     fetchCumpleaneros();
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     const fetchSedes = async () => {
@@ -145,7 +145,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       }
     };
     fetchSedes();
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     const fetchAlumnosCount = async () => {
@@ -167,7 +167,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       }
     };
     fetchAlumnosCount();
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     const fetchNuevosAlumnosMes = async () => {
@@ -231,7 +231,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
       }
     };
     fetchResumenMensualidades();
-  }, [mesSeleccionado]);
+  }, [apiBase, mesSeleccionado]);
 
   useEffect(() => {
     const fetchDolaresPagadosPorSede = async () => {
@@ -255,8 +255,9 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     };
 
     fetchDolaresPagadosPorSede();
-  }, [mesGraficaSeleccionado]);
+  }, [apiBase, mesGraficaSeleccionado]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const fetchDolaresMesActual = async () => {
       try {
@@ -311,6 +312,7 @@ console.log('Cumpleañeros en página:', cumpleanerosPagina);
     };
 
     fetchIngresosUniformesMes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase, mesGraficaSeleccionado]);
 
   useEffect(() => {

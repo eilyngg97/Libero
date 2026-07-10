@@ -506,6 +506,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		setConfirmarPagoOpen(true);
 	};
 
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const cargarUltimoPagoDraft = React.useCallback(() => {
 		if (!detallePago?._id) return;
 
@@ -548,6 +549,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		});
 		setUltimoPagoEsperadoBsManual(existeAjusteManualMontoEsperadoBs(detallePago, mensualidadDetalle?.monto_esperado));
 		setUltimoPagoComprobante(null);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
 		detallePago?._id,
 		detallePago?.metodo_pago,
@@ -1086,13 +1088,13 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		return Number(value).toFixed(2);
 	};
 
-	const formatTelefonoPago = (value) => {
+	const formatTelefonoPago = React.useCallback((value) => {
 		const digits = String(value || '').replace(/\D/g, '');
 		if (!digits) return '';
 		return digits.length >= 10 ? digits.slice(-10) : digits;
-	};
+	}, []);
 
-	const getTelefonoPagoDesdeRegistro = (registro) => {
+	const getTelefonoPagoDesdeRegistro = React.useCallback((registro) => {
 		if (!registro) return '';
 		return formatTelefonoPago(
 			registro?.telefono_pago
@@ -1101,9 +1103,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			?? registro?.telefono_de_pago
 			?? ''
 		);
-	};
+	}, [formatTelefonoPago]);
 
-	const formatCedulaPago = (value) => {
+	const formatCedulaPago = React.useCallback((value) => {
 		const raw = String(value || '').trim().toUpperCase();
 		if (!raw) return '';
 
@@ -1115,9 +1117,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		const digits = raw.replace(/\D/g, '');
 		if (!digits) return '';
 		return `V-${digits}`;
-	};
+	}, []);
 
-	const getCedulaPagoDesdeRegistro = (registro) => {
+	const getCedulaPagoDesdeRegistro = React.useCallback((registro) => {
 		if (!registro) return '';
 		return formatCedulaPago(
 			registro?.cedula_titular
@@ -1126,7 +1128,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			?? registro?.cedulaPago
 			?? ''
 		);
-	};
+	}, [formatCedulaPago]);
 
 	const formatFechaBonita = (value) => {
 		if (!value) return '-';
