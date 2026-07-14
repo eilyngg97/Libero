@@ -52,6 +52,10 @@ const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
+const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
+const UniformePedido = require('../models/UniformePedido');
+const Partido = require('../models/Partido');
+const Torneo = require('../models/Torneo');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const bcrypt = require('bcryptjs');
@@ -95,6 +99,18 @@ async function getTenantAlumnoWriteModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
 
+  const getTenantModelOptional = (modelName) => {
+    try {
+      return getTenantModel(connection, modelName);
+    } catch (error) {
+      const message = String(error?.message || '');
+      if (message.includes('Modelo tenant no registrado')) {
+        return null;
+      }
+      throw error;
+    }
+  };
+
   return {
     Alumno: getTenantModel(connection, 'Alumno'),
     Representante: getTenantModel(connection, 'Representante'),
@@ -105,7 +121,11 @@ async function getTenantAlumnoWriteModels(req) {
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
     TenantConfig: getTenantModel(connection, 'TenantConfig'),
-    HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno')
+    HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno'),
+    ConstanciaSolicitud: getTenantModelOptional('ConstanciaSolicitud'),
+    UniformePedido: getTenantModelOptional('UniformePedido'),
+    Partido: getTenantModelOptional('Partido'),
+    Torneo: getTenantModelOptional('Torneo')
   };
 }
 
@@ -1130,20 +1150,26 @@ async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio, models = {}
   );
 }
 
-async function eliminarUsuarioSiQuedaHuerfano(userId, models = {}) {
+function applySession(query, session) {
+  if (!session || !query || typeof query.session !== 'function') return query;
+  return query.session(session);
+}
+
+async function eliminarUsuarioSiQuedaHuerfano(userId, models = {}, options = {}) {
   if (!userId) return;
+  const { session } = options;
 
   const AlumnoModel = models.Alumno || Alumno;
   const RepresentanteModel = models.Representante || Representante;
   const UserModel = models.User || User;
 
   const [alumnoRelacionado, representanteRelacionado] = await Promise.all([
-    AlumnoModel.findOne({ usuario: userId }).select('_id'),
-    RepresentanteModel.findOne({ usuario: userId }).select('_id')
+    applySession(AlumnoModel.findOne({ usuario: userId }), session).select('_id'),
+    applySession(RepresentanteModel.findOne({ usuario: userId }), session).select('_id')
   ]);
 
   if (!alumnoRelacionado && !representanteRelacionado) {
-    await UserModel.findByIdAndDelete(userId);
+    await applySession(UserModel.findByIdAndDelete(userId), session);
   }
 }
 
@@ -2851,37 +2877,183 @@ exports.updateAlumno = async (req, res) => {
 
 // Eliminar un alumno
 exports.deleteAlumno = async (req, res) => {
+  let session = null;
   try {
-    const { Alumno: TenantAlumno, Representante: TenantRepresentante, User: TenantUser } = await getTenantAlumnoWriteModels(req);
-    const alumno = await TenantAlumno.findByIdAndDelete(req.params.id);
-    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+    const {
+      Alumno: TenantAlumno,
+      Representante: TenantRepresentante,
+      User: TenantUser,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      Reposo: TenantReposo,
+      HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
+      ConstanciaSolicitud: TenantConstanciaSolicitud,
+      UniformePedido: TenantUniformePedido,
+      Partido: TenantPartido,
+      Torneo: TenantTorneo
+    } = await getTenantAlumnoWriteModels(req);
 
-    if (alumno.representante) {
-      const otroAlumnoConRepresentante = await TenantAlumno.findOne({ representante: alumno.representante }).select('_id');
+    if (TenantAlumno?.db && typeof TenantAlumno.db.startSession === 'function') {
+      session = await TenantAlumno.db.startSession();
+    }
 
-      if (!otroAlumnoConRepresentante) {
-        const representante = await TenantRepresentante.findByIdAndDelete(alumno.representante);
-        if (representante?.usuario) {
-          await eliminarUsuarioSiQuedaHuerfano(representante.usuario, {
+    const eliminarEnCascada = async () => {
+      const alumno = await applySession(TenantAlumno.findByIdAndDelete(req.params.id), session);
+      if (!alumno) {
+        const notFoundError = new Error('Alumno no encontrado');
+        notFoundError.statusCode = 404;
+        throw notFoundError;
+      }
+
+      const consultaMensualidades = applySession(TenantMensualidad.find({ id_alumno: alumno._id }), session);
+      let mensualidades = [];
+      if (consultaMensualidades && typeof consultaMensualidades.select === 'function') {
+        const seleccion = await consultaMensualidades.select('_id');
+        mensualidades = seleccion && typeof seleccion.lean === 'function'
+          ? await seleccion.lean()
+          : seleccion;
+      } else {
+        mensualidades = await consultaMensualidades;
+      }
+
+      if (!Array.isArray(mensualidades)) {
+        mensualidades = [];
+      }
+
+      const mensualidadIds = (mensualidades || []).map((item) => item?._id).filter(Boolean);
+
+      if (mensualidadIds.length > 0) {
+        if (typeof TenantPagoDetalle?.deleteMany === 'function') {
+          await applySession(
+            TenantPagoDetalle.deleteMany({ id_mensualidad: { $in: mensualidadIds } }),
+            session
+          );
+        }
+      }
+
+      const cleanupOps = [];
+
+      if (typeof TenantMensualidad?.deleteMany === 'function') {
+        cleanupOps.push(applySession(TenantMensualidad.deleteMany({ id_alumno: alumno._id }), session));
+      }
+      if (typeof TenantReposo?.deleteMany === 'function') {
+        cleanupOps.push(applySession(TenantReposo.deleteMany({ id_alumno: alumno._id }), session));
+      }
+      if (typeof TenantHistorialEstadoAlumno?.deleteMany === 'function') {
+        cleanupOps.push(applySession(TenantHistorialEstadoAlumno.deleteMany({ id_alumno: alumno._id }), session));
+      }
+      if (typeof TenantConstanciaSolicitud?.deleteMany === 'function') {
+        cleanupOps.push(applySession(
+          TenantConstanciaSolicitud.deleteMany({
+            $or: [
+              { alumno: alumno._id },
+              { alumno_ids: alumno._id }
+            ]
+          }),
+          session
+        ));
+      }
+      if (typeof TenantUniformePedido?.deleteMany === 'function') {
+        cleanupOps.push(applySession(TenantUniformePedido.deleteMany({ alumno: alumno._id }), session));
+      }
+      if (typeof TenantPartido?.updateMany === 'function') {
+        cleanupOps.push(applySession(
+          TenantPartido.updateMany(
+            { 'convocados.alumno': alumno._id },
+            { $pull: { convocados: { alumno: alumno._id } } }
+          ),
+          session
+        ));
+      }
+      if (typeof TenantTorneo?.updateMany === 'function') {
+        cleanupOps.push(applySession(
+          TenantTorneo.updateMany(
+            { 'convocados.alumno': alumno._id },
+            { $pull: { convocados: { alumno: alumno._id } } }
+          ),
+          session
+        ));
+      }
+
+      await Promise.all(cleanupOps);
+
+      if (alumno.representante) {
+        const otroAlumnoConRepresentante = await applySession(
+          TenantAlumno.findOne({
+            representante: alumno.representante,
+            _id: { $ne: alumno._id }
+          }),
+          session
+        ).select('_id');
+
+        if (!otroAlumnoConRepresentante) {
+          const representante = await applySession(
+            TenantRepresentante.findByIdAndDelete(alumno.representante),
+            session
+          );
+
+          if (representante?.usuario) {
+            await eliminarUsuarioSiQuedaHuerfano(
+              representante.usuario,
+              {
+                Alumno: TenantAlumno,
+                Representante: TenantRepresentante,
+                User: TenantUser
+              },
+              { session }
+            );
+          }
+        }
+      }
+
+      if (alumno.usuario) {
+        await eliminarUsuarioSiQuedaHuerfano(
+          alumno.usuario,
+          {
             Alumno: TenantAlumno,
             Representante: TenantRepresentante,
             User: TenantUser
-          });
-        }
+          },
+          { session }
+        );
       }
-    }
+    };
 
-    if (alumno.usuario) {
-      await eliminarUsuarioSiQuedaHuerfano(alumno.usuario, {
-        Alumno: TenantAlumno,
-        Representante: TenantRepresentante,
-        User: TenantUser
-      });
+    if (session && typeof session.withTransaction === 'function') {
+      try {
+        await session.withTransaction(eliminarEnCascada);
+      } catch (txError) {
+        const msg = String(txError?.message || '');
+        const txNoSoportada =
+          msg.includes('Transaction numbers are only allowed on a replica set member or mongos') ||
+          msg.includes('Standalone servers do not support transactions');
+
+        if (!txNoSoportada) {
+          throw txError;
+        }
+
+        // Fallback para entornos locales con Mongo standalone sin soporte de transacciones.
+        await eliminarEnCascada();
+      }
+    } else {
+      await eliminarEnCascada();
     }
 
     res.json({ message: 'Alumno eliminado' });
   } catch (err) {
+    if (err?.statusCode === 404) {
+      return res.status(404).json({ error: err.message });
+    }
+    console.error('Error al eliminar alumno:', {
+      alumnoId: req.params?.id,
+      name: err?.name,
+      message: err?.message
+    });
     res.status(500).json({ error: 'Error al eliminar alumno' });
+  } finally {
+    if (session && typeof session.endSession === 'function') {
+      await session.endSession();
+    }
   }
 };
 

@@ -13,8 +13,17 @@ jest.mock('../models/Reposo', () => ({}));
 jest.mock('../models/PagoDetalle', () => ({}));
 jest.mock('../models/Representante', () => ({}));
 
+const mongoose = require('mongoose');
 const { getTenantModel } = require('../services/tenantModelService');
 const mensualidadController = require('../controllers/mensualidadController');
+
+afterAll(async () => {
+  try {
+    await mongoose.disconnect();
+  } catch {
+    // noop
+  }
+});
 
 describe('adelantarMensualidadSiguiente', () => {
   beforeEach(() => {
