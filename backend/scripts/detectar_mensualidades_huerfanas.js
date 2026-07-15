@@ -81,7 +81,7 @@ async function deleteOrphansInBatches(Mensualidad, orphanPipeline, chunkSize = 5
   const cursor = Mensualidad.aggregate([
     ...orphanPipeline,
     { $project: { _id: 1 } }
-  ]).cursor({ batchSize: chunkSize }).exec();
+  ]).cursor({ batchSize: chunkSize });
 
   let deleted = 0;
   let buffer = [];
