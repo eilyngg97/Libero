@@ -488,7 +488,9 @@ function parseAlumnoExcelRows(fileBuffer) {
 
   const idxNombres = findColumnIndexByCandidates(headerRow, ['NOMBRES', 'NOMBRE', 'NOMBRES DEL ALUMNO']);
   const idxApellidos = findColumnIndexByCandidates(headerRow, ['APELLIDOS', 'APELLIDO']);
-  const idxRepresentante = findColumnIndexByCandidates(headerRow, ['REPRESENTANTE', 'NOMBRE REPRESENTANTE']);
+  const idxRepresentante = findColumnIndexByCandidates(headerRow, ['REPRESENTANTE', 'NOMBRE COMPLETO REPRESENTANTE', 'NOMBRE REPRESENTANTE']);
+  const idxRepNombres = findColumnIndexByCandidates(headerRow, ['NOMBRES REPRESENTANTE', 'NOMBRE REPRESENTANTE', 'NOMBRES DEL REPRESENTANTE']);
+  const idxRepApellidos = findColumnIndexByCandidates(headerRow, ['APELLIDOS REPRESENTANTE', 'APELLIDO REPRESENTANTE', 'APELLIDOS DEL REPRESENTANTE']);
   const fechaNacIndexes = findColumnIndexesByCandidates(headerRow, ['FECHA NAC', 'FECHA NACIMIENTO', 'FECHA DE NACIMIENTO']);
 
   const idxCedula = findColumnIndexByCandidates(headerRow, ['CEDULA ALUMNO', 'CEDULA ESTUDIANTE', 'CEDULA']);
@@ -533,6 +535,8 @@ function parseAlumnoExcelRows(fileBuffer) {
     const domicilio = idxDireccion >= 0 ? String(row[idxDireccion] || '').trim() : '';
     const numeroFranelaRaw = idxNumeroFranela >= 0 ? row[idxNumeroFranela] : '';
     const representanteRaw = idxRepresentante >= 0 ? String(row[idxRepresentante] || '').trim() : '';
+    const repNombresSeparado = idxRepNombres >= 0 ? String(row[idxRepNombres] || '').trim() : '';
+    const repApellidosSeparado = idxRepApellidos >= 0 ? String(row[idxRepApellidos] || '').trim() : '';
     const repCedula = idxRepCedula >= 0 ? normalizarCedula(row[idxRepCedula]) : '';
     const repTelefono = idxRepTelefono >= 0 ? normalizarTelefonoPlano(row[idxRepTelefono]) : '';
     const repFechaNacimiento = idxRepFechaNac >= 0 ? parseExcelDateInput(row[idxRepFechaNac]) : null;
@@ -540,7 +544,11 @@ function parseAlumnoExcelRows(fileBuffer) {
     const repDireccion = idxRepDireccion >= 0
       ? String(row[idxRepDireccion] || '').trim()
       : (domicilio || '');
-    const repNombrePartes = splitNombreCompleto(representanteRaw);
+    const repNombrePartesDesdeCompleto = splitNombreCompleto(representanteRaw);
+    const repNombrePartes = {
+      nombres: repNombresSeparado || repNombrePartesDesdeCompleto.nombres,
+      apellidos: repApellidosSeparado || repNombrePartesDesdeCompleto.apellidos
+    };
 
     return {
       excelRow: headerRowIndex + index + 2,
