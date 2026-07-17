@@ -41,25 +41,47 @@ jest.mock('../models/Mensualidad', () => ({
   find: jest.fn(),
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
-  create: jest.fn()
+  create: jest.fn(),
+  deleteMany: jest.fn()
 }));
 
 jest.mock('../models/PagoDetalle', () => ({
   find: jest.fn(),
   findById: jest.fn(),
   findByIdAndDelete: jest.fn(),
-  create: jest.fn()
+  create: jest.fn(),
+  deleteMany: jest.fn()
 }));
 
 jest.mock('../models/UniformePedido', () => ({
   find: jest.fn(),
   findById: jest.fn(),
-  create: jest.fn()
+  create: jest.fn(),
+  deleteMany: jest.fn()
 }));
 
 jest.mock('../models/Reposo', () => ({
   find: jest.fn(),
-  findOne: jest.fn()
+  findOne: jest.fn(),
+  deleteMany: jest.fn()
+}));
+
+jest.mock('../models/HistorialEstadoAlumno', () => ({
+  create: jest.fn(),
+  find: jest.fn(),
+  deleteMany: jest.fn()
+}));
+
+jest.mock('../models/ConstanciaSolicitud', () => ({
+  deleteMany: jest.fn()
+}));
+
+jest.mock('../models/Partido', () => ({
+  updateMany: jest.fn()
+}));
+
+jest.mock('../models/Torneo', () => ({
+  updateMany: jest.fn()
 }));
 
 jest.mock('../models/TenantConfig', () => ({
@@ -87,7 +109,11 @@ jest.mock('../services/tenantModelService', () => ({
     const PagoDetalle = require('../models/PagoDetalle');
     const UniformePedido = require('../models/UniformePedido');
     const Reposo = require('../models/Reposo');
+    const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
     const TenantConfig = require('../models/TenantConfig');
+    const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
+    const Partido = require('../models/Partido');
+    const Torneo = require('../models/Torneo');
 
     const map = {
       User,
@@ -96,14 +122,18 @@ jest.mock('../services/tenantModelService', () => ({
       Mensualidad,
       PagoDetalle,
       Reposo,
+      HistorialEstadoAlumno,
       TenantConfig,
+      ConstanciaSolicitud,
+      Partido,
+      Torneo,
       Sede: { findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 100, nombre: 'TRINITARIAS' }) },
       Aspirante: { find: jest.fn(), findOne: jest.fn(), create: jest.fn() },
       Uniforme: { find: jest.fn(), findById: jest.fn() },
       UniformePedido,
       LandingAtletaFoto: { find: jest.fn() },
       Entrenador: { find: jest.fn(), findById: jest.fn() },
-      HistorialEstadoAlumno: { create: jest.fn(), find: jest.fn() }
+      HistorialEstadoAlumno
     };
 
     return map[modelName] || {};
@@ -137,6 +167,7 @@ jest.mock('pdfkit', () => {
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Alumno = require('../models/Alumno');
 const Representante = require('../models/Representante');
@@ -144,15 +175,42 @@ const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
 const UniformePedido = require('../models/UniformePedido');
 const Reposo = require('../models/Reposo');
+const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
+const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
+const Partido = require('../models/Partido');
+const Torneo = require('../models/Torneo');
 const { app } = require('../app');
 
 function makeToken(payload) {
   return jwt.sign(payload, process.env.JWT_SECRET_CURRENT, { expiresIn: '1h' });
 }
 
+afterAll(async () => {
+  try {
+    await mongoose.disconnect();
+  } catch {
+    // noop
+  }
+});
+
 describe('Backend smoke tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    Mensualidad.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([])
+      })
+    });
+    Mensualidad.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    PagoDetalle.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    UniformePedido.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    Reposo.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    HistorialEstadoAlumno.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    ConstanciaSolicitud.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    Partido.updateMany.mockResolvedValue({ modifiedCount: 0 });
+    Torneo.updateMany.mockResolvedValue({ modifiedCount: 0 });
+
     Reposo.find.mockReturnValue({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue([])
@@ -737,6 +795,48 @@ describe('Backend smoke tests', () => {
     expect(response.status).toBe(200);
     expect(Representante.findByIdAndDelete).toHaveBeenCalledWith('r1');
     expect(User.findByIdAndDelete).toHaveBeenCalledWith('u1');
+  });
+
+  test('DELETE /api/alumnos/:id elimina datos asociados en cascada', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    Alumno.findByIdAndDelete.mockResolvedValue({
+      _id: 'a1',
+      representante: null,
+      usuario: null
+    });
+
+    Mensualidad.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ _id: 'm1' }, { _id: 'm2' }])
+      })
+    });
+
+    const response = await request(app)
+      .delete('/api/alumnos/a1')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(PagoDetalle.deleteMany).toHaveBeenCalledWith({ id_mensualidad: { $in: ['m1', 'm2'] } });
+    expect(Mensualidad.deleteMany).toHaveBeenCalledWith({ id_alumno: 'a1' });
+    expect(Reposo.deleteMany).toHaveBeenCalledWith({ id_alumno: 'a1' });
+
+    expect(HistorialEstadoAlumno.deleteMany).toHaveBeenCalledWith({ id_alumno: 'a1' });
+    expect(ConstanciaSolicitud.deleteMany).toHaveBeenCalledWith({
+      $or: [
+        { alumno: 'a1' },
+        { alumno_ids: 'a1' }
+      ]
+    });
+    expect(UniformePedido.deleteMany).toHaveBeenCalledWith({ alumno: 'a1' });
+    expect(Partido.updateMany).toHaveBeenCalledWith(
+      { 'convocados.alumno': 'a1' },
+      { $pull: { convocados: { alumno: 'a1' } } }
+    );
+    expect(Torneo.updateMany).toHaveBeenCalledWith(
+      { 'convocados.alumno': 'a1' },
+      { $pull: { convocados: { alumno: 'a1' } } }
+    );
   });
 
   test('PATCH /api/alumnos/:id/baja mantiene representante y usuario', async () => {
