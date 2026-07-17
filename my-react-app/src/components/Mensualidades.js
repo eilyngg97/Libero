@@ -17,10 +17,31 @@ import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
+import { mediaUrl } from '../utils/mediaUrl';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo',];
+const SESSION_AVATAR_CACHE_KEY = 'mensualidades_avatar_cache_v1';
+
+const loadAvatarCacheFromSession = () => {
+	try {
+		const raw = sessionStorage.getItem(SESSION_AVATAR_CACHE_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw);
+		return parsed && typeof parsed === 'object' ? parsed : {};
+	} catch {
+		return {};
+	}
+};
+
+const saveAvatarCacheToSession = (cache) => {
+	try {
+		sessionStorage.setItem(SESSION_AVATAR_CACHE_KEY, JSON.stringify(cache || {}));
+	} catch {
+		// no-op
+	}
+};
 
 const getLocalInputDate = (dateValue = new Date()) => {
 	const date = new Date(dateValue);
@@ -145,6 +166,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		insolventesRepresentante: false,
 		insolventesAlumnoRepresentante: false
 	});
+	const [alumnoAvatarMap, setAlumnoAvatarMap] = useState(() => loadAvatarCacheFromSession());
+	const avatarFetchInFlightRef = React.useRef(new Set());
 	const monedaCobro = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
 	const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
 
@@ -159,6 +182,86 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		const token = localStorage.getItem('token');
 		return token ? { Authorization: `Bearer ${token}` } : {};
 	};
+
+	const obtenerAvatarAlumno = React.useCallback((mensualidad) => {
+		const alumno = mensualidad?.id_alumno;
+		const alumnoId = String(alumno?._id || alumno || '').trim();
+		if (!alumnoId) return '';
+
+		if (Object.prototype.hasOwnProperty.call(alumnoAvatarMap, alumnoId)) {
+			return alumnoAvatarMap[alumnoId] || '';
+		}
+
+		const fotoDirecta = mediaUrl(alumno?.foto || '');
+		return fotoDirecta || '';
+	}, [alumnoAvatarMap]);
+
+	React.useEffect(() => {
+		setAlumnoAvatarMap((prev) => {
+			let changed = false;
+			const next = { ...prev };
+
+			for (const mensualidad of mensualidadesBD || []) {
+				const alumno = mensualidad?.id_alumno;
+				const alumnoId = String(alumno?._id || alumno || '').trim();
+				if (!alumnoId) continue;
+				const foto = mediaUrl(alumno?.foto || '');
+				const cached = next[alumnoId] || '';
+
+				if (foto && foto !== cached) {
+					next[alumnoId] = foto;
+					changed = true;
+				}
+			}
+
+			return changed ? next : prev;
+		});
+	}, [mensualidadesBD]);
+
+	React.useEffect(() => {
+		saveAvatarCacheToSession(alumnoAvatarMap);
+	}, [alumnoAvatarMap]);
+
+	React.useEffect(() => {
+		const token = localStorage.getItem('token');
+		const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+		const idsPendientes = (mensualidadesBD || [])
+			.map((mensualidad) => String(mensualidad?.id_alumno?._id || mensualidad?.id_alumno || '').trim())
+			.filter((id) => id && !Object.prototype.hasOwnProperty.call(alumnoAvatarMap, id) && !avatarFetchInFlightRef.current.has(id));
+
+		if (!idsPendientes.length) return;
+
+		idsPendientes.forEach((alumnoId) => {
+			avatarFetchInFlightRef.current.add(alumnoId);
+			fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${alumnoId}`, { headers })
+				.then((res) => res.json().catch(() => ({})).then((data) => ({ ok: res.ok, data })))
+				.then(({ ok, data }) => {
+					const foto = ok ? mediaUrl(data?.foto || '') : '';
+					setAlumnoAvatarMap((prev) => {
+						const actual = prev[alumnoId] || '';
+						if ((foto || '') === actual) return prev;
+						if (!foto && actual) return prev;
+						return {
+							...prev,
+							[alumnoId]: foto || null
+						};
+					});
+				})
+				.catch(() => {
+					setAlumnoAvatarMap((prev) => {
+						if (Object.prototype.hasOwnProperty.call(prev, alumnoId)) return prev;
+						return {
+							...prev,
+							[alumnoId]: null
+						};
+					});
+				})
+				.finally(() => {
+					avatarFetchInFlightRef.current.delete(alumnoId);
+				});
+		});
+	}, [mensualidadesBD, alumnoAvatarMap]);
 
 	const resetPagoForm = () => {
 		setModalPago(false);
@@ -1852,7 +1955,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												}}
 											/>
 										</Tooltip>
-										<Avatar sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+										<Avatar src={obtenerAvatarAlumno(m) || ''} sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 											{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 										</Avatar>
 										<Typography
@@ -2024,7 +2127,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 														}}
 													/>
 												</Tooltip>
-												<Avatar sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+												<Avatar src={obtenerAvatarAlumno(m) || ''} sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 													{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 												</Avatar>
 												{obtenerNombreAlumnoMensualidad(m)}
