@@ -11,6 +11,7 @@ const DEFAULT_CONFIG = {
   pagos: {
     pago_movil: {
       banco: '',
+      codigo_banco: '',
       telefono: '',
       cedula: '',
       titular: ''
@@ -392,6 +393,7 @@ function normalizeConfigPayload(payload = {}) {
     pagos: {
       pago_movil: {
         banco: cleanValue(pagoMovil.banco),
+        codigo_banco: cleanValue(pagoMovil.codigo_banco),
         telefono: cleanValue(pagoMovil.telefono),
         cedula: cleanValue(pagoMovil.cedula),
         titular: cleanValue(pagoMovil.titular)
@@ -429,6 +431,7 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
       const pagoMovil = root.pagos.pago_movil;
       pagosPatch.pago_movil = {
         banco: cleanValue(pagoMovil.banco),
+        codigo_banco: cleanValue(pagoMovil.codigo_banco),
         telefono: cleanValue(pagoMovil.telefono),
         cedula: cleanValue(pagoMovil.cedula),
         titular: cleanValue(pagoMovil.titular)
@@ -578,6 +581,7 @@ function serializeConfig(doc) {
     pagos: {
       pago_movil: {
         banco: cleanValue(pagos?.pago_movil?.banco),
+        codigo_banco: cleanValue(pagos?.pago_movil?.codigo_banco),
         telefono: cleanValue(pagos?.pago_movil?.telefono),
         cedula: cleanValue(pagos?.pago_movil?.cedula),
         titular: cleanValue(pagos?.pago_movil?.titular)
@@ -621,6 +625,7 @@ function serializePagosConfig(doc) {
     pagos: {
       pago_movil: {
         banco: cleanValue(pagos?.pago_movil?.banco),
+        codigo_banco: cleanValue(pagos?.pago_movil?.codigo_banco),
         telefono: cleanValue(pagos?.pago_movil?.telefono),
         cedula: cleanValue(pagos?.pago_movil?.cedula),
         titular: cleanValue(pagos?.pago_movil?.titular)
