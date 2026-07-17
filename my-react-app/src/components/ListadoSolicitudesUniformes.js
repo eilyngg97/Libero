@@ -65,6 +65,7 @@ const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', '
 
 function ListadoSolicitudesUniformes() {
   const [pedidos, setPedidos] = useState([]);
+  const [prendasCatalogo, setPrendasCatalogo] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -186,11 +187,13 @@ function ListadoSolicitudesUniformes() {
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
   const esPedidoPendiente = (pedido) => String(pedido?.estado || '').toLowerCase() === 'pendiente';
 
-  const opcionesPrenda = Array.from(new Set(
+  const opcionesPrendaDesdePedidos = Array.from(new Set(
     pedidos
       .map((pedido) => String(pedido?.prenda || '').trim())
       .filter(Boolean)
   )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+  const opcionesPrenda = prendasCatalogo.length > 0 ? prendasCatalogo : opcionesPrendaDesdePedidos;
 
   const pedidosFiltrados = pedidos.filter((pedido) => {
     const fechaPedido = pedido?.createdAt || pedido?.fecha_solicitud || pedido?.fechaSolicitud;
@@ -368,9 +371,33 @@ function ListadoSolicitudesUniformes() {
     }
   }, [sedeSeleccionada?._id, token]);
 
+  const fetchPrendasCatalogo = useCallback(async () => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || 'Error al obtener catalogo de prendas');
+
+      const prendas = Array.from(new Set(
+        (Array.isArray(data) ? data : [])
+          .map((item) => String(item?.prenda || '').trim())
+          .filter(Boolean)
+      )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+      setPrendasCatalogo(prendas);
+    } catch {
+      setPrendasCatalogo([]);
+    }
+  }, [token]);
+
   useEffect(() => {
     fetchPedidos();
   }, [fetchPedidos]);
+
+  useEffect(() => {
+    fetchPrendasCatalogo();
+  }, [fetchPrendasCatalogo]);
 
   useEffect(() => {
     if (pagina > 0 && pagina * filasPorPagina >= pedidosFiltrados.length) {
