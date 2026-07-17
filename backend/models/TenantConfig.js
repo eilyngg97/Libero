@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const PaymentMethodSchema = new mongoose.Schema({
   banco: { type: String, default: '' },
+  codigo_banco: { type: String, default: '' },
   telefono: { type: String, default: '' },
   cedula: { type: String, default: '' },
   cuenta: { type: String, default: '' },

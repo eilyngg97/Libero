@@ -25,6 +25,7 @@ function buildMetodosFromConfig(config = {}) {
       etiqueta: 'Pago Movil',
       detalles: {
         banco: pagos?.pago_movil?.banco || '',
+        codigo_banco: pagos?.pago_movil?.codigo_banco || '',
         telefono: pagos?.pago_movil?.telefono || '',
         cedula: pagos?.pago_movil?.cedula || '',
         titular: pagos?.pago_movil?.titular || ''
@@ -284,6 +285,59 @@ function ModalPago({
     }
   };
 
+  const obtenerCodigoBancoPagoMovil = (detalles = {}) => {
+    const codigoDirecto = String(
+      detalles?.codigo_banco || detalles?.codigoBanco || detalles?.banco_codigo || ''
+    ).replace(/\D/g, '');
+    if (codigoDirecto.length >= 4) return codigoDirecto.slice(0, 4);
+
+    const bancoRaw = String(detalles?.banco || '').trim();
+    const matchDigitos = bancoRaw.match(/(\d{4})/);
+    if (matchDigitos) return matchDigitos[1];
+
+    return '';
+  };
+
+  const normalizarCedulaPagoMovil = (cedulaRaw) => {
+    const raw = String(cedulaRaw || '').trim();
+    const match = raw.match(/^([VEJGvejg])\s*[-:]?\s*(\d+)$/);
+    if (match) {
+      return `${match[1].toUpperCase()}${match[2]}`;
+    }
+    return raw.replace(/\D/g, '');
+  };
+
+  const normalizarTelefonoPagoMovil = (telefonoRaw) => {
+    const digits = String(telefonoRaw || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.length === 10 ? `0${digits}` : digits;
+  };
+
+  const copiarTodosPagoMovil = async (montoEnBs) => {
+    const detalles = metodoSeleccionado?.detalles || {};
+    const codigoBanco = obtenerCodigoBancoPagoMovil(detalles);
+    const cedula = normalizarCedulaPagoMovil(detalles?.cedula);
+    const telefono = normalizarTelefonoPagoMovil(detalles?.telefono);
+    const montoFormateado = Number.isFinite(Number(montoEnBs)) ? formatMoney(montoEnBs) : '';
+
+    if (!codigoBanco || !cedula || !telefono || !montoFormateado) {
+      setCopySuccess('Faltan datos para copiar todos');
+      setTimeout(() => setCopySuccess(''), 1800);
+      return;
+    }
+
+    const texto = `${codigoBanco}\n${cedula}\n${telefono}\n${montoFormateado}`;
+
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopySuccess('Datos completos copiados');
+      setTimeout(() => setCopySuccess(''), 1800);
+    } catch {
+      setCopySuccess('No se pudo copiar');
+      setTimeout(() => setCopySuccess(''), 1800);
+    }
+  };
+
   const formatearValorDetallePago = (clave, valor) => {
     if (clave === 'cedula') {
       const base = String(valor || '').replace(/^V-?/i, '').trim();
@@ -304,6 +358,34 @@ function ModalPago({
     }
 
     return valor;
+  };
+
+  const construirCamposDetallePago = (detalles = {}) => {
+    return Object.entries(detalles || {})
+      .filter(([clave]) => clave !== 'codigo_banco')
+      .map(([clave, valor]) => {
+        if (clave === 'banco') {
+          const codigoBanco = obtenerCodigoBancoPagoMovil(detalles);
+          const nombreBanco = String(valor || '').trim();
+          const valorBanco = codigoBanco && nombreBanco
+            ? `${codigoBanco} - ${nombreBanco}`
+            : (nombreBanco || codigoBanco || '-');
+
+          return {
+            clave,
+            etiqueta: 'banco',
+            valorFormateado: valorBanco,
+            valorCopiable: valorBanco
+          };
+        }
+
+        return {
+          clave,
+          etiqueta: clave.replace('_', ' '),
+          valorFormateado: formatearValorDetallePago(clave, valor),
+          valorCopiable: valor
+        };
+      });
   };
 
   useEffect(() => {
@@ -793,31 +875,24 @@ function ModalPago({
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, mb: 2 }}>
-                    {Object.entries(metodoSeleccionado.detalles).map(([k, v]) => (
-                      <Box key={k}>
-                        {(() => {
-                          const valorFormateado = formatearValorDetallePago(k, v);
-                          return (
-                            <>
+                    {construirCamposDetallePago(metodoSeleccionado.detalles).map((item) => (
+                      <Box key={item.clave}>
                         <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                          {k.replace('_', ' ')}
+                          {item.etiqueta}
                         </Typography>
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                           <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
-                            {valorFormateado}
+                            {item.valorFormateado}
                           </Typography>
                           <IconButton
                             size="small"
-                            onClick={() => copiarDatoPago(k, v)}
+                            onClick={() => copiarDatoPago(item.clave, item.valorCopiable)}
                             sx={{ color: '#64748b' }}
-                            aria-label={`Copiar ${k}`}
+                            aria-label={`Copiar ${item.clave}`}
                           >
                             <ContentCopyIcon fontSize="inherit" />
                           </IconButton>
                         </Box>
-                            </>
-                          );
-                        })()}
                       </Box>
                     ))}
                   </Box>
@@ -860,6 +935,30 @@ function ModalPago({
                       <PaymentsIcon sx={{ opacity: 0.85 }} />
                     </Box>
                   </Box>
+                  {metodoSeleccionado?.id === 'pago-movil' && (
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      startIcon={<ContentCopyIcon fontSize="small" />}
+                      onClick={() => copiarTodosPagoMovil(montoBs)}
+                      disabled={montoBs === null}
+                      sx={{
+                        mt: 1.2,
+                        borderRadius: 1.8,
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        color: '#334155',
+                        borderColor: '#cbd5e1',
+                        backgroundColor: '#f8fafc',
+                        '&:hover': {
+                          borderColor: '#94a3b8',
+                          backgroundColor: '#eef2f7'
+                        }
+                      }}
+                    >
+                      Copiar todos
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -970,24 +1069,21 @@ function ModalPago({
                           DATOS PARA EL PAGO
                         </Typography>
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
-                          {Object.entries(metodoSeleccionado.detalles).map(([k, v]) => {
-                            const valorFormateado = formatearValorDetallePago(k, v);
-                            return (
-                              <Box key={k}>
-                                <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                  {k.replace('_', ' ')}
+                          {construirCamposDetallePago(metodoSeleccionado.detalles).map((item) => (
+                            <Box key={item.clave}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                {item.etiqueta}
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
+                                  {item.valorFormateado}
                                 </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                                  <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>
-                                    {valorFormateado}
-                                  </Typography>
-                                  <IconButton size="small" onClick={() => copiarDatoPago(k, v)} sx={{ color: '#64748b' }}>
-                                    <ContentCopyIcon fontSize="inherit" />
-                                  </IconButton>
-                                </Box>
+                                <IconButton size="small" onClick={() => copiarDatoPago(item.clave, item.valorCopiable)} sx={{ color: '#64748b' }}>
+                                  <ContentCopyIcon fontSize="inherit" />
+                                </IconButton>
                               </Box>
-                            );
-                          })}
+                            </Box>
+                          ))}
                         </Box>
                       </CardContent>
                     </Card>
@@ -1041,6 +1137,30 @@ function ModalPago({
                       <ContentCopyIcon fontSize="inherit" />
                     </IconButton>
                   </Box>
+                  {metodoSeleccionado?.id === 'pago-movil' && (
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      startIcon={<ContentCopyIcon fontSize="small" />}
+                      onClick={() => copiarTodosPagoMovil(montoAbonoBs)}
+                      disabled={montoAbonoBs === null}
+                      sx={{
+                        mt: 1.1,
+                        borderRadius: 1.8,
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        color: '#334155',
+                        borderColor: '#cbd5e1',
+                        backgroundColor: '#f8fafc',
+                        '&:hover': {
+                          borderColor: '#94a3b8',
+                          backgroundColor: '#eef2f7'
+                        }
+                      }}
+                    >
+                      Copiar todos
+                    </Button>
+                  )}
                   <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
                     Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/${moneda}` : 'No disponible'}
                   </Typography>
