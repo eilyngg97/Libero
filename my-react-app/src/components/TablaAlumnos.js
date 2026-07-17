@@ -16,6 +16,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import DownloadIcon from '@mui/icons-material/Download';
 import PersonOffIcon from '@mui/icons-material/PersonOff';
 import ReplayIcon from '@mui/icons-material/Replay';
+import UndoIcon from '@mui/icons-material/Undo';
 import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
@@ -107,6 +108,53 @@ function parseFechaLocal(fecha) {
   return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 }
 
+function formatPeriodoMensualidad(mensualidad) {
+  const mes = Number(mensualidad?.mes);
+  const anio = Number(mensualidad?.anio);
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12 || !Number.isInteger(anio) || anio < 2000) {
+    return '-';
+  }
+
+  const meses = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  return `${meses[mes - 1]} ${anio}`;
+}
+
+function buildPeriodoKey(mes, anio) {
+  return `${Number(anio)}-${String(Number(mes)).padStart(2, '0')}`;
+}
+
+function obtenerMinFechaReingreso(ultimaMensualidad) {
+  const mes = Number(ultimaMensualidad?.mes);
+  const anio = Number(ultimaMensualidad?.anio);
+  if (!Number.isInteger(mes) || !Number.isInteger(anio)) return '';
+
+  const siguienteMes = mes === 12 ? 1 : mes + 1;
+  const siguienteAnio = mes === 12 ? anio + 1 : anio;
+  return `${siguienteAnio}-${String(siguienteMes).padStart(2, '0')}-01`;
+}
+
+function construirPreviewPeriodosReingreso(fechaReingresoRaw) {
+  const fechaReingreso = parseFechaLocal(fechaReingresoRaw);
+  if (!fechaReingreso) return [];
+
+  const hoy = new Date();
+  const inicio = new Date(fechaReingreso.getFullYear(), fechaReingreso.getMonth(), 1);
+  const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  if (inicio.getTime() > fin.getTime()) return [];
+
+  const periodos = [];
+  let cursor = new Date(inicio);
+  while (cursor.getTime() <= fin.getTime()) {
+    periodos.push({ mes: cursor.getMonth() + 1, anio: cursor.getFullYear() });
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+
+  return periodos;
+}
+
 function TablaAlumnos() {
   // Estados para filtros
   const [filtroNombreApellido, setFiltroNombreApellido] = useState('');
@@ -148,10 +196,16 @@ function TablaAlumnos() {
   const [motivoBaja, setMotivoBaja] = useState('');
   const [bajaLoading, setBajaLoading] = useState(false);
   const [bajaSuccess, setBajaSuccess] = useState({ open: false, message: '' });
+  const [anularBajaId, setAnularBajaId] = useState(null);
+  const [anularBajaLoading, setAnularBajaLoading] = useState(false);
+  const [anularBajaSuccess, setAnularBajaSuccess] = useState({ open: false, message: '' });
   const [reactivarId, setReactivarId] = useState(null);
   const [reactivarLoading, setReactivarLoading] = useState(false);
   const [reactivarSuccess, setReactivarSuccess] = useState({ open: false, message: '' });
   const [reactivarError, setReactivarError] = useState(null);
+  const [reactivarUltimaMensualidad, setReactivarUltimaMensualidad] = useState(null);
+  const [reactivarUltimaMensualidadLoading, setReactivarUltimaMensualidadLoading] = useState(false);
+  const [reactivarPeriodosExistentes, setReactivarPeriodosExistentes] = useState([]);
   const [importLoading, setImportLoading] = useState(false);
   const [importSuccess, setImportSuccess] = useState({ open: false, message: '' });
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
@@ -164,6 +218,7 @@ function TablaAlumnos() {
   const [previewErrorPage, setPreviewErrorPage] = useState(0);
   const importInputRef = useRef(null);
   const [reactivarForm, setReactivarForm] = useState({
+    fechaReingreso: new Date().toISOString().slice(0, 10),
     montoReingreso: '',
     montoMensualidad: '',
     montoPagado: '',
@@ -192,6 +247,11 @@ function TablaAlumnos() {
   ).toFixed(2));
   const montoPagadoReingresoUsd = Number(reactivarForm.montoPagado) || 0;
   const saldoReingresoUsd = Number((Math.max(0, totalReingresoUsd - montoPagadoReingresoUsd)).toFixed(2));
+  const periodosExistentesSet = new Set(reactivarPeriodosExistentes);
+  const periodosReingresoPreview = construirPreviewPeriodosReingreso(reactivarForm.fechaReingreso)
+    .filter((periodo) => !periodosExistentesSet.has(buildPeriodoKey(periodo.mes, periodo.anio)));
+  const primerPeriodoReingreso = periodosReingresoPreview[0] || null;
+  const minFechaReingreso = obtenerMinFechaReingreso(reactivarUltimaMensualidad);
   // Función para descargar CSV
   const handleDownloadExcel = () => {
     const alumnosActivos = alumnosFiltrados.filter(a => !(a.dado_de_baja || a.activo === false || a.estado === 'Baja'));
@@ -452,10 +512,43 @@ function TablaAlumnos() {
     setMotivoBaja('');
   };
 
-  const openReactivarDialog = (alumno) => {
+  const handleAnularBajaAlumno = async () => {
+    if (!anularBajaId) return;
+    setAnularBajaLoading(true);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${anularBajaId}/anular-baja`, {
+        method: 'PATCH'
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const error = new Error(data.error || 'Error al anular la baja del alumno');
+        error.code = data.code;
+        throw error;
+      }
+      setAlumnos(prev => prev.map(a => a._id === anularBajaId ? { ...a, estado: 'Activo', dado_de_baja: false, activo: true, fecha_baja: null, motivo_baja: null } : a));
+      setAnularBajaId(null);
+      setAnularBajaSuccess({ open: true, message: data.message || 'Baja anulada. El alumno fue restaurado sin generar reingreso.' });
+    } catch (err) {
+      if (err?.code === 'REINGRESO_REQUIRED') {
+        const alumno = alumnos.find((item) => item._id === anularBajaId);
+        setAnularBajaId(null);
+        if (alumno) {
+          openReactivarDialog(alumno, err.message || 'La baja no se puede deshacer fuera del mismo mes. Usa reingreso.');
+          return;
+        }
+      }
+      setError(err.message);
+    } finally {
+      setAnularBajaLoading(false);
+    }
+  };
+
+  const openReactivarDialog = (alumno, aviso = null) => {
+    const alumnoId = alumno?._id || null;
     const montoSugerido = Number(alumno?.sede?.costo);
     const sugerido = Number.isFinite(montoSugerido) && montoSugerido > 0 ? String(montoSugerido) : '';
     setReactivarForm({
+      fechaReingreso: new Date().toISOString().slice(0, 10),
       montoReingreso: sugerido,
       montoMensualidad: sugerido,
       montoPagado: '',
@@ -465,14 +558,61 @@ function TablaAlumnos() {
       comentario: '',
       comprobante: null
     });
-    setReactivarError(null);
-    setReactivarId(alumno?._id || null);
+    setReactivarError(aviso ? String(aviso) : null);
+    setReactivarUltimaMensualidad(null);
+    setReactivarUltimaMensualidadLoading(Boolean(alumnoId));
+    setReactivarPeriodosExistentes([]);
+    setReactivarId(alumnoId);
+
+    if (!alumnoId) return;
+
+    const token = localStorage.getItem('token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?id_alumno=${encodeURIComponent(alumnoId)}`, {
+      headers
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => []);
+        if (!res.ok) {
+          throw new Error(data?.error || 'Error al consultar mensualidades del alumno');
+        }
+        const lista = Array.isArray(data) ? data : [];
+        const periodosExistentes = lista
+          .map((item) => buildPeriodoKey(item?.mes, item?.anio))
+          .filter((item) => /\d{4}-\d{2}/.test(item));
+        setReactivarPeriodosExistentes(Array.from(new Set(periodosExistentes)));
+
+        const ultima = lista.sort((a, b) => {
+          const anioA = Number(a?.anio) || 0;
+          const anioB = Number(b?.anio) || 0;
+          if (anioA !== anioB) return anioB - anioA;
+
+          const mesA = Number(a?.mes) || 0;
+          const mesB = Number(b?.mes) || 0;
+          if (mesA !== mesB) return mesB - mesA;
+
+          const fechaA = new Date(a?.createdAt || 0).getTime();
+          const fechaB = new Date(b?.createdAt || 0).getTime();
+          return fechaB - fechaA;
+        })[0] || null;
+        setReactivarUltimaMensualidad(ultima);
+      })
+      .catch(() => {
+        setReactivarUltimaMensualidad(null);
+        setReactivarPeriodosExistentes([]);
+      })
+      .finally(() => {
+        setReactivarUltimaMensualidadLoading(false);
+      });
   };
 
   const closeReactivarDialog = () => {
     if (reactivarLoading) return;
     setReactivarId(null);
     setReactivarError(null);
+    setReactivarUltimaMensualidad(null);
+    setReactivarUltimaMensualidadLoading(false);
+    setReactivarPeriodosExistentes([]);
     setReactivarForm((prev) => ({
       ...prev,
       referencia: '',
@@ -486,29 +626,39 @@ function TablaAlumnos() {
     setReactivarError(null);
 
     const montoReingreso = Number(reactivarForm.montoReingreso);
-    const montoMensualidad = Number(reactivarForm.montoMensualidad);
+    const montoPrimeraMensualidad = Number(reactivarForm.montoMensualidad);
     if (!Number.isFinite(montoReingreso) || montoReingreso <= 0) {
       setReactivarError('Debes ingresar un monto de reingreso valido.');
       return;
     }
-    if (!Number.isFinite(montoMensualidad) || montoMensualidad <= 0) {
-      setReactivarError('Debes ingresar un monto de mensualidad valido.');
+    if (!Number.isFinite(montoPrimeraMensualidad) || montoPrimeraMensualidad <= 0) {
+      setReactivarError('Debes ingresar un monto valido para la primera mensualidad del reingreso.');
+      return;
+    }
+    if (!periodosReingresoPreview.length) {
+      if (reactivarUltimaMensualidad) {
+        setReactivarError(`La fecha de reingreso debe ser posterior a la ultima mensualidad generada (${formatPeriodoMensualidad(reactivarUltimaMensualidad)}).`);
+      } else {
+        setReactivarError('La fecha de reingreso debe ser valida y no puede ser futura.');
+      }
       return;
     }
 
-    const metodoPago = normalizeMetodoPago(reactivarForm.metodoPago);
-    if (!metodoPago) {
-      setReactivarError('Debes seleccionar un metodo de pago.');
+    const totalEsperado = Number((montoReingreso + montoPrimeraMensualidad).toFixed(2));
+    const montoPagado = Number(reactivarForm.montoPagado || 0);
+    const tienePago = Number.isFinite(montoPagado) && montoPagado > 0;
+    const metodoPago = tienePago ? normalizeMetodoPago(reactivarForm.metodoPago) : '';
+
+    if (tienePago && !metodoPago) {
+      setReactivarError('Debes seleccionar un metodo de pago cuando registras un monto pagado.');
       return;
     }
 
-    if (metodoRequiereReferencia(metodoPago) && !/^[0-9]{6,}$/.test(String(reactivarForm.referencia || '').trim())) {
+    if (tienePago && metodoRequiereReferencia(metodoPago) && !/^[0-9]{6,}$/.test(String(reactivarForm.referencia || '').trim())) {
       setReactivarError('La referencia debe tener minimo 6 digitos para el metodo de pago seleccionado.');
       return;
     }
 
-    const totalEsperado = Number((montoReingreso + montoMensualidad).toFixed(2));
-    const montoPagado = Number(reactivarForm.montoPagado || 0);
     const estatus = (!Number.isFinite(montoPagado) || montoPagado <= 0)
       ? 'Pendiente'
       : (montoPagado < totalEsperado ? 'Abono' : 'Pagado');
@@ -516,13 +666,15 @@ function TablaAlumnos() {
     setReactivarLoading(true);
     try {
       const formData = new FormData();
+      formData.append('fecha_reingreso', reactivarForm.fechaReingreso || new Date().toISOString().slice(0, 10));
       formData.append('monto_reingreso', String(montoReingreso));
-      formData.append('monto_mensualidad', String(montoMensualidad));
+      formData.append('monto_primera_mensualidad', String(montoPrimeraMensualidad));
+      formData.append('monto_mensualidad', String(montoPrimeraMensualidad));
       formData.append('monto_esperado', String(totalEsperado));
-      formData.append('monto_pagado', Number.isFinite(montoPagado) && montoPagado > 0 ? String(montoPagado) : '');
+      formData.append('monto_pagado', tienePago ? String(montoPagado) : '');
       formData.append('fecha_pago', reactivarForm.fechaPago || new Date().toISOString().slice(0, 10));
-      formData.append('metodo_pago', metodoPago);
-      formData.append('referencia', metodoRequiereReferencia(metodoPago) ? String(reactivarForm.referencia || '').trim() : '');
+      formData.append('metodo_pago', tienePago ? metodoPago : '');
+      formData.append('referencia', (tienePago && metodoRequiereReferencia(metodoPago)) ? String(reactivarForm.referencia || '').trim() : '');
       formData.append('estatus', estatus);
       formData.append('comentario_reingreso', String(reactivarForm.comentario || '').trim());
       if (reactivarForm.comprobante) {
@@ -1006,12 +1158,12 @@ function TablaAlumnos() {
 
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                 <Tooltip title="Ver detalles">
-                  <IconButton aria-label="ver" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/${alumno._id}`); }}>
+                  <IconButton aria-label="ver" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/${alumno._id}`); }}>
                     <VisibilityIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Editar">
-                  <IconButton aria-label="editar" size="small" sx={{ color: '#64748b', bgcolor: '#f8fafc' }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/editar/${alumno._id}`); }}>
+                  <IconButton aria-label="editar" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); navigate(`/alumno/editar/${alumno._id}`); }}>
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -1019,7 +1171,7 @@ function TablaAlumnos() {
                   <IconButton
                     aria-label="descargar ficha tecnica"
                     size="small"
-                    sx={{ color: '#64748b', bgcolor: '#f8fafc' }}
+                    sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }}
                     disabled={descargandoFichaId === alumno._id}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1031,7 +1183,7 @@ function TablaAlumnos() {
                 </Tooltip>
                 {!(alumno.dado_de_baja || alumno.activo === false) && (
                   <Tooltip title="Dar de baja">
-                    <IconButton aria-label="dar de baja" size="small" sx={{ color: '#64748b', bgcolor: '#fff7ed' }} onClick={(e) => {
+                    <IconButton aria-label="dar de baja" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => {
                       e.stopPropagation();
                       setBajaId(alumno._id);
                       setMotivoBaja('');
@@ -1041,19 +1193,27 @@ function TablaAlumnos() {
                   </Tooltip>
                 )}
                 {(alumno.dado_de_baja || alumno.activo === false) && (
-                  <Tooltip title="Reactivar">
-                    <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', bgcolor: '#f0fdf4' }} onClick={(e) => { e.stopPropagation(); openReactivarDialog(alumno); }}>
-                      <ReplayIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
+                    <Tooltip title="Reingresar con cobro">
+                      <IconButton aria-label="reingresar con cobro" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); openReactivarDialog(alumno); }}>
+                        <ReplayIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Deshacer baja">
+                      <IconButton aria-label="deshacer baja" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); setAnularBajaId(alumno._id); }}>
+                        <UndoIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 )}
                 <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
                   <IconButton
                     aria-label="gestionar reposos"
                     size="small"
                     sx={{
-                      color: alumno.tiene_reposo_activo ? '#15803d' : '#64748b',
-                      bgcolor: alumno.tiene_reposo_activo ? '#f0fdf4' : '#f8fafc'
+                      color: '#94a3b8',
+                      bgcolor: '#f8fafc',
+                      '&:hover': { bgcolor: '#eef2f7' }
                     }}
                     onClick={(e) => { e.stopPropagation(); navigate(`/alumno/reposos/${alumno._id}`); }}
                   >
@@ -1061,7 +1221,7 @@ function TablaAlumnos() {
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Eliminar">
-                  <IconButton aria-label="eliminar" size="small" sx={{ color: '#64748b', bgcolor: '#fff1f2' }} onClick={(e) => { e.stopPropagation(); setDeleteId(alumno._id); }}>
+                  <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); setDeleteId(alumno._id); }}>
                     <DeleteIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -1070,7 +1230,7 @@ function TablaAlumnos() {
                     <IconButton
                       aria-label="descargar cédula"
                       size="small"
-                      sx={{ color: '#64748b', bgcolor: '#f8fafc' }}
+                      sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }}
                       onClick={(e) => {
                         e.stopPropagation();
                         const link = document.createElement('a');
@@ -1230,19 +1390,28 @@ function TablaAlumnos() {
                         </Tooltip>
                       )}
                       {(alumno.dado_de_baja || alumno.activo === false) && (
-                        <Tooltip title="Reactivar">
-                          <IconButton aria-label="reactivar" size="small" sx={{ color: '#2e7d32', p: 0.5 }} onClick={(e) => { e.stopPropagation(); openReactivarDialog(alumno); }}>
-                            <ReplayIcon />
-                          </IconButton>
-                        </Tooltip>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, width: '100%', minWidth: 0 }}>
+                          <Tooltip title="Reingresar con cobro">
+                            <IconButton aria-label="reingresar con cobro" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); openReactivarDialog(alumno); }}>
+                              <ReplayIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Deshacer baja">
+                            <IconButton aria-label="deshacer baja" size="small" sx={{ color: '#94a3b8', bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); setAnularBajaId(alumno._id); }}>
+                              <UndoIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
                       )}
                       <Tooltip title={alumno.tiene_reposo_activo ? 'Gestionar reposos (activo)' : 'Gestionar reposos'}>
                         <IconButton
                           aria-label="gestionar reposos"
                           size="small"
                           sx={{
-                            color: alumno.tiene_reposo_activo ? '#15803d' : '#94a3b8',
-                            p: 0.5
+                            color: '#94a3b8',
+                            p: 0.5,
+                            bgcolor: '#f8fafc',
+                            '&:hover': { bgcolor: '#eef2f7' }
                           }}
                           onClick={(e) => { e.stopPropagation(); navigate(`/alumno/reposos/${alumno._id}`); }}
                         >
@@ -1250,7 +1419,7 @@ function TablaAlumnos() {
                         </IconButton>
                       </Tooltip>
                       <Tooltip title="Eliminar">
-                        <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8', p: 0.5 }} onClick={(e) => { e.stopPropagation(); setDeleteId(alumno._id); }}>
+                        <IconButton aria-label="eliminar" size="small" sx={{ color: '#94a3b8', p: 0.5, bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }} onClick={(e) => { e.stopPropagation(); setDeleteId(alumno._id); }}>
                           <DeleteIcon />
                         </IconButton>
                       </Tooltip>
@@ -1259,7 +1428,7 @@ function TablaAlumnos() {
                           <IconButton
                             aria-label="descargar cédula"
                             size="small"
-                            sx={{ color: '#94a3b8', p: 0.5 }}
+                            sx={{ color: '#94a3b8', p: 0.5, bgcolor: '#f8fafc', '&:hover': { bgcolor: '#eef2f7' } }}
                             onClick={(e) => {
                               e.stopPropagation();
                               const link = document.createElement('a');
@@ -1331,15 +1500,35 @@ function TablaAlumnos() {
         </DialogActions>
       </Dialog>
       <Dialog
+        open={!!anularBajaId}
+        onClose={() => { if (!anularBajaLoading) setAnularBajaId(null); }}
+      >
+        <DialogTitle>¿Deshacer baja?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1.5 }}>
+            Esta acción solo revierte la baja del alumno.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAnularBajaId(null)} disabled={anularBajaLoading}>Cancelar</Button>
+          <Button onClick={handleAnularBajaAlumno} variant="contained" disabled={anularBajaLoading} sx={{ bgcolor: '#d97706', '&:hover': { bgcolor: '#b45309' } }}>
+            {anularBajaLoading ? 'Procesando...' : 'Deshacer baja'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
         open={!!reactivarId}
         onClose={closeReactivarDialog}
         fullWidth
-        maxWidth="sm"
+        maxWidth="lg"
+        scroll="paper"
         BackdropProps={{ sx: { backgroundColor: 'rgba(255, 255, 255, 0.08)', backdropFilter: 'blur(4px)' } }}
         PaperProps={{
           sx: {
             borderRadius: 3,
             boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)',
+            width: { xs: 'calc(100% - 16px)', md: 'min(1100px, 96vw)' },
+            maxWidth: '1100px',
             px: { xs: 0.5, sm: 1.5 },
             py: 0.5
           }
@@ -1355,188 +1544,258 @@ function TablaAlumnos() {
 
           <Box
             sx={{
-              p: 2,
-              borderRadius: 2.5,
-              border: '1px solid #dbe3ef',
-              borderLeft: '4px solid #f97316',
-              background: 'linear-gradient(135deg, #f8fbff 0%, #fdfdfd 100%)',
-              mb: 2
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(290px, 380px) minmax(0, 1fr)' },
+              gap: 1.75,
+              alignItems: 'start'
             }}
           >
-            <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', mb: 0.5 }}>
-              Datos base
-            </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.75, alignItems: 'center' }}>
-              <Typography variant="body2" sx={{ color: '#334155' }}>Alumno</Typography>
-              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
-                {alumnoReactivar ? `${alumnoReactivar.nombres || ''} ${alumnoReactivar.apellidos || ''}`.trim() : '-'}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#334155' }}>Sede</Typography>
-              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
-                {alumnoReactivar?.sede?.nombre || '-'}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#334155' }}>Monto base sede</Typography>
-              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
-                {alumnoReactivar?.sede?.costo !== undefined && alumnoReactivar?.sede?.costo !== null
-                  ? `$${Number(alumnoReactivar.sede.costo).toFixed(2)}`
-                  : 'No disponible'}
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, my: 1.5 }}>
-            <TextField
-              label="Monto de reingreso (USD)"
-              type="number"
-              value={reactivarForm.montoReingreso}
-              onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoReingreso: e.target.value }))}
-              inputProps={{ min: 0, step: '0.01' }}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-              fullWidth
-              size="small"
-              sx={modalInputSx}
-            />
-            <TextField
-              label="Monto mensualidad (USD)"
-              type="number"
-              value={reactivarForm.montoMensualidad}
-              onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoMensualidad: e.target.value }))}
-              inputProps={{ min: 0, step: '0.01' }}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-              fullWidth
-              size="small"
-              sx={modalInputSx}
-            />
-          </Box>
-
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: 2.5,
-              border: '1px solid #1e2a57',
-              background: '#0B0F2A',
-              mb: 2
-            }}
-          >
-            <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#cbd5e1', mb: 0.75 }}>
-              Resumen de reingreso
-            </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.75, alignItems: 'center' }}>
-              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Total USD</Typography>
-              <Typography sx={{ color: '#ffffff', fontWeight: 900, fontSize: 20, lineHeight: 1.1 }}>
-                ${totalReingresoUsd.toFixed(2)}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Pagado USD</Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff', fontWeight: 800 }}>
-                ${montoPagadoReingresoUsd.toFixed(2)}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Saldo USD</Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff', fontWeight: 800 }}>
-                ${saldoReingresoUsd.toFixed(2)}
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-            <TextField
-              label="Monto pagado (USD)"
-              type="number"
-              value={reactivarForm.montoPagado}
-              onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoPagado: e.target.value }))}
-              inputProps={{ min: 0, step: '0.01' }}
-              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-              helperText="Opcional. Si queda en blanco se registra como pendiente."
-              fullWidth
-              size="small"
-              sx={modalInputSx}
-            />
-            <TextField
-              label="Fecha de pago"
-              type="date"
-              value={reactivarForm.fechaPago}
-              onChange={(e) => setReactivarForm((prev) => ({ ...prev, fechaPago: e.target.value }))}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-              size="small"
-              sx={modalInputSx}
-            />
-            <FormControl fullWidth size="small" sx={modalInputSx}>
-              <InputLabel id="metodo-pago-reingreso-label">Metodo de pago</InputLabel>
-              <Select
-                labelId="metodo-pago-reingreso-label"
-                value={reactivarForm.metodoPago}
-                label="Metodo de pago"
-                onChange={(e) => setReactivarForm((prev) => ({ ...prev, metodoPago: normalizeMetodoPago(e.target.value) }))}
+            <Box sx={{ display: 'grid', gap: 1.25 }}>
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2.5,
+                  border: '1px solid #dbe3ef',
+                  borderLeft: '4px solid #f97316',
+                  background: 'linear-gradient(135deg, #f8fbff 0%, #fdfdfd 100%)'
+                }}
               >
-                {METODOS_PAGO.map((metodo) => (
-                  <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {metodoRequiereReferencia(reactivarForm.metodoPago) && (
-              <TextField
-                label="Referencia (minimo 6 digitos)"
-                value={reactivarForm.referencia}
-                onChange={(e) => setReactivarForm((prev) => ({ ...prev, referencia: e.target.value.replace(/\D/g, '') }))}
-                inputProps={{ minLength: 6 }}
-                fullWidth
-                size="small"
-                sx={modalInputSx}
-              />
-            )}
-            <TextField
-              label="Comentario"
-              value={reactivarForm.comentario}
-              onChange={(e) => setReactivarForm((prev) => ({ ...prev, comentario: e.target.value }))}
-              multiline
-              minRows={2}
-              fullWidth
-              size="small"
-              sx={{ ...modalInputSx, gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}
-            />
-          </Box>
+                <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b', mb: 0.5 }}>
+                  Datos base
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr auto' }, gap: 0.55, alignItems: 'center' }}>
+                  <Typography variant="body2" sx={{ color: '#334155' }}>Alumno</Typography>
+                  <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                    {alumnoReactivar ? `${alumnoReactivar.nombres || ''} ${alumnoReactivar.apellidos || ''}`.trim() : '-'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#334155' }}>Sede</Typography>
+                  <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                    {alumnoReactivar?.sede?.nombre || '-'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#334155' }}>Monto base sede</Typography>
+                  <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                    {alumnoReactivar?.sede?.costo !== undefined && alumnoReactivar?.sede?.costo !== null
+                      ? `$${Number(alumnoReactivar.sede.costo).toFixed(2)}`
+                      : 'No disponible'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#334155' }}>Fecha de baja</Typography>
+                  <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                    {formatFecha(alumnoReactivar?.fecha_baja) || '-'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#334155' }}>Ultima mensualidad generada</Typography>
+                  <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                    {reactivarUltimaMensualidadLoading
+                      ? 'Consultando...'
+                      : (reactivarUltimaMensualidad ? formatPeriodoMensualidad(reactivarUltimaMensualidad) : 'No generada')}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#334155' }}>Estatus de ultima mensualidad</Typography>
+                  <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                    {reactivarUltimaMensualidadLoading
+                      ? 'Consultando...'
+                      : (reactivarUltimaMensualidad?.estatus || '-')}
+                  </Typography>
+                </Box>
+              </Box>
 
-          <Box
-            component="label"
-            sx={{
-              mt: 2,
-              border: '1px dashed #cbd5f0',
-              borderRadius: 2,
-              p: 2,
-              textAlign: 'center',
-              backgroundColor: '#f8fafc',
-              display: 'block',
-              cursor: 'pointer'
-            }}
-          >
-            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
-              Haz clic para adjuntar comprobante
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG hasta 5MB</Typography>
-            <input
-              type="file"
-              hidden
-              accept="image/*"
-              onChange={(e) => setReactivarForm((prev) => ({ ...prev, comprobante: e.target.files?.[0] || null }))}
-            />
-          </Box>
-
-          {reactivarForm.comprobante && (
-            <Box
-              sx={{
-                mt: 1.5,
-                px: 1.5,
-                py: 1,
-                border: '1px solid #e2e8f0',
-                borderRadius: 2,
-                bgcolor: '#ffffff'
-              }}
-            >
-              <Typography sx={{ fontSize: 12, color: '#475569' }}>
-                Archivo: {reactivarForm.comprobante.name}
-              </Typography>
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2.5,
+                  border: '1px solid #1e2a57',
+                  background: '#0B0F2A'
+                }}
+              >
+                <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#cbd5e1', mb: 0.7 }}>
+                  Resumen de reingreso
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr auto' }, gap: 0.65, alignItems: 'center' }}>
+                  <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Total USD</Typography>
+                  <Typography sx={{ color: '#ffffff', fontWeight: 900, fontSize: 20, lineHeight: 1.1 }}>
+                    ${totalReingresoUsd.toFixed(2)}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Pagado USD</Typography>
+                  <Typography variant="body2" sx={{ color: '#ffffff', fontWeight: 800 }}>
+                    ${montoPagadoReingresoUsd.toFixed(2)}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>Saldo USD</Typography>
+                  <Typography variant="body2" sx={{ color: '#ffffff', fontWeight: 800 }}>
+                    ${saldoReingresoUsd.toFixed(2)}
+                  </Typography>
+                </Box>
+              </Box>
             </Box>
-          )}
+
+            <Box sx={{ display: 'grid', gap: 1.25 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 1.15 }}>
+                <TextField
+                  label="Fecha de reingreso"
+                  type="date"
+                  value={reactivarForm.fechaReingreso}
+                  onChange={(e) => setReactivarForm((prev) => ({ ...prev, fechaReingreso: e.target.value }))}
+                  InputLabelProps={{ shrink: true }}
+                  inputProps={{ min: minFechaReingreso || undefined }}
+                  helperText={minFechaReingreso ? `Disponible desde ${formatFecha(minFechaReingreso)}.` : ''}
+                  fullWidth
+                  size="small"
+                  sx={modalInputSx}
+                />
+                <TextField
+                  label="Monto de reingreso (USD)"
+                  type="number"
+                  value={reactivarForm.montoReingreso}
+                  onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoReingreso: e.target.value }))}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                  fullWidth
+                  size="small"
+                  sx={modalInputSx}
+                />
+                <TextField
+                  label="Primera mensualidad (USD)"
+                  type="number"
+                  value={reactivarForm.montoMensualidad}
+                  onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoMensualidad: e.target.value }))}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                  helperText="Solo aplica al primer mes generado (prorrateo opcional)."
+                  fullWidth
+                  size="small"
+                  sx={modalInputSx}
+                />
+              </Box>
+
+              <MuiAlert
+                severity={periodosReingresoPreview.length ? 'info' : 'warning'}
+                sx={{
+                  borderRadius: 2,
+                  border: '1px solid #dbeafe',
+                  backgroundColor: '#eff6ff',
+                  color: '#1e3a8a',
+                  '& .MuiAlert-icon': { color: '#2563eb' }
+                }}
+              >
+                <Typography sx={{ fontWeight: 700, fontSize: 12.5, mb: 0.25 }}>
+                  Mensualidades a generar segun fecha de reingreso
+                </Typography>
+                <Typography sx={{ fontSize: 12.5 }}>
+                  {periodosReingresoPreview.length
+                    ? periodosReingresoPreview.map((periodo) => formatPeriodoMensualidad(periodo)).join(', ')
+                    : 'No hay periodos pendientes por generar desde la fecha seleccionada.'}
+                </Typography>
+                {primerPeriodoReingreso && (
+                  <Typography sx={{ fontSize: 12.5, mt: 0.5 }}>
+                    El pago registrado aqui se aplicara en orden desde <strong>{formatPeriodoMensualidad(primerPeriodoReingreso)}</strong> y el excedente se descontara en los siguientes periodos generados.
+                  </Typography>
+                )}
+                <Typography sx={{ fontSize: 12.5, mt: 0.5 }}>
+                  Las mensualidades posteriores se generan con el monto base configurado del alumno/sede.
+                </Typography>
+              </MuiAlert>
+
+              <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#64748b' }}>
+                Detalles de pago
+              </Typography>
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 1.15 }}>
+                <FormControl fullWidth size="small" sx={{ ...modalInputSx, gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
+                  <InputLabel id="metodo-pago-reingreso-label">Metodo de pago</InputLabel>
+                  <Select
+                    labelId="metodo-pago-reingreso-label"
+                    value={reactivarForm.metodoPago}
+                    label="Metodo de pago"
+                    onChange={(e) => setReactivarForm((prev) => ({ ...prev, metodoPago: normalizeMetodoPago(e.target.value) }))}
+                  >
+                    {METODOS_PAGO.map((metodo) => (
+                      <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <TextField
+                  label="Monto pagado (USD)"
+                  type="number"
+                  value={reactivarForm.montoPagado}
+                  onChange={(e) => setReactivarForm((prev) => ({ ...prev, montoPagado: e.target.value }))}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                  helperText="Opcional. Si queda en blanco se registra como pendiente."
+                  fullWidth
+                  size="small"
+                  sx={modalInputSx}
+                />
+                <TextField
+                  label="Fecha de pago"
+                  type="date"
+                  value={reactivarForm.fechaPago}
+                  onChange={(e) => setReactivarForm((prev) => ({ ...prev, fechaPago: e.target.value }))}
+                  InputLabelProps={{ shrink: true }}
+                  fullWidth
+                  size="small"
+                  sx={modalInputSx}
+                />
+                {metodoRequiereReferencia(reactivarForm.metodoPago) && (
+                  <TextField
+                    label="Referencia (minimo 6 digitos)"
+                    value={reactivarForm.referencia}
+                    onChange={(e) => setReactivarForm((prev) => ({ ...prev, referencia: e.target.value.replace(/\D/g, '') }))}
+                    inputProps={{ minLength: 6 }}
+                    fullWidth
+                    size="small"
+                    sx={modalInputSx}
+                  />
+                )}
+                <TextField
+                  label="Comentario"
+                  value={reactivarForm.comentario}
+                  onChange={(e) => setReactivarForm((prev) => ({ ...prev, comentario: e.target.value }))}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                  size="small"
+                  sx={{ ...modalInputSx, gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}
+                />
+              </Box>
+
+              <Box
+                component="label"
+                sx={{
+                  border: '1px dashed #cbd5f0',
+                  borderRadius: 2,
+                  p: 1.25,
+                  textAlign: 'center',
+                  backgroundColor: '#f8fafc',
+                  display: 'block',
+                  cursor: 'pointer'
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                  Haz clic para adjuntar comprobante
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG hasta 5MB</Typography>
+                <input
+                  type="file"
+                  hidden
+                  accept="image/*"
+                  onChange={(e) => setReactivarForm((prev) => ({ ...prev, comprobante: e.target.files?.[0] || null }))}
+                />
+              </Box>
+
+              {reactivarForm.comprobante && (
+                <Box
+                  sx={{
+                    px: 1.5,
+                    py: 1,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 2,
+                    bgcolor: '#ffffff'
+                  }}
+                >
+                  <Typography sx={{ fontSize: 12, color: '#475569' }}>
+                    Archivo: {reactivarForm.comprobante.name}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
 
           {reactivarError && (
             <MuiAlert
@@ -1672,6 +1931,11 @@ function TablaAlumnos() {
       <Snackbar open={bajaSuccess.open} autoHideDuration={2500} onClose={() => setBajaSuccess({ open: false, message: '' })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <MuiAlert onClose={() => setBajaSuccess({ open: false, message: '' })} severity="success" sx={{ width: '100%' }}>
           {bajaSuccess.message}
+        </MuiAlert>
+      </Snackbar>
+      <Snackbar open={anularBajaSuccess.open} autoHideDuration={2500} onClose={() => setAnularBajaSuccess({ open: false, message: '' })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <MuiAlert onClose={() => setAnularBajaSuccess({ open: false, message: '' })} severity="success" sx={{ width: '100%' }}>
+          {anularBajaSuccess.message}
         </MuiAlert>
       </Snackbar>
       <Snackbar open={reactivarSuccess.open} autoHideDuration={2500} onClose={() => setReactivarSuccess({ open: false, message: '' })} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>

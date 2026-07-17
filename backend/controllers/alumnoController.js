@@ -689,6 +689,58 @@ function distribuirPagoPorConceptos({
   };
 }
 
+function distribuirPagoReingresoEntreMensualidades({
+  mensualidades = [],
+  montoPagadoUsd = 0,
+  montoPagadoBs,
+  montoReingreso = 0,
+  montoPrimeraMensualidad = 0
+}) {
+  const totalUsd = redondearMonto(Math.max(0, montoPagadoUsd || 0));
+  const totalBs = Number.isFinite(Number(montoPagadoBs)) ? redondearMonto(montoPagadoBs) : undefined;
+  let restanteUsd = totalUsd;
+  let restanteBs = Number.isFinite(totalBs) ? totalBs : undefined;
+
+  return mensualidades.map((item, index) => {
+    const montoEsperadoUsd = redondearMonto(Math.max(0, Number(item?.montoEsperadoUsd) || 0));
+    const montoAplicadoUsd = redondearMonto(Math.min(restanteUsd, montoEsperadoUsd));
+    let montoAplicadoBs;
+
+    if (Number.isFinite(totalBs) && totalUsd > 0) {
+      if (index === mensualidades.length - 1) {
+        montoAplicadoBs = redondearMonto(Math.max(0, restanteBs ?? 0));
+      } else {
+        montoAplicadoBs = redondearMonto((montoAplicadoUsd / totalUsd) * totalBs);
+        restanteBs = redondearMonto((restanteBs ?? totalBs) - montoAplicadoBs);
+      }
+    }
+
+    restanteUsd = redondearMonto(Math.max(0, restanteUsd - montoAplicadoUsd));
+
+    const conceptosDetalle = index === 0
+      ? distribuirPagoPorConceptos({
+        montoPagadoUsd: montoAplicadoUsd,
+        montoPagadoBs: montoAplicadoBs,
+        montoReingreso,
+        montoMensualidad: montoPrimeraMensualidad
+      }).conceptosDetalle
+      : [{
+        tipo: 'MENSUALIDAD_REINGRESO',
+        monto_esperado_usd: montoEsperadoUsd,
+        monto_pagado_usd: montoAplicadoUsd,
+        monto_esperado_bs: undefined,
+        monto_pagado_bs: montoAplicadoBs
+      }];
+
+    return {
+      ...item,
+      montoAplicadoUsd,
+      montoAplicadoBs,
+      conceptosDetalle
+    };
+  });
+}
+
 function normalizarMontoParcialPersonalizado(valor) {
   if (valor === undefined || valor === null || String(valor).trim() === '') return null;
   const numero = Number(valor);
@@ -796,6 +848,64 @@ function getPeriodoZonaCaracas() {
     mes: Number(monthPart?.value || now.getUTCMonth() + 1),
     anio: Number(yearPart?.value || now.getUTCFullYear())
   };
+}
+
+function obtenerPeriodoDesdeFecha(fecha) {
+  if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) return null;
+  return {
+    mes: fecha.getUTCMonth() + 1,
+    anio: fecha.getUTCFullYear()
+  };
+}
+
+function construirPeriodosEntre(inicio, fin) {
+  const mesInicio = Number(inicio?.mes);
+  const anioInicio = Number(inicio?.anio);
+  const mesFin = Number(fin?.mes);
+  const anioFin = Number(fin?.anio);
+
+  if (!Number.isInteger(mesInicio) || !Number.isInteger(anioInicio) || !Number.isInteger(mesFin) || !Number.isInteger(anioFin)) {
+    return [];
+  }
+
+  const periodos = [];
+  let cursorMes = mesInicio;
+  let cursorAnio = anioInicio;
+
+  while (cursorAnio < anioFin || (cursorAnio === anioFin && cursorMes <= mesFin)) {
+    periodos.push({ mes: cursorMes, anio: cursorAnio });
+    cursorMes += 1;
+    if (cursorMes > 12) {
+      cursorMes = 1;
+      cursorAnio += 1;
+    }
+  }
+
+  return periodos;
+}
+
+function compararPeriodos(a, b) {
+  const anioA = Number(a?.anio) || 0;
+  const anioB = Number(b?.anio) || 0;
+  if (anioA !== anioB) return anioA - anioB;
+
+  const mesA = Number(a?.mes) || 0;
+  const mesB = Number(b?.mes) || 0;
+  return mesA - mesB;
+}
+
+function formatPeriodoTexto(periodo) {
+  const mes = Number(periodo?.mes);
+  const anio = Number(periodo?.anio);
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12 || !Number.isInteger(anio) || anio < 2000) {
+    return '-';
+  }
+
+  const meses = [
+    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+  ];
+  return `${meses[mes - 1]} ${anio}`;
 }
 
 async function resolverMontoBaseAlumno(alumno, models = {}) {
@@ -3104,11 +3214,93 @@ exports.darDeBajaAlumno = async (req, res) => {
   }
 };
 
+// Anular una baja accidental sin generar reingreso ni cobros
+exports.anularBajaAlumno = async (req, res) => {
+  try {
+    const {
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+    } = await getTenantAlumnoWriteModels(req);
+
+    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id activo dado_de_baja estado fecha_baja motivo_baja numero_franela');
+    if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
+    if (alumnoActual.activo !== false && alumnoActual.dado_de_baja !== true) {
+      return res.status(400).json({ error: 'El alumno ya se encuentra activo.' });
+    }
+
+    if (!alumnoActual.fecha_baja) {
+      return res.status(409).json({
+        error: 'La baja no tiene una fecha válida. Debes usar el proceso de reingreso.',
+        code: 'REINGRESO_REQUIRED'
+      });
+    }
+
+    const fechaBaja = new Date(alumnoActual.fecha_baja);
+    const fechaActual = new Date();
+    const mismoMesYAnio = fechaBaja.getMonth() === fechaActual.getMonth() && fechaBaja.getFullYear() === fechaActual.getFullYear();
+    if (!mismoMesYAnio) {
+      return res.status(409).json({
+        error: 'Solo puedes deshacer la baja en el mismo mes en que ocurrió. Debes usar reingreso.',
+        code: 'REINGRESO_REQUIRED'
+      });
+    }
+
+    const mensualidadDelMes = await TenantMensualidad.findOne({
+      id_alumno: alumnoActual._id,
+      mes: fechaBaja.getMonth() + 1,
+      anio: fechaBaja.getFullYear()
+    }).select('_id estatus mes anio');
+
+    if (!mensualidadDelMes) {
+      return res.status(409).json({
+        error: 'No existe la mensualidad generada de ese mes. Debes usar reingreso.',
+        code: 'REINGRESO_REQUIRED'
+      });
+    }
+
+    const fechaAnulacion = new Date();
+    const alumno = await TenantAlumno.findByIdAndUpdate(
+      req.params.id,
+      {
+        activo: true,
+        dado_de_baja: false,
+        estado: 'Activo',
+        $unset: {
+          fecha_baja: '',
+          motivo_baja: ''
+        }
+      },
+      { new: true }
+    );
+
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    await TenantHistorialEstadoAlumno.create({
+      id_alumno: alumno._id,
+      tipo_movimiento: 'REACTIVACION',
+      fecha_evento: fechaAnulacion,
+      motivo: 'Baja anulada sin reingreso',
+      actor_id: req.user?.id || undefined,
+      metadata: {
+        estado_resultante: 'Activo',
+        anula_movimiento: 'BAJA',
+        tipo_operacion: 'ANULACION_BAJA'
+      }
+    });
+
+    res.json({ message: 'Baja anulada. El alumno fue restaurado sin generar reingreso.', alumno });
+  } catch (err) {
+    res.status(400).json({ error: 'Error al anular la baja del alumno' });
+  }
+};
+
 // Reactivar un alumno (revertir baja)
 exports.reactivarAlumno = async (req, res) => {
   try {
     const {
       Alumno: TenantAlumno,
+      Sede: TenantSede,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
       HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
@@ -3122,7 +3314,11 @@ exports.reactivarAlumno = async (req, res) => {
     }
 
     const montoReingreso = normalizarMontoOpcional(req.body?.monto_reingreso);
-    const montoMensualidad = normalizarMontoOpcional(req.body?.monto_mensualidad);
+    const montoPrimeraMensualidad = normalizarMontoOpcional(
+      req.body?.monto_primera_mensualidad !== undefined
+        ? req.body?.monto_primera_mensualidad
+        : req.body?.monto_mensualidad
+    );
     const montoPagadoUsd = normalizarMontoOpcional(req.body?.monto_pagado);
     const montoPagadoBs = normalizarMontoBsOpcional(req.body?.monto_pagado_bs);
     const montoEsperadoBs = normalizarMontoBsOpcional(req.body?.monto_esperado_bs);
@@ -3130,38 +3326,83 @@ exports.reactivarAlumno = async (req, res) => {
     const referencia = String(req.body?.referencia || '').trim();
     const comentarioReingreso = String(req.body?.comentario_reingreso || '').trim();
     const fechaPago = parseDateInput(req.body?.fecha_pago) || new Date();
+    const fechaReingreso = parseDateInput(req.body?.fecha_reingreso);
+
+    if (!fechaReingreso) {
+      return res.status(400).json({ error: 'fecha_reingreso es requerida y debe ser valida.' });
+    }
 
     if (!Number.isFinite(montoReingreso) || montoReingreso <= 0) {
       return res.status(400).json({ error: 'monto_reingreso invalido' });
     }
-    if (!Number.isFinite(montoMensualidad) || montoMensualidad <= 0) {
-      return res.status(400).json({ error: 'monto_mensualidad invalido' });
+    if (!Number.isFinite(montoPrimeraMensualidad) || montoPrimeraMensualidad <= 0) {
+      return res.status(400).json({ error: 'monto_primera_mensualidad invalido' });
     }
-    if (!metodoPago) {
-      return res.status(400).json({ error: 'metodo_pago es requerido' });
+    const totalEsperado = redondearMonto(montoReingreso + montoPrimeraMensualidad);
+    const totalPagado = redondearMonto(Math.max(0, montoPagadoUsd || 0));
+    const tienePago = totalPagado > 0;
+
+    if (tienePago && !metodoPago) {
+      return res.status(400).json({ error: 'metodo_pago es requerido cuando monto_pagado es mayor a 0' });
     }
-    if (metodoRequiereReferencia(metodoPago) && !/^[0-9]{6,}$/.test(referencia)) {
+    if (tienePago && metodoRequiereReferencia(metodoPago) && !/^[0-9]{6,}$/.test(referencia)) {
       return res.status(400).json({ error: 'La referencia de pago debe tener minimo 6 digitos.' });
     }
+    const periodoReingreso = obtenerPeriodoDesdeFecha(fechaReingreso);
+    const periodoActual = getPeriodoZonaCaracas();
 
-    const totalEsperado = redondearMonto(montoReingreso + montoMensualidad);
-    const totalPagado = redondearMonto(Math.max(0, montoPagadoUsd || 0));
-    const { mes, anio } = getPeriodoZonaCaracas();
+    if (!periodoReingreso) {
+      return res.status(400).json({ error: 'No se pudo resolver el periodo de reingreso.' });
+    }
+    if (
+      periodoReingreso.anio > periodoActual.anio ||
+      (periodoReingreso.anio === periodoActual.anio && periodoReingreso.mes > periodoActual.mes)
+    ) {
+      return res.status(400).json({ error: 'La fecha de reingreso no puede estar en un periodo futuro.' });
+    }
 
-    const mensualidadExistente = await TenantMensualidad.findOne({
-      id_alumno: alumnoActual._id,
-      mes,
-      anio
-    });
+    const periodosObjetivo = construirPeriodosEntre(periodoReingreso, periodoActual);
+    if (!periodosObjetivo.length) {
+      return res.status(400).json({ error: 'No hay periodos validos para generar mensualidades.' });
+    }
 
-    if (mensualidadExistente) {
+    const ultimaMensualidadGenerada = await TenantMensualidad.findOne({
+      id_alumno: alumnoActual._id
+    })
+      .sort({ anio: -1, mes: -1, createdAt: -1 })
+      .select('mes anio')
+      .lean();
+
+    if (ultimaMensualidadGenerada && compararPeriodos(periodoReingreso, ultimaMensualidadGenerada) <= 0) {
       return res.status(409).json({
-        error: 'Ya existe una mensualidad para el periodo actual. No se puede registrar reingreso duplicado.'
+        error: `La fecha de reingreso debe estar despues de la ultima mensualidad generada (${formatPeriodoTexto(ultimaMensualidadGenerada)}).`
       });
     }
 
+    const mensualidadInicioExistente = await TenantMensualidad.findOne({
+      id_alumno: alumnoActual._id,
+      mes: periodoReingreso.mes,
+      anio: periodoReingreso.anio
+    });
+
+    if (mensualidadInicioExistente) {
+      return res.status(409).json({
+        error: 'Ya existe una mensualidad en el periodo de reingreso seleccionado.'
+      });
+    }
+
+    const condicionesPeriodos = periodosObjetivo.map((periodo) => ({ mes: periodo.mes, anio: periodo.anio }));
+    const mensualidadesExistentes = await TenantMensualidad.find({
+      id_alumno: alumnoActual._id,
+      $or: condicionesPeriodos
+    })
+      .select('_id mes anio')
+      .lean();
+    const existentesSet = new Set(
+      mensualidadesExistentes.map((item) => `${Number(item?.anio)}-${Number(item?.mes)}`)
+    );
+
     const diaVencimiento = await obtenerDiaVencimientoCobro({ TenantConfig: TenantConfigModel });
-    const fechaVencimiento = construirFinDeDiaCaracasPeriodo(anio, mes, diaVencimiento);
     const estatusSolicitado = String(req.body?.estatus || '').trim();
     let estatusInicial = estatusSolicitado || 'Pendiente';
     if (totalPagado > 0 && totalPagado < totalEsperado) {
@@ -3174,57 +3415,108 @@ exports.reactivarAlumno = async (req, res) => {
       ? `/uploads/${resolveRequestTenantId(req)}/comprobantes/${req.file.filename}`
       : undefined;
 
-    const mensualidad = await TenantMensualidad.create({
-      id_alumno: alumnoActual._id,
-      mes,
-      anio,
-      monto_base: totalEsperado,
-      credito_aplicado: 0,
-      ajuste_extraordinario: 0,
-      saldo_a_favor_generado: 0,
-      monto_esperado: totalEsperado,
-      monto_reingreso: montoReingreso,
-      monto_mensualidad_reingreso: montoMensualidad,
-      tipo_registro_inicial: 'reingreso',
-      monto_equivalente_bs: montoEsperadoBs,
-      fecha_pago: fechaPago,
-      metodo_pago: metodoPago,
-      referencia: referencia || undefined,
-      comprobante_url: comprobanteUrl,
-      fecha_vencimiento: fechaVencimiento,
-      estatus: estatusInicial
+    const montoBaseAlumno = await resolverMontoBaseAlumno(alumnoActual, {
+      Sede: TenantSede
     });
 
+    const mensualidadesGeneradas = [];
+    let mensualidadPrimerPeriodo = null;
+
+    for (const periodo of periodosObjetivo) {
+      const keyPeriodo = `${periodo.anio}-${periodo.mes}`;
+      if (existentesSet.has(keyPeriodo)) continue;
+
+      const esPrimerPeriodo =
+        periodo.mes === periodoReingreso.mes &&
+        periodo.anio === periodoReingreso.anio;
+
+      const fechaVencimientoPeriodo = construirFinDeDiaCaracasPeriodo(periodo.anio, periodo.mes, diaVencimiento);
+      const montoEsperadoPeriodo = esPrimerPeriodo ? totalEsperado : montoBaseAlumno;
+      const estatusPeriodoInicial = esPrimerPeriodo ? estatusInicial : 'Pendiente';
+
+      const mensualidadCreada = await TenantMensualidad.create({
+        id_alumno: alumnoActual._id,
+        mes: periodo.mes,
+        anio: periodo.anio,
+        monto_base: montoEsperadoPeriodo,
+        credito_aplicado: 0,
+        ajuste_extraordinario: 0,
+        saldo_a_favor_generado: 0,
+        monto_esperado: montoEsperadoPeriodo,
+        monto_reingreso: esPrimerPeriodo ? montoReingreso : undefined,
+        monto_mensualidad_reingreso: esPrimerPeriodo ? montoPrimeraMensualidad : undefined,
+        tipo_registro_inicial: esPrimerPeriodo ? 'reingreso' : undefined,
+        monto_equivalente_bs: esPrimerPeriodo ? montoEsperadoBs : undefined,
+        fecha_pago: (esPrimerPeriodo && tienePago) ? fechaPago : undefined,
+        metodo_pago: (esPrimerPeriodo && tienePago) ? metodoPago : undefined,
+        referencia: (esPrimerPeriodo && tienePago) ? (referencia || undefined) : undefined,
+        comprobante_url: esPrimerPeriodo ? comprobanteUrl : undefined,
+        fecha_vencimiento: fechaVencimientoPeriodo,
+        estatus: estatusPeriodoInicial
+      });
+
+      if (esPrimerPeriodo) {
+        mensualidadPrimerPeriodo = mensualidadCreada;
+      }
+
+      await recalcularMensualidadPorPagos(mensualidadCreada, estatusPeriodoInicial, {
+        Alumno: TenantAlumno,
+        Mensualidad: TenantMensualidad,
+        PagoDetalle: TenantPagoDetalle
+      });
+
+      mensualidadesGeneradas.push(mensualidadCreada);
+    }
+
+    if (!mensualidadPrimerPeriodo) {
+      return res.status(409).json({ error: 'No se pudo generar la mensualidad del periodo de reingreso.' });
+    }
+
     let pagoRegistrado = null;
+    const pagosRegistrados = [];
     if (totalPagado > 0) {
-      const distribucion = distribuirPagoPorConceptos({
+      const asignacionesPago = distribuirPagoReingresoEntreMensualidades({
+        mensualidades: mensualidadesGeneradas.map((mensualidad) => ({
+          mensualidad,
+          montoEsperadoUsd: Number(mensualidad?.monto_esperado) || 0
+        })),
         montoPagadoUsd: totalPagado,
         montoPagadoBs,
         montoReingreso,
-        montoMensualidad
+        montoPrimeraMensualidad
       });
 
-      pagoRegistrado = await TenantPagoDetalle.create({
-        id_mensualidad: mensualidad._id,
-        concepto: 'Reingreso alumno',
-        origen: 'reactivacion',
-        conceptos_detalle: distribucion.conceptosDetalle,
-        monto_pagado: totalPagado,
-        monto_pagado_bs: montoPagadoBs,
-        monto_esperado_usd: totalEsperado,
-        monto_esperado_bs: montoEsperadoBs,
-        fecha_pago: fechaPago,
-        metodo_pago: metodoPago,
-        referencia: referencia || 'reingreso',
-        comprobante_url: comprobanteUrl
-      });
+      for (let index = 0; index < asignacionesPago.length; index += 1) {
+        const asignacion = asignacionesPago[index];
+        if (!asignacion || asignacion.montoAplicadoUsd <= 0) continue;
+
+        const mensualidadDestino = asignacion.mensualidad;
+        const pagoCreado = await TenantPagoDetalle.create({
+          id_mensualidad: mensualidadDestino._id,
+          concepto: index === 0 ? 'Reingreso alumno' : 'Mensualidad reingreso',
+          origen: 'reactivacion',
+          conceptos_detalle: asignacion.conceptosDetalle,
+          monto_pagado: asignacion.montoAplicadoUsd,
+          monto_pagado_bs: asignacion.montoAplicadoBs,
+          monto_esperado_usd: Number(mensualidadDestino?.monto_esperado) || 0,
+          monto_esperado_bs: index === 0 ? montoEsperadoBs : undefined,
+          fecha_pago: fechaPago,
+          metodo_pago: metodoPago,
+          referencia: referencia || 'reingreso',
+          comprobante_url: comprobanteUrl
+        });
+
+        pagosRegistrados.push(pagoCreado);
+
+        await recalcularMensualidadPorPagos(mensualidadDestino, index === 0 ? estatusInicial : 'Pendiente', {
+          Alumno: TenantAlumno,
+          Mensualidad: TenantMensualidad,
+          PagoDetalle: TenantPagoDetalle
+        });
+      }
+
+      pagoRegistrado = pagosRegistrados[0] || null;
     }
-
-    await recalcularMensualidadPorPagos(mensualidad, estatusInicial, {
-      Alumno: TenantAlumno,
-      Mensualidad: TenantMensualidad,
-      PagoDetalle: TenantPagoDetalle
-    });
 
     const numeroFranelaAnterior = alumnoActual.numero_franela ?? null;
 
@@ -3248,12 +3540,25 @@ exports.reactivarAlumno = async (req, res) => {
       actor_id: req.user?.id || undefined,
       metadata: {
         monto_reingreso: montoReingreso,
-        monto_mensualidad: montoMensualidad,
+        monto_mensualidad: montoPrimeraMensualidad,
+        monto_primera_mensualidad_reingreso: montoPrimeraMensualidad,
         monto_total_esperado: totalEsperado,
         monto_total_pagado: totalPagado,
+        fecha_reingreso: fechaReingreso,
         metodo_pago: metodoPago,
         referencia: referencia || undefined,
-        mensualidad_id: mensualidad?._id,
+        mensualidad_id: mensualidadPrimerPeriodo?._id,
+        mensualidades_generadas: mensualidadesGeneradas.map((item) => ({
+          id: item?._id,
+          mes: item?.mes,
+          anio: item?.anio
+        })),
+        pagos_generados: pagosRegistrados.map((item) => ({
+          id: item?._id,
+          id_mensualidad: item?.id_mensualidad,
+          monto_pagado: item?.monto_pagado,
+          monto_pagado_bs: item?.monto_pagado_bs
+        })),
         pago_id: pagoRegistrado?._id || undefined,
         numero_franela_anterior: numeroFranelaAnterior,
         requiere_reasignacion_franela: true
@@ -3264,8 +3569,10 @@ exports.reactivarAlumno = async (req, res) => {
     res.json({
       message: 'Alumno reactivado y reingreso registrado. Debes reasignar el nro de franela.',
       alumno,
-      mensualidad,
+      mensualidad: mensualidadPrimerPeriodo,
+      mensualidades_generadas: mensualidadesGeneradas,
       pago: pagoRegistrado,
+      pagos: pagosRegistrados,
       requiere_reasignacion_franela: true,
       numero_franela_anterior: numeroFranelaAnterior
     });
