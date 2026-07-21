@@ -5,6 +5,7 @@ const Alumno = require('../models/Alumno');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
+const { getDefaultPermissionsByLegacyRole } = require('../config/permissions');
 
 const ESTADOS_PEDIDO = {
   PENDIENTE: 'pendiente',
@@ -39,6 +40,222 @@ function buildComprobanteUrl(file, tenantIdInput) {
   return `/uploads/${tenantId}/comprobantes/${file.filename}`;
 }
 
+function normalizeMoneda(moneda) {
+  return String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+}
+
+function normalizeGeneroAlumno(sexoRaw) {
+  const sexo = String(sexoRaw || '').trim().toLowerCase();
+  if (sexo.startsWith('masc')) return 'masculino';
+  if (sexo.startsWith('fem')) return 'femenino';
+  return 'mixto';
+}
+
+function resolveGeneroPrecioVariante(generoRaw, sexoAlumnoRaw) {
+  const genero = String(generoRaw || '').trim().toLowerCase();
+  if (genero === 'masculino' || genero === 'femenino' || genero === 'mixto') {
+    return genero;
+  }
+  return normalizeGeneroAlumno(sexoAlumnoRaw);
+}
+
+function resolvePrecioUniformePorVariante(uniforme, tallaRaw, sexoAlumnoRaw) {
+  const precioBase = Number(uniforme?.precio) || 0;
+  const variantesActivas = uniforme?.variantes_precio_activo === true;
+  const variantes = Array.isArray(uniforme?.precios_variantes) ? uniforme.precios_variantes : [];
+
+  if (!variantesActivas || variantes.length === 0) {
+    return precioBase;
+  }
+
+  const talla = String(tallaRaw || '').trim().toUpperCase();
+  const generoAlumno = normalizeGeneroAlumno(sexoAlumnoRaw);
+
+  const matchExacto = variantes.find((item) =>
+    String(item?.talla || '').trim().toUpperCase() === talla
+    && String(item?.genero || '').trim().toLowerCase() === generoAlumno
+  );
+  if (matchExacto && Number.isFinite(Number(matchExacto.precio))) {
+    return Number(matchExacto.precio);
+  }
+
+  const matchMixto = variantes.find((item) =>
+    String(item?.talla || '').trim().toUpperCase() === talla
+    && String(item?.genero || '').trim().toLowerCase() === 'mixto'
+  );
+  if (matchMixto && Number.isFinite(Number(matchMixto.precio))) {
+    return Number(matchMixto.precio);
+  }
+
+  return precioBase;
+}
+
+function resolvePedidoPrenda(pedidoDoc) {
+  const pedido = typeof pedidoDoc?.toObject === 'function' ? pedidoDoc.toObject() : { ...pedidoDoc };
+  const prendaCatalogo = String(pedido?.uniforme?.prenda || '').trim();
+  const prendaHistorica = String(pedido?.prenda || '').trim();
+  return {
+    ...pedido,
+    prenda: prendaCatalogo || prendaHistorica || ''
+  };
+}
+
+async function findPedidoByIdWithRelations(TenantUniformePedido, id) {
+  return TenantUniformePedido.findById(id)
+    .populate('alumno')
+    .populate('sede')
+    .populate('solicitado_por')
+    .populate('uniforme', 'prenda precio moneda lleva_nombre_atleta lleva_personalizacion_nombre lleva_numero_franela franela_representante');
+}
+
+exports.actualizarPedidoUniforme = async (req, res) => {
+  try {
+    const {
+      UniformePedido: TenantUniformePedido,
+      Uniforme: TenantUniforme,
+      Alumno: TenantAlumno
+    } = await getTenantUniformePedidoModels(req);
+
+    const pedido = await TenantUniformePedido.findById(req.params.id);
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+    const esUsuarioFinal = rolUsuario === 'usuario';
+    const permisosUsuario = Array.isArray(req.user?.permisos)
+      ? req.user.permisos
+      : getDefaultPermissionsByLegacyRole(rolUsuario);
+    const tienePermisoGestion = permisosUsuario
+      .map((permiso) => String(permiso || '').trim().toLowerCase())
+      .includes('solicitudes_uniformes.manage');
+
+    if (esUsuarioFinal) {
+      const alumnoPedido = await TenantAlumno.findById(pedido.alumno).select('usuario representante');
+      if (!alumnoPedido) {
+        return res.status(404).json({ error: 'Alumno no encontrado para esta solicitud' });
+      }
+
+      let esPropietario = alumnoPedido.usuario && String(alumnoPedido.usuario) === String(req.user.id);
+      if (!esPropietario && alumnoPedido.representante) {
+        const RepresentanteModel = getTenantModel((await getTenantBusinessConnection(req.tenant || { tenantId: req.tenantId })), 'Representante');
+        const representante = await RepresentanteModel.findById(alumnoPedido.representante).select('usuario');
+        esPropietario = !!representante && String(representante.usuario) === String(req.user.id);
+      }
+
+      if (!esPropietario) {
+        return res.status(403).json({ error: 'No tienes permiso para editar esta solicitud' });
+      }
+    } else if (!tienePermisoGestion) {
+      return res.status(403).json({ msg: 'No tienes permisos suficientes para esta acción' });
+    }
+
+    if (pedido.estado !== ESTADOS_PEDIDO.PENDIENTE) {
+      return res.status(400).json({ error: 'Solo se puede editar una solicitud pendiente' });
+    }
+
+    const body = req.body || {};
+    const { uniformeId, talla, nombrePersonalizado, numeroFranela, precio, moneda, generoPrecioVariante } = body;
+  let uniformeActualizado = null;
+  let cambioTalla = false;
+  let cambioGeneroPrecio = false;
+
+    if (uniformeId !== undefined && uniformeId !== null && String(uniformeId).trim()) {
+      const uniformeIdNormalizado = String(uniformeId).trim();
+      if (!mongoose.Types.ObjectId.isValid(uniformeIdNormalizado)) {
+        return res.status(400).json({ error: 'uniformeId inválido' });
+      }
+
+      const uniforme = await TenantUniforme.findById(uniformeIdNormalizado)
+        .select('_id prenda precio moneda variantes_precio_activo precios_variantes');
+      if (!uniforme) {
+        return res.status(404).json({ error: 'Prenda no encontrada en el catalogo' });
+      }
+
+      pedido.uniforme = uniforme._id;
+      pedido.prenda = String(uniforme.prenda || '').trim();
+      uniformeActualizado = uniforme;
+
+      if (precio === undefined || precio === null || String(precio).trim() === '') {
+        pedido.precio = Number(uniforme.precio) || 0;
+      }
+      if (moneda === undefined || moneda === null || String(moneda).trim() === '') {
+        pedido.moneda = normalizeMoneda(uniforme.moneda);
+      }
+    }
+
+    if (talla !== undefined) {
+      const tallaNormalizada = String(talla || '').trim().toUpperCase();
+      if (!tallaNormalizada) {
+        return res.status(400).json({ error: 'La talla es requerida' });
+      }
+      pedido.talla = tallaNormalizada;
+      cambioTalla = true;
+    }
+
+    if (nombrePersonalizado !== undefined) {
+      const nombre = String(nombrePersonalizado || '').trim().toUpperCase();
+      pedido.nombre_personalizado = nombre || undefined;
+    }
+
+    if (numeroFranela !== undefined) {
+      const numeroNormalizado = String(numeroFranela || '').trim();
+      if (!numeroNormalizado) {
+        pedido.numero_franela = null;
+      } else {
+        const numero = Number(numeroNormalizado);
+        if (!Number.isInteger(numero) || numero < 1 || numero > 100) {
+          return res.status(400).json({ error: 'numeroFranela invalido. Debe estar entre 1 y 100' });
+        }
+        pedido.numero_franela = String(numero);
+      }
+    }
+
+    if (precio !== undefined) {
+      const precioNumerico = Number(precio);
+      if (!Number.isFinite(precioNumerico) || precioNumerico < 0) {
+        return res.status(400).json({ error: 'Precio invalido para la solicitud' });
+      }
+      pedido.precio = precioNumerico;
+      if (pedido.estado === ESTADOS_PEDIDO.ESPERANDO_PAGO && (Number(pedido.monto_pagado) || 0) <= 0) {
+        pedido.saldo_pendiente = precioNumerico;
+      }
+    }
+
+    if (moneda !== undefined) {
+      pedido.moneda = normalizeMoneda(moneda);
+    }
+
+    if (generoPrecioVariante !== undefined) {
+      const alumno = await TenantAlumno.findById(pedido.alumno).select('sexo');
+      const generoPrecio = resolveGeneroPrecioVariante(generoPrecioVariante, alumno?.sexo);
+      pedido.genero_precio_variante = generoPrecio;
+      cambioGeneroPrecio = true;
+    }
+
+    if (precio === undefined || precio === null || String(precio).trim() === '') {
+      if (!uniformeActualizado && pedido.uniforme && mongoose.Types.ObjectId.isValid(String(pedido.uniforme))) {
+        uniformeActualizado = await TenantUniforme.findById(pedido.uniforme)
+          .select('_id prenda precio moneda variantes_precio_activo precios_variantes');
+      }
+
+      if (uniformeActualizado && (cambioTalla || uniformeId !== undefined || cambioGeneroPrecio)) {
+        const alumno = await TenantAlumno.findById(pedido.alumno).select('sexo');
+        const generoPrecio = resolveGeneroPrecioVariante(generoPrecioVariante ?? pedido.genero_precio_variante, alumno?.sexo);
+        const precioCalculado = resolvePrecioUniformePorVariante(uniformeActualizado, pedido.talla, generoPrecio);
+        pedido.precio = precioCalculado;
+        pedido.genero_precio_variante = generoPrecio;
+      }
+    }
+
+    await pedido.save();
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    return res.json(resolvePedidoPrenda(pedidoActualizado));
+  } catch (err) {
+    return res.status(400).json({ error: 'Error al actualizar la solicitud de uniforme', detalle: err.message });
+  }
+};
+
 async function getTenantUniformePedidoModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
@@ -67,13 +284,15 @@ exports.createPedidoUniforme = async (req, res) => {
     const {
       alumnoId,
       sedeId,
+      uniformeId,
       prenda,
       talla,
       nombrePersonalizado,
       numeroFranela,
+      generoPrecioVariante,
     } = req.body;
 
-    if (!alumnoId || !prenda || !talla) {
+    if (!alumnoId || !talla || (!uniformeId && !prenda)) {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
     if (!mongoose.Types.ObjectId.isValid(alumnoId)) {
@@ -82,19 +301,30 @@ exports.createPedidoUniforme = async (req, res) => {
     if (sedeId && !mongoose.Types.ObjectId.isValid(sedeId)) {
       return res.status(400).json({ error: 'sedeId inválido' });
     }
+    if (uniformeId && !mongoose.Types.ObjectId.isValid(uniformeId)) {
+      return res.status(400).json({ error: 'uniformeId inválido' });
+    }
 
-    const uniforme = await TenantUniforme.findOne({ prenda });
-    const precio = uniforme?.precio || 0;
+    const uniforme = uniformeId
+      ? await TenantUniforme.findById(uniformeId)
+      : await TenantUniforme.findOne({ prenda });
+    if (!uniforme) {
+      return res.status(404).json({ error: 'Prenda no encontrada en el catalogo' });
+    }
+    const prendaActual = String(uniforme.prenda || '').trim();
     const moneda = String(uniforme?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
     const llevaNombreAtleta = uniforme?.lleva_nombre_atleta === true;
     const esFranelaRepresentante = uniforme?.franela_representante === true;
     const requiereNombrePersonalizado = llevaNombreAtleta || esFranelaRepresentante;
     const requiereNumeroFranela = uniforme?.lleva_numero_franela !== false;
-    const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo');
+    const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo sexo');
 
     if (!alumno) {
       return res.status(404).json({ error: 'Alumno no encontrado' });
     }
+
+    const generoPrecio = resolveGeneroPrecioVariante(generoPrecioVariante, alumno?.sexo);
+    const precio = resolvePrecioUniformePorVariante(uniforme, talla, generoPrecio);
 
     let numeroFranelaPedido = null;
 
@@ -132,8 +362,10 @@ exports.createPedidoUniforme = async (req, res) => {
     const pedido = await TenantUniformePedido.create({
       alumno: alumnoId,
       sede: sedeId || undefined,
-      prenda,
+      uniforme: uniforme._id,
+      prenda: prendaActual,
       moneda,
+      genero_precio_variante: generoPrecio,
       nombre_personalizado: requiereNombrePersonalizado ? (String(nombrePersonalizado || '').trim().toUpperCase() || undefined) : undefined,
       numero_franela: requiereNumeroFranela ? String(numeroFranelaPedido) : null,
       precio,
@@ -142,7 +374,8 @@ exports.createPedidoUniforme = async (req, res) => {
       solicitado_por: req.user?.id
     });
 
-    res.status(201).json(pedido);
+    const pedidoCreado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    res.status(201).json(resolvePedidoPrenda(pedidoCreado));
   } catch (err) {
     res.status(400).json({ error: 'Error al crear pedido de uniforme', detalle: err.message });
   }
@@ -176,9 +409,10 @@ exports.getMisPedidosUniforme = async (req, res) => {
     const pedidos = await TenantUniformePedido.find(filtro)
       .populate('alumno')
       .populate('sede')
+      .populate('uniforme', 'prenda precio moneda')
       .sort({ createdAt: -1 });
 
-    res.json(pedidos);
+    res.json(pedidos.map(resolvePedidoPrenda));
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener tus pedidos de uniformes' });
   }
@@ -200,8 +434,9 @@ exports.getPedidosUniforme = async (req, res) => {
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por')
+      .populate('uniforme', 'prenda precio moneda')
       .sort({ createdAt: -1 });
-    res.json(pedidos);
+    res.json(pedidos.map(resolvePedidoPrenda));
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener pedidos de uniformes' });
   }
@@ -233,12 +468,9 @@ exports.solicitarPagoPedido = async (req, res) => {
     pedido.estado = ESTADOS_PEDIDO.ESPERANDO_PAGO;
     await pedido.save();
 
-    const pedidoActualizado = await TenantUniformePedido.findById(pedido._id)
-      .populate('alumno')
-      .populate('sede')
-      .populate('solicitado_por');
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
 
-    res.json(pedidoActualizado);
+    res.json(resolvePedidoPrenda(pedidoActualizado));
   } catch (err) {
     res.status(400).json({ error: 'Error al solicitar pago del pedido', detalle: err.message });
   }
@@ -259,7 +491,8 @@ exports.cancelarPedido = async (req, res) => {
 
     pedido.estado = ESTADOS_PEDIDO.CANCELADO;
     await pedido.save();
-    res.json(pedido);
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    res.json(resolvePedidoPrenda(pedidoActualizado));
   } catch (err) {
     res.status(400).json({ error: 'Error al cancelar pedido' });
   }
@@ -351,7 +584,8 @@ exports.registrarPagoPedido = async (req, res) => {
     }
 
     await pedido.save();
-    res.json(pedido);
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    res.json(resolvePedidoPrenda(pedidoActualizado));
   } catch (err) {
     res.status(400).json({ error: 'Error al registrar pago del pedido', detalle: err.message });
   }
@@ -414,7 +648,8 @@ exports.verificarPagoPedido = async (req, res) => {
     pedido.estado = saldoPendiente > 0 ? ESTADOS_PEDIDO.ABONO : ESTADOS_PEDIDO.VERIFICADO;
     await pedido.save();
 
-    res.json(pedido);
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    res.json(resolvePedidoPrenda(pedidoActualizado));
   } catch (err) {
     res.status(400).json({ error: 'Error al verificar el pago del pedido', detalle: err.message });
   }
@@ -435,7 +670,8 @@ exports.marcarEntregado = async (req, res) => {
 
     pedido.estado = ESTADOS_PEDIDO.ENTREGADO;
     await pedido.save();
-    res.json(pedido);
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    res.json(resolvePedidoPrenda(pedidoActualizado));
   } catch (err) {
     res.status(400).json({ error: 'Error al marcar como entregado' });
   }

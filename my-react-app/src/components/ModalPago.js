@@ -94,6 +94,7 @@ function ModalPago({
   onSuccess,
   onSubmitPayment,
   currencyCode = '',
+  fallbackRate = null,
   disableCuotas = false,
   allowedMethodIds = null
 }) {
@@ -128,12 +129,14 @@ function ModalPago({
   const monto = pago?.monto;
   const cuotasHabilitadas = !disableCuotas && pago?.id_alumno?.habilitar_pago_cuotas === true;
   const { dolar } = useDolar();
-  const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const monedaDesdeProps = String(currencyCode || '').trim().toUpperCase();
-  const moneda = (monedaDesdeProps === 'USD' || monedaDesdeProps === 'EUR')
-    ? monedaDesdeProps
-    : monedaConfigurada;
-  const tasa = dolar?.promedio;
+  const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const moneda = (monedaDesdeProps === 'USD' || monedaDesdeProps === 'EUR') ? monedaDesdeProps : monedaConfigurada;
+  const monedaDolarContexto = String(dolar?.moneda || '').trim().toUpperCase();
+  const tasaContexto = Number(dolar?.promedio) || null;
+  const tasaFallbackProps = Number(fallbackRate) || null;
+  const tasaContextoCoincideMoneda = monedaDolarContexto === moneda ? tasaContexto : null;
+  const tasaBasePorMoneda = tasaContextoCoincideMoneda || tasaFallbackProps;
   const montoBs = (monto !== undefined && monto !== null && tasaPago) ? Number(monto) * Number(tasaPago) : null;
   const esAbonoParcial = preferenciaCuota === 'parcial';
   const montoAbonoUsd = esAbonoParcial ? Number(montoPagado) : null;
@@ -205,6 +208,12 @@ function ModalPago({
   }, [open]);
 
   useEffect(() => {
+    if (open) {
+      setTasaPago(tasaBasePorMoneda);
+    }
+  }, [open, tasaBasePorMoneda]);
+
+  useEffect(() => {
     if (!open) {
       setMetodoSeleccionado(null);
       setMostrarConfirmacionCantevista(false);
@@ -219,14 +228,14 @@ function ModalPago({
       setSubmitting(false);
       setSubmitError(null);
       setCopySuccess('');
-      setTasaPago(Number(tasa) || null);
+      setTasaPago(tasaBasePorMoneda);
       setPreferenciaCuota(null);
       setTelefonoConfirmacionCantevista('');
       setCedulaConfirmacionCantevista('');
       setTipoCedulaConfirmacionCantevista('V');
       setMetodosError('');
     }
-  }, [open, tasa]);
+  }, [open, tasaBasePorMoneda]);
 
   useEffect(() => {
     if (!open) return;
@@ -267,12 +276,17 @@ function ModalPago({
     };
   }, [open]);
 
-  const copiarDatoPago = async (clave, valor) => {
+  const obtenerTextoCopiablePorClave = (clave, valor) => {
     const valorFormateado = formatearValorDetallePago(clave, valor);
     const soloDigitos = String(valor || '').replace(/\D/g, '');
-    const textoParaCopiar = (clave === 'cedula' || clave === 'telefono' || clave === 'cuenta')
-      ? soloDigitos
-      : String(valorFormateado || '');
+    if (clave === 'cedula' || clave === 'telefono' || clave === 'cuenta') {
+      return soloDigitos;
+    }
+    return String(valorFormateado || '');
+  };
+
+  const copiarDatoPago = async (clave, valor) => {
+    const textoParaCopiar = obtenerTextoCopiablePorClave(clave, valor);
     if (!textoParaCopiar || textoParaCopiar === '-') return;
     const label = String(clave || '').replace('_', ' ');
     try {
@@ -290,6 +304,10 @@ function ModalPago({
       detalles?.codigo_banco || detalles?.codigoBanco || detalles?.banco_codigo || ''
     ).replace(/\D/g, '');
     if (codigoDirecto.length >= 4) return codigoDirecto.slice(0, 4);
+
+    // En transferencia puede no venir codigo_banco; se infiere de los 4 primeros digitos de la cuenta.
+    const cuentaDigitos = String(detalles?.cuenta || '').replace(/\D/g, '');
+    if (cuentaDigitos.length >= 4) return cuentaDigitos.slice(0, 4);
 
     const bancoRaw = String(detalles?.banco || '').trim();
     const matchDigitos = bancoRaw.match(/(\d{4})/);
@@ -335,6 +353,57 @@ function ModalPago({
     } catch {
       setCopySuccess('No se pudo copiar');
       setTimeout(() => setCopySuccess(''), 1800);
+    }
+  };
+
+  const copiarTodosTransferencia = async (montoEnBs) => {
+    const detalles = metodoSeleccionado?.detalles || {};
+    const titular = String(
+      detalles?.titular
+      || detalles?.nombre_titular
+      || detalles?.titular_cuenta
+      || detalles?.titularCuenta
+      || detalles?.beneficiario
+      || detalles?.nombre_beneficiario
+      || detalles?.razon_social
+      || detalles?.nombre
+      || ''
+    ).trim();
+    const cuenta = obtenerTextoCopiablePorClave('cuenta', detalles?.cuenta);
+    const cedula = obtenerTextoCopiablePorClave('cedula', detalles?.cedula);
+    const codigoBanco = obtenerCodigoBancoPagoMovil(detalles);
+    const montoBsFormateado = Number.isFinite(Number(montoEnBs)) ? formatMoney(montoEnBs) : '';
+
+    if (!cuenta || !cedula || !codigoBanco || !montoBsFormateado) {
+      setCopySuccess('Faltan datos para copiar todos');
+      setTimeout(() => setCopySuccess(''), 1800);
+      return;
+    }
+
+    const lineas = [cuenta, cedula, codigoBanco, montoBsFormateado];
+    if (titular) {
+      lineas.unshift(titular);
+    }
+    const texto = lineas.join('\n');
+
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopySuccess('Datos completos copiados');
+      setTimeout(() => setCopySuccess(''), 1800);
+    } catch {
+      setCopySuccess('No se pudo copiar');
+      setTimeout(() => setCopySuccess(''), 1800);
+    }
+  };
+
+  const copiarTodosDatosPago = async (montoEnBs) => {
+    if (metodoSeleccionado?.id === 'pago-movil') {
+      await copiarTodosPagoMovil(montoEnBs);
+      return;
+    }
+
+    if (metodoSeleccionado?.id === 'transferencia') {
+      await copiarTodosTransferencia(montoEnBs);
     }
   };
 
@@ -395,9 +464,9 @@ function ModalPago({
 
     const actualizarMontoConHistorico = async () => {
       try {
-        const tasaHistorica = monedaConfigurada === 'EUR'
-          ? await obtenerTasaEuroOficialPorFecha(fechaPago, Number(tasa) || null)
-          : await obtenerTasaOficialPorFecha(fechaPago, Number(tasa) || null);
+        const tasaHistorica = moneda === 'EUR'
+          ? await obtenerTasaEuroOficialPorFecha(fechaPago, tasaBasePorMoneda)
+          : await obtenerTasaOficialPorFecha(fechaPago, tasaBasePorMoneda);
         if (cancelled) return;
         const tasaNormalizada = Number(tasaHistorica) || null;
         setTasaPago(tasaNormalizada);
@@ -406,7 +475,7 @@ function ModalPago({
         }
       } catch {
         if (cancelled) return;
-        const tasaActual = Number(tasa) || null;
+        const tasaActual = tasaBasePorMoneda;
         setTasaPago(tasaActual);
         if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
           setMontoPagado(tasaActual ? formatMoney(Number(monto) * tasaActual) : '');
@@ -419,7 +488,7 @@ function ModalPago({
     return () => {
       cancelled = true;
     };
-  }, [open, mostrarFormularioPago, fechaPago, monto, tasa, cuotasHabilitadas, preferenciaCuota, monedaConfigurada]);
+  }, [open, mostrarFormularioPago, fechaPago, monto, cuotasHabilitadas, preferenciaCuota, moneda, tasaBasePorMoneda]);
 
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);
@@ -430,6 +499,12 @@ function ModalPago({
 
   const abrirFormularioPago = () => {
     setMostrarConfirmacionCantevista(false);
+    if (!esAbonoParcial) {
+      const montoBaseBs = Number.isFinite(Number(monto)) && Number(monto) > 0 && Number.isFinite(Number(tasaBasePorMoneda)) && Number(tasaBasePorMoneda) > 0
+        ? formatMoney(Number(monto) * Number(tasaBasePorMoneda))
+        : '';
+      setMontoPagado(montoBaseBs);
+    }
     setMostrarFormularioPago(true);
     if (esAbonoParcial) {
       setMontoPagadoBs(montoAbonoBs !== null ? formatMoney(montoAbonoBs) : '');
@@ -503,7 +578,7 @@ function ModalPago({
     }
     const montoPagadoNum = Number(montoPagado);
     const montoPagadoBsNum = Number(montoPagadoBs);
-    const tasaAplicada = Number(tasaPago) || Number(tasa) || null;
+    const tasaAplicada = Number(tasaPago) || tasaBasePorMoneda || null;
     const montoPagadoMoneda = esAbonoParcial
       ? (tasaAplicada ? (montoPagadoBsNum / tasaAplicada) : null)
       : (tasaAplicada ? (montoPagadoNum / tasaAplicada) : null);
@@ -649,7 +724,6 @@ function ModalPago({
       }}
     >
       <DialogTitle
-        disableTypography
         sx={{
           px: 3,
           pt: 2.5,
@@ -935,12 +1009,12 @@ function ModalPago({
                       <PaymentsIcon sx={{ opacity: 0.85 }} />
                     </Box>
                   </Box>
-                  {metodoSeleccionado?.id === 'pago-movil' && (
+                  {(metodoSeleccionado?.id === 'pago-movil' || metodoSeleccionado?.id === 'transferencia') && (
                     <Button
                       fullWidth
                       variant="outlined"
                       startIcon={<ContentCopyIcon fontSize="small" />}
-                      onClick={() => copiarTodosPagoMovil(montoBs)}
+                      onClick={() => copiarTodosDatosPago(montoBs)}
                       disabled={montoBs === null}
                       sx={{
                         mt: 1.2,

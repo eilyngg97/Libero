@@ -49,6 +49,8 @@ const uploadComprobante = multer({
 	}
 });
 
+const parseMultipartFields = multer().none();
+
 
 // Endpoint público de listado
 router.get('/public', uniformeController.getUniformes);
@@ -56,6 +58,7 @@ router.get('/public', uniformeController.getUniformes);
 router.post('/pedidos', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.createPedidoUniforme);
 router.get('/pedidos/mis', authMiddleware, uniformePedidoController.getMisPedidosUniforme);
 router.get('/pedidos', authMiddleware, permisoMiddleware('solicitudes_uniformes.view'), uniformePedidoController.getPedidosUniforme);
+router.patch('/pedidos/:id', authMiddleware, parseMultipartFields, uniformePedidoController.actualizarPedidoUniforme);
 router.patch('/pedidos/:id/solicitar-pago', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.solicitarPagoPedido);
 router.patch('/pedidos/:id/cancelar', authMiddleware, uniformePedidoController.cancelarPedido);
 router.patch('/pedidos/:id/pagar', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.registrarPagoPedido);

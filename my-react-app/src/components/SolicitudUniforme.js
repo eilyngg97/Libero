@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -27,11 +27,11 @@ import {
 } from '@mui/material';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CloseIcon from '@mui/icons-material/Close';
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import ModalPago from './ModalPago';
-import { useDolar } from '../context/DolarContext';
 import { mediaUrl } from '../utils/mediaUrl';
 
-const TALLAS = ['S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
+const TALLAS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
 const MONTO_TOLERANCIA_BS = 100;
 const OPCIONES_NOMBRE_REPRESENTANTE = [
   'Volley Mom',
@@ -40,6 +40,12 @@ const OPCIONES_NOMBRE_REPRESENTANTE = [
   'Volley Granddad',
   'Volley Sister',
   'Volley Brother'
+];
+
+const GENERO_PRECIO_OPTIONS = [
+  { key: 'masculino', label: 'Masculino' },
+  { key: 'femenino', label: 'Femenino' },
+  { key: 'mixto', label: 'Mixto' }
 ];
 
 const ESTADO_LABELS = {
@@ -62,6 +68,39 @@ const ESTADO_STYLES = {
   cancelado: { bgcolor: '#fee2e2', color: '#b91c1c' }
 };
 
+const ACCION_BOTON_BASE_SX = {
+  textTransform: 'none',
+  borderRadius: '10px',
+  fontWeight: 600,
+  px: 1.6,
+  py: 0.45,
+  minWidth: 90,
+  lineHeight: 1.2,
+  boxShadow: 'none'
+};
+
+const ACCION_BOTON_EDITAR_SX = {
+  ...ACCION_BOTON_BASE_SX,
+  color: '#4b5563',
+  borderColor: '#d1d5db',
+  backgroundColor: '#ffffff',
+  '&:hover': {
+    borderColor: '#9ca3af',
+    backgroundColor: '#f8fafc'
+  }
+};
+
+const ACCION_BOTON_ELIMINAR_SX = {
+  ...ACCION_BOTON_BASE_SX,
+  color: '#b91c1c',
+  borderColor: '#e5caca',
+  backgroundColor: '#ffffff',
+  '&:hover': {
+    borderColor: '#ef4444',
+    backgroundColor: '#fff7f7'
+  }
+};
+
 function construirNombrePersonalizado(alumno) {
   const apellidos = String(alumno?.apellidos || '').trim();
   const nombres = String(alumno?.nombres || '').trim();
@@ -82,6 +121,47 @@ function normalizarMoneda(moneda) {
   return String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
 }
 
+function normalizarGeneroAlumno(sexoRaw) {
+  const sexo = String(sexoRaw || '').trim().toLowerCase();
+  if (sexo.startsWith('masc')) return 'masculino';
+  if (sexo.startsWith('fem')) return 'femenino';
+  return 'mixto';
+}
+
+function getGeneroLabel(genero) {
+  const found = GENERO_PRECIO_OPTIONS.find((item) => item.key === genero);
+  return found ? found.label : 'Mixto';
+}
+
+function resolverPrecioPorVariante(prendaConfig, talla, sexoAlumno) {
+  const precioBase = Number(prendaConfig?.precio) || 0;
+  const variantesActivas = prendaConfig?.variantes_precio_activo === true;
+  const variantes = Array.isArray(prendaConfig?.precios_variantes) ? prendaConfig.precios_variantes : [];
+
+  if (!variantesActivas || variantes.length === 0) return precioBase;
+
+  const tallaNorm = String(talla || '').trim().toUpperCase();
+  const generoNorm = normalizarGeneroAlumno(sexoAlumno);
+
+  const matchExacto = variantes.find((item) =>
+    String(item?.talla || '').trim().toUpperCase() === tallaNorm
+    && String(item?.genero || '').trim().toLowerCase() === generoNorm
+  );
+  if (matchExacto && Number.isFinite(Number(matchExacto.precio))) {
+    return Number(matchExacto.precio);
+  }
+
+  const matchMixto = variantes.find((item) =>
+    String(item?.talla || '').trim().toUpperCase() === tallaNorm
+    && String(item?.genero || '').trim().toLowerCase() === 'mixto'
+  );
+  if (matchMixto && Number.isFinite(Number(matchMixto.precio))) {
+    return Number(matchMixto.precio);
+  }
+
+  return precioBase;
+}
+
 function construirEjemploNombreJugador(alumno) {
   const nombres = String(alumno?.nombres || '').trim();
   const apellidos = String(alumno?.apellidos || '').trim();
@@ -97,7 +177,6 @@ function construirEjemploNombreJugador(alumno) {
 }
 
 function SolicitudUniforme({ alumno, sede, onGuardar }) {
-  const { dolar } = useDolar();
   const [prendas, setPrendas] = useState([]);
   const [prendasLoading, setPrendasLoading] = useState(false);
   const [prendasError, setPrendasError] = useState('');
@@ -105,11 +184,15 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [talla, setTalla] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [showPedidoSuccessDialog, setShowPedidoSuccessDialog] = useState(false);
+  const [pedidoSuccessDialogMode, setPedidoSuccessDialogMode] = useState('crear');
+  const [showPagoRevisionDialog, setShowPagoRevisionDialog] = useState(false);
+  const [pagoRevisionResumen, setPagoRevisionResumen] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pedidos, setPedidos] = useState([]);
   const [pedidosLoading, setPedidosLoading] = useState(false);
   const [cancelandoId, setCancelandoId] = useState(null);
+  const [editandoId, setEditandoId] = useState(null);
   const [confirmCancelId, setConfirmCancelId] = useState(null);
   const [pagoDialogOpen, setPagoDialogOpen] = useState(false);
   const [pedidoPago, setPedidoPago] = useState(null);
@@ -119,9 +202,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [numeroFranelaLoading, setNumeroFranelaLoading] = useState(false);
   const [numeroFranelaError, setNumeroFranelaError] = useState('');
   const [mostrarImagenesPrenda, setMostrarImagenesPrenda] = useState(false);
+  const [tasaUsdBCV, setTasaUsdBCV] = useState(null);
   const [tasaEuroBCV, setTasaEuroBCV] = useState(null);
+  const [generoPrecioSeleccionado, setGeneroPrecioSeleccionado] = useState('');
 
-  const tasaBCV = Number(dolar?.promedio) || 0;
   const token = localStorage.getItem('token');
   const numeroFranelaAlumno = String(numeroFranelaAsignado || '').trim();
   const categoriaAlumno = String(alumno?.categoria || '').trim();
@@ -129,7 +213,40 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const nombrePersonalizadoDefault = construirNombrePersonalizado(alumno);
   const ejemploNombreJugador = construirEjemploNombreJugador(alumno);
   const [nombrePersonalizadoInput, setNombrePersonalizadoInput] = useState(nombrePersonalizadoDefault);
-  const prendaSeleccionada = prendas.find((item) => item.prenda === prenda);
+  const prendaSeleccionada = prendas.find((item) => String(item._id) === String(prenda));
+  const generoAlumnoNormalizado = normalizarGeneroAlumno(alumno?.sexo);
+  const generosDisponiblesPrecio = useMemo(() => {
+    if (!prendaSeleccionada?.variantes_precio_activo) return [];
+    const variantes = Array.isArray(prendaSeleccionada?.precios_variantes) ? prendaSeleccionada.precios_variantes : [];
+    if (!variantes.length) return [];
+
+    const tallaNorm = String(talla || '').trim().toUpperCase();
+    const generosRaw = variantes
+      .filter((item) => {
+        const tallaItem = String(item?.talla || '').trim().toUpperCase();
+        if (!tallaNorm) return true;
+        return tallaItem === tallaNorm;
+      })
+      .map((item) => String(item?.genero || '').trim().toLowerCase())
+      .filter((value) => value === 'masculino' || value === 'femenino' || value === 'mixto');
+
+    const fuente = generosRaw.length ? generosRaw : variantes
+      .map((item) => String(item?.genero || '').trim().toLowerCase())
+      .filter((value) => value === 'masculino' || value === 'femenino' || value === 'mixto');
+
+    const unique = Array.from(new Set(fuente));
+    return GENERO_PRECIO_OPTIONS
+      .map((item) => item.key)
+      .filter((key) => unique.includes(key));
+  }, [prendaSeleccionada, talla]);
+  const requiereSelectorGeneroPrecio = Boolean(prendaSeleccionada?.variantes_precio_activo) && generosDisponiblesPrecio.length > 1;
+  const generoPrecioParaCalculo = requiereSelectorGeneroPrecio
+    ? (generoPrecioSeleccionado
+      || (generosDisponiblesPrecio.includes(generoAlumnoNormalizado) ? generoAlumnoNormalizado : generosDisponiblesPrecio[0] || 'mixto'))
+    : generoAlumnoNormalizado;
+  const precioSeleccionActual = prendaSeleccionada
+    ? resolverPrecioPorVariante(prendaSeleccionada, talla, generoPrecioParaCalculo)
+    : null;
   const esFranelaRepresentante = Boolean(prendaSeleccionada?.franela_representante);
   const llevaNombreAtleta = Boolean(prendaSeleccionada?.lleva_nombre_atleta);
   const permitePersonalizacionNombre = Boolean(prendaSeleccionada?.lleva_personalizacion_nombre);
@@ -150,7 +267,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
 
     const raw = String(fecha).trim();
-    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (fechaBase) {
       const year = Number(fechaBase[1]);
       const month = Number(fechaBase[2]) - 1;
@@ -175,8 +292,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     if (monedaNormalizada === 'EUR') {
       return Number(tasaEuroBCV) || 0;
     }
-    return Number(tasaBCV) || 0;
-  }, [tasaEuroBCV, tasaBCV]);
+    return Number(tasaUsdBCV) || 0;
+  }, [tasaEuroBCV, tasaUsdBCV]);
 
   const formatearMontoConMoneda = useCallback((monto, moneda) => {
     return `${normalizarMoneda(moneda)} ${formatMoney(monto)}`;
@@ -192,10 +309,31 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       alignItems: 'center',
       boxSizing: 'border-box',
       paddingTop: '0 !important',
-      paddingBottom: '0 !important'
+      paddingBottom: '0 !important',
+      minWidth: 0,
+      maxWidth: '100%',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
     },
     '& .MuiInputBase-input': {
       boxSizing: 'border-box'
+    }
+  };
+
+  const mobileMenuProps = {
+    anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+    transformOrigin: { vertical: 'top', horizontal: 'left' },
+    PaperProps: {
+      sx: {
+        mt: 0.5,
+        maxHeight: 320,
+        width: { xs: 'calc(100vw - 24px)', sm: 'auto' },
+        maxWidth: 'calc(100vw - 24px)',
+        '& .MuiMenuItem-root': {
+          minWidth: 0
+        }
+      }
     }
   };
 
@@ -224,26 +362,35 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return null;
     };
 
-    const fetchEuroRate = async () => {
-      try {
-        const response = await fetch('https://ve.dolarapi.com/v1/euros/oficial');
-        if (!response.ok) throw new Error('No se pudo obtener la tasa EUR oficial');
-        const payload = await response.json().catch(() => null);
-        const parsed = parseRate(payload);
-        if (parsed && !cancelled) {
-          setTasaEuroBCV(parsed);
-          return;
-        }
-      } catch {
-        // Sin tasa EUR disponible.
-      }
+    const fetchRates = async () => {
+      fetch('https://ve.dolarapi.com/v1/dolares/oficial')
+        .then(async (response) => {
+          if (!response.ok) return null;
+          const payload = await response.json().catch(() => null);
+          return parseRate(payload);
+        })
+        .then((rate) => {
+          if (!cancelled) setTasaUsdBCV(rate || null);
+        })
+        .catch(() => {
+          if (!cancelled) setTasaUsdBCV(null);
+        });
 
-      if (!cancelled) {
-        setTasaEuroBCV(null);
-      }
+      fetch('https://ve.dolarapi.com/v1/euros/oficial')
+        .then(async (response) => {
+          if (!response.ok) return null;
+          const payload = await response.json().catch(() => null);
+          return parseRate(payload);
+        })
+        .then((rate) => {
+          if (!cancelled) setTasaEuroBCV(rate || null);
+        })
+        .catch(() => {
+          if (!cancelled) setTasaEuroBCV(null);
+        });
     };
 
-    fetchEuroRate();
+    fetchRates();
 
     return () => {
       cancelled = true;
@@ -297,10 +444,24 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   }, [prenda]);
 
   useEffect(() => {
+    if (!requiereSelectorGeneroPrecio) {
+      setGeneroPrecioSeleccionado('');
+      return;
+    }
+
+    setGeneroPrecioSeleccionado((prev) => {
+      if (prev && generosDisponiblesPrecio.includes(prev)) return prev;
+      if (generosDisponiblesPrecio.includes(generoAlumnoNormalizado)) return generoAlumnoNormalizado;
+      return generosDisponiblesPrecio[0] || '';
+    });
+  }, [generoAlumnoNormalizado, generosDisponiblesPrecio, requiereSelectorGeneroPrecio]);
+
+  useEffect(() => {
     setNumeroFranelaAsignado(String(alumno?.numero_franela ?? alumno?.numeroFranela ?? '').trim());
     setNumeroFranelaSeleccionado('');
     setNumeroFranelaError('');
     setNumerosFranelaDisponibles([]);
+    setEditandoId(null);
   }, [alumno?._id, alumno?.numero_franela, alumno?.numeroFranela]);
 
   useEffect(() => {
@@ -410,38 +571,85 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     try {
       setGuardando(true);
       const formData = new FormData();
-      formData.append('alumnoId', alumno?._id || alumno?.id || '');
-      const sedeId = sede?._id || sede?.id || alumno?.sede?._id || alumno?.sede || '';
-      formData.append('sedeId', sedeId);
-      formData.append('prenda', prenda);
+      formData.append('uniformeId', prenda);
       formData.append('talla', talla);
       if (mostrarCampoNombre) {
         formData.append('nombrePersonalizado', String(nombrePersonalizadoInput || '').trim());
+      }
+      if (prendaSeleccionada?.variantes_precio_activo && generoPrecioParaCalculo) {
+        formData.append('generoPrecioVariante', generoPrecioParaCalculo);
       }
       if (requiereNumeroFranela && numeroFranelaFinal) {
         formData.append('numeroFranela', numeroFranelaFinal);
       }
 
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
-        method: 'POST',
+      if (!editandoId) {
+        formData.append('alumnoId', alumno?._id || alumno?.id || '');
+        const sedeId = sede?._id || sede?.id || alumno?.sede?._id || alumno?.sede || '';
+        formData.append('sedeId', sedeId);
+      }
+
+      const endpoint = editandoId
+        ? `${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${editandoId}`
+        : `${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`;
+
+      const res = await fetch(endpoint, {
+        method: editandoId ? 'PATCH' : 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: formData
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Error al guardar el pedido');
+      if (!res.ok) throw new Error(data?.error || (editandoId ? 'Error al editar el pedido' : 'Error al guardar el pedido'));
 
       setPrenda('');
       setTalla('');
+      setEditandoId(null);
       if (requiereNumeroFranela && !numeroFranelaAlumno) {
         setNumeroFranelaAsignado(numeroFranelaFinal);
       }
-      setShowPedidoSuccessDialog(true);
+      if (editandoId) {
+        setPedidoSuccessDialogMode('editar');
+        setShowPedidoSuccessDialog(true);
+      } else {
+        setPedidoSuccessDialogMode('crear');
+        setShowPedidoSuccessDialog(true);
+      }
       onGuardar && onGuardar(data);
       await fetchPedidos();
     } catch (err) {
-      setErrorMessage(err.message || 'Error al guardar el pedido');
+      setErrorMessage(err.message || (editandoId ? 'Error al editar el pedido' : 'Error al guardar el pedido'));
     } finally {
       setGuardando(false);
+    }
+  };
+
+  const handleEditarPedido = (pedido) => {
+    if (!pedido || pedido.estado !== 'pendiente') return;
+
+    const prendaId = String(pedido.uniforme?._id || pedido.uniforme || '').trim();
+    if (!prendaId) {
+      setErrorMessage('No se pudo editar: la prenda no está disponible en el catálogo.');
+      return;
+    }
+
+    setEditandoId(String(pedido._id));
+    setPrenda(prendaId);
+    setTalla(String(pedido.talla || '').trim().toUpperCase());
+    setGeneroPrecioSeleccionado(String(pedido.genero_precio_variante || '').trim().toLowerCase());
+    setNombrePersonalizadoInput(String(pedido.nombre_personalizado || '').trim());
+    if (!numeroFranelaAlumno) {
+      setNumeroFranelaSeleccionado(String(pedido.numero_franela || '').trim());
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelarEdicionPedido = () => {
+    setEditandoId(null);
+    setPrenda('');
+    setTalla('');
+    setNombrePersonalizadoInput(nombrePersonalizadoDefault);
+    if (!numeroFranelaAlumno) {
+      setNumeroFranelaSeleccionado('');
     }
   };
 
@@ -465,7 +673,16 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
   };
 
+  const tieneTasaDisponibleParaPedido = (pedido) => {
+    const tasaActual = obtenerTasaPorMoneda(pedido?.moneda);
+    return Number.isFinite(tasaActual) && tasaActual > 0;
+  };
+
   const openPagoDialog = (pedido) => {
+    if (!tieneTasaDisponibleParaPedido(pedido)) {
+      setErrorMessage('Aun estamos cargando la tasa de cambio para esta moneda. Intenta de nuevo en unos segundos.');
+      return;
+    }
     setPedidoPago(pedido);
     setPagoDialogOpen(true);
   };
@@ -529,14 +746,58 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       data?.estado === 'abono'
         ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(data?.saldo_pendiente, normalizarMoneda(data?.moneda || pago?.moneda))}`
         : data?.estado === 'pago_en_revision'
-          ? 'Pago enviado a revision'
+          ? ''
           : 'Pago registrado correctamente'
     );
+
+    if (data?.estado === 'pago_en_revision') {
+      setPagoRevisionResumen({
+        metodoPago: metodoPago || '-',
+        referencia: referencia || '-',
+        fechaPago: fechaPago || '-',
+        monto: formatearMontoConMoneda(montoPagadoFinal, moneda)
+      });
+      setShowPagoRevisionDialog(true);
+    }
   };
 
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
 
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
+
+  const getEstadoChipSx = (estado) => {
+    const base = getEstadoStyle(estado);
+    return {
+      ...base,
+      borderRadius: '999px',
+      height: 28,
+      border: '1px solid rgba(148, 163, 184, 0.35)',
+      '& .MuiChip-label': {
+        px: 1.15,
+        fontWeight: 700,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.65
+      }
+    };
+  };
+
+  const renderEstadoChipLabel = (estado) => (
+    <>
+      <Box
+        component="span"
+        sx={{
+          width: 7,
+          height: 7,
+          borderRadius: '50%',
+          backgroundColor: 'currentColor',
+          opacity: 0.75,
+          display: 'inline-block'
+        }}
+      />
+      {getEstadoLabel(estado)}
+    </>
+  );
 
   const getSaldoPendienteVisible = (pedido) => {
     const saldo = Number(pedido?.saldo_pendiente);
@@ -583,7 +844,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   };
 
   return (
-    <Grid container justifyContent="center" alignItems="flex-start" sx={{ minHeight: '80vh', py: { xs: 2, md: 3 } }}>
+    <Grid container justifyContent="center" alignItems="flex-start" sx={{ minHeight: '80vh', py: { xs: 2, md: 3 }, px: { xs: 0.75, sm: 0 }, width: '100%', maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Snackbar
         open={!!successMessage}
         autoHideDuration={3000}
@@ -604,11 +865,22 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
           {errorMessage}
         </Alert>
       </Snackbar>
-      <Grid item size={{ xs: 12, sm: 11, md: 10 }}>
+      <Grid item size={{ xs: 12, sm: 11, md: 10 }} sx={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
         <Box sx={{ display: 'grid', gap: 3 }}>
-          <Paper elevation={4} sx={{ p: { xs: 2, sm: 3, md: 4 }, borderRadius: 3 }}>
+          <Paper
+            elevation={4}
+            sx={{
+              p: { xs: 2, sm: 3, md: 4 },
+              borderRadius: 3,
+              width: '100%',
+              maxWidth: '100%',
+              overflowX: 'hidden',
+              boxSizing: 'border-box',
+              border: '1px solid #e2e8f0'
+            }}
+          >
             <Typography variant="h5" gutterBottom align="center" fontWeight={700}>
-              Solicitar Uniforme
+              {editandoId ? 'Editar Solicitud de Uniforme' : 'Solicitar Uniforme'}
             </Typography>
             {alumno && (
               <Typography variant="subtitle1" sx={{ mb: 1 }}>
@@ -626,16 +898,34 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                       label="Prenda"
                       onChange={(event) => setPrenda(event.target.value)}
                       disabled={prendasLoading || !!prendasError}
+                      MenuProps={mobileMenuProps}
                       renderValue={(selected) => {
                         if (!selected) return <em>Seleccione</em>;
-                        const item = prendas.find((p) => p.prenda === selected);
+                        const item = prendas.find((p) => String(p._id) === String(selected));
                         if (!item) return selected;
-                        return `${item.prenda} - ${formatearMontoConMoneda(item.precio, item.moneda)}`;
+                        const precioCalculado = resolverPrecioPorVariante(item, talla, generoPrecioParaCalculo);
+                        const label = `${item.prenda} - ${formatearMontoConMoneda(precioCalculado, item.moneda)}`;
+                        return (
+                          <Typography
+                            component="span"
+                            sx={{
+                              display: 'block',
+                              minWidth: 0,
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title={label}
+                          >
+                            {label}
+                          </Typography>
+                        );
                       }}
                     >
                       <MenuItem value=""><em>Seleccione</em></MenuItem>
                       {prendas.map((item) => (
-                        <MenuItem key={item._id} value={item.prenda}>
+                        <MenuItem key={item._id} value={item._id}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
                             {item.fotos?.[0] ? (
                               <Box
@@ -664,8 +954,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                 }}
                               />
                             )}
-                            <Typography sx={{ fontSize: 14, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
-                              {item.prenda} - {formatearMontoConMoneda(item.precio, item.moneda)}
+                            <Typography sx={{ fontSize: 14, color: '#0f172a', whiteSpace: { xs: 'normal', sm: 'nowrap' }, wordBreak: 'break-word', overflow: 'hidden', textOverflow: { xs: 'clip', sm: 'ellipsis' }, lineHeight: 1.25 }}>
+                              {item.prenda}
                             </Typography>
                           </Box>
                         </MenuItem>
@@ -681,6 +971,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                       value={talla}
                       label="Talla"
                       onChange={(event) => setTalla(event.target.value)}
+                      MenuProps={mobileMenuProps}
                     >
                       <MenuItem value=""><em>Seleccione</em></MenuItem>
                       {TALLAS.map((item) => (
@@ -689,6 +980,46 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     </Select>
                   </FormControl>
                 </Grid>
+                {requiereSelectorGeneroPrecio && (
+                  <Grid item size={{ xs: 12, md: 6 }}>
+                    <FormControl fullWidth required sx={uniformControlSx}>
+                      <InputLabel id="genero-precio-label">Género para precio</InputLabel>
+                      <Select
+                        labelId="genero-precio-label"
+                        value={generoPrecioParaCalculo}
+                        label="Género para precio"
+                        onChange={(event) => setGeneroPrecioSeleccionado(String(event.target.value || '').trim().toLowerCase())}
+                        MenuProps={mobileMenuProps}
+                      >
+                        {generosDisponiblesPrecio.map((genero) => (
+                          <MenuItem key={genero} value={genero}>{getGeneroLabel(genero)}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                )}
+                {prendaSeleccionada && (
+                  <Grid item size={{ xs: 12 }}>
+                    <Box
+                      sx={{
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 2,
+                        p: 1.25,
+                        backgroundColor: '#f8fafc'
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+                        Precio según selección
+                      </Typography>
+                      <Typography sx={{ fontSize: 18, color: '#0f172a', fontWeight: 800, lineHeight: 1.2 }}>
+                        {formatearMontoConMoneda(precioSeleccionActual, prendaSeleccionada?.moneda)}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.25 }}>
+                        {`Género para precio: ${generoPrecioParaCalculo} | Talla: ${String(talla || '-').toUpperCase()}`}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                )}
                 {mostrarCampoNombre && (
                   <Grid item size={{ xs: 12, md: 6 }}>
                     {usaSelectorNombreRepresentante ? (
@@ -699,6 +1030,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           value={nombrePersonalizadoInput}
                           label="Nombre para franela"
                           onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
+                          MenuProps={mobileMenuProps}
                         >
                           <MenuItem value=""><em>Seleccione</em></MenuItem>
                           {OPCIONES_NOMBRE_REPRESENTANTE.map((opcion) => (
@@ -762,6 +1094,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           label="Numero de franela"
                           onChange={(event) => setNumeroFranelaSeleccionado(event.target.value)}
                           disabled={numeroFranelaLoading || numerosFranelaDisponibles.length === 0}
+                          MenuProps={mobileMenuProps}
                         >
                           <MenuItem value=""><em>Seleccione</em></MenuItem>
                           {numerosFranelaDisponibles.map((numero) => (
@@ -821,8 +1154,20 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                 size="large"
                 disabled={guardando || (mostrarCampoNombre && !String(nombrePersonalizadoInput || '').trim()) || (requiereNumeroFranela && (!numeroFranelaAlumno && !numeroFranelaSeleccionado)) || (requiereNumeroFranela && numeroFranelaLoading) || (requiereNumeroFranela && !!numeroFranelaError)}
               >
-                {guardando ? 'Guardando...' : 'Guardar pedido'}
+                {guardando ? 'Guardando...' : (editandoId ? 'Guardar cambios' : 'Guardar pedido')}
               </Button>
+              {editandoId && (
+                <Button
+                  type="button"
+                  variant="text"
+                  color="inherit"
+                  fullWidth
+                  sx={{ mt: 1, textTransform: 'none', fontWeight: 700, color: '#64748b' }}
+                  onClick={cancelarEdicionPedido}
+                >
+                  Cancelar edición
+                </Button>
+              )}
             </Box>
           </Paper>
 
@@ -853,12 +1198,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           {pedido.prenda} - {pedido.talla}
                         </Typography>
                         <Chip
-                          label={getEstadoLabel(pedido.estado)}
+                          label={renderEstadoChipLabel(pedido.estado)}
                           size="small"
-                          sx={{
-                            ...getEstadoStyle(pedido.estado),
-                            fontWeight: 700
-                          }}
+                          sx={getEstadoChipSx(pedido.estado)}
                         />
                       </Box>
 
@@ -898,8 +1240,14 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
                       {(pedido.estado === 'esperando_pago' || pedido.estado === 'abono') ? (
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                          <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
-                            Realizar pago
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => openPagoDialog(pedido)}
+                            disabled={!tieneTasaDisponibleParaPedido(pedido)}
+                            sx={ACCION_BOTON_EDITAR_SX}
+                          >
+                            {tieneTasaDisponibleParaPedido(pedido) ? 'Realizar pago' : 'Cargando tasa...'}
                           </Button>
                           <Button
                             size="small"
@@ -916,15 +1264,26 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           <Typography variant="body2" sx={{ color: '#64748b' }}>
                             Esperando solicitud de pago del administrador
                           </Typography>
-                          <Button
-                            size="small"
-                            color="error"
-                            variant="outlined"
-                            disabled={cancelandoId === pedido._id}
-                            onClick={() => setConfirmCancelId(pedido._id)}
-                          >
-                            {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar solicitud'}
-                          </Button>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleEditarPedido(pedido)}
+                              disabled={!pedido?.uniforme}
+                              sx={ACCION_BOTON_EDITAR_SX}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              disabled={cancelandoId === pedido._id}
+                              onClick={() => setConfirmCancelId(pedido._id)}
+                              sx={ACCION_BOTON_ELIMINAR_SX}
+                            >
+                              {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar'}
+                            </Button>
+                          </Box>
                         </Box>
                       ) : (
                         <Typography variant="body2" sx={{ color: '#64748b' }}>
@@ -991,19 +1350,22 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           <TableCell>{formatFecha(pedido.fecha_pago || pedido.createdAt)}</TableCell>
                           <TableCell>
                             <Chip
-                              label={getEstadoLabel(pedido.estado)}
+                              label={renderEstadoChipLabel(pedido.estado)}
                               size="small"
-                              sx={{
-                                ...getEstadoStyle(pedido.estado),
-                                fontWeight: 700
-                              }}
+                              sx={getEstadoChipSx(pedido.estado)}
                             />
                           </TableCell>
                           <TableCell>
                             {(pedido.estado === 'esperando_pago' || pedido.estado === 'abono') ? (
                               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                <Button size="small" variant="contained" onClick={() => openPagoDialog(pedido)}>
-                                  Realizar pago
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => openPagoDialog(pedido)}
+                                  disabled={!tieneTasaDisponibleParaPedido(pedido)}
+                                  sx={ACCION_BOTON_EDITAR_SX}
+                                >
+                                  {tieneTasaDisponibleParaPedido(pedido) ? 'Realizar pago' : 'Cargando tasa...'}
                                 </Button>
                                 <Button
                                   size="small"
@@ -1016,19 +1378,30 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                 </Button>
                               </Box>
                             ) : pedido.estado === 'pendiente' ? (
-                              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <Box sx={{ display: 'grid', gap: 0.9, alignItems: 'start' }}>
                                 <Typography variant="body2" sx={{ color: '#64748b' }}>
                                   Esperando solicitud de pago del administrador
                                 </Typography>
-                                <Button
-                                  size="small"
-                                  color="error"
-                                  variant="outlined"
-                                  disabled={cancelandoId === pedido._id}
-                                  onClick={() => setConfirmCancelId(pedido._id)}
-                                >
-                                  {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar solicitud'}
-                                </Button>
+                                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'nowrap', alignItems: 'center' }}>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => handleEditarPedido(pedido)}
+                                    disabled={!pedido?.uniforme}
+                                    sx={ACCION_BOTON_EDITAR_SX}
+                                  >
+                                    Editar
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    disabled={cancelandoId === pedido._id}
+                                    onClick={() => setConfirmCancelId(pedido._id)}
+                                    sx={ACCION_BOTON_ELIMINAR_SX}
+                                  >
+                                    {cancelandoId === pedido._id ? 'Eliminando solicitud...' : 'Eliminar solicitud'}
+                                  </Button>
+                                </Box>
                               </Box>
                             ) : (
                               <Typography variant="body2" sx={{ color: '#64748b' }}>
@@ -1085,13 +1458,21 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       >
         <DialogContent sx={{ pt: 1, pb: 1 }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
-            <CheckCircleRoundedIcon sx={{ fontSize: 62, color: '#16a34a' }} />
+            {pedidoSuccessDialogMode === 'editar' ? (
+              <TaskAltRoundedIcon sx={{ fontSize: 62, color: '#0ea5e9' }} />
+            ) : (
+              <CheckCircleRoundedIcon sx={{ fontSize: 62, color: '#16a34a' }} />
+            )}
           </Box>
           <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1, letterSpacing: 0.3 }}>
-            SOLICITUD DE UNIFORME ENVIADO
+            {pedidoSuccessDialogMode === 'editar'
+              ? 'SOLICITUD DE UNIFORME ACTUALIZADA'
+              : 'SOLICITUD DE UNIFORME ENVIADO'}
           </Typography>
           <Typography variant="body2" sx={{ color: '#475569' }}>
-            Próximamente el administrador le solicitará el pago del uniforme. No se preocupe, le avisaremos por aquí en cuanto ocurra.
+            {pedidoSuccessDialogMode === 'editar'
+              ? 'Tu solicitud fue actualizada correctamente. Próximamente el administrador le solicitará el pago del uniforme y te avisaremos por aquí.'
+              : 'Próximamente el administrador le solicitará el pago del uniforme. No se preocupe, le avisaremos por aquí en cuanto ocurra.'}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', pt: 1, pb: 0.5 }}>
@@ -1100,6 +1481,82 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
             onClick={() => setShowPedidoSuccessDialog(false)}
             sx={{
               minWidth: 140,
+              fontWeight: 700,
+              textTransform: 'none',
+              bgcolor: '#0B0F2A',
+              '&:hover': {
+                bgcolor: '#11183d'
+              }
+            }}
+          >
+            Entendido
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={showPagoRevisionDialog}
+        onClose={() => setShowPagoRevisionDialog(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            textAlign: 'center',
+            p: { xs: 2, sm: 2.5 }
+          }
+        }}
+      >
+        <DialogContent sx={{ pt: 1, pb: 1.25 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
+            <TaskAltRoundedIcon sx={{ fontSize: 64, color: '#0ea5e9' }} />
+          </Box>
+
+          <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.8, letterSpacing: 0.3 }}>
+            PAGO ENVIADO A REVISION
+          </Typography>
+
+          <Typography variant="body2" sx={{ color: '#475569', mb: 1.6 }}>
+            Recibimos tu comprobante correctamente. El administrador validara tu pago y te notificaremos por aqui cuando cambie el estado.
+          </Typography>
+
+          <Box
+            sx={{
+              textAlign: 'left',
+              border: '1px solid #e2e8f0',
+              borderRadius: 2,
+              backgroundColor: '#f8fafc',
+              p: 1.35,
+              display: 'grid',
+              gap: 0.5,
+              mb: 1.2
+            }}
+          >
+            <Typography variant="caption" sx={{ color: '#64748b' }}>
+              Monto reportado: <strong style={{ color: '#0f172a' }}>{pagoRevisionResumen?.monto || '-'}</strong>
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748b' }}>
+              Metodo: <strong style={{ color: '#0f172a' }}>{pagoRevisionResumen?.metodoPago || '-'}</strong>
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748b' }}>
+              Referencia: <strong style={{ color: '#0f172a' }}>{pagoRevisionResumen?.referencia || '-'}</strong>
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#64748b' }}>
+              Fecha de pago: <strong style={{ color: '#0f172a' }}>{pagoRevisionResumen?.fechaPago || '-'}</strong>
+            </Typography>
+          </Box>
+
+          <Typography variant="caption" sx={{ color: '#64748b' }}>
+            Mientras esta en revision, no necesitas volver a enviarlo.
+          </Typography>
+        </DialogContent>
+
+        <DialogActions sx={{ justifyContent: 'center', pt: 0.8, pb: 0.5 }}>
+          <Button
+            variant="contained"
+            onClick={() => setShowPagoRevisionDialog(false)}
+            sx={{
+              minWidth: 150,
               fontWeight: 700,
               textTransform: 'none',
               bgcolor: '#0B0F2A',
@@ -1168,6 +1625,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
           moneda: pedidoPago.moneda
         } : null}
         currencyCode={normalizarMoneda(pedidoPago?.moneda)}
+        fallbackRate={pedidoPago ? obtenerTasaPorMoneda(pedidoPago?.moneda) : null}
         disableCuotas
         allowedMethodIds={['pago-movil', 'transferencia']}
         onSubmitPayment={handlePagarPedido}

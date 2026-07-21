@@ -37,6 +37,7 @@ import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import DownloadIcon from '@mui/icons-material/Download';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { mediaUrl } from '../utils/mediaUrl';
 import { useSede } from '../context/SedeContext';
 import { exportToExcel } from '../utils/exportExcel';
@@ -62,17 +63,36 @@ const ESTADO_STYLES = {
 };
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const TALLAS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '4', '6', '8', '10', '12', '14', '16'];
+const OPCIONES_NOMBRE_REPRESENTANTE = [
+  'Volley Mom',
+  'Volley Dad',
+  'Volley Grandmom',
+  'Volley Granddad',
+  'Volley Sister',
+  'Volley Brother'
+];
 
 function ListadoSolicitudesUniformes() {
   const [pedidos, setPedidos] = useState([]);
+  const [uniformesCatalogo, setUniformesCatalogo] = useState([]);
   const [prendasCatalogo, setPrendasCatalogo] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [solicitudPagoOpen, setSolicitudPagoOpen] = useState(false);
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
-  const [precioSolicitado, setPrecioSolicitado] = useState('');
   const [submittingSolicitudPago, setSubmittingSolicitudPago] = useState(false);
+  const [editSolicitudOpen, setEditSolicitudOpen] = useState(false);
+  const [submittingEditSolicitud, setSubmittingEditSolicitud] = useState(false);
+  const [editSolicitudData, setEditSolicitudData] = useState({
+    uniformeId: '',
+    talla: '',
+    nombrePersonalizado: '',
+    numeroFranela: '',
+    precio: '',
+    moneda: 'USD'
+  });
   const [detallePagoOpen, setDetallePagoOpen] = useState(false);
   const [submittingVerificacion, setSubmittingVerificacion] = useState(false);
   const [confirmEntregarId, setConfirmEntregarId] = useState(null);
@@ -156,7 +176,7 @@ function ListadoSolicitudesUniformes() {
     }
 
     const raw = String(fecha).trim();
-    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+    const fechaBase = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (fechaBase) {
       const year = Number(fechaBase[1]);
       const month = Number(fechaBase[2]) - 1;
@@ -187,19 +207,22 @@ function ListadoSolicitudesUniformes() {
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
   const esPedidoPendiente = (pedido) => String(pedido?.estado || '').toLowerCase() === 'pendiente';
 
-  const opcionesPrendaDesdePedidos = Array.from(new Set(
-    pedidos
-      .map((pedido) => String(pedido?.prenda || '').trim())
-      .filter(Boolean)
-  )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  const opcionesPrenda = prendasCatalogo;
 
-  const opcionesPrenda = prendasCatalogo.length > 0 ? prendasCatalogo : opcionesPrendaDesdePedidos;
+  const getUniformeIdFromPedido = (pedido) => {
+    const raw = pedido?.uniforme;
+    if (!raw) return '';
+    if (typeof raw === 'string') return raw;
+    return String(raw?._id || '').trim();
+  };
 
   const pedidosFiltrados = pedidos.filter((pedido) => {
     const fechaPedido = pedido?.createdAt || pedido?.fecha_solicitud || pedido?.fechaSolicitud;
     const fechaPedidoDate = parseFechaSinDesfase(fechaPedido);
     const mesPedido = fechaPedidoDate ? (fechaPedidoDate.getMonth() + 1) : null;
-    const mesOk = filtroMes ? mesPedido === Number(filtroMes) : true;
+    const mesOk = filtroMes === 'todos' || !filtroMes
+      ? true
+      : mesPedido === Number(filtroMes);
 
     const estadoOk = filtroEstado === 'todos'
       ? true
@@ -330,6 +353,12 @@ function ListadoSolicitudesUniformes() {
     return montoEsperadoDivisa * tasaAplicadaNumero;
   })();
 
+  const uniformeSeleccionadoEdicion = uniformesCatalogo.find((item) => String(item?._id) === String(editSolicitudData.uniformeId));
+  const requiereNumeroFranelaEdicion = uniformeSeleccionadoEdicion?.lleva_numero_franela !== false;
+  const muestraCampoNombreEdicion = Boolean(uniformeSeleccionadoEdicion?.lleva_nombre_atleta) || Boolean(uniformeSeleccionadoEdicion?.franela_representante);
+  const permitePersonalizacionNombreEdicion = Boolean(uniformeSeleccionadoEdicion?.lleva_personalizacion_nombre);
+  const usaSelectorNombreRepresentanteEdicion = Boolean(uniformeSeleccionadoEdicion?.franela_representante) && !permitePersonalizacionNombreEdicion;
+
   const copiarReferencia = async (texto) => {
     try {
       if (!texto) return;
@@ -379,14 +408,18 @@ function ListadoSolicitudesUniformes() {
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Error al obtener catalogo de prendas');
 
+      const uniformes = Array.isArray(data) ? data : [];
+      setUniformesCatalogo(uniformes);
+
       const prendas = Array.from(new Set(
-        (Array.isArray(data) ? data : [])
+        uniformes
           .map((item) => String(item?.prenda || '').trim())
           .filter(Boolean)
       )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
       setPrendasCatalogo(prendas);
     } catch {
+      setUniformesCatalogo([]);
       setPrendasCatalogo([]);
     }
   }, [token]);
@@ -421,7 +454,6 @@ function ListadoSolicitudesUniformes() {
 
   const openSolicitudPagoDialog = (pedido) => {
     setPedidoSeleccionado(pedido);
-    setPrecioSolicitado(formatMoney(pedido?.precio));
     setSolicitudPagoOpen(true);
   };
 
@@ -429,13 +461,49 @@ function ListadoSolicitudesUniformes() {
     if (submittingSolicitudPago) return;
     setSolicitudPagoOpen(false);
     setPedidoSeleccionado(null);
-    setPrecioSolicitado('');
+  };
+
+  const openEditSolicitudDialog = (pedido) => {
+    const uniformeId = getUniformeIdFromPedido(pedido);
+    const uniformeCatalogo = uniformesCatalogo.find((item) => String(item?._id) === String(uniformeId));
+    const requiereNumero = uniformeCatalogo?.lleva_numero_franela !== false;
+    const muestraNombre = Boolean(uniformeCatalogo?.lleva_nombre_atleta) || Boolean(uniformeCatalogo?.franela_representante);
+    const usaSelectorRepresentante = Boolean(uniformeCatalogo?.franela_representante) && !Boolean(uniformeCatalogo?.lleva_personalizacion_nombre);
+    const nombreActual = String(pedido?.nombre_personalizado || '');
+    const nombreNormalizado = usaSelectorRepresentante && !OPCIONES_NOMBRE_REPRESENTANTE.includes(nombreActual)
+      ? ''
+      : nombreActual;
+
+    setPedidoSeleccionado(pedido);
+    setEditSolicitudData({
+      uniformeId,
+      talla: String(pedido?.talla || ''),
+      nombrePersonalizado: muestraNombre ? nombreNormalizado : '',
+      numeroFranela: requiereNumero ? String(pedido?.numero_franela || '') : '',
+      precio: String(pedido?.precio ?? uniformeCatalogo?.precio ?? ''),
+      moneda: normalizarMoneda(pedido?.moneda || uniformeCatalogo?.moneda || 'USD')
+    });
+    setEditSolicitudOpen(true);
+  };
+
+  const closeEditSolicitudDialog = () => {
+    if (submittingEditSolicitud) return;
+    setEditSolicitudOpen(false);
+    setPedidoSeleccionado(null);
+    setEditSolicitudData({
+      uniformeId: '',
+      talla: '',
+      nombrePersonalizado: '',
+      numeroFranela: '',
+      precio: '',
+      moneda: 'USD'
+    });
   };
 
   const handleSolicitarPago = async () => {
-    const precio = Number(precioSolicitado);
+    const precio = Number(pedidoSeleccionado?.precio);
     if (!precio || Number.isNaN(precio) || precio <= 0 || !pedidoSeleccionado?._id) {
-      setError('Debes indicar un precio valido para solicitar el pago');
+      setError('El pedido no tiene un precio valido. Edita la solicitud antes de confirmar pago.');
       return;
     }
 
@@ -454,12 +522,58 @@ function ListadoSolicitudesUniformes() {
       setPedidos((prev) => prev.map((pedido) => (pedido._id === data._id ? data : pedido)));
       setSolicitudPagoOpen(false);
       setPedidoSeleccionado(null);
-      setPrecioSolicitado('');
       setSuccessMessage('Solicitud de pago enviada al usuario');
     } catch (err) {
       setError(err.message || 'Error al solicitar el pago');
     } finally {
       setSubmittingSolicitudPago(false);
+    }
+  };
+
+  const handleGuardarEdicionSolicitud = async () => {
+    if (!pedidoSeleccionado?._id) return;
+
+    const precio = Number(editSolicitudData.precio);
+    if (!editSolicitudData.uniformeId) {
+      setError('Selecciona una prenda del catalogo');
+      return;
+    }
+    if (!editSolicitudData.talla) {
+      setError('Selecciona una talla');
+      return;
+    }
+    if (!Number.isFinite(precio) || precio < 0) {
+      setError('Debes indicar un precio valido');
+      return;
+    }
+
+    try {
+      setSubmittingEditSolicitud(true);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoSeleccionado._id}`, {
+        method: 'PATCH',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          uniformeId: editSolicitudData.uniformeId,
+          talla: editSolicitudData.talla,
+          nombrePersonalizado: muestraCampoNombreEdicion ? editSolicitudData.nombrePersonalizado : '',
+          numeroFranela: requiereNumeroFranelaEdicion ? editSolicitudData.numeroFranela : '',
+          precio,
+          moneda: normalizarMoneda(editSolicitudData.moneda)
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al actualizar la solicitud');
+
+      setPedidos((prev) => prev.map((pedido) => (pedido._id === data._id ? data : pedido)));
+      setSuccessMessage('Solicitud actualizada correctamente');
+      closeEditSolicitudDialog();
+    } catch (err) {
+      setError(err.message || 'Error al actualizar la solicitud');
+    } finally {
+      setSubmittingEditSolicitud(false);
     }
   };
 
@@ -699,6 +813,20 @@ function ListadoSolicitudesUniformes() {
     if (pedido.estado === 'pendiente') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          <Tooltip title="Editar solicitud">
+            <IconButton
+              size="small"
+              onClick={() => openEditSolicitudDialog(pedido)}
+              aria-label="Editar solicitud"
+              sx={{
+                bgcolor: '#f1f5f9',
+                color: '#334155',
+                '&:hover': { bgcolor: '#e2e8f0' }
+              }}
+            >
+              <EditOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Solicitar pago">
             <IconButton
               size="small"
@@ -854,16 +982,110 @@ function ListadoSolicitudesUniformes() {
         </Alert>
       </Snackbar>
 
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Pedidos de Uniformes</Typography>
-          <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
-            Lista de solicitudes de uniformes realizadas por los alumnos. Puedes solicitar pagos, verificar pagos pendientes y marcar prendas como entregadas desde esta sección.
-          </Typography>
-        </Box>
+      <Box sx={{ mb: 1.5 }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, fontSize: { xs: 24, md: 30 }, color: '#0f172a' }}>
+          Pedidos de Uniformes
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.4 }}>
+          Lista de solicitudes realizadas por los alumnos. Solicita pagos, verifica comprobantes y marca prendas como entregadas.
+        </Typography>
+      </Box>
 
-        <Box>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+      <Paper
+        elevation={0}
+        sx={{
+          border: '1px solid #e2e8f0',
+          borderRadius: 2.5,
+          p: 1.75,
+          mb: 1.5,
+          backgroundColor: '#ffffff',
+          boxShadow: '0 8px 18px rgba(15, 23, 42, 0.04)'
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 1,
+            flexWrap: { xs: 'wrap', md: 'nowrap' },
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: { xs: 'wrap', md: 'nowrap' }, flexGrow: 1 }}>
+            <TextField
+              select
+              size="small"
+              label="Mes"
+              value={filtroMes}
+              onChange={(event) => {
+                setFiltroMes(event.target.value);
+                setPagina(0);
+              }}
+              sx={{
+                minWidth: { xs: 150, md: 170 },
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+              }}
+            >
+              <MenuItem value="todos">Todos</MenuItem>
+              {MESES.map((mes, index) => (
+                <MenuItem key={mes} value={(index + 1).toString()}>{mes}</MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              size="small"
+              label="Estado"
+              value={filtroEstado}
+              onChange={(event) => {
+                setFiltroEstado(event.target.value);
+                setPagina(0);
+              }}
+              sx={{
+                minWidth: { xs: 150, md: 175 },
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+              }}
+            >
+              <MenuItem value="todos">Todos los estados</MenuItem>
+              <MenuItem value="pendiente">Pendiente</MenuItem>
+              <MenuItem value="esperando_pago">Esperando pago</MenuItem>
+              <MenuItem value="abono">Abono</MenuItem>
+              <MenuItem value="pago_en_revision">Pago en revision</MenuItem>
+              <MenuItem value="verificado">Verificado</MenuItem>
+              <MenuItem value="entregado">Entregado</MenuItem>
+              <MenuItem value="cancelado">Cancelado</MenuItem>
+            </TextField>
+
+            <TextField
+              select
+              size="small"
+              label="Prenda"
+              value={filtroPrenda}
+              onChange={(event) => {
+                setFiltroPrenda(event.target.value);
+                setPagina(0);
+              }}
+              sx={{
+                minWidth: { xs: 150, md: 175 },
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+              }}
+            >
+              <MenuItem value="todas">Todas las prendas</MenuItem>
+              {opcionesPrenda.map((prenda) => (
+                <MenuItem key={prenda} value={prenda.toLowerCase()}>{prenda}</MenuItem>
+              ))}
+            </TextField>
+          </Box>
+
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              flexWrap: { xs: 'wrap', md: 'nowrap' },
+              justifyContent: { xs: 'flex-start', md: 'flex-end' },
+              ml: { md: 'auto' }
+            }}
+          >
             <Button
               variant="outlined"
               startIcon={<RequestQuoteIcon />}
@@ -871,34 +1093,16 @@ function ListadoSolicitudesUniformes() {
               onClick={() => setConfirmSolicitudPagoLoteOpen(true)}
               sx={{
                 textTransform: 'none',
-                fontWeight: 600,
-                letterSpacing: '0.01em',
+                fontWeight: 700,
                 borderRadius: 2,
-                px: 1.8,
-                py: 0.85,
-                minHeight: 38,
-                color: '#334155',
-                borderColor: '#cbd5e1',
-                backgroundColor: '#ffffff',
-                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
-                '& .MuiButton-startIcon': {
-                  color: '#64748b'
-                },
-                '&:hover': {
-                  borderColor: '#94a3b8',
-                  backgroundColor: '#f8fafc',
-                  boxShadow: '0 2px 6px rgba(15, 23, 42, 0.06)'
-                },
-                '&:disabled': {
-                  borderColor: '#e2e8f0',
-                  color: '#94a3b8',
-                  backgroundColor: '#f8fafc'
-                }
+                minHeight: 40,
+                px: 1.5,
+                whiteSpace: 'nowrap'
               }}
             >
               {submittingSolicitudPagoLote
-                ? 'Procesando lote...'
-                : `Solicitar pago por lote (${pedidosPendientesSeleccionados.length})`}
+                ? 'Procesando...'
+                : `Solicitar pago (${pedidosPendientesSeleccionados.length})`}
             </Button>
             <Button
               variant="outlined"
@@ -908,18 +1112,16 @@ function ListadoSolicitudesUniformes() {
               onClick={() => setConfirmEliminarLoteOpen(true)}
               sx={{
                 textTransform: 'none',
-                fontWeight: 600,
-                letterSpacing: '0.01em',
+                fontWeight: 700,
                 borderRadius: 2,
-                px: 1.8,
-                py: 0.85,
-                minHeight: 38,
-                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)'
+                minHeight: 40,
+                px: 1.5,
+                whiteSpace: 'nowrap'
               }}
             >
               {submittingEliminarLote
-                ? 'Eliminando lote...'
-                : `Eliminar por lote (${pedidosFiltradosSeleccionados.length})`}
+                ? 'Eliminando...'
+                : `Eliminar (${pedidosFiltradosSeleccionados.length})`}
             </Button>
             <Button
               variant="outlined"
@@ -927,99 +1129,31 @@ function ListadoSolicitudesUniformes() {
               onClick={handleOpenExportMenu}
               sx={{
                 textTransform: 'none',
-                fontWeight: 600,
-                letterSpacing: '0.01em',
+                fontWeight: 700,
                 borderRadius: 2,
-                px: 1.8,
-                py: 0.85,
-                minHeight: 38,
-                color: '#334155',
-                borderColor: '#cbd5e1',
-                backgroundColor: '#ffffff',
-                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
-                '& .MuiButton-startIcon': {
-                  color: '#64748b'
-                },
-                '&:hover': {
-                  borderColor: '#94a3b8',
-                  backgroundColor: '#f8fafc',
-                  boxShadow: '0 2px 6px rgba(15, 23, 42, 0.06)'
-                }
+                minHeight: 40,
+                px: 1.5,
+                whiteSpace: 'nowrap'
               }}
             >
               Exportar Excel
             </Button>
           </Box>
-          <Menu
-            anchorEl={exportMenuAnchorEl}
-            open={Boolean(exportMenuAnchorEl)}
-            onClose={handleCloseExportMenu}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-          >
-            <MenuItem onClick={handleExportAll}>Exportar todos los registros</MenuItem>
-            <MenuItem onClick={handleExportVerified}>Exportar solo verificados</MenuItem>
-          </Menu>
         </Box>
-      </Box>
 
-      <Box sx={{ mb: 1.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        <TextField
-          select
-          size="small"
-          label="Mes"
-          value={filtroMes}
-          onChange={(event) => {
-            setFiltroMes(event.target.value);
-            setPagina(0);
-          }}
-          sx={{ minWidth: 170 }}
+        <Menu
+          anchorEl={exportMenuAnchorEl}
+          open={Boolean(exportMenuAnchorEl)}
+          onClose={handleCloseExportMenu}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
-          {MESES.map((mes, index) => (
-            <MenuItem key={mes} value={(index + 1).toString()}>{mes}</MenuItem>
-          ))}
-        </TextField>
+          <MenuItem onClick={handleExportAll}>Exportar todos los registros</MenuItem>
+          <MenuItem onClick={handleExportVerified}>Exportar solo verificados</MenuItem>
+        </Menu>
+      </Paper>
 
-        <TextField
-          select
-          size="small"
-          label="Filtrar por estado"
-          value={filtroEstado}
-          onChange={(event) => {
-            setFiltroEstado(event.target.value);
-            setPagina(0);
-          }}
-          sx={{ minWidth: 220 }}
-        >
-          <MenuItem value="todos">Todos</MenuItem>
-          <MenuItem value="pendiente">Pendiente</MenuItem>
-          <MenuItem value="esperando_pago">Esperando pago</MenuItem>
-          <MenuItem value="abono">Abono</MenuItem>
-          <MenuItem value="pago_en_revision">Pago en revision</MenuItem>
-          <MenuItem value="verificado">Verificado</MenuItem>
-          <MenuItem value="entregado">Entregado</MenuItem>
-          <MenuItem value="cancelado">Cancelado</MenuItem>
-        </TextField>
-
-        <TextField
-          select
-          size="small"
-          label="Filtrar por prenda"
-          value={filtroPrenda}
-          onChange={(event) => {
-            setFiltroPrenda(event.target.value);
-            setPagina(0);
-          }}
-          sx={{ minWidth: 220 }}
-        >
-          <MenuItem value="todas">Todas</MenuItem>
-          {opcionesPrenda.map((prenda) => (
-            <MenuItem key={prenda} value={prenda.toLowerCase()}>{prenda}</MenuItem>
-          ))}
-        </TextField>
-      </Box>
-
-      <Box sx={{ mb: 1.25 }}>
+      <Box sx={{ mb: 1.1 }}>
         <Button
           variant="text"
           onClick={handleToggleSeleccionGlobalFiltrados}
@@ -1028,7 +1162,7 @@ function ListadoSolicitudesUniformes() {
             textTransform: 'none',
             fontWeight: 600,
             color: '#475569',
-            minHeight: 36,
+            minHeight: 34,
             px: 0.5,
             justifyContent: 'flex-start',
             '&:hover': { backgroundColor: '#f1f5f9' }
@@ -1130,12 +1264,13 @@ function ListadoSolicitudesUniformes() {
         <TableContainer
           component={Paper}
           sx={{
-            mt: 3,
+            mt: 1.25,
             borderRadius: 3,
             overflowX: 'auto',
             overflowY: 'hidden',
             maxWidth: '100%',
-            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 8px 20px rgba(15, 23, 42, 0.05)'
           }}
         >
           <Table sx={{ minWidth: 980 }}>
@@ -1150,21 +1285,27 @@ function ListadoSolicitudesUniformes() {
                     disabled={pedidosPaginados.length === 0}
                   />
                 </TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SEDE</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>PRENDA</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>TALLA</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NOMBRE</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>NUMERO</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>PRECIO</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>FECHA</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
-                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCION</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>ALUMNO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>SEDE</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>PRENDA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>TALLA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>NOMBRE</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>NUMERO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>PRECIO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>FECHA</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>ESTADO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {pedidosPaginados.map((pedido) => (
-                <TableRow key={pedido._id} sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 2 }, '&:hover': { backgroundColor: '#fafafa' } }}>
+                <TableRow
+                  key={pedido._id}
+                  sx={{
+                    '& td': { borderBottom: '1px solid #eef0f3', py: 1.8, verticalAlign: 'middle' },
+                    '&:hover': { backgroundColor: '#f8fafc' }
+                  }}
+                >
                   <TableCell padding="checkbox">
                     <Checkbox
                       size="small"
@@ -1183,7 +1324,7 @@ function ListadoSolicitudesUniformes() {
                   <TableCell>
                     <Chip label={getEstadoLabel(pedido.estado)} size="small" sx={{ ...getEstadoStyle(pedido.estado), fontWeight: 700 }} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ minWidth: 190 }}>
                     {renderAccion(pedido)}
                   </TableCell>
                 </TableRow>
@@ -1250,22 +1391,17 @@ function ListadoSolicitudesUniformes() {
                 </Typography>
               </Box>
 
-              <TextField
-                label={`Monto solicitado (${normalizarMoneda(pedidoSeleccionado?.moneda)})`}
-                type="number"
-                value={precioSolicitado}
-                onChange={(event) => setPrecioSolicitado(event.target.value)}
-                inputProps={{ min: 0, step: '0.01' }}
-                sx={{
-                  '& .MuiInputBase-root': {
-                    bgcolor: '#ffffff',
-                    borderRadius: 2
-                  }
-                }}
-              />
+              <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 1 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.04em', color: '#94a3b8', textTransform: 'uppercase' }}>
+                  Monto
+                </Typography>
+                <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>
+                  {formatMoneyWithCurrency(pedidoSeleccionado?.precio, pedidoSeleccionado?.moneda)}
+                </Typography>
+              </Box>
 
               <Typography variant="body2" sx={{ color: '#64748b' }}>
-                El monto viene desde la prenda configurada, pero puedes ajustarlo antes de confirmar la solicitud de pago.
+                Para cambiar campos de la solicitud (incluyendo monto), usa "Editar solicitud" antes de confirmar.
               </Typography>
             </Box>
           </Paper>
@@ -1280,7 +1416,157 @@ function ListadoSolicitudesUniformes() {
             disabled={submittingSolicitudPago}
             sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none', px: 2.2 }}
           >
-            {submittingSolicitudPago ? 'Procesando...' : 'Confirmar solicitud'}
+            {submittingSolicitudPago ? 'Procesando...' : 'Confirmar solicitud de pago'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={editSolicitudOpen}
+        onClose={closeEditSolicitudDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 17, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <EditOutlinedIcon sx={{ fontSize: 20, color: '#1e293b' }} />
+            <Typography sx={{ fontWeight: 800, fontSize: 17, color: '#0b2a57' }}>
+              {`Editar solicitud${pedidoSeleccionado?.alumno ? ` - ${pedidoSeleccionado.alumno.nombres || ''} ${pedidoSeleccionado.alumno.apellidos || ''}`.trim() : ''}`}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={closeEditSolicitudDialog} disabled={submittingEditSolicitud} sx={{ color: '#6b7280' }}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ bgcolor: '#f3f5fb', pt: 2.5, pb: 2.5 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              borderRadius: 2.5,
+              border: '1px solid #e7eaf2',
+              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+              p: 2
+            }}
+          >
+            <Box sx={{ display: 'grid', gap: 1.5 }}>
+              <TextField
+                select
+                label="Prenda"
+                value={editSolicitudData.uniformeId}
+                onChange={(event) => {
+                  const uniformeId = event.target.value;
+                  const uniforme = uniformesCatalogo.find((item) => String(item?._id) === String(uniformeId));
+                  const requiereNumero = uniforme?.lleva_numero_franela !== false;
+                  const muestraNombre = Boolean(uniforme?.lleva_nombre_atleta) || Boolean(uniforme?.franela_representante);
+                  const usaSelectorRepresentante = Boolean(uniforme?.franela_representante) && !Boolean(uniforme?.lleva_personalizacion_nombre);
+                  setEditSolicitudData((prev) => ({
+                    ...prev,
+                    uniformeId,
+                    precio: uniforme ? String(uniforme.precio ?? '') : prev.precio,
+                    moneda: uniforme ? normalizarMoneda(uniforme.moneda) : prev.moneda,
+                    numeroFranela: requiereNumero ? prev.numeroFranela : '',
+                    nombrePersonalizado: muestraNombre
+                      ? (usaSelectorRepresentante
+                        ? (OPCIONES_NOMBRE_REPRESENTANTE.includes(prev.nombrePersonalizado) ? prev.nombrePersonalizado : '')
+                        : prev.nombrePersonalizado)
+                      : ''
+                  }));
+                }}
+                disabled={submittingEditSolicitud}
+              >
+                {uniformesCatalogo.map((item) => (
+                  <MenuItem key={item._id} value={item._id}>
+                    {item.prenda}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                select
+                label="Talla"
+                value={editSolicitudData.talla}
+                onChange={(event) => setEditSolicitudData((prev) => ({ ...prev, talla: event.target.value }))}
+                disabled={submittingEditSolicitud}
+              >
+                {TALLAS.map((talla) => (
+                  <MenuItem key={talla} value={talla}>{talla}</MenuItem>
+                ))}
+              </TextField>
+
+              {muestraCampoNombreEdicion && (
+                usaSelectorNombreRepresentanteEdicion ? (
+                  <TextField
+                    select
+                    label="Nombre en franela"
+                    value={editSolicitudData.nombrePersonalizado}
+                    onChange={(event) => setEditSolicitudData((prev) => ({ ...prev, nombrePersonalizado: event.target.value }))}
+                    disabled={submittingEditSolicitud}
+                    helperText="Selecciona uno de los nombres permitidos para franela de representante"
+                  >
+                    <MenuItem value="">Seleccione</MenuItem>
+                    {OPCIONES_NOMBRE_REPRESENTANTE.map((opcion) => (
+                      <MenuItem key={opcion} value={opcion}>{opcion}</MenuItem>
+                    ))}
+                  </TextField>
+                ) : (
+                  <TextField
+                    label="Nombre deportivo"
+                    value={editSolicitudData.nombrePersonalizado}
+                    onChange={(event) => setEditSolicitudData((prev) => ({ ...prev, nombrePersonalizado: event.target.value }))}
+                    disabled={submittingEditSolicitud || !permitePersonalizacionNombreEdicion}
+                    helperText={permitePersonalizacionNombreEdicion
+                      ? 'Puedes editar el nombre que se imprimirá en la prenda'
+                      : 'Esta prenda no permite personalizar el nombre'}
+                  />
+                )
+              )}
+
+              {requiereNumeroFranelaEdicion && (
+                <TextField
+                  label="Numero de franela"
+                  value={editSolicitudData.numeroFranela}
+                  onChange={(event) => setEditSolicitudData((prev) => ({ ...prev, numeroFranela: event.target.value }))}
+                  disabled={submittingEditSolicitud}
+                />
+              )}
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 140px' }, gap: 1.5 }}>
+                <TextField
+                  label="Precio"
+                  type="number"
+                  value={editSolicitudData.precio}
+                  onChange={(event) => setEditSolicitudData((prev) => ({ ...prev, precio: event.target.value }))}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  disabled={submittingEditSolicitud}
+                />
+                <TextField
+                  select
+                  label="Moneda"
+                  value={editSolicitudData.moneda}
+                  onChange={(event) => setEditSolicitudData((prev) => ({ ...prev, moneda: event.target.value }))}
+                  disabled={submittingEditSolicitud}
+                >
+                  <MenuItem value="USD">USD</MenuItem>
+                  <MenuItem value="EUR">EUR</MenuItem>
+                </TextField>
+              </Box>
+            </Box>
+          </Paper>
+        </DialogContent>
+
+        <DialogActions sx={{ bgcolor: '#f3f5fb', px: 3, pb: 2.5, pt: 0.5 }}>
+          <Button onClick={closeEditSolicitudDialog} disabled={submittingEditSolicitud} sx={{ color: '#475569', textTransform: 'none', fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleGuardarEdicionSolicitud}
+            variant="contained"
+            disabled={submittingEditSolicitud}
+            sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none', px: 2.2 }}
+          >
+            {submittingEditSolicitud ? 'Guardando...' : 'Guardar cambios'}
           </Button>
         </DialogActions>
       </Dialog>

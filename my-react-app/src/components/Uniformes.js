@@ -10,6 +10,7 @@ import {
   MenuItem,
   FormControlLabel,
   Checkbox,
+  Switch,
   Snackbar,
   Alert,
   AlertTitle,
@@ -32,6 +33,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+import StraightenIcon from '@mui/icons-material/Straighten';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { mediaUrl } from '../utils/mediaUrl';
@@ -39,16 +42,105 @@ import { mediaUrl } from '../utils/mediaUrl';
 
 const API_URL = `${process.env.REACT_APP_API_URL}/api/uniformes`;
 
+const GENERO_VARIANTES = [
+  { key: 'masculino', label: 'Masculino' },
+  { key: 'femenino', label: 'Femenino' },
+  { key: 'mixto', label: 'Mixto' }
+];
+
+const TALLAS_VARIANTES = ['6', '8', '10', '12', '14', '16', 'XS', 'S', 'M', 'L', 'XL', 'XXL'];
+
 const initialForm = {
   prenda: '',
   precio: '',
+  precio_aplicar_variantes: '',
   moneda: 'USD',
+  variantes_precio_activo: false,
+  variantes_generos: [],
+  variantes_tallas: [],
+  precios_variantes: [],
   lleva_nombre_atleta: false,
   lleva_personalizacion_nombre: false,
   lleva_numero_franela: false,
   franela_representante: false,
   fotos: []
 };
+
+function normalizeVariantPriceRows(rows = []) {
+  const normalized = rows
+    .map((row) => ({
+      genero: String(row?.genero || '').trim().toLowerCase(),
+      talla: String(row?.talla || '').trim().toUpperCase(),
+      precio: row?.precio === '' || row?.precio === null || row?.precio === undefined
+        ? ''
+        : Number(row?.precio)
+    }))
+    .filter((row) => row.genero && row.talla);
+
+  const uniqueMap = new Map();
+  normalized.forEach((row) => {
+    uniqueMap.set(`${row.genero}::${row.talla}`, row);
+  });
+  return Array.from(uniqueMap.values());
+}
+
+function upsertVariantBatch(existingRows = [], generos = [], tallas = [], precio) {
+  const map = new Map(normalizeVariantPriceRows(existingRows).map((row) => [`${row.genero}::${row.talla}`, row]));
+
+  generos.forEach((genero) => {
+    tallas.forEach((talla) => {
+      map.set(`${genero}::${talla}`, { genero, talla, precio });
+    });
+  });
+
+  return Array.from(map.values());
+}
+
+function getGeneroLabel(genero) {
+  const found = GENERO_VARIANTES.find((item) => item.key === genero);
+  if (found) return found.label;
+  const normalized = String(genero || '').trim().toLowerCase();
+  return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : '-';
+}
+
+function parsePriceInput(rawValue) {
+  const text = String(rawValue ?? '').trim().replace(',', '.');
+  if (text === '') return null;
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+function buildVariantSummaryRows(rows = []) {
+  const grouped = new Map();
+  normalizeVariantPriceRows(rows).forEach((row) => {
+    const price = Number(row.precio);
+    if (!Number.isFinite(price) || price < 0) return;
+
+    const key = price.toFixed(2);
+    const current = grouped.get(key) || {
+      precio: price,
+      generos: new Set(),
+      tallas: new Set(),
+      combinaciones: 0,
+      keys: []
+    };
+
+    current.generos.add(row.genero);
+    current.tallas.add(row.talla);
+    current.combinaciones += 1;
+    current.keys.push(`${row.genero}::${row.talla}`);
+    grouped.set(key, current);
+  });
+
+  return Array.from(grouped.values()).map((item) => ({
+    precio: item.precio,
+    generos: Array.from(item.generos),
+    tallas: Array.from(item.tallas),
+    combinaciones: item.combinaciones,
+    keys: item.keys
+  }));
+}
 
 const modalInputSx = {
   '& .MuiOutlinedInput-root': {
@@ -143,6 +235,7 @@ export default function Uniformes() {
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
+  const [editingVariantKeys, setEditingVariantKeys] = useState([]);
   const fileInputRef = useRef(null);
   const token = localStorage.getItem('token');
 
@@ -177,10 +270,16 @@ export default function Uniformes() {
     if (!token) return;
     if (id !== null) {
       const u = uniformes.find((u) => u._id === id);
+      const generosSeleccionados = Array.isArray(u.variantes_generos) ? u.variantes_generos : [];
+      const tallasSeleccionadas = Array.isArray(u.variantes_tallas) ? u.variantes_tallas : [];
       setForm({
         prenda: u.prenda,
         precio: u.precio,
         moneda: String(u.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD',
+        variantes_precio_activo: Boolean(u.variantes_precio_activo),
+        variantes_generos: generosSeleccionados,
+        variantes_tallas: tallasSeleccionadas,
+        precios_variantes: normalizeVariantPriceRows(u.precios_variantes || []),
         lleva_nombre_atleta: Boolean(u.lleva_nombre_atleta),
         lleva_personalizacion_nombre: Boolean(u.lleva_personalizacion_nombre),
         lleva_numero_franela: Boolean(u.lleva_numero_franela),
@@ -189,10 +288,12 @@ export default function Uniformes() {
       });
       setFotosNuevas([]);
       setEditId(id);
+      setEditingVariantKeys([]);
     } else {
       setForm(initialForm);
       setFotosNuevas([]);
       setEditId(null);
+      setEditingVariantKeys([]);
     }
     setOpen(true);
   };
@@ -202,6 +303,7 @@ export default function Uniformes() {
     setForm(initialForm);
     setFotosNuevas([]);
     setEditId(null);
+    setEditingVariantKeys([]);
   };
 
   const handleChange = (e) => {
@@ -209,7 +311,167 @@ export default function Uniformes() {
     setForm({ ...form, [name]: type === 'checkbox' ? checked : value });
   };
 
+  const toggleGeneroVariante = (genero) => {
+    setForm((prev) => {
+      const exists = prev.variantes_generos.includes(genero);
+      let nextGeneros;
+
+      if (genero === 'mixto') {
+        nextGeneros = exists ? [] : ['mixto'];
+      } else if (exists) {
+        nextGeneros = prev.variantes_generos.filter((item) => item !== genero);
+      } else {
+        nextGeneros = prev.variantes_generos
+          .filter((item) => item !== 'mixto')
+          .concat(genero);
+      }
+
+      return {
+        ...prev,
+        variantes_generos: nextGeneros
+      };
+    });
+  };
+
+  const toggleTallaVariante = (talla) => {
+    setForm((prev) => {
+      const exists = prev.variantes_tallas.includes(talla);
+      const nextTallas = exists
+        ? prev.variantes_tallas.filter((item) => item !== talla)
+        : [...prev.variantes_tallas, talla];
+
+      return {
+        ...prev,
+        variantes_tallas: nextTallas
+      };
+    });
+  };
+
+  const toggleTodasTallasVariantes = () => {
+    setForm((prev) => {
+      const todasSeleccionadas = TALLAS_VARIANTES.every((talla) => prev.variantes_tallas.includes(talla));
+      return {
+        ...prev,
+        variantes_tallas: todasSeleccionadas ? [] : [...TALLAS_VARIANTES]
+      };
+    });
+  };
+
+  const editarSeleccionesAplicadas = (summaryRow = null) => {
+    if (!summaryRow) {
+      const rows = normalizeVariantPriceRows(form.precios_variantes);
+      if (!rows.length) return;
+
+      const generos = Array.from(new Set(rows.map((row) => row.genero)));
+      const tallas = Array.from(new Set(rows.map((row) => row.talla)));
+      const preciosUnicos = Array.from(new Set(rows.map((row) => Number(row.precio)).filter((value) => Number.isFinite(value))));
+
+      setForm((prev) => ({
+        ...prev,
+        variantes_generos: generos,
+        variantes_tallas: tallas,
+        precio_aplicar_variantes: preciosUnicos.length === 1 ? String(preciosUnicos[0]) : ''
+      }));
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      variantes_generos: Array.isArray(summaryRow.generos) ? summaryRow.generos : [],
+      variantes_tallas: Array.isArray(summaryRow.tallas) ? summaryRow.tallas : [],
+      precio_aplicar_variantes: Number.isFinite(Number(summaryRow.precio)) ? String(summaryRow.precio) : ''
+    }));
+    setEditingVariantKeys(Array.isArray(summaryRow.keys) ? summaryRow.keys : []);
+  };
+
+  const cancelarEdicionVariante = () => {
+    setForm((prev) => ({
+      ...prev,
+      variantes_generos: [],
+      variantes_tallas: [],
+      precio_aplicar_variantes: ''
+    }));
+    setEditingVariantKeys([]);
+  };
+
+  const quitarSeleccionesAplicadas = (summaryRow) => {
+    const precioObjetivo = Number(summaryRow?.precio);
+    if (!Number.isFinite(precioObjetivo)) return;
+
+    setForm((prev) => ({
+      ...prev,
+      precios_variantes: normalizeVariantPriceRows(prev.precios_variantes)
+        .filter((row) => Number(row.precio).toFixed(2) !== precioObjetivo.toFixed(2))
+    }));
+    setEditingVariantKeys([]);
+  };
+
+  const aplicarPrecioBaseAVariantes = () => {
+    const precioBase = parsePriceInput(form.precio_aplicar_variantes);
+    if (precioBase === null) {
+      setAlert({ open: true, message: 'Ingresa un precio valido para aplicar.', severity: 'warning' });
+      return;
+    }
+    if (form.variantes_generos.length === 0 || form.variantes_tallas.length === 0) {
+      setAlert({ open: true, message: 'Selecciona genero y talla para aplicar el precio.', severity: 'warning' });
+      return;
+    }
+
+    const keysEnEdicion = editingVariantKeys;
+
+    setForm((prev) => ({
+      ...(() => {
+        const normalized = normalizeVariantPriceRows(prev.precios_variantes);
+        const rowsBase = keysEnEdicion.length
+          ? normalized.filter((row) => !keysEnEdicion.includes(`${row.genero}::${row.talla}`))
+          : normalized;
+
+        return {
+          ...prev,
+          precio_aplicar_variantes: '',
+          variantes_generos: [],
+          variantes_tallas: [],
+          precios_variantes: upsertVariantBatch(rowsBase, prev.variantes_generos, prev.variantes_tallas, precioBase)
+        };
+      })()
+    }));
+
+    if (keysEnEdicion.length) {
+      setAlert({ open: true, message: 'Variante editada y guardada.', severity: 'success' });
+    }
+    setEditingVariantKeys([]);
+  };
+
+  const toggleVariantesPrecioActivo = () => {
+    setForm((prev) => {
+      const nextActive = !prev.variantes_precio_activo;
+      if (!nextActive) {
+        return {
+          ...prev,
+          variantes_precio_activo: false,
+          variantes_generos: [],
+          variantes_tallas: [],
+          precios_variantes: []
+        };
+      }
+
+      return {
+        ...prev,
+        variantes_precio_activo: true,
+        variantes_generos: prev.variantes_generos,
+        variantes_tallas: prev.variantes_tallas,
+        precios_variantes: normalizeVariantPriceRows(prev.precios_variantes)
+      };
+    });
+  };
+
   const totalFotosSeleccionadas = (form.fotos?.length || 0) + fotosNuevas.length;
+  const preciosVariantesNormalizados = normalizeVariantPriceRows(form.precios_variantes);
+  const resumenFilasVariantes = buildVariantSummaryRows(preciosVariantesNormalizados);
+  const precioAplicarValido = parsePriceInput(form.precio_aplicar_variantes) !== null;
+  const tallasSeleccionadasCount = form.variantes_tallas.filter((talla) => TALLAS_VARIANTES.includes(talla)).length;
+  const todasTallasSeleccionadas = TALLAS_VARIANTES.length > 0 && tallasSeleccionadasCount === TALLAS_VARIANTES.length;
+  const hayTallasSeleccionadas = tallasSeleccionadasCount > 0;
 
   const agregarFotos = async (archivos = []) => {
     const imagenes = archivos.filter((archivo) => String(archivo?.type || '').toLowerCase().startsWith('image/'));
@@ -293,16 +555,37 @@ export default function Uniformes() {
   };
 
   const handleSave = async () => {
-    if (!token || !form.prenda || !form.precio) return;
+    if (!token || !form.prenda) return;
     try {
       if (totalFotosSeleccionadas > 2) {
         throw new Error('Solo puedes guardar hasta 2 fotos por prenda.');
       }
 
+      const preciosVariantes = normalizeVariantPriceRows(form.precios_variantes || [])
+        .filter((item) => Number.isFinite(Number(item.precio)) && Number(item.precio) >= 0);
+      const variantesGeneros = Array.from(new Set(preciosVariantes.map((item) => item.genero)));
+      const variantesTallas = Array.from(new Set(preciosVariantes.map((item) => item.talla)));
+
+      if (form.variantes_precio_activo) {
+        if (preciosVariantes.length === 0) {
+          throw new Error('Debes aplicar al menos una variante de precio para guardar.');
+        }
+      } else if (form.precio === '' || form.precio === null || form.precio === undefined) {
+        throw new Error('Debes indicar el precio base de la prenda.');
+      }
+
+      const precioBasePayload = form.variantes_precio_activo
+        ? (form.precio === '' || form.precio === null || form.precio === undefined ? '0' : String(form.precio))
+        : String(form.precio);
+
       const formData = new FormData();
       formData.append('prenda', form.prenda);
-      formData.append('precio', form.precio);
+      formData.append('precio', precioBasePayload);
       formData.append('moneda', String(form.moneda || 'USD').toUpperCase());
+      formData.append('variantes_precio_activo', String(Boolean(form.variantes_precio_activo)));
+      formData.append('variantes_generos', JSON.stringify(variantesGeneros));
+      formData.append('variantes_tallas', JSON.stringify(variantesTallas));
+      formData.append('precios_variantes', JSON.stringify(preciosVariantes));
       formData.append('lleva_nombre_atleta', String(Boolean(form.lleva_nombre_atleta)));
       formData.append('lleva_personalizacion_nombre', String(Boolean(form.lleva_personalizacion_nombre)));
       formData.append('lleva_numero_franela', String(Boolean(form.lleva_numero_franela)));
@@ -459,50 +742,114 @@ export default function Uniformes() {
           sx={{
             overflowX: 'auto',
             overflowY: 'hidden',
-            maxWidth: '100%'
+            maxWidth: '100%',
+            borderRadius: 3,
+            border: '1px solid #eef0f3',
+            boxShadow: 'none'
           }}
         >
-          <Table sx={{ minWidth: 760 }}>
+          <Table sx={{ minWidth: 860, width: '100%', tableLayout: 'fixed' }}>
             <TableHead>
-              <TableRow>
-                <TableCell>Prenda</TableCell>
-                <TableCell>Precio</TableCell>
-                <TableCell>Moneda</TableCell>
-                <TableCell>Nombre del atleta</TableCell>
-                <TableCell>Personalizacion nombre</TableCell>
-                <TableCell>Numero de franela</TableCell>
-                <TableCell>Franela de representante</TableCell>
-                <TableCell align="right">Acciones</TableCell>
+              <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                <TableCell sx={{ width: '19%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1.5 }}>PRENDA</TableCell>
+                <TableCell sx={{ width: '9%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PRECIO</TableCell>
+                <TableCell sx={{ width: '8%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>MONEDA</TableCell>
+                <TableCell sx={{ width: '16%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NOMBRE DEL ATLETA</TableCell>
+                <TableCell sx={{ width: '16%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PERSONALIZACION NOMBRE</TableCell>
+                <TableCell sx={{ width: '14%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NUMERO DE FRANELA</TableCell>
+                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>FRANELA REP.</TableCell>
+                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} align="center">Cargando...</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={8} align="center" sx={{ py: 2.2, color: '#94a3b8', fontWeight: 600 }}>
+                    Cargando...
+                  </TableCell>
+                </TableRow>
               ) : (
-                uniformes.map((uniforme) => (
-                  <TableRow key={uniforme._id}>
-                    <TableCell>{uniforme.prenda}</TableCell>
-                    <TableCell>{uniforme.precio}</TableCell>
-                    <TableCell>{String(uniforme.moneda || 'USD').toUpperCase()}</TableCell>
-                    <TableCell>{uniforme.lleva_nombre_atleta ? 'Si' : 'No'}</TableCell>
-                    <TableCell>{uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</TableCell>
-                    <TableCell>{uniforme.lleva_numero_franela ? 'Si' : 'No'}</TableCell>
-                    <TableCell>{uniforme.franela_representante ? 'Si' : 'No'}</TableCell>
-                    <TableCell align="right">
-                      <IconButton onClick={() => handleOpen(uniforme._id)} disabled={!token}><EditIcon /></IconButton>
-                      <IconButton
-                        onClick={() => solicitarEliminarUniforme(uniforme)}
-                        disabled={!token || deletingId === uniforme._id}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))
+                uniformes.map((uniforme) => {
+                  const variantesCount = Boolean(uniforme.variantes_precio_activo)
+                    ? buildVariantSummaryRows(uniforme.precios_variantes || []).length
+                    : 0;
+
+                  return (
+                    <TableRow
+                      key={uniforme._id}
+                      sx={{ '& td': { borderBottom: '1px solid #eef0f3', py: 1.45, px: 1 }, '&:hover': { backgroundColor: '#fafafa' } }}
+                    >
+                      <TableCell sx={{ px: 1.5, color: '#0f172a', fontWeight: 700 }}>
+                        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                          <span>{uniforme.prenda}</span>
+                          {variantesCount > 0 && (
+                            <Box
+                              component="span"
+                              sx={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                px: 0.8,
+                                py: 0.2,
+                                borderRadius: 999,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                letterSpacing: '0.02em',
+                                color: '#b45309',
+                                bgcolor: '#ffedd5',
+                                border: '1px solid #fdba74'
+                              }}
+                            >
+                              {`${variantesCount} variante${variantesCount === 1 ? '' : 's'}`}
+                            </Box>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {uniforme.precio}
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {String(uniforme.moneda || 'USD').toUpperCase()}
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {uniforme.lleva_nombre_atleta ? 'Si' : 'No'}
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {uniforme.lleva_numero_franela ? 'Si' : 'No'}
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {uniforme.franela_representante ? 'Si' : 'No'}
+                      </TableCell>
+                      <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
+                        <IconButton
+                          onClick={() => handleOpen(uniforme._id)}
+                          disabled={!token}
+                          size="small"
+                          sx={{ color: '#94a3b8', p: 0.55 }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          onClick={() => solicitarEliminarUniforme(uniforme)}
+                          disabled={!token || deletingId === uniforme._id}
+                          size="small"
+                          sx={{ color: '#94a3b8', p: 0.55 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
               {!loading && uniformes.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">No hay uniformes registrados.</TableCell>
+                  <TableCell colSpan={8} align="center" sx={{ py: 2.5, color: '#94a3b8', fontWeight: 600 }}>
+                    No hay uniformes registrados.
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -542,12 +889,13 @@ export default function Uniformes() {
       <Dialog
         open={open}
         onClose={handleClose}
-        maxWidth="xs"
+        maxWidth="lg"
         fullWidth
         PaperProps={{
           sx: {
             borderRadius: 3,
             overflow: 'hidden',
+            width: 'min(1120px, 96vw)',
             boxShadow: '0 24px 50px rgba(15, 23, 42, 0.24)'
           }
         }}
@@ -577,6 +925,15 @@ export default function Uniformes() {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ px: 2.5, pt: 2.25, pb: 1.25, bgcolor: '#ffffff' }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: '1.25fr 0.75fr' },
+              gap: 2,
+              alignItems: 'start'
+            }}
+          >
+            <Box>
           <TextField
             autoFocus
             margin="dense"
@@ -589,21 +946,349 @@ export default function Uniformes() {
             disabled={!token}
             sx={modalInputSx}
           />
-          <TextField
-            margin="dense"
-            name="precio"
-            label="Precio"
-            type="number"
-            placeholder="0.00"
-            fullWidth
-            value={form.precio}
-            onChange={handleChange}
-            disabled={!token}
-            sx={modalInputSx}
-            InputProps={{
-              startAdornment: <InputAdornment position="start">$</InputAdornment>
+
+          <Box
+            sx={{
+              mt: 1.5,
+              border: '1px solid #e2e8f0',
+              borderRadius: 2,
+              p: 1.5,
+              backgroundColor: '#f8fafc'
             }}
-          />
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Box>
+                <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>
+                  Variantes de precio
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: '#64748b' }}>
+                  El precio puede variar según género y talla.
+                </Typography>
+              </Box>
+              <Switch
+                checked={Boolean(form.variantes_precio_activo)}
+                onChange={toggleVariantesPrecioActivo}
+                disabled={!token}
+                size="small"
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked': { color: '#f97316' },
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#fdba74' }
+                }}
+              />
+            </Box>
+
+            {form.variantes_precio_activo && (
+              <Box sx={{ mt: 1.5, display: 'grid', gap: 1.25 }}>
+                <Box>
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155', mb: 0.75, display: 'inline-flex', alignItems: 'center', gap: 0.55 }}>
+                    <PersonOutlineIcon sx={{ fontSize: 15, color: '#64748b' }} />
+                    Género
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                    {GENERO_VARIANTES.map((option) => {
+                      const selected = form.variantes_generos.includes(option.key);
+                      const mixtoActivo = form.variantes_generos.includes('mixto');
+                      const optionDisabled = !token || (mixtoActivo && option.key !== 'mixto');
+                      return (
+                        <Button
+                          key={option.key}
+                          type="button"
+                          size="small"
+                          variant="outlined"
+                          onClick={() => toggleGeneroVariante(option.key)}
+                          disabled={optionDisabled}
+                          sx={{
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            borderRadius: 2,
+                            minWidth: 96,
+                            bgcolor: '#ffffff',
+                            borderColor: selected ? '#f97316' : '#cbd5e1',
+                            color: selected ? '#c2410c' : '#475569',
+                            '&:hover': {
+                              bgcolor: '#ffffff',
+                              borderColor: selected ? '#ea580c' : '#94a3b8'
+                            }
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
+                            <Checkbox
+                              checked={selected}
+                              tabIndex={-1}
+                              disableRipple
+                              size="small"
+                              sx={{
+                                p: 0,
+                                pointerEvents: 'none',
+                                color: selected ? '#f97316' : optionDisabled ? '#cbd5e1' : '#94a3b8',
+                                '&.Mui-checked': { color: '#f97316' }
+                              }}
+                            />
+                            {option.label}
+                          </Box>
+                        </Button>
+                      );
+                    })}
+                  </Box>
+                </Box>
+
+                <Box>
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155', mb: 0.75, display: 'inline-flex', alignItems: 'center', gap: 0.55 }}>
+                    <StraightenIcon sx={{ fontSize: 15, color: '#64748b' }} />
+                    Talla
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                    <Button
+                      type="button"
+                      size="small"
+                      variant="outlined"
+                      onClick={toggleTodasTallasVariantes}
+                      disabled={!token}
+                      sx={{
+                        textTransform: 'none',
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        minWidth: 138,
+                        bgcolor: '#ffffff',
+                        borderColor: todasTallasSeleccionadas ? '#f97316' : '#cbd5e1',
+                        color: todasTallasSeleccionadas ? '#c2410c' : '#475569',
+                        '&:hover': {
+                          bgcolor: '#ffffff',
+                          borderColor: todasTallasSeleccionadas ? '#ea580c' : '#94a3b8'
+                        }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Checkbox
+                          checked={todasTallasSeleccionadas}
+                          indeterminate={!todasTallasSeleccionadas && hayTallasSeleccionadas}
+                          tabIndex={-1}
+                          disableRipple
+                          size="small"
+                          sx={{
+                            p: 0,
+                            pointerEvents: 'none',
+                            color: (todasTallasSeleccionadas || hayTallasSeleccionadas) ? '#f97316' : '#94a3b8',
+                            '&.Mui-checked': { color: '#f97316' },
+                            '&.MuiCheckbox-indeterminate': { color: '#f97316' }
+                          }}
+                        />
+                        {todasTallasSeleccionadas ? 'Quitar todas' : 'Seleccionar todo'}
+                      </Box>
+                    </Button>
+                    {TALLAS_VARIANTES.map((tallaOption) => {
+                      const selected = form.variantes_tallas.includes(tallaOption);
+                      return (
+                        <Button
+                          key={tallaOption}
+                          type="button"
+                          size="small"
+                          variant="outlined"
+                          onClick={() => toggleTallaVariante(tallaOption)}
+                          disabled={!token}
+                          sx={{
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            borderRadius: 2,
+                            minWidth: 64,
+                            bgcolor: '#ffffff',
+                            borderColor: selected ? '#f97316' : '#cbd5e1',
+                            color: selected ? '#c2410c' : '#475569',
+                            '&:hover': {
+                              bgcolor: '#ffffff',
+                              borderColor: selected ? '#ea580c' : '#94a3b8'
+                            }
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Checkbox
+                              checked={selected}
+                              tabIndex={-1}
+                              disableRipple
+                              size="small"
+                              sx={{
+                                p: 0,
+                                pointerEvents: 'none',
+                                color: selected ? '#f97316' : '#94a3b8',
+                                '&.Mui-checked': { color: '#f97316' }
+                              }}
+                            />
+                            {tallaOption}
+                          </Box>
+                        </Button>
+                      );
+                    })}
+                  </Box>
+                </Box>
+
+                <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'hidden', bgcolor: '#fff' }}>
+                  <Box
+                    sx={{
+                      px: 1.25,
+                      py: 0.75,
+                      borderBottom: '1px solid #e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1,
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>
+                      Precio por combinacion
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0.75 }}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        placeholder="0.00"
+                        value={form.precio_aplicar_variantes}
+                        onChange={(event) => setForm((prev) => ({ ...prev, precio_aplicar_variantes: event.target.value }))}
+                        disabled={!token}
+                        inputProps={{ min: 0, step: '0.01' }}
+                        sx={{
+                          width: 112,
+                          '& .MuiOutlinedInput-root': {
+                            height: 40,
+                            borderRadius: 1.5
+                          }
+                        }}
+                        InputProps={{
+                          startAdornment: <InputAdornment position="start">$</InputAdornment>
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        size="small"
+                        variant="outlined"
+                        onClick={aplicarPrecioBaseAVariantes}
+                        disabled={!token || !precioAplicarValido || form.variantes_generos.length === 0 || form.variantes_tallas.length === 0}
+                        sx={{
+                          minWidth: 112,
+                          height: 40,
+                          borderRadius: 1.5,
+                          textTransform: 'none',
+                          fontWeight: 700,
+                          borderColor: '#fdba74',
+                          color: '#c2410c'
+                        }}
+                      >
+                        {editingVariantKeys.length > 0 ? 'Guardar edicion' : 'Aplicar'}
+                      </Button>
+                      {editingVariantKeys.length > 0 && (
+                        <Button
+                          type="button"
+                          size="small"
+                          variant="text"
+                          onClick={cancelarEdicionVariante}
+                          disabled={!token}
+                          sx={{
+                            minWidth: 88,
+                            height: 40,
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            color: '#64748b'
+                          }}
+                        >
+                          Cancelar
+                        </Button>
+                      )}
+                    </Box>
+                  </Box>
+
+                  <Typography sx={{ px: 1.25, pt: 0.8, pb: 0.35, fontSize: 11.5, color: '#64748b' }}>
+                    Se aplicará al lote seleccionado: {form.variantes_generos.length} genero(s) x {form.variantes_tallas.length} talla(s)
+                  </Typography>
+                  {editingVariantKeys.length > 0 && (
+                    <Typography sx={{ px: 1.25, pb: 0.35, fontSize: 11.5, fontWeight: 700, color: '#b45309' }}>
+                      Modo edicion activo: pulsa Guardar edicion para persistir los cambios.
+                    </Typography>
+                  )}
+
+                  {preciosVariantesNormalizados.length === 0 ? (
+                    <Typography sx={{ px: 1.25, py: 1.2, fontSize: 12, color: '#64748b' }}>
+                      Selecciona genero(s) y talla(s), define un precio y pulsa Aplicar.
+                    </Typography>
+                  ) : (
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 700, color: '#475569' }}>Genero</TableCell>
+                          <TableCell sx={{ fontWeight: 700, color: '#475569' }}>Talla</TableCell>
+                          <TableCell sx={{ fontWeight: 700, color: '#475569' }}>Precio</TableCell>
+                          <TableCell sx={{ fontWeight: 700, color: '#475569' }}>Comb.</TableCell>
+                          <TableCell sx={{ fontWeight: 700, color: '#475569' }} align="right">Accion</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {resumenFilasVariantes.map((row, index) => {
+                          const generoResumen = row.generos.length
+                            ? `${getGeneroLabel(row.generos[0])}${row.generos.length > 1 ? ' +' : ''}`
+                            : '-';
+                          const tallaResumen = row.tallas.length
+                            ? `${row.tallas[0]}${row.tallas.length > 1 ? ' +' : ''}`
+                            : '-';
+
+                          return (
+                            <TableRow key={`${row.precio}-${index}`}>
+                              <TableCell>{generoResumen}</TableCell>
+                              <TableCell>{tallaResumen}</TableCell>
+                              <TableCell sx={{ fontWeight: 700 }}>{`$ ${Number(row.precio).toFixed(2)}`}</TableCell>
+                              <TableCell>{row.combinaciones}</TableCell>
+                              <TableCell align="right">
+                                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Button
+                                    type="button"
+                                    size="small"
+                                    variant="text"
+                                    onClick={() => editarSeleccionesAplicadas(row)}
+                                    disabled={!token}
+                                    sx={{ textTransform: 'none', minWidth: 0, px: 0.5 }}
+                                  >
+                                    Editar
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="small"
+                                    color="error"
+                                    variant="text"
+                                    onClick={() => quitarSeleccionesAplicadas(row)}
+                                    disabled={!token}
+                                    sx={{ textTransform: 'none', minWidth: 0, px: 0.5 }}
+                                  >
+                                    Quitar
+                                  </Button>
+                                </Box>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </Box>
+              </Box>
+            )}
+          </Box>
+
+          {!form.variantes_precio_activo && (
+            <TextField
+              margin="dense"
+              name="precio"
+              label="Precio"
+              type="number"
+              placeholder="0.00"
+              fullWidth
+              value={form.precio}
+              onChange={handleChange}
+              disabled={!token}
+              sx={modalInputSx}
+              InputProps={{
+                startAdornment: <InputAdornment position="start">$</InputAdornment>
+              }}
+            />
+          )}
+
           <FormControl fullWidth margin="dense" sx={modalInputSx}>
             <InputLabel id="moneda-prenda-label">Moneda</InputLabel>
             <Select
@@ -674,6 +1359,10 @@ export default function Uniformes() {
             )}
             label="Franela de representante"
           />
+
+            </Box>
+
+            <Box sx={{ mt: { xs: 0, md: 0.5 } }}>
           <Box sx={{ mt: 1.5 }}>
             <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155', mb: 0.75 }}>
               Fotos de la prenda ({totalFotosSeleccionadas}/2)
@@ -812,6 +1501,8 @@ export default function Uniformes() {
                 ))}
               </Box>
             )}
+          </Box>
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 2.5, pb: 2.2, pt: 1, gap: 1.25, justifyContent: 'space-between' }}>

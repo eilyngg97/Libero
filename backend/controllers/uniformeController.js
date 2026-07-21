@@ -51,6 +51,68 @@ function normalizeMoneda(value) {
   return String(value || 'USD').trim().toUpperCase();
 }
 
+function parseJsonArrayField(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === '') return [];
+  if (Array.isArray(rawValue)) return rawValue;
+  if (typeof rawValue === 'string') {
+    try {
+      const parsed = JSON.parse(rawValue);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function normalizeGeneros(rawGeneros = []) {
+  const allowed = new Set(['masculino', 'femenino', 'mixto']);
+  return Array.from(new Set(
+    rawGeneros
+      .map((item) => String(item || '').trim().toLowerCase())
+      .filter((item) => allowed.has(item))
+  ));
+}
+
+function normalizeTallas(rawTallas = []) {
+  return Array.from(new Set(
+    rawTallas
+      .map((item) => String(item || '').trim().toUpperCase())
+      .filter(Boolean)
+  ));
+}
+
+function parseVariantesPrecio(payload = {}) {
+  const variantesPrecioActivo = parseBooleanField(payload.variantes_precio_activo);
+  const variantesGeneros = normalizeGeneros(parseJsonArrayField(payload.variantes_generos));
+  const variantesTallas = normalizeTallas(parseJsonArrayField(payload.variantes_tallas));
+  const preciosRaw = parseJsonArrayField(payload.precios_variantes);
+
+  const preciosVariantes = preciosRaw
+    .map((item) => {
+      const genero = String(item?.genero || '').trim().toLowerCase();
+      const talla = String(item?.talla || '').trim().toUpperCase();
+      const precio = Number(item?.precio);
+      return { genero, talla, precio };
+    })
+    .filter((item) => item.genero && item.talla && Number.isFinite(item.precio) && item.precio >= 0);
+
+  const preciosSinDuplicados = Array.from(
+    new Map(preciosVariantes.map((item) => [`${item.genero}::${item.talla}`, item])).values()
+  );
+
+  if (variantesPrecioActivo && (variantesGeneros.length === 0 || variantesTallas.length === 0)) {
+    throw new Error('Debes seleccionar al menos un genero y una talla para activar variantes de precio.');
+  }
+
+  return {
+    variantes_precio_activo: variantesPrecioActivo,
+    variantes_generos: variantesGeneros,
+    variantes_tallas: variantesTallas,
+    precios_variantes: variantesPrecioActivo ? preciosSinDuplicados : []
+  };
+}
+
 exports.getUniformes = async (req, res) => {
   try {
     const TenantUniforme = await getTenantUniformeModel(req);
@@ -82,6 +144,7 @@ exports.createUniforme = async (req, res) => {
       return res.status(400).json({ error: 'Moneda invalida. Debe ser USD o EUR.' });
     }
     const fotosNuevas = Array.isArray(req.files) ? req.files.map((file) => buildUploadUrl(req, file)).filter(Boolean) : [];
+    const variantesPrecio = parseVariantesPrecio(req.body || {});
 
     if (fotosNuevas.length > 2) {
       return res.status(400).json({ error: 'Solo se permiten hasta 2 fotos por prenda.' });
@@ -95,6 +158,7 @@ exports.createUniforme = async (req, res) => {
       lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
       lleva_numero_franela: parseBooleanField(lleva_numero_franela),
       franela_representante: parseBooleanField(franela_representante),
+      ...variantesPrecio,
       fotos: fotosNuevas
     });
     await uniforme.save();
@@ -128,6 +192,7 @@ exports.updateUniforme = async (req, res) => {
     const fotosExistentes = parseFotosExistentes(req.body?.fotos_existentes);
     const fotosNuevas = Array.isArray(req.files) ? req.files.map((file) => buildUploadUrl(req, file)).filter(Boolean) : [];
     const fotos = [...fotosExistentes, ...fotosNuevas].slice(0, 2);
+    const variantesPrecio = parseVariantesPrecio(req.body || {});
 
     if (fotosExistentes.length + fotosNuevas.length > 2) {
       return res.status(400).json({ error: 'Solo se permiten hasta 2 fotos por prenda.' });
@@ -143,11 +208,13 @@ exports.updateUniforme = async (req, res) => {
         lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
         lleva_numero_franela: parseBooleanField(lleva_numero_franela),
         franela_representante: parseBooleanField(franela_representante),
+        ...variantesPrecio,
         fotos
       },
       { new: true }
     );
     if (!uniforme) return res.status(404).json({ error: 'Uniforme no encontrado' });
+
     res.json(uniforme);
   } catch (err) {
     res.status(400).json({ error: 'Error al actualizar uniforme' });
