@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -72,6 +72,13 @@ const OPCIONES_NOMBRE_REPRESENTANTE = [
   'Volley Sister',
   'Volley Brother'
 ];
+
+const ESTADOS_SOLICITUD_ACTIVA = new Set([
+  'pendiente',
+  'esperando_pago',
+  'abono',
+  'pago_en_revision'
+]);
 
 function ListadoSolicitudesUniformes() {
   const [pedidos, setPedidos] = useState([]);
@@ -207,7 +214,42 @@ function ListadoSolicitudesUniformes() {
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
   const esPedidoPendiente = (pedido) => String(pedido?.estado || '').toLowerCase() === 'pendiente';
 
-  const opcionesPrenda = prendasCatalogo;
+  const opcionesPrenda = useMemo(() => {
+    const prendasUnicas = new Map();
+    const prendasCatalogoNormalizadas = new Set();
+
+    const registrarPrenda = (valor, esSoloActiva = false) => {
+      const prenda = String(valor || '').trim();
+      if (!prenda) return;
+      const clave = prenda.toLowerCase();
+      if (!prendasUnicas.has(clave)) {
+        prendasUnicas.set(clave, { label: prenda, value: clave, esSoloActiva });
+        return;
+      }
+
+      if (!esSoloActiva) {
+        const actual = prendasUnicas.get(clave);
+        prendasUnicas.set(clave, { ...actual, esSoloActiva: false });
+      }
+    };
+
+    prendasCatalogo.forEach((prenda) => {
+      const prendaNormalizada = String(prenda || '').trim().toLowerCase();
+      if (prendaNormalizada) prendasCatalogoNormalizadas.add(prendaNormalizada);
+      registrarPrenda(prenda, false);
+    });
+
+    pedidos.forEach((pedido) => {
+      const estado = String(pedido?.estado || '').trim().toLowerCase();
+      if (!ESTADOS_SOLICITUD_ACTIVA.has(estado)) return;
+      const prenda = String(pedido?.prenda || '').trim();
+      const clave = prenda.toLowerCase();
+      if (!prenda) return;
+      registrarPrenda(prenda, !prendasCatalogoNormalizadas.has(clave));
+    });
+
+    return Array.from(prendasUnicas.values()).sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+  }, [pedidos, prendasCatalogo]);
 
   const getUniformeIdFromPedido = (pedido) => {
     const raw = pedido?.uniforme;
@@ -1072,7 +1114,35 @@ function ListadoSolicitudesUniformes() {
             >
               <MenuItem value="todas">Todas las prendas</MenuItem>
               {opcionesPrenda.map((prenda) => (
-                <MenuItem key={prenda} value={prenda.toLowerCase()}>{prenda}</MenuItem>
+                <MenuItem key={prenda.value} value={prenda.value}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography component="span" sx={{ fontSize: 13.5, color: '#475569', fontWeight: 600 }}>
+                      {prenda.label}
+                    </Typography>
+                    {prenda.esSoloActiva && (
+                      <Box
+                        component="span"
+                        sx={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          px: 0.65,
+                          py: 0.2,
+                          borderRadius: '999px',
+                          backgroundColor: '#eef2f7',
+                          border: '1px solid #d6dee9',
+                          color: '#94a3b8',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: '0.02em',
+                          lineHeight: 1,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        solicitudes activas
+                      </Box>
+                    )}
+                  </Box>
+                </MenuItem>
               ))}
             </TextField>
           </Box>
