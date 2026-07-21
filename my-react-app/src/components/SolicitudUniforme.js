@@ -903,8 +903,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                         if (!selected) return <em>Seleccione</em>;
                         const item = prendas.find((p) => String(p._id) === String(selected));
                         if (!item) return selected;
-                        const precioCalculado = resolverPrecioPorVariante(item, talla, generoPrecioParaCalculo);
-                        const label = `${item.prenda} - ${formatearMontoConMoneda(precioCalculado, item.moneda)}`;
+                        const label = `${item.prenda}`;
                         return (
                           <Typography
                             component="span"

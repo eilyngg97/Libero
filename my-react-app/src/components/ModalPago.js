@@ -173,6 +173,35 @@ function ModalPago({
   const telefonoConfirmacionNormalizado = normalizarTelefonoPago(telefonoConfirmacionCantevista);
   const cedulaConfirmacionNormalizada = normalizarCedulaPago(cedulaConfirmacionCantevista);
   const puedeContinuarConfirmacion = Boolean(telefonoConfirmacionNormalizado && cedulaConfirmacionNormalizada);
+  const copyFeedbackKey = String(copySuccess || '').toLowerCase();
+  const copyFeedbackTone = copyFeedbackKey.includes('no se pudo')
+    ? 'error'
+    : copyFeedbackKey.includes('faltan datos')
+      ? 'warning'
+      : 'success';
+
+  const copyFeedbackStyleByTone = {
+    success: {
+      color: '#065f46',
+      backgroundColor: '#d1fae5',
+      borderColor: '#6ee7b7',
+      dotColor: '#10b981'
+    },
+    warning: {
+      color: '#92400e',
+      backgroundColor: '#fef3c7',
+      borderColor: '#fcd34d',
+      dotColor: '#f59e0b'
+    },
+    error: {
+      color: '#991b1b',
+      backgroundColor: '#fee2e2',
+      borderColor: '#fca5a5',
+      dotColor: '#ef4444'
+    }
+  };
+
+  const copyFeedbackStyle = copyFeedbackStyleByTone[copyFeedbackTone] || copyFeedbackStyleByTone.success;
 
   useEffect(() => {
     if (!open) return;
@@ -971,9 +1000,37 @@ function ModalPago({
                     ))}
                   </Box>
                   {copySuccess && (
-                    <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 700, display: 'block', mb: 1 }}>
-                      {copySuccess}
-                    </Typography>
+                    <Box
+                      sx={{
+                        mb: 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        px: 1.25,
+                        py: 0.55,
+                        borderRadius: '999px',
+                        border: `1px solid ${copyFeedbackStyle.borderColor}`,
+                        backgroundColor: copyFeedbackStyle.backgroundColor,
+                        color: copyFeedbackStyle.color,
+                        boxShadow: '0 6px 14px rgba(15, 23, 42, 0.08)',
+                        transform: 'translateY(0)',
+                        opacity: 1,
+                        transition: 'opacity .25s ease, transform .25s ease'
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          backgroundColor: copyFeedbackStyle.dotColor,
+                          flexShrink: 0
+                        }}
+                      />
+                      <Typography component="span" sx={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2 }}>
+                        {copySuccess}
+                      </Typography>
+                    </Box>
                   )}
                   <Box
                     sx={{
@@ -1163,9 +1220,37 @@ function ModalPago({
                     </Card>
                   )}
                   {copySuccess && (
-                    <Typography variant="caption" sx={{ color: '#16a34a', fontWeight: 700, display: 'block', mb: 1 }}>
-                      {copySuccess}
-                    </Typography>
+                    <Box
+                      sx={{
+                        mb: 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        px: 1.25,
+                        py: 0.55,
+                        borderRadius: '999px',
+                        border: `1px solid ${copyFeedbackStyle.borderColor}`,
+                        backgroundColor: copyFeedbackStyle.backgroundColor,
+                        color: copyFeedbackStyle.color,
+                        boxShadow: '0 6px 14px rgba(15, 23, 42, 0.08)',
+                        transform: 'translateY(0)',
+                        opacity: 1,
+                        transition: 'opacity .25s ease, transform .25s ease'
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          backgroundColor: copyFeedbackStyle.dotColor,
+                          flexShrink: 0
+                        }}
+                      />
+                      <Typography component="span" sx={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2 }}>
+                        {copySuccess}
+                      </Typography>
+                    </Box>
                   )}
                   <TextField
                     label={`Monto a pagar (${moneda})`}
