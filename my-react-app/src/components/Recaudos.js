@@ -74,7 +74,6 @@ function isPdfFile(item) {
 function Recaudos() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [rol, setRol] = useState('');
   const [recaudos, setRecaudos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -165,9 +164,7 @@ function Recaudos() {
   }, [apiBase, getAuthHeaders]);
 
   useEffect(() => {
-    const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
     const puedeGestionarRequisitos = hasPermission('recaudos.manage');
-    setRol(rolLs);
     cargarRecaudos();
     if (puedeGestionarRequisitos) {
       cargarRequisitos();

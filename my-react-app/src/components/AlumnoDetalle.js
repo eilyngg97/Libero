@@ -116,7 +116,6 @@ function AlumnoDetalle() {
   const [historialLoading, setHistorialLoading] = useState(false);
   const [historialError, setHistorialError] = useState(null);
   const [descargandoFicha, setDescargandoFicha] = useState(false);
-  const [rol, setRol] = useState('');
   const [requisitosChecklist, setRequisitosChecklist] = useState([]);
   const [requisitosSaving, setRequisitosSaving] = useState('');
   const [requisitosError, setRequisitosError] = useState('');
@@ -182,9 +181,6 @@ function AlumnoDetalle() {
   };
 
   useEffect(() => {
-    const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-    setRol(rolLs);
-
     const fetchAlumno = async () => {
       setLoading(true);
       setRequisitosError('');

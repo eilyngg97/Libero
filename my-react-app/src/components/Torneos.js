@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, List, ListItem, ListItemText, IconButton, Typography, Accordion, AccordionSummary, AccordionDetails, Box, Grid, Chip, InputAdornment, Snackbar, Alert, AlertTitle, Paper, Avatar } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import EditIcon from '@mui/icons-material/Edit';
@@ -24,11 +24,11 @@ import { mediaUrl } from '../utils/mediaUrl';
 
 function Torneos() {
   const token = localStorage.getItem('token');
-  const buildAuthHeaders = (baseHeaders = {}) => ({
+  const buildAuthHeaders = useCallback((baseHeaders = {}) => ({
     ...baseHeaders,
     ...(token ? { Authorization: `Bearer ${token}` } : {})
-  });
-  const fetchTorneosFrescos = async () => {
+  }), [token]);
+  const fetchTorneosFrescos = useCallback(async () => {
     const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos?_t=${Date.now()}`, {
       cache: 'no-store',
       headers: buildAuthHeaders()
@@ -37,7 +37,7 @@ function Torneos() {
     if (!res.ok || !Array.isArray(data)) throw new Error('Respuesta inválida');
     setTorneos(data);
     return data;
-  };
+  }, [buildAuthHeaders]);
   const [dialogEliminarOpen, setDialogEliminarOpen] = useState(false);
   const [torneoAEliminar, setTorneoAEliminar] = useState(null);
     // Estado para saber si se está editando un partido
@@ -110,7 +110,7 @@ function Torneos() {
       }
     };
     fetchAlumnos();
-  }, [open, token]);
+  }, [open, buildAuthHeaders]);
 
   useEffect(() => {
     if (!open) return;
@@ -142,7 +142,7 @@ function Torneos() {
       }
     };
     fetchSolvencias();
-  }, [open, token]);
+  }, [open, buildAuthHeaders]);
 
   useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }));
@@ -157,7 +157,7 @@ function Torneos() {
       }
     };
     cargar();
-  }, [token]);
+  }, [fetchTorneosFrescos]);
 
   // Torneo CRUD
   const handleClose = () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { TextField, Typography, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle, CircularProgress } from '@mui/material';
 import { OPCIONES_MENSUALIDAD } from './Alumnos';
@@ -122,7 +122,7 @@ function AlumnoEditar({ locationState }) {
     if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
   };
 
-  const fetchAlumnoFresco = async () => {
+  const fetchAlumnoFresco = useCallback(async () => {
     const url = `${process.env.REACT_APP_API_URL}/api/alumnos/${id}?_t=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
@@ -133,7 +133,7 @@ function AlumnoEditar({ locationState }) {
     console.log('Alumno obtenido del API:', data);
     hidratarFormularioAlumno(data);
     return data;
-  };
+  }, [id, token]);
 
   const tipoMensualidadActual = form.tipo_mensualidad || 'monto_sede';
   const montoPersonalizadoActual = form.monto_personalizado_valor ?? '';
@@ -162,7 +162,7 @@ function AlumnoEditar({ locationState }) {
 
     cargar();
     return () => { mounted = false; };
-  }, [id, locationState, token]);
+  }, [locationState, fetchAlumnoFresco]);
 
   useEffect(() => {
     if (!esAdmin) return;
@@ -264,7 +264,7 @@ function AlumnoEditar({ locationState }) {
     return () => {
       cancelled = true;
     };
-  }, [form.fecha_nacimiento]);
+  }, [form.fecha_nacimiento, token]);
 
   useEffect(() => {
     let cancelled = false;

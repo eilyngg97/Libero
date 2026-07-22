@@ -107,7 +107,6 @@ const DETALLE_PAGE_SIZE = 6;
 function TerminosCondiciones() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [rol, setRol] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -233,8 +232,6 @@ function TerminosCondiciones() {
   }, [apiBase, getAuthHeaders]);
 
   useEffect(() => {
-    const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-    setRol(rolLs);
     cargarInformacion();
     cargarNombreAcademia();
   }, [cargarInformacion, cargarNombreAcademia]);

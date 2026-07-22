@@ -4,7 +4,6 @@ import {
   Avatar,
   Box,
   Button,
-  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -328,21 +327,6 @@ function UsuariosAccesos() {
       setError(err.message || 'No se pudo eliminar el rol');
     } finally {
       setDeletingRoleId('');
-    }
-  };
-
-  const handleSembrarRolesBase = async () => {
-    try {
-      const res = await fetch(`${apiBase}/api/roles/seed-base`, {
-        method: 'POST',
-        headers: authHeaders
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.msg || 'No se pudieron sembrar los roles base');
-      setSuccess('Roles base verificados correctamente');
-      await fetchData();
-    } catch (err) {
-      setError(err.message || 'No se pudieron sembrar los roles base');
     }
   };
 
