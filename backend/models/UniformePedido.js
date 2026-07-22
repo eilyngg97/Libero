@@ -25,6 +25,7 @@ const UniformePedidoSchema = new mongoose.Schema({
   referencia: { type: String },
   telefono_pago: { type: String },
   cedula_titular: { type: String },
+  nota: { type: String, trim: true, default: '' },
   comprobante_url: { type: String },
   fecha_pago: { type: Date },
   pagos_historial: {
@@ -36,6 +37,7 @@ const UniformePedidoSchema = new mongoose.Schema({
         referencia: { type: String },
         telefono_pago: { type: String },
         cedula_titular: { type: String },
+        nota: { type: String, trim: true, default: '' },
         comprobante_url: { type: String },
         fecha_pago: { type: Date }
       }

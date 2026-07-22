@@ -112,6 +112,7 @@ function ListadoSolicitudesUniformes() {
   const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [filtroPrenda, setFiltroPrenda] = useState('todas');
+  const [filtroCategoria, setFiltroCategoria] = useState('todas');
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(10);
   const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState(null);
@@ -173,6 +174,18 @@ function ListadoSolicitudesUniformes() {
     );
   };
 
+  const getNotaPagoDesdeRegistro = (registro) => {
+    if (!registro) return '';
+    return String(
+      registro?.nota
+      ?? registro?.nota_pago
+      ?? registro?.notaPago
+      ?? registro?.observacion
+      ?? registro?.comentario
+      ?? ''
+    ).trim();
+  };
+
   const normalizarMoneda = (moneda) => String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const formatMoneyWithCurrency = (value, moneda) => `${normalizarMoneda(moneda)} ${formatMoney(value)}`;
 
@@ -188,6 +201,18 @@ function ListadoSolicitudesUniformes() {
       const year = Number(fechaBase[1]);
       const month = Number(fechaBase[2]) - 1;
       const day = Number(fechaBase[3]);
+      const localDate = new Date(year, month, day);
+      return Number.isNaN(localDate.getTime()) ? null : localDate;
+    }
+
+    // Cuando el backend guarda "YYYY-MM-DD" como UTC medianoche,
+    // al parsear en horario local puede retroceder un dia. Lo tratamos
+    // como fecha calendario local para preservar el dia de BD.
+    const fechaUtcMedianoche = raw.match(/^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.\d+)?(?:Z|\+00:00)$/i);
+    if (fechaUtcMedianoche) {
+      const year = Number(fechaUtcMedianoche[1]);
+      const month = Number(fechaUtcMedianoche[2]) - 1;
+      const day = Number(fechaUtcMedianoche[3]);
       const localDate = new Date(year, month, day);
       return Number.isNaN(localDate.getTime()) ? null : localDate;
     }
@@ -258,6 +283,23 @@ function ListadoSolicitudesUniformes() {
     return String(raw?._id || '').trim();
   };
 
+  const opcionesCategoria = useMemo(() => {
+    const categoriasUnicas = new Map();
+
+    pedidos.forEach((pedido) => {
+      const categoria = String(pedido?.alumno?.categoria || '').trim();
+      if (!categoria) return;
+      const clave = categoria.toLowerCase();
+      if (!categoriasUnicas.has(clave)) {
+        categoriasUnicas.set(clave, categoria);
+      }
+    });
+
+    return Array.from(categoriasUnicas.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+  }, [pedidos]);
+
   const pedidosFiltrados = pedidos.filter((pedido) => {
     const fechaPedido = pedido?.createdAt || pedido?.fecha_solicitud || pedido?.fechaSolicitud;
     const fechaPedidoDate = parseFechaSinDesfase(fechaPedido);
@@ -274,7 +316,11 @@ function ListadoSolicitudesUniformes() {
       ? true
       : String(pedido?.prenda || '').trim().toLowerCase() === filtroPrenda;
 
-    return mesOk && estadoOk && prendaOk;
+    const categoriaOk = filtroCategoria === 'todas'
+      ? true
+      : String(pedido?.alumno?.categoria || '').trim().toLowerCase() === filtroCategoria;
+
+    return mesOk && estadoOk && prendaOk && categoriaOk;
   });
 
   const pagosHistorialOrdenados = Array.isArray(pedidoSeleccionado?.pagos_historial)
@@ -297,6 +343,7 @@ function ListadoSolicitudesUniformes() {
         referencia: pedidoSeleccionado?.referencia,
         telefono_pago: pedidoSeleccionado?.telefono_pago,
         cedula_titular: pedidoSeleccionado?.cedula_titular,
+        nota: pedidoSeleccionado?.nota,
         comprobante_url: pedidoSeleccionado?.comprobante_url,
         fecha_pago: pedidoSeleccionado?.fecha_pago
       }
@@ -324,6 +371,7 @@ function ListadoSolicitudesUniformes() {
     pedidosPaginados.every((pedido) => selectedPedidoIds.includes(String(pedido._id)));
 
   const buildExcelRows = (rows) => rows.map((pedido) => ({
+    Sede: pedido.sede?.nombre || pedido.sede?.sede || '-',
     Alumno: pedido.alumno ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim() : '-',
     Prenda: pedido.prenda || '-',
     Talla: pedido.talla || '-',
@@ -350,7 +398,7 @@ function ListadoSolicitudesUniformes() {
       return;
     }
 
-    await exportToExcel(rows, fileName, ['Alumno', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela']);
+    await exportToExcel(rows, fileName, ['Sede', 'Alumno', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela']);
     setSuccessMessage(mode === 'verificados'
       ? 'Excel de solicitudes verificadas (segun filtros) exportado'
       : 'Excel de solicitudes filtradas exportado');
@@ -1145,6 +1193,26 @@ function ListadoSolicitudesUniformes() {
                 </MenuItem>
               ))}
             </TextField>
+
+            <TextField
+              select
+              size="small"
+              label="Categoria"
+              value={filtroCategoria}
+              onChange={(event) => {
+                setFiltroCategoria(event.target.value);
+                setPagina(0);
+              }}
+              sx={{
+                minWidth: { xs: 150, md: 175 },
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+              }}
+            >
+              <MenuItem value="todas">Todas las categorias</MenuItem>
+              {opcionesCategoria.map((categoria) => (
+                <MenuItem key={categoria.value} value={categoria.value}>{categoria.label}</MenuItem>
+              ))}
+            </TextField>
           </Box>
 
           <Box
@@ -1746,6 +1814,13 @@ function ListadoSolicitudesUniformes() {
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Cedula de pago</Typography>
                     <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
                       {getCedulaPagoDesdeRegistro(ultimoPagoDetalle) || '-'}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Nota</Typography>
+                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.25, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {getNotaPagoDesdeRegistro(ultimoPagoDetalle) || '-'}
                     </Typography>
                   </Box>
 
