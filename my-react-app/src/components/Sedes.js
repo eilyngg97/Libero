@@ -165,6 +165,9 @@ function Sedes() {
                   <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>
                     Mensualidad: {simboloMonedaActiva}{sede.costo || '-'}
                   </Typography>
+                  <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>
+                    Inscripción: {simboloMonedaActiva}{sede.monto_inscripcion || '-'}
+                  </Typography>
                 </Box>
               </Box>
               <Box sx={{ flex: 1, minWidth: 180 }}>

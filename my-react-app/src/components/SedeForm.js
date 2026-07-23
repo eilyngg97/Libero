@@ -22,6 +22,7 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 	const [nombre, setNombre] = useState('');
 	const [direccion, setDireccion] = useState('');
 	const [costo, setCosto] = useState('');
+	const [montoInscripcion, setMontoInscripcion] = useState('');
 	const [estado, setEstado] = useState('Activa');
 	const [horarioConstancia, setHorarioConstancia] = useState('');
 	const [loading, setLoading] = useState(false);
@@ -32,12 +33,14 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 			setNombre(sedeEditar.nombre || '');
 			setDireccion(sedeEditar.direccion || '');
 			setCosto(sedeEditar.costo || '');
+			setMontoInscripcion(sedeEditar.monto_inscripcion || '');
 			setEstado(sedeEditar.estado || 'Activa');
 			setHorarioConstancia(sedeEditar.horario_constancia || '');
 		} else {
 			setNombre('');
 			setDireccion('');
 			setCosto('');
+			setMontoInscripcion('');
 			setEstado('Activa');
 			setHorarioConstancia('');
 		}
@@ -57,7 +60,14 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 						'Content-Type': 'application/json',
 						...authHeaders
 					},
-					body: JSON.stringify({ nombre, direccion, costo, estado, horario_constancia: horarioConstancia })
+					body: JSON.stringify({
+						nombre,
+						direccion,
+						costo,
+						monto_inscripcion: montoInscripcion,
+						estado,
+						horario_constancia: horarioConstancia
+					})
 				});
 				const data = await res.json();
 				if (!res.ok) throw new Error(data.detalle || data.error || 'Error al editar sede');
@@ -78,7 +88,14 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 						'Content-Type': 'application/json',
 						...authHeaders
 					},
-					body: JSON.stringify({ nombre, direccion, costo, estado, horario_constancia: horarioConstancia })
+					body: JSON.stringify({
+						nombre,
+						direccion,
+						costo,
+						monto_inscripcion: montoInscripcion,
+						estado,
+						horario_constancia: horarioConstancia
+					})
 				});
 				const data = await res.json();
 				if (!res.ok) throw new Error(data.detalle || data.error || 'Error al crear sede');
@@ -95,6 +112,7 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 				setNombre('');
 				setDireccion('');
 				setCosto('');
+				setMontoInscripcion('');
 				setEstado('Activa');
 				setHorarioConstancia('');
 				if (typeof onAgregarSede === 'function') onAgregarSede(sedeCreada);
@@ -130,6 +148,15 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 					type="number"
 					value={costo}
 					onChange={e => setCosto(e.target.value)}
+					required
+					fullWidth
+					margin="normal"
+				/>
+				<TextField
+					label={`Monto Inscripción (${monedaActiva})`}
+					type="number"
+					value={montoInscripcion}
+					onChange={e => setMontoInscripcion(e.target.value)}
 					required
 					fullWidth
 					margin="normal"

@@ -385,7 +385,8 @@ function Alumnos() {
         sede: {
           _id: sede._id,
           nombre: sede.nombre,
-          costo: sede.costo
+          costo: sede.costo,
+          monto_inscripcion: sede.monto_inscripcion
         }
       }));
     }
@@ -712,9 +713,13 @@ function Alumnos() {
       }
     } else {
       const montoSede = Number(form.sede?.costo);
-      const montoSugerido = Number.isFinite(montoSede) && montoSede > 0 ? String(montoSede) : '';
-      setMontoMensualidad(montoSugerido);
-      setMontoInscripcion(montoSugerido);
+      const montoInscripcionSede = Number(form.sede?.monto_inscripcion);
+      const montoMensualidadSugerido = Number.isFinite(montoSede) && montoSede > 0 ? String(montoSede) : '';
+      const montoInscripcionSugerido = Number.isFinite(montoInscripcionSede) && montoInscripcionSede > 0
+        ? String(montoInscripcionSede)
+        : montoMensualidadSugerido;
+      setMontoMensualidad(montoMensualidadSugerido);
+      setMontoInscripcion(montoInscripcionSugerido);
       setMontoPagadoInscripcion('');
       setEstadoMensualidad(form.habilitar_pago_cuotas ? 'Abono' : 'Pendiente');
       setMetodoPagoInscripcion(METODOS_PAGO[0]);
@@ -1334,11 +1339,11 @@ function Alumnos() {
         }}
       >
         <DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pb: 0.5 }}>
-          Registrar inscripcion
+          Registrar inscripción
         </DialogTitle>
         <DialogContent sx={{ pt: 1.25, pb: 1.5 }}>
           <DialogContentText sx={{ color: '#64748b', mb: 1.25 }}>
-            Se sugiere el monto base de la sede para ambos conceptos, pero puedes ajustarlo si aplica.
+            Se sugiere el monto de inscripción y mensualidad según la sede seleccionada, pero puedes ajustarlos si aplica.
           </DialogContentText>
           <Box
             sx={{
@@ -1361,18 +1366,26 @@ function Alumnos() {
                 {form.sede?.nombre || '-'}
               </Typography>
               <Typography variant="body2" sx={{ color: '#334155' }}>
-                Monto base sede
+                Mensualidad sede
               </Typography>
               <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
                 {form.sede?.costo !== undefined && form.sede?.costo !== null && form.sede?.costo !== ''
                   ? `${simboloMonedaCobro}${Number(form.sede.costo).toFixed(2)} ${monedaCobro}`
                   : 'No disponible'}
               </Typography>
+              <Typography variant="body2" sx={{ color: '#334155' }}>
+                Inscripción sede
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {form.sede?.monto_inscripcion !== undefined && form.sede?.monto_inscripcion !== null && form.sede?.monto_inscripcion !== ''
+                  ? `${simboloMonedaCobro}${Number(form.sede.monto_inscripcion).toFixed(2)} ${monedaCobro}`
+                  : 'No disponible'}
+              </Typography>
             </Box>
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, my: 1.5 }}>
             <TextField
-              label="Monto de inscripcion"
+              label="Monto de inscripción"
               type="number"
               value={montoInscripcion}
               onChange={e => setMontoInscripcion(e.target.value)}
