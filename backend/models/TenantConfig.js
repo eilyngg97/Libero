@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const PaymentMethodSchema = new mongoose.Schema({
   banco: { type: String, default: '' },
+  codigo_banco: { type: String, default: '' },
   telefono: { type: String, default: '' },
   cedula: { type: String, default: '' },
   cuenta: { type: String, default: '' },
@@ -20,7 +21,8 @@ const CobroSchema = new mongoose.Schema({
   dia_cobro: { type: Number, default: 1, min: 1, max: 31 },
   dia_vencimiento: { type: Number, default: 5, min: 1, max: 31 },
   dias_gracia: { type: Number, default: 0, min: 0, max: 31 },
-  recargo_usd: { type: Number, default: 0, min: 0, max: 100000 }
+  recargo_usd: { type: Number, default: 0, min: 0, max: 100000 },
+  moneda: { type: String, enum: ['USD', 'EUR'], default: 'USD' }
 }, { _id: false });
 
 const CategoriaRangoSchema = new mongoose.Schema({

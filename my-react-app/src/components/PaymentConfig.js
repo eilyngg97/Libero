@@ -5,6 +5,7 @@ import {
   Button,
   Divider,
   InputAdornment,
+  MenuItem,
   Paper,
   Snackbar,
   TextField,
@@ -17,10 +18,20 @@ import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
+const BANCOS_PAGO_MOVIL = [
+  { codigo: '0102', nombre: 'BANCO DE VENEZUELA' },
+  { codigo: '0105', nombre: 'BANCO MERCANTIL' },
+  { codigo: '0108', nombre: 'BANCO PROVINCIAL' },
+  { codigo: '0134', nombre: 'BANESCO' },
+  { codigo: '0163', nombre: 'BANCO DEL TESORO' },
+  { codigo: '0172', nombre: 'BANCAMIGA' }
+];
+
 const EMPTY_CONFIG = {
   pagos: {
     pago_movil: {
       banco: '',
+      codigo_banco: '',
       telefono: '',
       cedula: '',
       titular: ''
@@ -39,7 +50,8 @@ const EMPTY_CONFIG = {
     dia_cobro: 1,
     dia_vencimiento: 5,
     dias_gracia: 0,
-    recargo_usd: 0
+    recargo_usd: 0,
+    moneda: 'USD'
   }
 };
 
@@ -72,6 +84,8 @@ function PaymentConfig() {
   const [savingCobro, setSavingCobro] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const monedaCobro = String(config?.cobro?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
 
   const buildFechaInicioRecargoTexto = () => {
     const diaVencimiento = Number(config?.cobro?.dia_vencimiento);
@@ -224,6 +238,43 @@ function PaymentConfig() {
     }));
   };
 
+  const handleBancoPagoMovilChange = (value) => {
+    const codigoSeleccionado = String(value || '');
+    const bancoSeleccionado = BANCOS_PAGO_MOVIL.find((item) => item.codigo === codigoSeleccionado);
+    setConfig((prev) => ({
+      ...prev,
+      pagos: {
+        ...prev.pagos,
+        pago_movil: {
+          ...prev.pagos.pago_movil,
+          codigo_banco: codigoSeleccionado,
+          banco: bancoSeleccionado?.nombre || ''
+        }
+      }
+    }));
+  };
+
+  const handleBancoTransferenciaChange = (value) => {
+    const codigoSeleccionado = String(value || '');
+    const bancoSeleccionado = BANCOS_PAGO_MOVIL.find((item) => item.codigo === codigoSeleccionado);
+    setConfig((prev) => ({
+      ...prev,
+      pagos: {
+        ...prev.pagos,
+        transferencia: {
+          ...prev.pagos.transferencia,
+          banco: bancoSeleccionado?.nombre || ''
+        }
+      }
+    }));
+  };
+
+  const selectedCodigoBancoTransferencia = (() => {
+    const bancoActual = String(config?.pagos?.transferencia?.banco || '').trim().toUpperCase();
+    const match = BANCOS_PAGO_MOVIL.find((item) => item.nombre === bancoActual);
+    return match?.codigo || '';
+  })();
+
   const savePagos = async () => {
     try {
       setSavingPagos(true);
@@ -309,7 +360,20 @@ function PaymentConfig() {
           </Box>
           <Divider sx={{ my: 1.4, borderColor: '#e6ebf3' }} />
           <Box sx={{ display: 'grid', gap: 1.75 }}>
-            <TextField label="Banco" placeholder="Seleccione un banco" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.banco} onChange={(e) => updateField('pagos', 'pago_movil', 'banco', e.target.value)} />
+            <TextField
+              label="Banco"
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              select
+              sx={fieldSx}
+              value={config.pagos.pago_movil.codigo_banco || ''}
+              onChange={(e) => handleBancoPagoMovilChange(e.target.value)}
+            >
+              <MenuItem value="">Seleccione un banco</MenuItem>
+              {BANCOS_PAGO_MOVIL.map((item) => (
+                <MenuItem key={item.codigo} value={item.codigo}>{`${item.codigo}-${item.nombre}`}</MenuItem>
+              ))}
+            </TextField>
             <TextField label="Telefono" placeholder="0412 000 0000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.telefono} onChange={(e) => updateField('pagos', 'pago_movil', 'telefono', e.target.value)} />
             <TextField label="Cedula" placeholder="V-00.000.000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.cedula} onChange={(e) => updateField('pagos', 'pago_movil', 'cedula', e.target.value)} />
             <TextField label="Titular (opcional)" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.titular} onChange={(e) => updateField('pagos', 'pago_movil', 'titular', e.target.value)} />
@@ -323,7 +387,20 @@ function PaymentConfig() {
           </Box>
           <Divider sx={{ my: 1.4, borderColor: '#e6ebf3' }} />
           <Box sx={{ display: 'grid', gap: 1.75 }}>
-            <TextField label="Banco" placeholder="Seleccione un banco" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.banco} onChange={(e) => updateField('pagos', 'transferencia', 'banco', e.target.value)} />
+            <TextField
+              label="Banco"
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              select
+              sx={fieldSx}
+              value={selectedCodigoBancoTransferencia}
+              onChange={(e) => handleBancoTransferenciaChange(e.target.value)}
+            >
+              <MenuItem value="">Seleccione un banco</MenuItem>
+              {BANCOS_PAGO_MOVIL.map((item) => (
+                <MenuItem key={`tr-${item.codigo}`} value={item.codigo}>{`${item.codigo}-${item.nombre}`}</MenuItem>
+              ))}
+            </TextField>
             <TextField label="Cuenta" placeholder="0000 0000 00 0000000000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.cuenta} onChange={(e) => updateField('pagos', 'transferencia', 'cuenta', e.target.value)} />
             <TextField label="Titular" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.titular} onChange={(e) => updateField('pagos', 'transferencia', 'titular', e.target.value)} />
             <TextField label="Cedula" placeholder="J-00000000-0" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.cedula} onChange={(e) => updateField('pagos', 'transferencia', 'cedula', e.target.value)} />
@@ -357,7 +434,19 @@ function PaymentConfig() {
             <Typography sx={{ fontWeight: 800, color: '#2a374d', fontSize: 22 }}>Cobro mensual</Typography>
           </Box>
           <Divider sx={{ my: 1.4, borderColor: '#e6ebf3' }} />
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.25 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(5, minmax(0, 1fr))' }, gap: 1.25 }}>
+            <TextField
+              label="Moneda de cobro"
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              select
+              sx={fieldSx}
+              value={monedaCobro}
+              onChange={(e) => updateCobroField('moneda', e.target.value)}
+            >
+              <MenuItem value="USD">Dolar (USD)</MenuItem>
+              <MenuItem value="EUR">Euro (EUR)</MenuItem>
+            </TextField>
             <TextField
               label="Dia de cobro"
               placeholder="1"
@@ -392,13 +481,13 @@ function PaymentConfig() {
               onChange={(e) => updateCobroField('dias_gracia', e.target.value)}
             />
             <TextField
-              label="Recargo (USD)"
+              label={`Recargo (${monedaCobro})`}
               placeholder="0.00"
               InputLabelProps={{ shrink: true }}
               size="small"
               sx={fieldSx}
               InputProps={{
-                startAdornment: <InputAdornment position="start">$</InputAdornment>
+                startAdornment: <InputAdornment position="start">{simboloMonedaCobro}</InputAdornment>
               }}
               type="number"
               inputProps={{ min: 0, max: 100000, step: '0.01' }}

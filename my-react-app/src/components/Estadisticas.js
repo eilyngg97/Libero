@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import { Bar, BarChart, Cell, CartesianGrid, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { mediaUrl } from '../utils/mediaUrl';
+import { useDolar } from '../context/DolarContext';
 import './Estadisticas.css';
 
 const LABELS_MESES = [
@@ -30,6 +31,7 @@ const CHART_FILL_COLORS = ['#0B0F2A', '#d92b73'];
 
 function Estadisticas() {
   const currentYear = new Date().getFullYear();
+  const { dolar } = useDolar();
   const [anio, setAnio] = useState(currentYear);
   const [sedes, setSedes] = useState([]);
   const [sedeSeleccionada, setSedeSeleccionada] = useState('all');
@@ -48,6 +50,8 @@ function Estadisticas() {
   const [errorIngresosSede, setErrorIngresosSede] = useState('');
   const [resumenIngresosSede, setResumenIngresosSede] = useState({ anio: currentYear, sedes: [], total_anual: 0 });
   const [dialogo, setDialogo] = useState({ open: false, titulo: '', items: [] });
+  const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
 
   const anios = useMemo(() => {
     const base = [];
@@ -307,7 +311,7 @@ function Estadisticas() {
 
   const formatMoney = (monto) => {
     const value = Number(monto || 0);
-    return `$${value.toFixed(2)} USD`;
+    return `${simboloMonedaActiva}${value.toFixed(2)} ${monedaActiva}`;
   };
 
   const dataGraficaIngresos = useMemo(() => {

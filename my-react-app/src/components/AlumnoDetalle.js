@@ -116,11 +116,9 @@ function AlumnoDetalle() {
   const [historialLoading, setHistorialLoading] = useState(false);
   const [historialError, setHistorialError] = useState(null);
   const [descargandoFicha, setDescargandoFicha] = useState(false);
-  const [rol, setRol] = useState('');
   const [requisitosChecklist, setRequisitosChecklist] = useState([]);
   const [requisitosSaving, setRequisitosSaving] = useState('');
   const [requisitosError, setRequisitosError] = useState('');
-  const esAdmin = rol === 'admin' || rol === 'super_admin';
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
@@ -183,9 +181,6 @@ function AlumnoDetalle() {
   };
 
   useEffect(() => {
-    const rolLs = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-    setRol(rolLs);
-
     const fetchAlumno = async () => {
       setLoading(true);
       setRequisitosError('');
@@ -228,7 +223,6 @@ function AlumnoDetalle() {
 
   const handleToggleRequisito = async (requisito, checked) => {
     if (!id || !requisito) return;
-    if (!esAdmin) return;
 
     const prev = requisitosChecklist;
     setRequisitosError('');
@@ -669,7 +663,7 @@ function AlumnoDetalle() {
                               <Checkbox
                                 checked={checked}
                                 onChange={(event) => handleToggleRequisito(requisito, event.target.checked)}
-                                disabled={!esAdmin || loadingItem}
+                                disabled={loadingItem}
                                 sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#16a34a' } }}
                               />
                             )}
@@ -688,11 +682,6 @@ function AlumnoDetalle() {
                   </Box>
                 )}
 
-                {!esAdmin ? (
-                  <Typography sx={{ mt: 1, fontSize: 12, color: '#94a3b8' }}>
-                    Solo administradores pueden marcar requisitos.
-                  </Typography>
-                ) : null}
               </Collapse>
             </Paper>
 

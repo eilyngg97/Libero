@@ -13,6 +13,7 @@ const { recordRequestMetric, getTenantHealthDashboard } = require('./services/te
 const { getConfiguredDefaultTenantId, getFailSafeTenantId } = require('./services/tenantFallbackService');
 
 const app = express();
+const isTestEnv = process.env.NODE_ENV === 'test';
 
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
   .split(',')
@@ -136,23 +137,29 @@ async function enforceTenantUploadAccess(req, res, next) {
   }
 }
 
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 25,
-  keyGenerator: tenantRateLimitKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { msg: 'Demasiados intentos de autenticacion. Intenta nuevamente en unos minutos.' }
-});
+const passThroughLimiter = (req, res, next) => next();
 
-const writeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  keyGenerator: tenantRateLimitKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { msg: 'Demasiadas solicitudes de escritura. Intenta nuevamente en unos minutos.' }
-});
+const authLimiter = isTestEnv
+  ? passThroughLimiter
+  : rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 25,
+    keyGenerator: tenantRateLimitKey,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { msg: 'Demasiados intentos de autenticacion. Intenta nuevamente en unos minutos.' }
+  });
+
+const writeLimiter = isTestEnv
+  ? passThroughLimiter
+  : rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    keyGenerator: tenantRateLimitKey,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { msg: 'Demasiadas solicitudes de escritura. Intenta nuevamente en unos minutos.' }
+  });
 
 app.use(cors({
   origin: (origin, callback) => {

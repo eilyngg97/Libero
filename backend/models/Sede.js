@@ -4,6 +4,7 @@ const SedeSchema = new mongoose.Schema({
   nombre: { type: String, required: true, unique: true },
   direccion: { type: String, required: true },
   costo: { type: Number, required: true },
+  monto_inscripcion: { type: Number, default: 0 },
   estado: { type: String },
   horario_constancia: { type: String }
 }, { timestamps: true });

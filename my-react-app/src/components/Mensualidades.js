@@ -15,12 +15,33 @@ import PaidIcon from '@mui/icons-material/Paid';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
+import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
+import { mediaUrl } from '../utils/mediaUrl';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo',];
+const SESSION_AVATAR_CACHE_KEY = 'mensualidades_avatar_cache_v1';
+
+const loadAvatarCacheFromSession = () => {
+	try {
+		const raw = sessionStorage.getItem(SESSION_AVATAR_CACHE_KEY);
+		if (!raw) return {};
+		const parsed = JSON.parse(raw);
+		return parsed && typeof parsed === 'object' ? parsed : {};
+	} catch {
+		return {};
+	}
+};
+
+const saveAvatarCacheToSession = (cache) => {
+	try {
+		sessionStorage.setItem(SESSION_AVATAR_CACHE_KEY, JSON.stringify(cache || {}));
+	} catch {
+		// no-op
+	}
+};
 
 const getLocalInputDate = (dateValue = new Date()) => {
 	const date = new Date(dateValue);
@@ -145,11 +166,102 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		insolventesRepresentante: false,
 		insolventesAlumnoRepresentante: false
 	});
+	const [alumnoAvatarMap, setAlumnoAvatarMap] = useState(() => loadAvatarCacheFromSession());
+	const avatarFetchInFlightRef = React.useRef(new Set());
+	const monedaCobro = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+	const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
+
+	const obtenerTasaHistoricaSegunMoneda = React.useCallback(async (fechaIso, tasaFallback) => {
+		if (monedaCobro === 'EUR') {
+			return obtenerTasaEuroOficialPorFecha(fechaIso, tasaFallback);
+		}
+		return obtenerTasaOficialPorFecha(fechaIso, tasaFallback);
+	}, [monedaCobro]);
 
 	const getAuthHeaders = () => {
 		const token = localStorage.getItem('token');
 		return token ? { Authorization: `Bearer ${token}` } : {};
 	};
+
+	const obtenerAvatarAlumno = React.useCallback((mensualidad) => {
+		const alumno = mensualidad?.id_alumno;
+		const alumnoId = String(alumno?._id || alumno || '').trim();
+		if (!alumnoId) return '';
+
+		if (Object.prototype.hasOwnProperty.call(alumnoAvatarMap, alumnoId)) {
+			return alumnoAvatarMap[alumnoId] || '';
+		}
+
+		const fotoDirecta = mediaUrl(alumno?.foto || '');
+		return fotoDirecta || '';
+	}, [alumnoAvatarMap]);
+
+	React.useEffect(() => {
+		setAlumnoAvatarMap((prev) => {
+			let changed = false;
+			const next = { ...prev };
+
+			for (const mensualidad of mensualidadesBD || []) {
+				const alumno = mensualidad?.id_alumno;
+				const alumnoId = String(alumno?._id || alumno || '').trim();
+				if (!alumnoId) continue;
+				const foto = mediaUrl(alumno?.foto || '');
+				const cached = next[alumnoId] || '';
+
+				if (foto && foto !== cached) {
+					next[alumnoId] = foto;
+					changed = true;
+				}
+			}
+
+			return changed ? next : prev;
+		});
+	}, [mensualidadesBD]);
+
+	React.useEffect(() => {
+		saveAvatarCacheToSession(alumnoAvatarMap);
+	}, [alumnoAvatarMap]);
+
+	React.useEffect(() => {
+		const token = localStorage.getItem('token');
+		const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+		const idsPendientes = (mensualidadesBD || [])
+			.map((mensualidad) => String(mensualidad?.id_alumno?._id || mensualidad?.id_alumno || '').trim())
+			.filter((id) => id && !Object.prototype.hasOwnProperty.call(alumnoAvatarMap, id) && !avatarFetchInFlightRef.current.has(id));
+
+		if (!idsPendientes.length) return;
+
+		idsPendientes.forEach((alumnoId) => {
+			avatarFetchInFlightRef.current.add(alumnoId);
+			fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${alumnoId}`, { headers })
+				.then((res) => res.json().catch(() => ({})).then((data) => ({ ok: res.ok, data })))
+				.then(({ ok, data }) => {
+					const foto = ok ? mediaUrl(data?.foto || '') : '';
+					setAlumnoAvatarMap((prev) => {
+						const actual = prev[alumnoId] || '';
+						if ((foto || '') === actual) return prev;
+						if (!foto && actual) return prev;
+						return {
+							...prev,
+							[alumnoId]: foto || null
+						};
+					});
+				})
+				.catch(() => {
+					setAlumnoAvatarMap((prev) => {
+						if (Object.prototype.hasOwnProperty.call(prev, alumnoId)) return prev;
+						return {
+							...prev,
+							[alumnoId]: null
+						};
+					});
+				})
+				.finally(() => {
+					avatarFetchInFlightRef.current.delete(alumnoId);
+				});
+		});
+	}, [mensualidadesBD, alumnoAvatarMap]);
 
 	const resetPagoForm = () => {
 		setModalPago(false);
@@ -241,7 +353,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 		const cargarTasaHistorica = async () => {
 			try {
-				const tasaHistorica = await obtenerTasaOficialPorFecha(fechaPago, Number(dolar?.promedio) || 0);
+				const tasaHistorica = await obtenerTasaHistoricaSegunMoneda(fechaPago, Number(dolar?.promedio) || 0);
 				if (!cancelled) {
 					setTasaPagoHistorica(Number(tasaHistorica) || 0);
 				}
@@ -257,7 +369,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		return () => {
 			cancelled = true;
 		};
-	}, [modalPago, fechaPago, dolar?.promedio]);
+	}, [modalPago, fechaPago, dolar?.promedio, obtenerTasaHistoricaSegunMoneda]);
 
 	const cargarMensualidades = React.useCallback(async () => {
 		try {
@@ -497,6 +609,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		setConfirmarPagoOpen(true);
 	};
 
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const cargarUltimoPagoDraft = React.useCallback(() => {
 		if (!detallePago?._id) return;
 
@@ -539,6 +652,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		});
 		setUltimoPagoEsperadoBsManual(existeAjusteManualMontoEsperadoBs(detallePago, mensualidadDetalle?.monto_esperado));
 		setUltimoPagoComprobante(null);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
 		detallePago?._id,
 		detallePago?.metodo_pago,
@@ -600,7 +714,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		const cargarTasaHistoricaUltimoPago = async () => {
 			try {
 				setCargandoTasaUltimoPago(true);
-				const tasaHistorica = await obtenerTasaOficialPorFecha(ultimoPagoDraft.fecha_pago, Number(dolar?.promedio) || 0);
+				const tasaHistorica = await obtenerTasaHistoricaSegunMoneda(ultimoPagoDraft.fecha_pago, Number(dolar?.promedio) || 0);
 				if (!cancelled) {
 					const tasaNormalizada = Number(tasaHistorica);
 					setTasaUltimoPagoHistorica(Number.isFinite(tasaNormalizada) && tasaNormalizada > 0 ? tasaNormalizada : null);
@@ -620,7 +734,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		return () => {
 			cancelled = true;
 		};
-	}, [editandoUltimoPagoInline, ultimoPagoDraft?.fecha_pago, dolar?.promedio]);
+	}, [editandoUltimoPagoInline, ultimoPagoDraft?.fecha_pago, dolar?.promedio, obtenerTasaHistoricaSegunMoneda]);
 
 	React.useEffect(() => {
 		if (!editandoUltimoPagoInline) return;
@@ -655,7 +769,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 		const montoEsperadoUsd = Number(mensualidadDetalle?.monto_esperado);
 		if (!Number.isFinite(montoEsperadoUsd) || montoEsperadoUsd < 0) {
-			setErrorMessage('No hay un monto esperado USD valido para recalcular.');
+			setErrorMessage(`No hay un monto esperado ${monedaCobro} valido para recalcular.`);
 			return;
 		}
 
@@ -707,7 +821,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			? tasaFallbackActual
 			: tasaDesdePago;
 		if (!Number.isFinite(tasaParaBs) || tasaParaBs <= 0) {
-			setErrorMessage('No se pudo determinar una tasa valida para convertir a USD.');
+			setErrorMessage(`No se pudo determinar una tasa valida para convertir a ${monedaCobro}.`);
 			return;
 		}
 
@@ -1077,13 +1191,13 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		return Number(value).toFixed(2);
 	};
 
-	const formatTelefonoPago = (value) => {
+	const formatTelefonoPago = React.useCallback((value) => {
 		const digits = String(value || '').replace(/\D/g, '');
 		if (!digits) return '';
 		return digits.length >= 10 ? digits.slice(-10) : digits;
-	};
+	}, []);
 
-	const getTelefonoPagoDesdeRegistro = (registro) => {
+	const getTelefonoPagoDesdeRegistro = React.useCallback((registro) => {
 		if (!registro) return '';
 		return formatTelefonoPago(
 			registro?.telefono_pago
@@ -1092,9 +1206,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			?? registro?.telefono_de_pago
 			?? ''
 		);
-	};
+	}, [formatTelefonoPago]);
 
-	const formatCedulaPago = (value) => {
+	const formatCedulaPago = React.useCallback((value) => {
 		const raw = String(value || '').trim().toUpperCase();
 		if (!raw) return '';
 
@@ -1106,9 +1220,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		const digits = raw.replace(/\D/g, '');
 		if (!digits) return '';
 		return `V-${digits}`;
-	};
+	}, []);
 
-	const getCedulaPagoDesdeRegistro = (registro) => {
+	const getCedulaPagoDesdeRegistro = React.useCallback((registro) => {
 		if (!registro) return '';
 		return formatCedulaPago(
 			registro?.cedula_titular
@@ -1117,7 +1231,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			?? registro?.cedulaPago
 			?? ''
 		);
-	};
+	}, [formatCedulaPago]);
 
 	const formatFechaBonita = (value) => {
 		if (!value) return '-';
@@ -1149,7 +1263,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		if (!montoUsd || Number.isNaN(montoUsd) || !montoBs || Number.isNaN(montoBs)) {
 			return '-';
 		}
-		return `${formatMoney(montoBs / montoUsd)} Bs/USD`;
+		return `${formatMoney(montoBs / montoUsd)} Bs/${monedaCobro}`;
 	};
 
 	const existeAjusteManualMontoEsperadoBs = (pago, fallbackMontoUsd = null) => {
@@ -1176,6 +1290,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const formatMontoEsperadoPago = (pago, fallbackMontoUsd = null, preferirMontoActual = false) => {
+		const formatMontoMonedaCobro = (value) => `${simboloMonedaCobro}${formatMoney(value)} ${monedaCobro}`;
+
 		if (preferirMontoActual) {
 			const montoEsperadoPagoBs = Number(pago?.monto_esperado_bs);
 			const montoEsperadoPagoUsd = Number(pago?.monto_esperado_usd);
@@ -1194,14 +1310,14 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 				if (Number.isFinite(tasaAplicada) && tasaAplicada > 0) {
 					const montoActualBs = montoActualUsd * tasaAplicada;
-					return `Bs ${formatMoney(montoActualBs)} / $${formatMoney(montoActualUsd)} USD`;
+					return `Bs ${formatMoney(montoActualBs)} / ${formatMontoMonedaCobro(montoActualUsd)}`;
 				}
 
-				return `$${formatMoney(montoActualUsd)} USD`;
+				return formatMontoMonedaCobro(montoActualUsd);
 			}
 
 			if (Number.isFinite(montoEsperadoPagoBs) && montoEsperadoPagoBs > 0 && Number.isFinite(montoEsperadoPagoUsd) && montoEsperadoPagoUsd > 0) {
-				return `Bs ${formatMoney(montoEsperadoPagoBs)} / $${formatMoney(montoEsperadoPagoUsd)} USD`;
+				return `Bs ${formatMoney(montoEsperadoPagoBs)} / ${formatMontoMonedaCobro(montoEsperadoPagoUsd)}`;
 			}
 
 			if (Number.isFinite(montoEsperadoPagoBs) && montoEsperadoPagoBs > 0) {
@@ -1217,10 +1333,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 				if (Number.isFinite(tasaAplicada) && tasaAplicada > 0) {
 					const montoActualBs = montoActualUsd * tasaAplicada;
-					return `Bs ${formatMoney(montoActualBs)} / $${formatMoney(montoActualUsd)} USD`;
+					return `Bs ${formatMoney(montoActualBs)} / ${formatMontoMonedaCobro(montoActualUsd)}`;
 				}
 
-				return `$${formatMoney(montoActualUsd)} USD`;
+				return formatMontoMonedaCobro(montoActualUsd);
 			}
 		}
 
@@ -1230,7 +1346,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			: Number(fallbackMontoUsd);
 
 		if (Number.isFinite(montoBs) && montoBs > 0 && Number.isFinite(montoUsd) && montoUsd > 0) {
-			return `Bs ${formatMoney(montoBs)} / $${formatMoney(montoUsd)} USD`;
+			return `Bs ${formatMoney(montoBs)} / ${formatMontoMonedaCobro(montoUsd)}`;
 		}
 
 		if (Number.isFinite(montoBs) && montoBs > 0) {
@@ -1238,7 +1354,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		}
 
 		if (Number.isFinite(montoUsd) && montoUsd > 0) {
-			return `$${formatMoney(montoUsd)} USD`;
+			return formatMontoMonedaCobro(montoUsd);
 		}
 
 		return '-';
@@ -1248,9 +1364,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		const montoUsd = formatMoney(pago?.monto_pagado);
 		const montoBs = pago?.monto_pagado_bs;
 		if (montoBs === null || montoBs === undefined || Number.isNaN(Number(montoBs))) {
-			return `$${montoUsd} USD`;
+			return `${simboloMonedaCobro}${montoUsd} ${monedaCobro}`;
 		}
-		return `Bs ${formatMoney(montoBs)} / $${montoUsd} USD`;
+		return `Bs ${formatMoney(montoBs)} / ${simboloMonedaCobro}${montoUsd} ${monedaCobro}`;
 	};
 
 	const formatRegistradoPorPago = (pago) => {
@@ -1694,7 +1810,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		? formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)
 		: 'No aplicado';
 	const diaRecargoPersonalizadoDetalle = obtenerDiaLimitePersonalizado(mensualidadDetalle);
-	const formatMontoCorto = (value) => `$${formatMoney(value)}`;
+	const formatMontoCorto = (value) => `${simboloMonedaCobro}${formatMoney(value)}`;
 	const tasaDetallePago = (() => {
 		const tasaDesdeFechaEdicion = Number(tasaUltimoPagoHistorica);
 		if (editandoUltimoPagoInline && Number.isFinite(tasaDesdeFechaEdicion) && tasaDesdeFechaEdicion > 0) {
@@ -1839,7 +1955,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												}}
 											/>
 										</Tooltip>
-										<Avatar sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+										<Avatar src={obtenerAvatarAlumno(m) || ''} sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 											{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 										</Avatar>
 										<Typography
@@ -1871,7 +1987,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										{renderEtiquetasAlumno(m.id_alumno)}
 									</Box>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
-									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
+									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
 									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -1980,7 +2096,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
-								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>RECARGO USD</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>RECARGO {monedaCobro}</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>FECHA RECARGO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO A FAVOR</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
@@ -2011,7 +2127,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 														}}
 													/>
 												</Tooltip>
-												<Avatar sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
+												<Avatar src={obtenerAvatarAlumno(m) || ''} sx={{ width: 28, height: 28, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}>
 													{m.id_alumno?.nombres ? `${m.id_alumno.nombres[0] || ''}${m.id_alumno.apellidos ? m.id_alumno.apellidos[0] : ''}`.toUpperCase() : ''}
 												</Avatar>
 												{obtenerNombreAlumnoMensualidad(m)}
@@ -2021,7 +2137,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 										</TableCell>
 										<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
-										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>${formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
+										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
 										<TableCell>
@@ -2247,7 +2363,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, monto_pagado_bs: e.target.value }))}
 										/>
 										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-											Equivalente USD: {ultimoPagoMontoPagadoUsdDraft !== null ? `$${formatMoney(ultimoPagoMontoPagadoUsdDraft)} USD` : '-'}
+											Equivalente {monedaCobro}: {ultimoPagoMontoPagadoUsdDraft !== null ? `${simboloMonedaCobro}${formatMoney(ultimoPagoMontoPagadoUsdDraft)} ${monedaCobro}` : '-'}
 										</Typography>
 									</Box>
 
@@ -2277,7 +2393,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											</Button>
 										)}
 										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-											Equivalente USD: {ultimoPagoMontoEsperadoUsdDraft !== null ? `$${formatMoney(ultimoPagoMontoEsperadoUsdDraft)} USD` : '-'}
+											Equivalente {monedaCobro}: {ultimoPagoMontoEsperadoUsdDraft !== null ? `${simboloMonedaCobro}${formatMoney(ultimoPagoMontoEsperadoUsdDraft)} ${monedaCobro}` : '-'}
 										</Typography>
 										{ultimoPagoTieneAjusteManualMontoEsperado && (
 											<Typography sx={{ mt: 0.45, fontSize: 12, color: '#b45309', fontWeight: 800 }}>
@@ -2304,7 +2420,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
 											{cargandoTasaUltimoPago && editandoUltimoPagoInline
 												? 'Actualizando...'
-												: (Number.isFinite(tasaDetallePago) && tasaDetallePago > 0 ? `${formatMoney(tasaDetallePago)} Bs/USD` : '-')}
+												: (Number.isFinite(tasaDetallePago) && tasaDetallePago > 0 ? `${formatMoney(tasaDetallePago)} Bs/${monedaCobro}` : '-')}
 										</Typography>
 									</Box>
 
@@ -2504,7 +2620,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 													Monto base (sin recargo)
 												</Typography>
 												<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-													{`$${formatMoney(desgloseRecargoDetalle.montoSinRecargo)} USD`}
+													{`${simboloMonedaCobro}${formatMoney(desgloseRecargoDetalle.montoSinRecargo)} ${monedaCobro}`}
 												</Typography>
 											</Box>
 											<Box>
@@ -2512,7 +2628,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 													Recargo aplicado
 												</Typography>
 												<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-													{`$${formatMoney(desgloseRecargoDetalle.recargoAplicado)} USD`}
+													{`${simboloMonedaCobro}${formatMoney(desgloseRecargoDetalle.recargoAplicado)} ${monedaCobro}`}
 												</Typography>
 											</Box>
 											<Box>
@@ -2520,7 +2636,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 													Total con recargo
 												</Typography>
 												<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-													{`$${formatMoney(desgloseRecargoDetalle.totalConRecargo)} USD`}
+													{`${simboloMonedaCobro}${formatMoney(desgloseRecargoDetalle.totalConRecargo)} ${monedaCobro}`}
 												</Typography>
 											</Box>
 										</Box>
@@ -2638,7 +2754,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												Monto de inscripcion
 											</Typography>
 											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-												{`$${formatMoney(mensualidadDetalle?.monto_inscripcion)} USD`}
+												{`${simboloMonedaCobro}${formatMoney(mensualidadDetalle?.monto_inscripcion)} ${monedaCobro}`}
 											</Typography>
 										</Box>
 									)}
@@ -2648,7 +2764,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												Monto de primera mensualidad
 											</Typography>
 											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-												{`$${formatMoney(mensualidadDetalle?.monto_primera_mensualidad)} USD`}
+												{`${simboloMonedaCobro}${formatMoney(mensualidadDetalle?.monto_primera_mensualidad)} ${monedaCobro}`}
 											</Typography>
 										</Box>
 									)}
@@ -2658,7 +2774,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												Monto de reingreso
 											</Typography>
 											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-												{`$${formatMoney(mensualidadDetalle?.monto_reingreso)} USD`}
+												{`${simboloMonedaCobro}${formatMoney(mensualidadDetalle?.monto_reingreso)} ${monedaCobro}`}
 											</Typography>
 										</Box>
 									)}
@@ -2668,7 +2784,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												Monto de mensualidad de reingreso
 											</Typography>
 											<Typography sx={{ mt: 0.35, color: '#0b2a57', fontWeight: 900 }}>
-												{`$${formatMoney(mensualidadDetalle?.monto_mensualidad_reingreso)} USD`}
+												{`${simboloMonedaCobro}${formatMoney(mensualidadDetalle?.monto_mensualidad_reingreso)} ${monedaCobro}`}
 											</Typography>
 										</Box>
 									)}
@@ -2736,13 +2852,13 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											{desgloseRecargoDetalle && (
 												<Box sx={{ mt: 0.35, display: 'grid', gap: 0.15 }}>
 													<Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 700 }}>
-														Base: ${formatMoney(desgloseRecargoDetalle.montoSinRecargo)}
+														Base: {simboloMonedaCobro}{formatMoney(desgloseRecargoDetalle.montoSinRecargo)}
 													</Typography>
 													<Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 700 }}>
-														Recargo: ${formatMoney(desgloseRecargoDetalle.recargoAplicado)}
+														Recargo: {simboloMonedaCobro}{formatMoney(desgloseRecargoDetalle.recargoAplicado)}
 													</Typography>
 													<Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 700 }}>
-														Total: ${formatMoney(desgloseRecargoDetalle.totalConRecargo)}
+														Total: {simboloMonedaCobro}{formatMoney(desgloseRecargoDetalle.totalConRecargo)}
 													</Typography>
 												</Box>
 											)}
@@ -2924,7 +3040,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						</Box>
 					)}
 					<TextField
-						label="Monto esperado (USD)"
+						label={`Monto esperado (${monedaCobro})`}
 						type="number"
 						fullWidth
 						margin="normal"
@@ -2986,7 +3102,11 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					{pagoAEliminar && (
 						<Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
 							<Typography variant="body2"><b>Método:</b> {pagoAEliminar.metodo_pago || '-'}</Typography>
-							<Typography variant="body2"><b>Monto:</b> {pagoAEliminar.monto_pagado || '-'} USD</Typography>
+							<Typography variant="body2">
+								<b>Monto:</b> {Number.isFinite(Number(pagoAEliminar.monto_pagado))
+									? `${simboloMonedaCobro}${formatMoney(pagoAEliminar.monto_pagado)} ${monedaCobro}`
+									: '-'}
+							</Typography>
 							<Typography variant="body2"><b>Fecha:</b> {formatFechaBonita(pagoAEliminar.fecha_pago)}</Typography>
 						</Box>
 					)}
@@ -3030,7 +3150,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						<Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
 							<Typography variant="body2"><b>Alumno:</b> {mensualidadAEliminar.id_alumno ? `${mensualidadAEliminar.id_alumno.nombres || ''} ${mensualidadAEliminar.id_alumno.apellidos || ''}`.trim() : '-'}</Typography>
 							<Typography variant="body2"><b>Mes:</b> {meses[(mensualidadAEliminar.mes || 1) - 1] || '-'}</Typography>
-							<Typography variant="body2"><b>Monto:</b> ${formatMoney(obtenerMontoTablaMensualidad(mensualidadAEliminar))} USD</Typography>
+							<Typography variant="body2"><b>Monto:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(mensualidadAEliminar))} {monedaCobro}</Typography>
 							<Typography variant="body2"><b>Estado:</b> {mensualidadAEliminar.estatus || '-'}</Typography>
 						</Box>
 					)}
@@ -3405,7 +3525,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 								Monto en Bs: {formatMoney((Number(montoPago) || 0) * tasaPagoActiva)} Bs
 							</Typography>
 							<Typography variant="caption" sx={{ mt: -0.5, mb: 1, color: '#94a3b8', display: 'block' }}>
-								Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/USD
+								Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/{monedaCobro}
 							</Typography>
 						</>
 					) : (
@@ -3423,7 +3543,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 								Monto en Bs: {formatMoney((pagoInfo.monto_esperado || 0) * tasaPagoActiva)} Bs
 							</Typography>
 							<Typography variant="caption" sx={{ mt: -0.5, mb: 1, color: '#94a3b8', display: 'block' }}>
-								Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/USD
+								Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/{monedaCobro}
 							</Typography>
 						</>
 					)}

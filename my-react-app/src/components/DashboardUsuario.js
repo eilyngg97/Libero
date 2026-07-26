@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Card, CardActions, CardContent, Typography, Avatar, Grid, Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { mediaUrl } from '../utils/mediaUrl';
@@ -44,16 +44,16 @@ function DashboardUsuario() {
     return `$${montoNum.toFixed(2)} USD`;
   };
 
-  const obtenerFechaVencimientoVisible = (mensualidad, alumno) => {
+  const obtenerFechaVencimientoVisible = useCallback((mensualidad, alumno) => {
     const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado);
     if (diaLimitePersonalizado) {
       return construirFechaPeriodoConDia(mensualidad?.mes, mensualidad?.anio, diaLimitePersonalizado);
     }
 
     return parseFechaSinDesfase(mensualidad?.fecha_vencimiento);
-  };
+  }, []);
 
-  const obtenerResumenPago = (mensualidades = [], alumno = null) => {
+  const obtenerResumenPago = useCallback((mensualidades = [], alumno = null) => {
     if (!Array.isArray(mensualidades) || mensualidades.length === 0) {
       return { fechaTexto: '--', monto: null, estado: 'sin datos' };
     }
@@ -87,7 +87,7 @@ function DashboardUsuario() {
       monto: referencia.monto,
       estado: pendientes.length ? 'pendiente' : 'al dia'
     };
-  };
+  }, [obtenerFechaVencimientoVisible]);
 
   useEffect(() => {
     // 1. Obtener el usuario logueado
@@ -142,7 +142,7 @@ function DashboardUsuario() {
       }
     };
     fetchAlumnos();
-  }, [apiBase]);
+  }, [apiBase, obtenerResumenPago]);
 
 
   return (

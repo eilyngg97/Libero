@@ -29,6 +29,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
 import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded';
+import { useDolar } from '../context/DolarContext';
 import './ConciliacionBancaria.css';
 
 const MONTO_TOLERANCIA_BS = 100;
@@ -80,12 +81,12 @@ function formatDiferenciaMonto(montoSistema, montoExcel) {
   return `${signo}${formatMoney(diferencia)}`;
 }
 
-function formatMontoEsperado(montoBs, montoUsd) {
+function formatMontoEsperado(montoBs, montoUsd, simboloMoneda = '$', moneda = 'USD') {
   const bsValido = montoBs !== null && montoBs !== undefined && !Number.isNaN(Number(montoBs));
   const usdValido = montoUsd !== null && montoUsd !== undefined && !Number.isNaN(Number(montoUsd));
 
   if (bsValido && usdValido) {
-    return `Bs ${formatMoney(montoBs)} / $${formatMoney(montoUsd)} USD`;
+    return `Bs ${formatMoney(montoBs)} / ${simboloMoneda}${formatMoney(montoUsd)} ${moneda}`;
   }
 
   if (bsValido) {
@@ -93,7 +94,7 @@ function formatMontoEsperado(montoBs, montoUsd) {
   }
 
   if (usdValido) {
-    return `$${formatMoney(montoUsd)} USD`;
+    return `${simboloMoneda}${formatMoney(montoUsd)} ${moneda}`;
   }
 
   return '-';
@@ -124,6 +125,7 @@ function estadoChip(tipo) {
 }
 
 export default function ConciliacionBancaria() {
+  const { dolar } = useDolar();
   const [archivo, setArchivo] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -136,6 +138,8 @@ export default function ConciliacionBancaria() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
 
   const headers = useMemo(() => {
     const token = localStorage.getItem('token');
@@ -547,7 +551,7 @@ export default function ConciliacionBancaria() {
                   </div>
                   <div className="conciliacionMobileRow">
                     <span className="label">Monto esperado</span>
-                    <span className="value">{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</span>
+                    <span className="value">{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd, simboloMonedaActiva, monedaActiva)}</span>
                   </div>
                   <div className="conciliacionMobileRow">
                     <span className="label">Monto Sistema</span>
@@ -641,7 +645,7 @@ export default function ConciliacionBancaria() {
                       <TableCell>{fila.matchPor}</TableCell>
                       <TableCell>{fila.identificadorSistema || '-'}</TableCell>
                       <TableCell>{fila.identificadorExcel || '-'}</TableCell>
-                      <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd)}</TableCell>
+                      <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd, simboloMonedaActiva, monedaActiva)}</TableCell>
                       <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
                       <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
                       <TableCell>{formatDiferenciaMonto(fila.montoSistema, fila.montoExcel)}</TableCell>

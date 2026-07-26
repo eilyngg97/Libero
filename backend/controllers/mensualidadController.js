@@ -767,7 +767,8 @@ async function generarMensualidadesPendientesAlumno(
     periodoFin,
     overridePeriodoActual,
     crearPagoSiPagado = false,
-    referenciaPago = 'primera-mensualidad'
+    referenciaPago = 'primera-mensualidad',
+    esInscripcionOverride
   } = {}
 ) {
   const periodoActual = periodoFin || getPeriodoZonaCaracas();
@@ -780,7 +781,9 @@ async function generarMensualidadesPendientesAlumno(
       overridePeriodoActual &&
       periodo.mes === overridePeriodoActual.mes &&
       periodo.anio === overridePeriodoActual.anio;
-    const esInscripcion = esPeriodoInscripcionAlumno(alumno, periodo);
+    const esInscripcion = typeof esInscripcionOverride === 'boolean'
+      ? esInscripcionOverride
+      : esPeriodoInscripcionAlumno(alumno, periodo);
 
     resultados.push(
       await crearMensualidadParaPeriodo(alumno, periodo, {
