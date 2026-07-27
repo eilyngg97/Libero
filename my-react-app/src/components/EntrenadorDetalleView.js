@@ -785,30 +785,32 @@ function EntrenadorDetalleView({
           textTransform: 'none',
           color: '#0f172a',
           fontWeight: 700,
+          fontSize: 13,
+          minHeight: 36,
           width: 'fit-content'
         }}
       >
         Volver a lista de entrenadores
       </Button>
 
-      <Paper sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 4, border: '1px solid #e5e7eb', boxShadow: '0 18px 36px rgba(15, 23, 42, 0.06)' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.8, minWidth: 0 }}>
+      <Paper sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 3.5, border: '1px solid #e5e7eb', boxShadow: '0 14px 28px rgba(15, 23, 42, 0.06)' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.4, minWidth: 0 }}>
             <Avatar
               src={photo}
               alt={`${entrenador.nombre || ''} ${entrenador.apellido || ''}`.trim()}
-              sx={{ width: 76, height: 76, background: palette.bg, color: palette.color, fontWeight: 900, fontSize: 30 }}
+              sx={{ width: { xs: 58, md: 66 }, height: { xs: 58, md: 66 }, background: palette.bg, color: palette.color, fontWeight: 900, fontSize: { xs: 22, md: 26 } }}
             >
               {`${entrenador.nombre?.[0] || ''}${entrenador.apellido?.[0] || ''}`.toUpperCase()}
             </Avatar>
             <Box sx={{ minWidth: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                <Typography sx={{ fontSize: { xs: 24, md: 30 }, fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>
+                <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>
                   {entrenador.nombre} {entrenador.apellido}
                 </Typography>
                 <span className={`estado-pill estado-${entrenador.estado}`}>{entrenador.estado || 'sin estado'}</span>
               </Box>
-              <Typography sx={{ color: '#64748b', mt: 0.3 }}>
+              <Typography sx={{ color: '#64748b', mt: 0.25, fontSize: 13 }}>
                 Voleibol {entrenador.especialidad ? `- ${entrenador.especialidad}` : '- Staff tecnico'}
               </Typography>
             </Box>
@@ -825,6 +827,9 @@ function EntrenadorDetalleView({
                 textTransform: 'none',
                 fontWeight: 700,
                 borderRadius: 2.5,
+                px: 1.2,
+                minHeight: 34,
+                fontSize: 12,
                 borderColor: estadoActual === 'activo' ? '#f59e0b' : '#059669',
                 color: estadoActual === 'activo' ? '#b45309' : '#047857'
               }}
@@ -838,7 +843,7 @@ function EntrenadorDetalleView({
               onClick={() => {
                 setIsEditing(true);
               }}
-              sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5, bgcolor: '#0f172a' }}
+              sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5, bgcolor: '#0f172a', px: 1.2, minHeight: 34, fontSize: 12 }}
             >
               Editar perfil
             </Button>
@@ -849,7 +854,7 @@ function EntrenadorDetalleView({
               startIcon={<DeleteForeverRoundedIcon />}
               onClick={handleEliminarDefinitivo}
               disabled={accionPerfilEnCurso}
-              sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5 }}
+              sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2.5, px: 1.2, minHeight: 34, fontSize: 12 }}
             >
               Eliminar entrenador
             </Button>
@@ -972,49 +977,49 @@ function EntrenadorDetalleView({
         <Box
           sx={{
             mt: 2,
-            p: 1.2,
+            p: 1,
             borderRadius: 3,
             border: '1px solid #e8edf3',
             bgcolor: '#f8fafc',
             display: 'grid',
-            gap: 1,
+            gap: 0.8,
             gridTemplateColumns: { xs: '1fr', md: 'repeat(5, minmax(0, 1fr))' }
           }}
         >
           <Box>
-            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.6, fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
-              <BadgeOutlinedIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <BadgeOutlinedIcon sx={{ fontSize: 13 }} />
               Cedula
             </Typography>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>V-{entrenador.cedula || 'Sin cedula'}</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>V-{entrenador.cedula || 'Sin cedula'}</Typography>
           </Box>
           <Box>
-            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.6, fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
-              <BusinessOutlinedIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <BusinessOutlinedIcon sx={{ fontSize: 13 }} />
               Sede
             </Typography>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{trainerSedes[0] || 'Sin sede'}</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{trainerSedes[0] || 'Sin sede'}</Typography>
           </Box>
           <Box>
-            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.6, fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
-              <WorkOutlineRoundedIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <WorkOutlineRoundedIcon sx={{ fontSize: 13 }} />
               Contrato
             </Typography>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{contractLabel}</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{contractLabel}</Typography>
           </Box>
           <Box>
-            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.6, fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
-              <CalendarMonthOutlinedIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <CalendarMonthOutlinedIcon sx={{ fontSize: 13 }} />
               Fecha de ingreso
             </Typography>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{formatDate(entrenador.fecha_ingreso)}</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{formatDate(entrenador.fecha_ingreso)}</Typography>
           </Box>
           <Box>
-            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.6, fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
-              <PhoneOutlinedIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <PhoneOutlinedIcon sx={{ fontSize: 13 }} />
               Telefono
             </Typography>
-            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{entrenador.telefono || 'Sin telefono'}</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{entrenador.telefono || 'Sin telefono'}</Typography>
           </Box>
         </Box>
       </Paper>

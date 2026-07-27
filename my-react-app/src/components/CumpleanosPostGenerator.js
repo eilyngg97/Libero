@@ -91,12 +91,14 @@ const DEFAULT_ELEMENTS_BY_FORMAT = {
   post: {
     logo: { x: 0.78, y: 0.05, w: 0.16, h: 0.1 },
     foto: { x: 0.31, y: 0.16, w: 0.38, h: 0.38 },
+    kicker: { x: 0.21, y: 0.6, w: 0.58, h: 0.06, fontScale: 1 },
     texto: { x: 0.12, y: 0.58, w: 0.76, h: 0.18, fontScale: DEFAULT_TEXT_SCALE },
     mensaje: { x: 0.09, y: 0.76, w: 0.82, h: 0.16, fontScale: DEFAULT_MESSAGE_SCALE }
   },
   story: {
     logo: { x: 0.74, y: 0.04, w: 0.2, h: 0.09 },
     foto: { x: 0.2, y: 0.18, w: 0.6, h: 0.34 },
+    kicker: { x: 0.18, y: 0.61, w: 0.64, h: 0.055, fontScale: 1 },
     texto: { x: 0.08, y: 0.58, w: 0.84, h: 0.16, fontScale: DEFAULT_TEXT_SCALE },
     mensaje: { x: 0.06, y: 0.76, w: 0.88, h: 0.16, fontScale: DEFAULT_MESSAGE_SCALE }
   }
@@ -107,12 +109,14 @@ function cloneDefaultElementsByFormat() {
     post: {
       logo: { ...DEFAULT_ELEMENTS_BY_FORMAT.post.logo },
       foto: { ...DEFAULT_ELEMENTS_BY_FORMAT.post.foto },
+      kicker: { ...DEFAULT_ELEMENTS_BY_FORMAT.post.kicker },
       texto: { ...DEFAULT_ELEMENTS_BY_FORMAT.post.texto },
       mensaje: { ...DEFAULT_ELEMENTS_BY_FORMAT.post.mensaje }
     },
     story: {
       logo: { ...DEFAULT_ELEMENTS_BY_FORMAT.story.logo },
       foto: { ...DEFAULT_ELEMENTS_BY_FORMAT.story.foto },
+      kicker: { ...DEFAULT_ELEMENTS_BY_FORMAT.story.kicker },
       texto: { ...DEFAULT_ELEMENTS_BY_FORMAT.story.texto },
       mensaje: { ...DEFAULT_ELEMENTS_BY_FORMAT.story.mensaje }
     }
@@ -127,17 +131,21 @@ function createDefaultElements() {
 
   base.minimal.post.logo = { x: 0.08, y: 0.06, w: 0.2, h: 0.08, fontScale: 1 };
   base.minimal.post.foto = { x: 0.26, y: 0.18, w: 0.48, h: 0.49 };
+  base.minimal.post.kicker = { x: 0.18, y: 0.67, w: 0.64, h: 0.12, fontScale: 0.86 };
   base.minimal.post.texto = { x: 0.14, y: 0.66, w: 0.72, h: 0.16, fontScale: 0.82 };
   base.minimal.post.mensaje = { x: 0.09, y: 0.82, w: 0.82, h: 0.12, fontScale: 0.88 };
   base.minimal.story.logo = { x: 0.08, y: 0.06, w: 0.2, h: 0.08, fontScale: 1 };
   base.minimal.story.foto = { x: 0.22, y: 0.16, w: 0.56, h: 0.5 };
+  base.minimal.story.kicker = { x: 0.18, y: 0.69, w: 0.64, h: 0.11, fontScale: 0.86 };
   base.minimal.story.texto = { x: 0.14, y: 0.68, w: 0.72, h: 0.15, fontScale: 0.82 };
   base.minimal.story.mensaje = { x: 0.08, y: 0.83, w: 0.84, h: 0.12, fontScale: 0.88 };
 
   base.diagonal.post.logo = { x: 0.06, y: 0.05, w: 0.14, h: 0.11 };
+  base.diagonal.post.kicker = { x: 0.16, y: 0.67, w: 0.68, h: 0.08, fontScale: 1 };
   base.diagonal.post.texto = { x: 0.14, y: 0.69, w: 0.7, h: 0.14, fontScale: DIAGONAL_TEXT_SCALE };
   base.diagonal.post.mensaje = { x: 0.17, y: 0.84, w: 0.68, h: 0.08, fontScale: DIAGONAL_MESSAGE_SCALE };
   base.diagonal.story.logo = { x: 0.06, y: 0.05, w: 0.16, h: 0.1 };
+  base.diagonal.story.kicker = { x: 0.14, y: 0.68, w: 0.72, h: 0.08, fontScale: 1 };
   base.diagonal.story.texto = { x: 0.12, y: 0.7, w: 0.72, h: 0.14, fontScale: DIAGONAL_TEXT_SCALE };
   base.diagonal.story.mensaje = { x: 0.14, y: 0.84, w: 0.72, h: 0.08, fontScale: DIAGONAL_MESSAGE_SCALE };
 
@@ -286,6 +294,7 @@ function normalizeElements(elements = {}) {
     const postLayers = stackMensajeDebajoTexto({
       logo: normalizeLayer(sourcePost.logo, fallbackPost.logo),
       foto: normalizeLayer(sourcePost.foto, fallbackPost.foto),
+      kicker: normalizeTextLayer(sourcePost.kicker, fallbackPost.kicker),
       texto: normalizeTextLayer(sourcePost.texto, fallbackPost.texto),
       mensaje: normalizeTextLayer(sourcePost.mensaje, fallbackPost.mensaje)
     }, 'post');
@@ -293,6 +302,7 @@ function normalizeElements(elements = {}) {
     const storyLayers = stackMensajeDebajoTexto({
       logo: normalizeLayer(sourceStory.logo, fallbackStory.logo),
       foto: normalizeLayer(sourceStory.foto, fallbackStory.foto),
+      kicker: normalizeTextLayer(sourceStory.kicker, fallbackStory.kicker),
       texto: normalizeTextLayer(sourceStory.texto, fallbackStory.texto),
       mensaje: normalizeTextLayer(sourceStory.mensaje, fallbackStory.mensaje)
     }, 'story');
@@ -374,9 +384,28 @@ function buildLayoutBackground(layoutId, colors) {
   }
 }
 
+function parseBirthdayDateSafe(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  // Fecha de nacimiento: conservar dia/mes exactos y evitar corrimiento por zona horaria.
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const localDate = new Date(year, month, day, 12, 0, 0, 0);
+    return Number.isNaN(localDate.getTime()) ? null : localDate;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function getDiaMesCaracas(fechaNacimiento) {
   if (!fechaNacimiento) return { dia: 99, mes: 99 };
-  const date = new Date(fechaNacimiento);
+  const date = parseBirthdayDateSafe(fechaNacimiento);
+  if (!date) return { dia: 99, mes: 99 };
   if (Number.isNaN(date.getTime())) return { dia: 99, mes: 99 };
   const parts = new Intl.DateTimeFormat('es-VE', {
     day: '2-digit',
@@ -602,8 +631,8 @@ function CumpleanosPostGenerator() {
 
   const formatCumpleLabel = (fechaNacimiento) => {
     if (!fechaNacimiento) return 'Sin fecha';
-    const date = new Date(fechaNacimiento);
-    if (Number.isNaN(date.getTime())) return 'Sin fecha';
+    const date = parseBirthdayDateSafe(fechaNacimiento);
+    if (!date) return 'Sin fecha';
     return date.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
   };
 
@@ -687,16 +716,27 @@ function CumpleanosPostGenerator() {
         );
       }
 
+      if (layerKey === 'kicker') {
+        return (
+          <Box
+            className="text-layer-shell text-layer-shell-minimal-kicker"
+            onMouseDown={editable ? () => setSelectedLayer('kicker') : undefined}
+            style={{ '--text-scale': String(fontScale || 1) }}
+          >
+            <Box className="minimal-title-stack">
+              <Typography className="minimal-happy">HAPPY</Typography>
+              <Typography className="minimal-birthday">BIRTHDAY</Typography>
+            </Box>
+          </Box>
+        );
+      }
+
       return (
         <Box
-          className="text-layer-shell text-layer-shell-minimal"
+          className="text-layer-shell text-layer-shell-minimal text-layer-shell-minimal-name"
           onMouseDown={editable ? () => setSelectedLayer('texto') : undefined}
           style={{ '--text-scale': String(fontScale || 1) }}
         >
-          <Box className="minimal-title-stack">
-            <Typography className="minimal-happy">HAPPY</Typography>
-            <Typography className="minimal-birthday">BIRTHDAY</Typography>
-          </Box>
           <Typography className="minimal-athlete-name">{nombreAtletaLienzo.toUpperCase()}</Typography>
         </Box>
       );
@@ -714,14 +754,25 @@ function CumpleanosPostGenerator() {
       );
     }
 
-    if (layoutId === 'diagonal') {
+    if (layoutId === 'diagonal' && layerKey === 'kicker') {
       return (
         <Box
-          className="text-layer-shell text-layer-shell-diagonal"
-          onMouseDown={editable ? () => setSelectedLayer('texto') : undefined}
+          className="text-layer-shell text-layer-shell-diagonal text-layer-shell-diagonal-kicker"
+          onMouseDown={editable ? () => setSelectedLayer('kicker') : undefined}
           style={{ '--text-scale': String(fontScale || 1) }}
         >
           <Typography className="diagonal-kicker">¡FELIZ CUMPLEAÑOS!</Typography>
+        </Box>
+      );
+    }
+
+    if (layoutId === 'diagonal' && layerKey === 'texto') {
+      return (
+        <Box
+          className="text-layer-shell text-layer-shell-diagonal text-layer-shell-diagonal-name"
+          onMouseDown={editable ? () => setSelectedLayer('texto') : undefined}
+          style={{ '--text-scale': String(fontScale || 1) }}
+        >
           <Typography className="diagonal-name-pill">{nombreAtletaLienzo.toUpperCase()}</Typography>
         </Box>
       );
@@ -729,7 +780,13 @@ function CumpleanosPostGenerator() {
 
     return (
       <Box
-        className={layerKey === 'mensaje' ? 'text-layer-shell text-layer-shell-message' : 'text-layer-shell'}
+        className={
+          layerKey === 'mensaje'
+            ? 'text-layer-shell text-layer-shell-message'
+            : layerKey === 'kicker'
+              ? 'text-layer-shell text-layer-shell-kicker'
+              : 'text-layer-shell text-layer-shell-name'
+        }
         onMouseDown={editable ? () => setSelectedLayer(layerKey) : undefined}
         style={{ '--text-scale': String(fontScale || 1) }}
       >
@@ -737,11 +794,10 @@ function CumpleanosPostGenerator() {
           <>
             <Typography className="birthday-message">{mensaje || DEFAULT_MESSAGE}</Typography>
           </>
+        ) : layerKey === 'kicker' ? (
+          <Typography className="birthday-kicker">¡Feliz cumpleaños!</Typography>
         ) : (
-          <>
-            <Typography className="birthday-kicker">¡Feliz cumpleaños!</Typography>
-            <Typography className="birthday-name">{nombreAtletaLienzo.toUpperCase()}</Typography>
-          </>
+          <Typography className="birthday-name">{nombreAtletaLienzo.toUpperCase()}</Typography>
         )}
       </Box>
     );
@@ -790,7 +846,7 @@ function CumpleanosPostGenerator() {
         h: heightNorm
       };
 
-      const shouldScaleText = layerKey === 'texto' || layerKey === 'mensaje';
+      const shouldScaleText = layerKey === 'kicker' || layerKey === 'texto' || layerKey === 'mensaje';
       if (shouldScaleText) {
         const baseWidth = (
           DEFAULT_ELEMENTS?.[layoutId]?.[formatId]
@@ -818,7 +874,7 @@ function CumpleanosPostGenerator() {
   };
 
   const updateTextScaleForLayer = (layerKey, nextScale) => {
-    if (!['texto', 'mensaje'].includes(layerKey)) return;
+    if (!['kicker', 'texto', 'mensaje'].includes(layerKey)) return;
     const safeScale = clamp(Number(nextScale) || 1, 0.65, 2.5);
     setElementos((prev) => {
       const baseByLayout = prev?.[layoutId] || DEFAULT_ELEMENTS[layoutId];
@@ -875,7 +931,7 @@ function CumpleanosPostGenerator() {
     });
   };
 
-  const selectedTextLayer = ['texto', 'mensaje'].includes(selectedLayer) ? selectedLayer : '';
+  const selectedTextLayer = ['kicker', 'texto', 'mensaje'].includes(selectedLayer) ? selectedLayer : '';
   const selectedTextScale = selectedTextLayer
     ? Number(layersActuales?.[selectedTextLayer]?.fontScale || 1)
     : 1;
@@ -1057,21 +1113,27 @@ function CumpleanosPostGenerator() {
     try {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      if (document?.fonts?.ready) {
+        await document.fonts.ready;
+      }
       await waitForNodeImages(exportRef.current);
+
+      const exportBaseWidth = Math.max(1, Math.round(canvasSize.width || 1));
+      const exportBaseHeight = Math.max(1, Math.round(canvasSize.height || 1));
 
       const baseOptions = {
         // cacheBust rompe URLs blob (foto adjunta local) al anexar querystring.
         cacheBust: false,
-        pixelRatio: 2,
-        width: formatoActual.width,
-        height: formatoActual.height,
+        pixelRatio: 1,
+        width: exportBaseWidth,
+        height: exportBaseHeight,
         canvasWidth: formatoActual.width,
         canvasHeight: formatoActual.height,
         skipAutoScale: true,
         backgroundColor: colors.fondo || '#1a1a3e',
         style: {
-          width: `${formatoActual.width}px`,
-          height: `${formatoActual.height}px`
+          width: `${exportBaseWidth}px`,
+          height: `${exportBaseHeight}px`
         }
       };
 
@@ -1346,7 +1408,7 @@ function CumpleanosPostGenerator() {
             <Box className="birthday-step">
               <Typography className="birthday-step-title"><span className="step-dot">5</span>Mover y ajustar capas</Typography>
               <Typography sx={{ fontSize: 12, color: '#334155' }}>
-                Haz clic en texto, mensaje, foto o logo en el preview y arrastra para mover. Usa la esquina para redimensionar.
+                Haz clic en titular, nombre, mensaje, foto o logo en el preview y arrastra para mover. Usa la esquina para redimensionar.
               </Typography>
               <Typography sx={{ fontSize: 11, color: '#ef4444', mt: 1, fontWeight: 700 }}>
                 Capa activa: {selectedLayer}
@@ -1362,7 +1424,7 @@ function CumpleanosPostGenerator() {
                   </Typography>
                   {selectedTextLayer === 'mensaje' ? (
                     <Typography sx={{ fontSize: 10.5, color: '#64748b', mb: 0.4 }}>
-                      El mensaje se alinea automáticamente debajo del título.
+                      El mensaje se alinea automáticamente debajo del nombre.
                     </Typography>
                   ) : null}
                   <Slider
@@ -1643,7 +1705,7 @@ function CumpleanosPostGenerator() {
             </>
           ) : null}
 
-          {['logo', 'foto', 'texto', 'mensaje'].map((layerKey) => {
+          {['logo', 'foto', 'kicker', 'texto', 'mensaje'].map((layerKey) => {
             const layerPx = getLayerPx(layerKey);
             return (
               <Rnd
@@ -1669,8 +1731,8 @@ function CumpleanosPostGenerator() {
                     height: ref.offsetHeight
                   }, true);
                 }}
-                minWidth={layerKey === 'texto' ? 130 : layerKey === 'mensaje' ? 280 : 60}
-                minHeight={layerKey === 'texto' ? 70 : layerKey === 'mensaje' ? 34 : 40}
+                minWidth={layerKey === 'texto' ? 130 : layerKey === 'kicker' ? 180 : layerKey === 'mensaje' ? 280 : 60}
+                minHeight={layerKey === 'texto' ? 70 : layerKey === 'kicker' ? 28 : layerKey === 'mensaje' ? 34 : 40}
                 className={`post-layer post-layer-${layerKey} ${selectedLayer === layerKey ? 'is-selected' : ''}`}
               >
                 {renderLayerContent(layerKey, layerPx.fontScale || 1, true)}
@@ -1684,8 +1746,8 @@ function CumpleanosPostGenerator() {
             ref={exportRef}
             className={`birthday-post birthday-post-export layout-${layoutId} format-${formatId}`}
             style={{
-              width: `${formatoActual.width}px`,
-              height: `${formatoActual.height}px`,
+              width: `${Math.max(1, Math.round(canvasSize.width || 1))}px`,
+              height: `${Math.max(1, Math.round(canvasSize.height || 1))}px`,
               aspectRatio: 'auto',
               background: layoutBackground,
               '--birthday-bg': colors.fondo,
@@ -1709,6 +1771,9 @@ function CumpleanosPostGenerator() {
             </Box>
             <Box className="post-layer-static post-layer-foto" style={getLayerRelativeStyle('foto')}>
               {renderLayerContent('foto', 1, false)}
+            </Box>
+            <Box className="post-layer-static post-layer-kicker" style={getLayerRelativeStyle('kicker')}>
+              {renderLayerContent('kicker', (layersActuales?.kicker?.fontScale || 1), false)}
             </Box>
             <Box className="post-layer-static post-layer-texto" style={getLayerRelativeStyle('texto')}>
               {renderLayerContent('texto', (layersActuales?.texto?.fontScale || 1), false)}

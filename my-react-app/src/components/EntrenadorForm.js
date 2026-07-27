@@ -67,7 +67,7 @@ const fieldSx = {
   '& .MuiOutlinedInput-root': {
     borderRadius: 3,
     backgroundColor: '#ffffff',
-    minHeight: 54,
+    minHeight: { xs: 46, md: 50, lg: 48 },
     '& fieldset': {
       borderColor: '#e5e7eb'
     },
@@ -77,16 +77,19 @@ const fieldSx = {
     '&.Mui-focused fieldset': {
       borderColor: '#fb923c',
       borderWidth: 1
+    },
+    '@media (max-height: 860px)': {
+      minHeight: 44
     }
   },
   '& .MuiInputBase-input': {
-    fontSize: 14,
+    fontSize: 13,
     color: '#0f172a'
   },
   '& .MuiInputLabel-root': {
     color: '#64748b',
     fontWeight: 600,
-    fontSize: 14
+    fontSize: 13
   },
   '& .MuiInputAdornment-root': {
     color: '#94a3b8'
@@ -101,7 +104,7 @@ const panelSx = {
 };
 
 const scrollableStepSx = {
-  pt: 1
+  pt: 0.5
 };
 
 const initialForm = {
@@ -443,8 +446,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
     <Box
       sx={{
         display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: '220px minmax(0, 1fr)' },
-        gap: { xs: 2, md: 3 },
+        gridTemplateColumns: { xs: '1fr', md: '200px minmax(0, 1fr)' },
+        gap: { xs: 1.5, md: 2.25 },
         alignItems: 'start'
       }}
     >
@@ -453,9 +456,9 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         sx={{
           borderRadius: 5,
           border: '1px solid #eef2f7',
-          p: { xs: 2, md: 2.5 },
+          p: { xs: 1.5, md: 2 },
           display: 'grid',
-          gap: 1.5,
+          gap: 1,
           background: 'linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%)'
         }}
       >
@@ -478,8 +481,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
             }
           }}
           sx={{
-            width: { xs: 160, md: 170 },
-            height: { xs: 160, md: 170 },
+            width: { xs: 132, md: 146 },
+            height: { xs: 132, md: 146 },
             mx: 'auto',
             borderRadius: '50%',
             border: '2px dashed',
@@ -510,7 +513,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         sx={{
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-          gap: 2
+          gap: 1.5
         }}
       >
         {renderInput({
@@ -567,7 +570,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
   );
 
   const certificationStep = (
-    <Box sx={{ ...scrollableStepSx, display: 'grid', gap: 2.25 }}>
+    <Box sx={{ ...scrollableStepSx, display: 'grid', gap: 1.75 }}>
       {renderInput({
         label: 'Nivel de instruccion',
         field: 'nivel_instruccion',
@@ -619,7 +622,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
             borderColor: dragCertificacionesActive ? '#c084fc' : '#d7dee9',
             backgroundColor: dragCertificacionesActive ? '#faf5ff' : '#fcfdff',
             borderRadius: 3.5,
-            minHeight: 84,
+            minHeight: 72,
             px: 2,
             display: 'flex',
             alignItems: 'center',
@@ -686,7 +689,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
   );
 
   const administrativeStep = (
-    <Box sx={{ ...scrollableStepSx, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
+    <Box sx={{ ...scrollableStepSx, display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
       <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
         <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#334155', mb: 0.5 }}>
           Sede asignada
@@ -711,7 +714,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                   position: 'relative',
                   overflow: 'visible',
                   borderRadius: 999,
-                  height: 38,
+                  height: 34,
                   fontWeight: 700,
                   color: selected ? '#1e3a8a' : '#475569',
                   borderColor: selected ? '#2563eb' : '#e5e7eb',
@@ -812,7 +815,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                 variant={selected ? 'filled' : 'outlined'}
                 sx={{
                   borderRadius: 999,
-                  height: 38,
+                  height: 34,
                   fontWeight: 700,
                   color: selected ? '#0f172a' : '#475569',
                   borderColor: selected ? '#c7d2fe' : '#e5e7eb',
@@ -943,28 +946,31 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         flexDirection: 'column',
         gap: 0,
         bgcolor: '#ffffff',
-        borderRadius: 6,
+        borderRadius: { xs: 4, md: 5 },
         overflow: 'hidden',
         minHeight: 0,
-        maxHeight: 'calc(90vh - 48px)'
+        maxHeight: { xs: 'none', md: 'calc(100vh - 200px)' },
+        '@media (max-height: 860px)': {
+          maxHeight: 'calc(100vh - 220px)'
+        }
       }}
     >
       <Box
         sx={{
-          px: { xs: 2, md: 3.5 },
-          pt: { xs: 2, md: 3 },
-          pb: 2.5,
+          px: { xs: 1.5, md: 2.5 },
+          pt: { xs: 1.5, md: 2 },
+          pb: 1.5,
           background: 'linear-gradient(180deg, #ffffff 0%, #fffaf5 100%)',
           borderBottom: '1px solid #eef2f7'
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 2.5, pr: { xs: 5, md: 6 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5, mb: 1.5, pr: { xs: 3.5, md: 4.5 } }}>
           <Box sx={{ display: 'flex', gap: 1.5 }}>
             <Box
               sx={{
-                width: 44,
-                height: 44,
-                borderRadius: 3,
+                width: 36,
+                height: 36,
+                borderRadius: 2.5,
                 background: 'linear-gradient(135deg, #fb7185 0%, #f97316 100%)',
                 display: 'flex',
                 alignItems: 'center',
@@ -975,13 +981,13 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
               <PersonOutlineRoundedIcon fontSize="small" />
             </Box>
             <Box>
-              <Typography sx={{ fontSize: 12, fontWeight: 900, letterSpacing: 0.6, textTransform: 'uppercase', color: '#f97316', mb: 0.5 }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.4, textTransform: 'uppercase', color: '#f97316', mb: 0.35 }}>
                 Paso {tab + 1} de 3
               </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>
+              <Typography sx={{ fontSize: { xs: 18, md: 24 }, fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>
                 {isEditMode ? 'Editar entrenador' : 'Nuevo entrenador'}
               </Typography>
-              <Typography sx={{ fontSize: 14, color: '#64748b', mt: 0.75 }}>
+              <Typography sx={{ fontSize: 13, color: '#64748b', mt: 0.45 }}>
                 {isEditMode
                   ? 'Actualiza la informacion del entrenador usando el mismo flujo de registro.'
                   : 'Registra al entrenador y queda listo para asignarle alumnos y horarios.'}
@@ -993,7 +999,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
           sx={{
             display: 'grid',
             gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
-            gap: 1.25
+            gap: 0.9
           }}
         >
           {steps.map((stepItem) => {
@@ -1006,8 +1012,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                 onClick={() => setTab(stepItem.id)}
                 elevation={0}
                 sx={{
-                  p: 1.5,
-                  borderRadius: 3.5,
+                  p: 1,
+                  borderRadius: 3,
                   border: '1px solid',
                   borderColor: isActive ? '#dbe4ff' : '#edf2f7',
                   backgroundColor: isActive ? '#f6f8ff' : '#ffffff',
@@ -1022,14 +1028,14 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
                   <Box
                     sx={{
-                      width: 28,
-                      height: 28,
+                      width: 24,
+                      height: 24,
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontWeight: 800,
-                      fontSize: 13,
+                      fontSize: 12,
                       color: isActive ? '#ffffff' : '#334155',
                       backgroundColor: isActive ? '#0f172a' : isPast ? '#fde68a' : '#e2e8f0'
                     }}
@@ -1037,8 +1043,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                     {stepItem.step}
                   </Box>
                   <Box>
-                    <Typography sx={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>{stepItem.title}</Typography>
-                    <Typography sx={{ fontSize: 12, color: '#64748b' }}>{stepItem.description}</Typography>
+                    <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0f172a', lineHeight: 1.1 }}>{stepItem.title}</Typography>
+                    <Typography sx={{ fontSize: 11, color: '#64748b', lineHeight: 1.15 }}>{stepItem.description}</Typography>
                   </Box>
                 </Box>
               </Paper>
@@ -1047,12 +1053,12 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         </Box>
       </Box>
 
-      <Box sx={{ p: { xs: 2, md: 3.5 }, backgroundColor: '#fcfcfd', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ p: { xs: 1.5, md: 2 }, backgroundColor: '#fcfcfd', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <Paper
           elevation={0}
           sx={{
             ...panelSx,
-            p: { xs: 2, md: 3 },
+            p: { xs: 1.5, md: 2 },
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
@@ -1085,12 +1091,12 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1.5,
-            mt: 2.5,
+            mt: 1.5,
             flexWrap: 'wrap',
             position: 'sticky',
             bottom: 0,
             zIndex: 2,
-            py: 1.25,
+            py: 0.9,
             px: 0.5,
             background: 'linear-gradient(180deg, rgba(252, 252, 253, 0.85) 0%, #fcfcfd 18px)',
             borderTop: '1px solid #eef2f7'
@@ -1102,8 +1108,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
             onClick={onCancel}
             sx={{
               borderRadius: 3,
-              px: 2.25,
-              minHeight: 48,
+              px: 2,
+              minHeight: 42,
               borderColor: '#e5e7eb',
               color: '#475569',
               fontWeight: 700
@@ -1119,7 +1125,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                 variant="text"
                 onClick={prevTab}
                 startIcon={<ArrowBackRoundedIcon />}
-                sx={{ color: '#64748b', fontWeight: 700, minHeight: 48, px: 1.5 }}
+                sx={{ color: '#64748b', fontWeight: 700, minHeight: 42, px: 1.25 }}
               >
                 Anterior
               </Button>
@@ -1133,8 +1139,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                 endIcon={<ArrowForwardRoundedIcon />}
                 sx={{
                   borderRadius: 3,
-                  px: 2.5,
-                  minHeight: 48,
+                  px: 2.1,
+                  minHeight: 42,
                   backgroundColor: '#0f172a',
                   boxShadow: '0 14px 26px rgba(15, 23, 42, 0.18)',
                   fontWeight: 800,
@@ -1152,8 +1158,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
                 disabled={saving || !canSubmit}
                 sx={{
                   borderRadius: 3,
-                  px: 2.5,
-                  minHeight: 48,
+                  px: 2.1,
+                  minHeight: 42,
                   backgroundColor: '#0f172a',
                   boxShadow: '0 14px 26px rgba(15, 23, 42, 0.18)',
                   fontWeight: 800,

@@ -414,6 +414,11 @@
   z-index: 8;
 }
 
+.post-layer-kicker,
+.post-layer-static.post-layer-kicker {
+  z-index: 9;
+}
+
 .post-layer-mensaje,
 .post-layer-static.post-layer-mensaje {
   z-index: 7;
@@ -636,16 +641,21 @@
   display: none;
 }
 
-.layout-minimal .post-layer-logo {
-  display: none;
-}
-
 .layout-minimal .post-layer-foto {
   z-index: 4;
 }
 
+.layout-minimal .post-layer-logo,
+.layout-minimal .post-layer-static.post-layer-logo {
+  z-index: 8;
+}
+
 .layout-minimal .post-layer-texto {
   z-index: 6;
+}
+
+.layout-minimal .post-layer-kicker {
+  z-index: 7;
 }
 
 .layout-minimal .post-layer-mensaje {
@@ -713,6 +723,26 @@
   font-weight: 700;
 }
 
+.layout-minimal .text-layer-shell-minimal-name {
+  align-content: center;
+  justify-items: center;
+  padding: 2px 12px;
+}
+
+.layout-minimal .text-layer-shell-minimal-name .minimal-athlete-name {
+  margin-top: 0;
+}
+
+.layout-minimal .text-layer-shell-minimal-kicker {
+  align-content: center;
+  justify-items: center;
+  padding: 2px 12px;
+}
+
+.layout-minimal .text-layer-shell-minimal-kicker .minimal-title-stack {
+  margin-top: 0;
+}
+
 .layout-minimal .minimal-message {
   margin-top: 0;
   max-width: 94%;
@@ -740,6 +770,13 @@
   justify-items: center;
   gap: 2px;
   padding-top: 2px;
+}
+
+.text-layer-shell-kicker,
+.text-layer-shell-name {
+  display: grid;
+  align-content: center;
+  justify-items: center;
 }
 
 .layout-minimal .minimal-bunting {
@@ -863,11 +900,11 @@
 .layout-badge .athlete-frame {
   border-radius: 24px;
   border-width: 3px;
-  transform: rotate(-4deg);
+  transform: rotate(0deg);
 }
 
 .layout-badge .birthday-name {
-  transform: rotate(-1.5deg);
+  transform: rotate(0deg);
 }
 
 .layout-aurora {
@@ -922,9 +959,9 @@
 
 .layout-diagonal .athlete-frame {
   border-width: 14px;
-  border-color: #f7b23b;
+  border-color: color-mix(in srgb, var(--birthday-detail) 88%, #ffffff 12%);
   box-shadow:
-    0 0 0 4px rgba(120, 184, 208, 0.55),
+    0 0 0 4px color-mix(in srgb, var(--birthday-detail) 58%, transparent),
     0 12px 24px rgba(15, 23, 42, 0.26);
   background: #e6eef5;
 }
@@ -946,6 +983,10 @@
   z-index: 9;
 }
 
+.layout-diagonal .post-layer-kicker {
+  z-index: 10;
+}
+
 .layout-diagonal .post-layer-mensaje {
   z-index: 8;
 }
@@ -964,10 +1005,16 @@
   padding: 2px;
 }
 
+.layout-diagonal .text-layer-shell-diagonal-kicker,
+.layout-diagonal .text-layer-shell-diagonal-name {
+  align-content: center;
+  justify-items: center;
+}
+
 .layout-diagonal .diagonal-kicker {
   margin: 0;
   text-align: center;
-  color: #f8b440;
+  color: var(--birthday-text);
   font-family: 'Sora', sans-serif;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -979,8 +1026,8 @@
 
 .layout-diagonal .diagonal-name-pill {
   margin: 0;
-  background: #f8b440;
-  color: #2e4298;
+  background: color-mix(in srgb, var(--birthday-accent) 82%, #ffffff 18%);
+  color: var(--birthday-text);
   border-radius: 999px;
   padding: 0.34em 1.06em;
   min-width: 180px;
@@ -999,7 +1046,7 @@
   margin: 0;
   text-align: center;
   max-width: 98%;
-  color: #ffffff;
+  color: var(--birthday-text);
   font-family: 'Manrope', sans-serif;
   font-weight: 600;
   line-height: 1.3;
