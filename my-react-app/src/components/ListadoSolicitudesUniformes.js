@@ -1136,12 +1136,20 @@ function ListadoSolicitudesUniformes() {
           sx={{
             display: 'flex',
             gap: 1,
-            flexWrap: { xs: 'wrap', md: 'nowrap' },
-            alignItems: 'center',
+            flexWrap: { xs: 'wrap', xl: 'nowrap' },
+            alignItems: { xs: 'stretch', xl: 'center' },
             justifyContent: 'space-between'
           }}
         >
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: { xs: 'wrap', md: 'nowrap' }, flexGrow: 1 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              flexWrap: 'wrap',
+              flexGrow: 1,
+              minWidth: 0
+            }}
+          >
             <TextField
               select
               size="small"
@@ -1335,9 +1343,10 @@ function ListadoSolicitudesUniformes() {
             sx={{
               display: 'flex',
               gap: 1,
-              flexWrap: { xs: 'wrap', md: 'nowrap' },
-              justifyContent: { xs: 'flex-start', md: 'flex-end' },
-              ml: { md: 'auto' }
+              flexWrap: 'wrap',
+              justifyContent: { xs: 'flex-start', xl: 'flex-end' },
+              ml: { xl: 'auto' },
+              width: { xs: '100%', xl: 'auto' }
             }}
           >
             <Button
