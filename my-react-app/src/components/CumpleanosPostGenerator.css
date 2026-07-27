@@ -1,0 +1,1210 @@
+@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@600;700&family=Great+Vibes&family=Manrope:wght@500;700;800&family=Sora:wght@600;700;800&display=swap');
+
+.birthday-generator-root {
+  display: grid;
+  grid-template-columns: minmax(320px, 390px) minmax(360px, 1fr);
+  gap: 0;
+  min-height: calc(100vh - 180px);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.birthday-generator-sidebar {
+  padding: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-right: 1px solid #e2e8f0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.birthday-generator-title {
+  font-family: 'Sora', sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  margin-bottom: 10px;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.birthday-panels-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.birthday-panel-tab {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  border-radius: 10px;
+  padding: 9px 8px;
+  min-height: 38px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.birthday-panel-tab.active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.birthday-step {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.birthday-step-title {
+  font-family: 'Sora', sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #64748b;
+  margin-bottom: 8px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-dot {
+  display: none;
+}
+
+.format-switcher {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.format-option {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  padding: 8px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  gap: 1px;
+  justify-items: center;
+}
+
+.format-option small {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.format-option.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #ffffff;
+}
+
+.format-option.active small {
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.auto-data-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.auto-data-grid .MuiTypography-root {
+  font-size: 11.5px;
+  color: #334155;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.auto-data-grid .MuiTypography-root:nth-child(even) {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.birthday-tip-card {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.birthday-tip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #92400e;
+  margin-bottom: 6px;
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.layout-option {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.layout-option.is-active {
+  border-color: #fb7185;
+  box-shadow: 0 8px 18px rgba(251, 113, 133, 0.22);
+}
+
+.layout-swatch {
+  height: 52px;
+  border-radius: 8px;
+}
+
+.layout-swatch-neon {
+  background: radial-gradient(circle at 20% 30%, #f472b6, transparent 45%), #111433;
+}
+
+.layout-swatch-minimal {
+  background: linear-gradient(155deg, #ffffff, #f8fafc);
+  border: 1px solid #e2e8f0;
+}
+
+.layout-swatch-badge {
+  background: conic-gradient(from 45deg, #0b1028, #1f2758, #0b1028);
+}
+
+.layout-swatch-aurora {
+  background: linear-gradient(130deg, #05263d, #0e7490 45%, #14b8a6 100%);
+}
+
+.layout-swatch-diagonal {
+  background:
+    radial-gradient(circle at 28% 36%, rgba(244, 63, 94, 0.42) 0 20px, transparent 22px),
+    linear-gradient(180deg, #101f3f 0%, #0f172a 100%);
+}
+
+.layout-swatch-confetti {
+  background:
+    radial-gradient(circle at 15% 20%, #fb7185 0 8px, transparent 9px),
+    radial-gradient(circle at 70% 65%, #22d3ee 0 9px, transparent 10px),
+    radial-gradient(circle at 80% 20%, #facc15 0 6px, transparent 7px),
+    #131a4b;
+}
+
+.color-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.color-row .MuiTypography-root {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.color-input {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.drop-area {
+  border: 1px dashed #94a3b8;
+  border-radius: 12px;
+  min-height: 86px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: linear-gradient(160deg, #f8fafc 0%, #eef2ff 100%);
+  cursor: pointer;
+}
+
+.drop-area.active {
+  border-color: #f43f5e;
+  box-shadow: inset 0 0 0 1px #f43f5e;
+}
+
+.logo-preview,
+.photo-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.helper-text {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.birthday-step .MuiInputBase-root {
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.birthday-step .MuiInputLabel-root {
+  font-size: 12px;
+}
+
+.birthday-step .MuiSelect-select {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.birthday-step .MuiInputBase-input {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.birthday-step .MuiButton-root {
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.save-preset-btn.MuiButton-contained {
+  background: #12162f;
+  border: 1px solid #12162f;
+  color: #ffffff;
+  min-width: 78px;
+  padding: 8px 12px;
+  box-shadow: none;
+}
+
+.save-preset-btn.MuiButton-contained:hover {
+  background: #0c1022;
+  border-color: #0c1022;
+  box-shadow: none;
+}
+
+.birthday-generator-preview-wrap {
+  padding: 16px;
+  background: #f1f5f9;
+  min-width: 0;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.preview-toolbar-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.preview-toolbar-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.preview-toolbar-pill {
+  font-size: 11px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.preview-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-toolbar-actions .MuiButton-root {
+  min-height: 38px;
+}
+
+.preview-toolbar-actions .MuiButton-text {
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 5px 10px;
+  min-width: auto;
+}
+
+.preview-toolbar-actions .MuiButton-contained {
+  background: linear-gradient(90deg, #fb7185 0%, #f97316 100%);
+  border-radius: 8px;
+  padding: 6px 12px;
+  min-width: auto;
+  box-shadow: 0 6px 14px rgba(244, 63, 94, 0.24);
+}
+
+.preview-toolbar-actions .MuiButton-root {
+  font-size: 12px;
+  text-transform: none;
+  font-weight: 700;
+}
+
+.birthday-post {
+  width: min(100%, 620px);
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--birthday-bg);
+  color: var(--birthday-text);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.2);
+  padding: 0;
+  display: block;
+  isolation: isolate;
+}
+
+.birthday-post.format-story {
+  width: min(100%, 430px);
+  aspect-ratio: 9 / 16;
+}
+
+.post-instagram-icon {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 3;
+  color: var(--birthday-text);
+  opacity: 0.88;
+}
+
+.post-layer {
+  z-index: 4;
+  border: 1px dashed transparent;
+  border-radius: 10px;
+}
+
+.post-layer-texto,
+.post-layer-static.post-layer-texto {
+  z-index: 8;
+}
+
+.post-layer-mensaje,
+.post-layer-static.post-layer-mensaje {
+  z-index: 7;
+}
+
+.post-layer-static {
+  position: absolute;
+  z-index: 4;
+}
+
+.post-layer.is-selected {
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.24);
+}
+
+.post-layer .react-resizable-handle {
+  width: 12px;
+  height: 12px;
+  right: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--birthday-accent) 74%, #ffffff 26%);
+}
+
+.logo-layer-shell,
+.text-layer-shell {
+  width: 100%;
+  height: 100%;
+}
+
+.logo-layer-shell {
+  display: grid;
+  place-items: center end;
+  padding-right: 4px;
+}
+
+.post-decoration {
+  position: absolute;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.post-decoration-a {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--birthday-accent) 64%, transparent) 0%, transparent 66%);
+  top: -130px;
+  left: -120px;
+  opacity: 0.7;
+}
+
+.post-decoration-b {
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--birthday-detail) 58%, transparent) 0%, transparent 70%);
+  bottom: -120px;
+  right: -110px;
+  opacity: 0.55;
+}
+
+.post-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 34px 34px;
+  pointer-events: none;
+  opacity: 0.35;
+}
+
+.post-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.post-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28));
+}
+
+.club-fallback {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.8;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 800;
+}
+
+.athlete-frame {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  border-radius: 50%;
+  border: 4px solid color-mix(in srgb, var(--birthday-accent) 70%, #ffffff 30%);
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--birthday-accent) 24%, transparent),
+    0 16px 30px rgba(0, 0, 0, 0.28);
+  background: rgba(15, 23, 42, 0.55);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.athlete-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.athlete-photo-ghost {
+  position: absolute;
+  inset: -11% 0 0 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.18;
+  filter: grayscale(0.2);
+  z-index: 0;
+}
+
+.athlete-frame .athlete-photo {
+  position: relative;
+  z-index: 1;
+}
+
+.athlete-initials {
+  font-family: 'Antonio', sans-serif;
+  font-size: clamp(34px, 7vw, 62px);
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.text-layer-shell {
+  text-align: center;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: 4px;
+}
+
+.birthday-export-stage {
+  position: fixed;
+  left: -20000px;
+  top: -20000px;
+  pointer-events: none;
+  opacity: 1;
+  z-index: -1;
+}
+
+.birthday-post-export {
+  margin: 0;
+}
+
+.birthday-kicker {
+  font-family: 'Manrope', sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: clamp(12px, 2.2vw, 20px);
+  color: var(--birthday-accent);
+  font-weight: 800;
+  font-size: clamp(10px, calc(20px * var(--text-scale, 1)), 28px);
+}
+
+.birthday-name {
+  font-family: 'Antonio', sans-serif;
+  font-size: clamp(36px, 6vw, 74px);
+  letter-spacing: 0.01em;
+  line-height: 0.98;
+  margin-top: 4px;
+  text-wrap: balance;
+  font-size: clamp(22px, calc(66px * var(--text-scale, 1)), 98px);
+}
+
+.birthday-message {
+  max-width: 98%;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(14px, 2.2vw, 26px);
+  font-weight: 600;
+  line-height: 1.35;
+  opacity: 0.95;
+  margin-top: 4px;
+  font-size: clamp(12px, calc(22px * var(--text-scale, 1)), 34px);
+  text-wrap: pretty;
+}
+
+.birthday-date {
+  margin-top: 8px;
+  font-family: 'Sora', sans-serif;
+  font-size: clamp(12px, 2vw, 18px);
+  opacity: 0.82;
+  text-transform: capitalize;
+  font-size: clamp(10px, calc(16px * var(--text-scale, 1)), 22px);
+}
+
+.layout-minimal {
+  color: var(--birthday-text);
+  background: var(--birthday-bg, #000000);
+}
+
+.layout-minimal .post-grid {
+  opacity: 0;
+}
+
+.layout-minimal .athlete-frame {
+  border-color: rgba(245, 240, 232, 0.88);
+  border-width: 8px;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+.layout-minimal .post-decoration,
+.layout-minimal .post-instagram-icon {
+  display: none;
+}
+
+.layout-minimal .post-layer-logo {
+  display: none;
+}
+
+.layout-minimal .post-layer-foto {
+  z-index: 4;
+}
+
+.layout-minimal .post-layer-texto {
+  z-index: 6;
+}
+
+.layout-minimal .post-layer-mensaje {
+  z-index: 5;
+}
+
+.layout-minimal .post-logo {
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.2));
+}
+
+.layout-minimal .text-layer-shell-minimal {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  text-align: center;
+  padding: 6px 12px 4px;
+}
+
+.layout-minimal .minimal-date-chip-dark {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--birthday-text);
+  opacity: 0.86;
+  font-size: clamp(10px, calc(14px * var(--text-scale, 1)), 16px);
+}
+
+.layout-minimal .minimal-title-stack {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  margin-top: 10px;
+  gap: 0;
+}
+
+.layout-minimal .minimal-happy,
+.layout-minimal .minimal-birthday {
+  margin: 0;
+  font-family: 'Georgia', serif;
+  font-weight: 800;
+  color: var(--birthday-text);
+  line-height: 0.9;
+  text-transform: uppercase;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+
+.layout-minimal .minimal-happy {
+  font-size: clamp(20px, calc(34px * var(--text-scale, 1)), 52px);
+  letter-spacing: 0.06em;
+}
+
+.layout-minimal .minimal-birthday {
+  font-size: clamp(20px, calc(34px * var(--text-scale, 1)), 52px);
+  letter-spacing: 0.06em;
+}
+
+.layout-minimal .minimal-athlete-name {
+  margin-top: 10px;
+  font-family: 'Sora', sans-serif;
+  font-size: clamp(12px, calc(16px * var(--text-scale, 1)), 24px);
+  letter-spacing: 0.28em;
+  color: var(--birthday-text);
+  opacity: 0.88;
+  font-weight: 700;
+}
+
+.layout-minimal .minimal-message {
+  margin-top: 0;
+  max-width: 94%;
+  color: var(--birthday-text);
+  opacity: 0.92;
+  font-family: 'Manrope', sans-serif;
+  font-size: clamp(10px, calc(14px * var(--text-scale, 1)), 20px);
+  line-height: 1.35;
+  font-weight: 600;
+  text-align: center;
+}
+
+.layout-minimal .text-layer-shell-minimal-message {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  text-align: center;
+  gap: 2px;
+  padding: 2px 10px;
+}
+
+.text-layer-shell-message {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+.layout-minimal .minimal-bunting {
+  position: absolute;
+  display: grid;
+  grid-auto-flow: column;
+  gap: 4px;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.layout-minimal .minimal-bunting span {
+  width: 16px;
+  height: 22px;
+  background: var(--flag-color);
+  clip-path: polygon(50% 100%, 0 0, 100% 0);
+  transform-origin: top center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.layout-minimal .minimal-bunting-left {
+  left: 6px;
+  top: 12px;
+  transform: rotate(-2deg);
+}
+
+.layout-minimal .minimal-bunting-right {
+  right: 6px;
+  top: 12px;
+  transform: rotate(2deg);
+}
+
+.layout-minimal .minimal-star {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #f4ead5;
+  clip-path: polygon(50% 0%, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  z-index: 6;
+  opacity: 0.94;
+  pointer-events: none;
+}
+
+.layout-minimal .minimal-star-a {
+  left: 10px;
+  top: 54%;
+}
+
+.layout-minimal .minimal-star-b {
+  left: 10%;
+  bottom: 12%;
+  width: 12px;
+  height: 12px;
+}
+
+.layout-minimal .minimal-star-c {
+  right: 10px;
+  top: 56%;
+}
+
+.layout-minimal .minimal-star-d {
+  right: 14%;
+  bottom: 10%;
+}
+
+.layout-minimal .minimal-star-e {
+  left: 42%;
+  bottom: 14px;
+  width: 6px;
+  height: 6px;
+}
+
+.minimal-date-chip {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  z-index: 9;
+  font-family: 'Sora', sans-serif;
+  font-size: clamp(10px, 1.6vw, 14px);
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  color: var(--birthday-text);
+  opacity: 0.8;
+}
+
+.minimal-right-title {
+  position: absolute;
+  inset: 56px 12px 168px auto;
+  width: 28%;
+  z-index: 7;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  justify-items: end;
+  pointer-events: none;
+}
+
+.minimal-right-title span {
+  font-family: 'Antonio', sans-serif;
+  font-size: clamp(60px, 11.2vw, 142px);
+  line-height: 0.84;
+  letter-spacing: 0.02em;
+  color: var(--birthday-text);
+  opacity: 0.96;
+  text-shadow: 0 10px 18px rgba(15, 23, 42, 0.28);
+}
+
+.minimal-bottom-fade {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 43%;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0) 0%, rgba(30, 41, 59, 0.84) 52%, rgba(15, 23, 42, 0.96) 100%);
+}
+
+.layout-badge {
+  background: radial-gradient(circle at 50% -10%, color-mix(in srgb, var(--birthday-detail) 40%, transparent), transparent 46%), var(--birthday-bg);
+}
+
+.layout-badge .athlete-frame {
+  border-radius: 24px;
+  border-width: 3px;
+  transform: rotate(-4deg);
+}
+
+.layout-badge .birthday-name {
+  transform: rotate(-1.5deg);
+}
+
+.layout-aurora {
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--birthday-bg) 85%, #020617 15%), color-mix(in srgb, var(--birthday-detail) 35%, var(--birthday-bg) 65%)),
+    var(--birthday-bg);
+}
+
+.layout-aurora .post-grid {
+  opacity: 0.2;
+}
+
+.layout-aurora .birthday-kicker {
+  color: color-mix(in srgb, var(--birthday-detail) 68%, #ffffff 32%);
+}
+
+.layout-neon .birthday-kicker,
+.layout-badge .birthday-kicker,
+.layout-aurora .birthday-kicker,
+.layout-confetti .birthday-kicker {
+  font-size: clamp(10px, calc(18px * var(--text-scale, 1)), 28px);
+}
+
+.layout-neon .birthday-name,
+.layout-badge .birthday-name,
+.layout-aurora .birthday-name,
+.layout-confetti .birthday-name {
+  font-size: clamp(22px, calc(52px * var(--text-scale, 1)), 86px);
+}
+
+.layout-neon .birthday-message,
+.layout-badge .birthday-message,
+.layout-aurora .birthday-message,
+.layout-confetti .birthday-message {
+  font-size: clamp(12px, calc(19px * var(--text-scale, 1)), 30px);
+}
+
+.layout-neon .birthday-date,
+.layout-badge .birthday-date,
+.layout-aurora .birthday-date,
+.layout-confetti .birthday-date {
+  font-size: clamp(10px, calc(15px * var(--text-scale, 1)), 22px);
+}
+
+.layout-diagonal {
+  background: #2e4298;
+}
+
+.layout-diagonal .post-grid {
+  opacity: 0;
+}
+
+.layout-diagonal .athlete-frame {
+  border-width: 14px;
+  border-color: #f7b23b;
+  box-shadow:
+    0 0 0 4px rgba(120, 184, 208, 0.55),
+    0 12px 24px rgba(15, 23, 42, 0.26);
+  background: #e6eef5;
+}
+
+.layout-diagonal .post-decoration,
+.layout-diagonal .post-instagram-icon {
+  display: none;
+}
+
+.layout-diagonal .post-layer-logo {
+  z-index: 10;
+}
+
+.layout-diagonal .post-layer-foto {
+  z-index: 7;
+}
+
+.layout-diagonal .post-layer-texto {
+  z-index: 9;
+}
+
+.layout-diagonal .post-layer-mensaje {
+  z-index: 8;
+}
+
+.layout-diagonal .athlete-photo {
+  object-position: center top;
+}
+
+.layout-diagonal .text-layer-shell-diagonal {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  align-content: end;
+  justify-items: center;
+  gap: 6px;
+  padding: 2px;
+}
+
+.layout-diagonal .diagonal-kicker {
+  margin: 0;
+  text-align: center;
+  color: #f8b440;
+  font-family: 'Sora', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.06;
+  font-size: clamp(12px, calc(22px * var(--text-scale, 1)), 34px);
+  text-shadow: 0 3px 8px rgba(15, 23, 42, 0.16);
+}
+
+.layout-diagonal .diagonal-name-pill {
+  margin: 0;
+  background: #f8b440;
+  color: #2e4298;
+  border-radius: 999px;
+  padding: 0.34em 1.06em;
+  min-width: 180px;
+  text-align: center;
+  font-family: 'Sora', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: clamp(13px, calc(34px * var(--text-scale, 1)), 56px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layout-diagonal .diagonal-message {
+  margin: 0;
+  text-align: center;
+  max-width: 98%;
+  color: #ffffff;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 600;
+  line-height: 1.3;
+  font-size: clamp(11px, calc(18px * var(--text-scale, 1)), 28px);
+  text-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+  text-wrap: pretty;
+}
+
+.layout-diagonal .diagonal-message-layer {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+}
+
+.diagonal-blob {
+  position: absolute;
+  inset: 18% -8% 22% -6%;
+  background:
+    radial-gradient(circle at 30% 22%, color-mix(in srgb, var(--birthday-accent) 78%, #ffffff 22%) 0%, color-mix(in srgb, var(--birthday-accent) 84%, #ffffff 16%) 36%, color-mix(in srgb, var(--birthday-accent) 74%, #0f172a 26%) 100%);
+  border-radius: 44% 56% 35% 65% / 55% 42% 58% 45%;
+  z-index: 2;
+  opacity: 0.7;
+}
+
+.layout-confetti {
+  background:
+    radial-gradient(circle at 8% 18%, color-mix(in srgb, var(--birthday-accent) 80%, #ffffff 20%) 0 7px, transparent 8px),
+    radial-gradient(circle at 88% 24%, color-mix(in srgb, var(--birthday-detail) 80%, #ffffff 20%) 0 8px, transparent 9px),
+    radial-gradient(circle at 75% 86%, #facc15 0 7px, transparent 8px),
+    radial-gradient(circle at 16% 80%, #fb7185 0 8px, transparent 9px),
+    var(--birthday-bg);
+}
+
+.layout-confetti .post-grid {
+  opacity: 0;
+}
+
+@media (max-width: 980px) {
+  .birthday-generator-root {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .birthday-generator-sidebar {
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .birthday-generator-preview-wrap {
+    padding: 12px;
+  }
+
+  .preview-toolbar {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .preview-toolbar-left,
+  .preview-toolbar-actions {
+    width: 100%;
+  }
+
+  .preview-toolbar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .preview-toolbar-actions .MuiButton-root {
+    width: 100%;
+  }
+
+  .birthday-post {
+    width: min(100%, 520px);
+  }
+
+  .birthday-post.format-story {
+    width: min(100%, 380px);
+  }
+}
+
+@media (max-width: 760px) {
+  .birthday-generator-root {
+    border-radius: 12px;
+  }
+
+  .birthday-generator-sidebar {
+    padding: 10px;
+  }
+
+  .birthday-generator-title {
+    font-size: 16px;
+  }
+
+  .birthday-panels-nav {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .birthday-panel-tab {
+    justify-content: flex-start;
+    font-size: 12px;
+    gap: 8px;
+    padding-left: 10px;
+  }
+
+  .birthday-step {
+    padding: 10px;
+  }
+
+  .layout-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .auto-data-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-data-grid .MuiTypography-root {
+    font-size: 12px;
+  }
+
+  .color-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    align-items: flex-start;
+  }
+
+  .color-row .MuiTextField-root {
+    width: 100% !important;
+  }
+
+  .color-input {
+    width: 42px;
+    height: 42px;
+  }
+
+  .drop-area {
+    min-height: 96px;
+  }
+
+  .birthday-step .MuiButton-root {
+    min-height: 40px;
+    font-size: 12px;
+  }
+
+  .birthday-post {
+    border-radius: 18px;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  }
+
+  .birthday-post.format-story {
+    width: min(100%, 360px);
+  }
+}
+
+@media (max-width: 560px) {
+  .birthday-generator-root {
+    border-radius: 10px;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .birthday-generator-sidebar,
+  .birthday-generator-preview-wrap {
+    padding: 9px;
+  }
+
+  .preview-toolbar {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .preview-toolbar-left {
+    display: grid;
+    gap: 6px;
+  }
+
+  .preview-toolbar-title {
+    font-size: 12px;
+  }
+
+  .preview-toolbar-pill {
+    width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .preview-toolbar-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .layout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .format-switcher {
+    grid-template-columns: 1fr;
+  }
+
+  .preset-select-row .MuiIconButton-root {
+    justify-self: end;
+  }
+}

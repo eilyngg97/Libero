@@ -97,7 +97,6 @@ function Dashboard() {
   const cumplePorPagina = 10;
   const totalPaginasCumple = Math.ceil(cumpleaneros.length / cumplePorPagina);
   const cumpleanerosPagina = cumpleaneros.slice((cumplePage - 1) * cumplePorPagina, cumplePage * cumplePorPagina);
-console.log('Cumpleañeros en página:', cumpleanerosPagina);
 
   useEffect(() => {
     const fetchCumpleaneros = async () => {

@@ -39,6 +39,7 @@ import MiPerfil from './components/MiPerfil';
 import Recaudos from './components/Recaudos';
 import TerminosCondiciones from './components/TerminosCondiciones';
 import UsuariosAccesos from './components/UsuariosAccesos';
+import CumpleanosPostGenerator from './components/CumpleanosPostGenerator';
 
 import { SedeProvider, useSede } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
@@ -129,6 +130,7 @@ function SedeBreadcrumb() {
     { startsWith: '/alumnos', label: 'Alumnos' },
     { startsWith: '/inscripciones', label: 'Inscripciones' },
     { startsWith: '/mensualidades', label: 'Mensualidades' },
+    { startsWith: '/publicaciones/cumpleanos', label: 'Publicaciones' },
     { startsWith: '/solicitud-uniforme', label: 'Solicitud de uniformes' },
     { startsWith: '/listado-solicitudes-uniformes', label: 'Solicitud de uniformes' }
   ];
@@ -396,6 +398,7 @@ function App() {
                           <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
                           <Route path="recaudos" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['recaudos.view']}><Recaudos /></ProtectedRoute>} />
+                          <Route path="publicaciones/cumpleanos" element={<ProtectedRoute allowedRoles={adminOnly}><CumpleanosPostGenerator /></ProtectedRoute>} />
                           <Route path="terminos-condiciones" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['reglamento.view']}><TerminosCondiciones /></ProtectedRoute>} />
                           <Route path="usuarios" element={<ProtectedRoute allowedRoles={['super_admin']} requiredPermissions={['usuarios.manage']}><UsuariosAccesos /></ProtectedRoute>} />
                         </Routes>

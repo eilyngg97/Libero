@@ -50,6 +50,7 @@ async function seedTenantData(tenantConfig, suffix) {
     apellidos: `QA${suffix}`,
     sede: sede._id,
     fecha_inscripcion: new Date(),
+    fecha_inicio_cobro: new Date(),
     categoria: 'QA'
   });
 

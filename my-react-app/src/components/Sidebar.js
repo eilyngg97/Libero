@@ -22,6 +22,7 @@ import GavelIcon from '@mui/icons-material/Gavel';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
+import CelebrationIcon from '@mui/icons-material/Celebration';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
@@ -99,6 +100,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   }
 
   if (esAdminLegacy) {
+    options.push({ text: 'Publicaciones', icon: <CelebrationIcon />, path: '/publicaciones/cumpleanos' });
 
     if (canViewConfiguraciones) {
       options.push({
