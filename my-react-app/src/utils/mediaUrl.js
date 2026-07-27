@@ -2,6 +2,8 @@ export const mediaUrl = (value) => {
   if (!value || typeof value !== 'string') return value;
 
   const apiBase = String(process.env.REACT_APP_API_URL || '').trim().replace(/\/$/, '');
+  const currentHost = window.location.hostname;
+  const isTenantLocalhost = currentHost.endsWith('.localhost');
 
   if (
     value.startsWith('data:') ||
@@ -17,9 +19,7 @@ export const mediaUrl = (value) => {
     if (apiBase) {
       try {
         const apiUrl = new URL(apiBase);
-        const currentHost = window.location.hostname;
         const isApiLocalhost = apiUrl.hostname === 'localhost' || apiUrl.hostname === '127.0.0.1';
-        const isTenantLocalhost = currentHost.endsWith('.localhost');
 
         if (isApiLocalhost && isTenantLocalhost) {
           apiUrl.hostname = currentHost;

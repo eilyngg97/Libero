@@ -107,12 +107,41 @@ const ConstanciasSchema = new mongoose.Schema({
   retiro_personalizado: { type: RetiroPersonalizadoSchema, default: () => ({}) }
 }, { _id: false });
 
+const CumpleanosPresetSchema = new mongoose.Schema({
+  nombre: { type: String, default: '' },
+  layout: { type: String, default: 'neon' },
+  formato: { type: String, enum: ['post', 'story'], default: 'post' },
+  mensaje: { type: String, default: '' },
+  elementos: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
+  colores: {
+    fondo: { type: String, default: '#1a1a3e' },
+    texto: { type: String, default: '#ffffff' },
+    acento: { type: String, default: '#ec4899' },
+    detalle: { type: String, default: '#7dd3fc' }
+  }
+}, { _id: false });
+
+const PublicacionesSchema = new mongoose.Schema({
+  cumpleanos: {
+    ultimo_preset: { type: CumpleanosPresetSchema, default: () => ({}) },
+    presets: {
+      type: [CumpleanosPresetSchema],
+      default: [],
+      validate: {
+        validator: (arr) => Array.isArray(arr) && arr.length <= 12,
+        message: 'Solo se permiten hasta 12 presets de cumpleaños por academia.'
+      }
+    }
+  }
+}, { _id: false });
+
 const TenantConfigSchema = new mongoose.Schema({
   key: { type: String, default: 'default', unique: true },
   pagos: { type: PagosSchema, default: () => ({}) },
   cobro: { type: CobroSchema, default: () => ({}) },
   categorias: { type: CategoriasSchema, default: () => ({}) },
   constancias: { type: ConstanciasSchema, default: () => ({}) },
+  publicaciones: { type: PublicacionesSchema, default: () => ({}) },
   requisitos_recaudos: {
     type: [{ type: String, trim: true }],
     default: []

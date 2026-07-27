@@ -128,6 +128,35 @@ const DEFAULT_CONFIG = {
         lugarEmision: 'Barquisimeto'
       }
     }
+  },
+  publicaciones: {
+    cumpleanos: {
+      ultimo_preset: {
+        nombre: 'Base club',
+        layout: 'neon',
+        formato: 'post',
+        mensaje: '¡Te deseamos un gran día lleno de éxitos en la cancha!',
+        elementos: {
+          post: {
+            logo: { x: 0.78, y: 0.05, w: 0.16, h: 0.1 },
+            foto: { x: 0.31, y: 0.16, w: 0.38, h: 0.38 },
+            texto: { x: 0.1, y: 0.56, w: 0.8, h: 0.34, fontScale: 1 }
+          },
+          story: {
+            logo: { x: 0.74, y: 0.04, w: 0.2, h: 0.09 },
+            foto: { x: 0.2, y: 0.18, w: 0.6, h: 0.34 },
+            texto: { x: 0.08, y: 0.56, w: 0.84, h: 0.34, fontScale: 1 }
+          }
+        },
+        colores: {
+          fondo: '#1a1a3e',
+          texto: '#ffffff',
+          acento: '#ec4899',
+          detalle: '#7dd3fc'
+        }
+      },
+      presets: []
+    }
   }
 };
 
@@ -377,12 +406,149 @@ function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG
   };
 }
 
+function normalizeColorHex(value, fallback) {
+  const str = cleanValue(value || fallback);
+  const hex = str.startsWith('#') ? str : `#${str}`;
+  return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.toLowerCase() : fallback;
+}
+
+function clampUnit(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  if (number < 0) return 0;
+  if (number > 1) return 1;
+  return number;
+}
+
+function clampPositiveUnit(value, fallback, min = 0.04) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  if (number < min) return min;
+  if (number > 1) return 1;
+  return number;
+}
+
+function clampScale(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  if (number < 0.65) return 0.65;
+  if (number > 2.5) return 2.5;
+  return number;
+}
+
+function normalizeLayerBox(layer = {}, fallback = {}) {
+  const normalized = {
+    x: clampUnit(layer?.x, fallback?.x ?? 0),
+    y: clampUnit(layer?.y, fallback?.y ?? 0),
+    w: clampPositiveUnit(layer?.w, fallback?.w ?? 0.3),
+    h: clampPositiveUnit(layer?.h, fallback?.h ?? 0.2)
+  };
+
+  const hasScale = layer?.fontScale !== undefined || fallback?.fontScale !== undefined;
+  if (hasScale) {
+    normalized.fontScale = clampScale(layer?.fontScale, fallback?.fontScale ?? 1);
+  }
+
+  return normalized;
+}
+
+function normalizeTextoLayer(layer = {}, fallback = {}) {
+  const normalized = normalizeLayerBox(layer, fallback);
+  normalized.fontScale = clampScale(layer?.fontScale, fallback?.fontScale ?? 1);
+  return normalized;
+}
+
+function normalizePresetElementos(elementos = {}, fallback = DEFAULT_CONFIG.publicaciones.cumpleanos.ultimo_preset.elementos) {
+  const layoutIds = ['neon', 'minimal', 'badge', 'aurora', 'diagonal', 'confetti'];
+  const root = elementos && typeof elementos === 'object' ? elementos : {};
+
+  const normalizeByFormat = (source = {}, fallbackByFormat = {}) => {
+    const sourcePost = source?.post || {};
+    const sourceStory = source?.story || {};
+    const fallbackPost = fallbackByFormat?.post || {};
+    const fallbackStory = fallbackByFormat?.story || {};
+
+    return {
+      post: {
+        logo: normalizeLayerBox(sourcePost?.logo, fallbackPost.logo),
+        foto: normalizeLayerBox(sourcePost?.foto, fallbackPost.foto),
+        texto: normalizeTextoLayer(sourcePost?.texto, fallbackPost.texto),
+        mensaje: normalizeTextoLayer(sourcePost?.mensaje, fallbackPost.mensaje)
+      },
+      story: {
+        logo: normalizeLayerBox(sourceStory?.logo, fallbackStory.logo),
+        foto: normalizeLayerBox(sourceStory?.foto, fallbackStory.foto),
+        texto: normalizeTextoLayer(sourceStory?.texto, fallbackStory.texto),
+        mensaje: normalizeTextoLayer(sourceStory?.mensaje, fallbackStory.mensaje)
+      }
+    };
+  };
+
+  const hasLegacyFormatShape = !!(root?.post || root?.story);
+
+  return layoutIds.reduce((acc, layoutId) => {
+    const fallbackForLayout = (fallback?.[layoutId] && typeof fallback[layoutId] === 'object')
+      ? fallback[layoutId]
+      : fallback;
+    const sourceForLayout = hasLegacyFormatShape
+      ? root
+      : ((root?.[layoutId] && typeof root[layoutId] === 'object') ? root[layoutId] : {});
+
+    acc[layoutId] = normalizeByFormat(sourceForLayout, fallbackForLayout);
+    return acc;
+  }, {});
+}
+
+function normalizeCumpleanosPreset(preset = {}, fallback = DEFAULT_CONFIG.publicaciones.cumpleanos.ultimo_preset) {
+  const layoutOptions = new Set(['neon', 'minimal', 'badge', 'aurora', 'diagonal', 'confetti']);
+  const formatoOptions = new Set(['post', 'story']);
+  const layout = cleanValue(preset?.layout || fallback.layout);
+  const formato = cleanValue(preset?.formato || fallback.formato);
+  const colores = preset?.colores && typeof preset.colores === 'object' ? preset.colores : {};
+
+  return {
+    nombre: cleanValue(preset?.nombre || fallback.nombre).slice(0, 60),
+    layout: layoutOptions.has(layout) ? layout : fallback.layout,
+    formato: formatoOptions.has(formato) ? formato : fallback.formato,
+    mensaje: cleanValue(preset?.mensaje || fallback.mensaje).slice(0, 280),
+    elementos: normalizePresetElementos(preset?.elementos, fallback?.elementos),
+    colores: {
+      fondo: normalizeColorHex(colores.fondo, fallback.colores.fondo),
+      texto: normalizeColorHex(colores.texto, fallback.colores.texto),
+      acento: normalizeColorHex(colores.acento, fallback.colores.acento),
+      detalle: normalizeColorHex(colores.detalle, fallback.colores.detalle)
+    }
+  };
+}
+
+function normalizePublicacionesPayload(publicaciones = {}, fallback = DEFAULT_CONFIG.publicaciones) {
+  const root = publicaciones && typeof publicaciones === 'object' ? publicaciones : {};
+  const cumpleanosRoot = root?.cumpleanos && typeof root.cumpleanos === 'object' ? root.cumpleanos : {};
+  const fallbackCumpleanos = fallback?.cumpleanos || DEFAULT_CONFIG.publicaciones.cumpleanos;
+  const ultimoPreset = normalizeCumpleanosPreset(cumpleanosRoot.ultimo_preset, fallbackCumpleanos.ultimo_preset);
+
+  const presets = Array.isArray(cumpleanosRoot.presets)
+    ? cumpleanosRoot.presets
+      .map((item) => normalizeCumpleanosPreset(item, fallbackCumpleanos.ultimo_preset))
+      .filter((item) => item.nombre)
+      .slice(0, 12)
+    : [];
+
+  return {
+    cumpleanos: {
+      ultimo_preset: ultimoPreset,
+      presets
+    }
+  };
+}
+
 function normalizeConfigPayload(payload = {}) {
   const root = payload && typeof payload === 'object' ? payload : {};
   const pagos = root.pagos && typeof root.pagos === 'object' ? root.pagos : root;
   const cobro = root.cobro && typeof root.cobro === 'object' ? root.cobro : {};
   const categorias = root.categorias && typeof root.categorias === 'object' ? root.categorias : {};
   const constancias = root.constancias && typeof root.constancias === 'object' ? root.constancias : {};
+  const publicaciones = root.publicaciones && typeof root.publicaciones === 'object' ? root.publicaciones : {};
   const recargoUsdRaw = cobro.recargo_usd ?? cobro.recargo_porcentaje;
 
   const pagoMovil = pagos.pago_movil || {};
@@ -416,7 +582,8 @@ function normalizeConfigPayload(payload = {}) {
       moneda: normalizeCobroMoneda(cobro.moneda, DEFAULT_CONFIG.cobro.moneda)
     },
     categorias: normalizeCategoriasPayload(categorias),
-    constancias: normalizeConstanciasPayload(constancias)
+    constancias: normalizeConstanciasPayload(constancias),
+    publicaciones: normalizePublicacionesPayload(publicaciones)
   };
 }
 
@@ -557,6 +724,27 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
     patch.constancias = constanciasPatch;
   }
 
+  if (root.publicaciones && typeof root.publicaciones === 'object') {
+    const existingPublicaciones = normalizePublicacionesPayload(existingConfig?.publicaciones || {}, DEFAULT_CONFIG.publicaciones);
+    const mergedPublicacionesInput = {
+      ...existingPublicaciones,
+      ...root.publicaciones,
+      cumpleanos: {
+        ...existingPublicaciones.cumpleanos,
+        ...(root.publicaciones.cumpleanos || {}),
+        ultimo_preset: {
+          ...existingPublicaciones.cumpleanos.ultimo_preset,
+          ...(root?.publicaciones?.cumpleanos?.ultimo_preset || {})
+        },
+        presets: root?.publicaciones?.cumpleanos?.presets !== undefined
+          ? root.publicaciones.cumpleanos.presets
+          : existingPublicaciones.cumpleanos.presets
+      }
+    };
+
+    patch.publicaciones = normalizePublicacionesPayload(mergedPublicacionesInput, DEFAULT_CONFIG.publicaciones);
+  }
+
   return patch;
 }
 
@@ -572,6 +760,7 @@ function serializeConfig(doc) {
   const cobro = doc?.cobro || {};
   const categorias = doc?.categorias || {};
   const constancias = doc?.constancias || {};
+  const publicaciones = doc?.publicaciones || {};
   const recargoUsdRaw = cobro?.recargo_usd ?? cobro?.recargo_porcentaje;
   const categoriasParaRespuesta = Array.isArray(categorias?.reglas) && categorias.reglas.length > 0
     ? categorias
@@ -605,6 +794,7 @@ function serializeConfig(doc) {
     },
     categorias: normalizeCategoriasPayload(categoriasParaRespuesta, DEFAULT_CONFIG.categorias),
     constancias: normalizeConstanciasPayload(constancias),
+    publicaciones: normalizePublicacionesPayload(publicaciones),
     is_default: false,
     updatedAt: doc.updatedAt
   };
@@ -697,7 +887,7 @@ exports.upsertConfiguracionAdmin = async (req, res) => {
 exports.patchConfiguracionAdmin = async (req, res) => {
   try {
     const TenantConfig = await getTenantConfigModel(req);
-    const currentConfig = await TenantConfig.findOne({ key: 'default' }).select('categorias constancias').lean();
+    const currentConfig = await TenantConfig.findOne({ key: 'default' }).select('categorias constancias publicaciones').lean();
     const normalizedPatch = normalizeConfigPatchPayload(req.body || {}, currentConfig || {});
 
     if (Object.keys(normalizedPatch).length === 0) {
@@ -732,6 +922,10 @@ exports.patchConfiguracionAdmin = async (req, res) => {
 
     if (normalizedPatch.constancias) {
       setPayload.constancias = normalizedPatch.constancias;
+    }
+
+    if (normalizedPatch.publicaciones) {
+      setPayload.publicaciones = normalizedPatch.publicaciones;
     }
 
     const updated = await TenantConfig.findOneAndUpdate(

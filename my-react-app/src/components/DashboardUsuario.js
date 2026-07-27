@@ -115,7 +115,6 @@ function DashboardUsuario() {
         // Buscar también alumnos por usuarioId (caso usuario sin representante o representante que es alumno)
         const alumRes2 = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/por-representante/null?usuarioId=${usuario.id}&populateSede=1`);
         const alumData2 = await alumRes2.json();
-        console.log('Alumnos por usuarioId:', alumData2);
         if (alumRes2.ok && Array.isArray(alumData2)) {
           alumnosFinal = alumnosFinal.concat(alumData2);
         }
