@@ -32,6 +32,20 @@ const parseFechaSinDesfase = (value) => {
   return Number.isNaN(fecha.getTime()) ? null : fecha;
 };
 
+const buildSiguientePeriodoDesde = (mes, anio) => {
+  const mesNum = Number(mes);
+  const anioNum = Number(anio);
+  if (!Number.isInteger(mesNum) || !Number.isInteger(anioNum)) {
+    return { mes: null, anio: null };
+  }
+
+  if (mesNum >= 12) {
+    return { mes: 1, anio: anioNum + 1 };
+  }
+
+  return { mes: mesNum + 1, anio: anioNum };
+};
+
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
   const [resumenPagos, setResumenPagos] = useState({});
@@ -64,6 +78,8 @@ function DashboardUsuario() {
         const fechaPeriodo = new Date(`${m.anio}-${String(m.mes).padStart(2, '0')}-01T00:00:00`);
         const fechaVencimientoVisible = obtenerFechaVencimientoVisible(m, alumno);
         return {
+          mes: Number(m.mes),
+          anio: Number(m.anio),
           fecha: fechaPeriodo,
           fechaVencimientoVisible,
           estado: normalizarEstado(m.estatus),
@@ -78,7 +94,25 @@ function DashboardUsuario() {
     }
 
     const pendientes = ordenadas.filter((m) => !['pagado', 'exonerado'].includes(m.estado));
-    const referencia = pendientes.length ? pendientes[0] : ordenadas[ordenadas.length - 1];
+
+    let referencia = pendientes[0] || null;
+    if (!referencia) {
+      const ultimaMensualidad = ordenadas[ordenadas.length - 1];
+      const siguientePeriodo = buildSiguientePeriodoDesde(ultimaMensualidad?.mes, ultimaMensualidad?.anio);
+      const diaReferencia = normalizarDiaMes(alumno?.dia_limite_personalizado)
+        || normalizarDiaMes(ultimaMensualidad?.fechaVencimientoVisible?.getDate())
+        || 1;
+
+      referencia = {
+        fecha: (siguientePeriodo.mes && siguientePeriodo.anio)
+          ? new Date(siguientePeriodo.anio, siguientePeriodo.mes - 1, 1)
+          : ultimaMensualidad.fecha,
+        fechaVencimientoVisible: (siguientePeriodo.mes && siguientePeriodo.anio)
+          ? construirFechaPeriodoConDia(siguientePeriodo.mes, siguientePeriodo.anio, diaReferencia)
+          : ultimaMensualidad.fechaVencimientoVisible,
+        monto: ultimaMensualidad?.monto
+      };
+    }
 
     return {
       fechaTexto: referencia.fechaVencimientoVisible

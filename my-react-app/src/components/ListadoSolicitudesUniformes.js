@@ -80,6 +80,9 @@ const ESTADOS_SOLICITUD_ACTIVA = new Set([
   'pago_en_revision'
 ]);
 
+const ALL_PRENDAS_VALUE = '__all__';
+const ALL_CATEGORIAS_VALUE = '__all__';
+
 function ListadoSolicitudesUniformes() {
   const [pedidos, setPedidos] = useState([]);
   const [uniformesCatalogo, setUniformesCatalogo] = useState([]);
@@ -111,8 +114,9 @@ function ListadoSolicitudesUniformes() {
   const [comprobanteTipo, setComprobanteTipo] = useState('imagen');
   const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
   const [filtroEstado, setFiltroEstado] = useState('todos');
-  const [filtroPrenda, setFiltroPrenda] = useState('todas');
-  const [filtroCategoria, setFiltroCategoria] = useState('todas');
+  const [filtroPrenda, setFiltroPrenda] = useState([]);
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
+  const [filtroSexo, setFiltroSexo] = useState('todos');
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(10);
   const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState(null);
@@ -238,6 +242,14 @@ function ListadoSolicitudesUniformes() {
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
   const esPedidoPendiente = (pedido) => String(pedido?.estado || '').toLowerCase() === 'pendiente';
+  const esAlumnoActivo = (alumno) => !(
+    alumno?.dado_de_baja
+    || alumno?.activo === false
+    || String(alumno?.estado || '').trim().toLowerCase() === 'baja'
+  );
+  const getTooltipEstadoAlumno = (alumno) => (esAlumnoActivo(alumno)
+    ? 'Alumno activo'
+    : `Motivo: ${alumno?.motivo_baja?.trim() || 'No especificado'}`);
 
   const opcionesPrenda = useMemo(() => {
     const prendasUnicas = new Map();
@@ -300,6 +312,28 @@ function ListadoSolicitudesUniformes() {
       .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
   }, [pedidos]);
 
+  const opcionesSexo = useMemo(() => {
+    const sexosUnicos = new Map();
+
+    pedidos.forEach((pedido) => {
+      const sexoRaw = String(pedido?.alumno?.sexo || '').trim();
+      if (!sexoRaw) return;
+      const value = sexoRaw.toLowerCase();
+      if (!sexosUnicos.has(value)) {
+        const label = value === 'masculino'
+          ? 'Masculino'
+          : value === 'femenino'
+            ? 'Femenino'
+            : sexoRaw;
+        sexosUnicos.set(value, label);
+      }
+    });
+
+    return Array.from(sexosUnicos.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+  }, [pedidos]);
+
   const pedidosFiltrados = pedidos.filter((pedido) => {
     const fechaPedido = pedido?.createdAt || pedido?.fecha_solicitud || pedido?.fechaSolicitud;
     const fechaPedidoDate = parseFechaSinDesfase(fechaPedido);
@@ -312,15 +346,21 @@ function ListadoSolicitudesUniformes() {
       ? true
       : String(pedido?.estado || '').toLowerCase() === filtroEstado;
 
-    const prendaOk = filtroPrenda === 'todas'
+    const prendaActual = String(pedido?.prenda || '').trim().toLowerCase();
+    const prendaOk = filtroPrenda.length === 0
       ? true
-      : String(pedido?.prenda || '').trim().toLowerCase() === filtroPrenda;
+      : filtroPrenda.includes(prendaActual);
 
-    const categoriaOk = filtroCategoria === 'todas'
+    const categoriaActual = String(pedido?.alumno?.categoria || '').trim().toLowerCase();
+    const categoriaOk = filtroCategoria.length === 0
       ? true
-      : String(pedido?.alumno?.categoria || '').trim().toLowerCase() === filtroCategoria;
+      : filtroCategoria.includes(categoriaActual);
 
-    return mesOk && estadoOk && prendaOk && categoriaOk;
+    const sexoOk = filtroSexo === 'todos'
+      ? true
+      : String(pedido?.alumno?.sexo || '').trim().toLowerCase() === filtroSexo;
+
+    return mesOk && estadoOk && prendaOk && categoriaOk && sexoOk;
   });
 
   const pagosHistorialOrdenados = Array.isArray(pedidoSeleccionado?.pagos_historial)
@@ -1150,20 +1190,47 @@ function ListadoSolicitudesUniformes() {
               select
               size="small"
               label="Prenda"
+              InputLabelProps={{ shrink: true }}
               value={filtroPrenda}
               onChange={(event) => {
-                setFiltroPrenda(event.target.value);
+                const value = event.target.value;
+                const nextValues = Array.isArray(value) ? value : String(value).split(',');
+
+                if (nextValues.includes(ALL_PRENDAS_VALUE)) {
+                  setFiltroPrenda([]);
+                  setPagina(0);
+                  return;
+                }
+
+                setFiltroPrenda(nextValues);
                 setPagina(0);
+              }}
+              SelectProps={{
+                multiple: true,
+                displayEmpty: true,
+                renderValue: (selected) => {
+                  const selectedValues = Array.isArray(selected) ? selected : [];
+                  if (selectedValues.length === 0) return 'Todas las prendas';
+                  if (selectedValues.length === 1) {
+                    const encontrada = opcionesPrenda.find((item) => item.value === selectedValues[0]);
+                    return encontrada?.label || selectedValues[0];
+                  }
+                  return `${selectedValues.length} prendas`;
+                }
               }}
               sx={{
                 minWidth: { xs: 150, md: 175 },
                 '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
               }}
             >
-              <MenuItem value="todas">Todas las prendas</MenuItem>
+              <MenuItem value={ALL_PRENDAS_VALUE}>
+                <Checkbox size="small" checked={filtroPrenda.length === 0} />
+                <Typography sx={{ fontSize: 13.5, color: '#475569', fontWeight: 600 }}>Todas las prendas</Typography>
+              </MenuItem>
               {opcionesPrenda.map((prenda) => (
                 <MenuItem key={prenda.value} value={prenda.value}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Checkbox size="small" checked={filtroPrenda.includes(prenda.value)} />
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.45 }}>
                     <Typography component="span" sx={{ fontSize: 13.5, color: '#475569', fontWeight: 600 }}>
                       {prenda.label}
                     </Typography>
@@ -1198,9 +1265,58 @@ function ListadoSolicitudesUniformes() {
               select
               size="small"
               label="Categoria"
+              InputLabelProps={{ shrink: true }}
               value={filtroCategoria}
               onChange={(event) => {
-                setFiltroCategoria(event.target.value);
+                const value = event.target.value;
+                const nextValues = Array.isArray(value) ? value : String(value).split(',');
+
+                if (nextValues.includes(ALL_CATEGORIAS_VALUE)) {
+                  setFiltroCategoria([]);
+                  setPagina(0);
+                  return;
+                }
+
+                setFiltroCategoria(nextValues);
+                setPagina(0);
+              }}
+              SelectProps={{
+                multiple: true,
+                displayEmpty: true,
+                renderValue: (selected) => {
+                  const selectedValues = Array.isArray(selected) ? selected : [];
+                  if (selectedValues.length === 0) return 'Todas las categorias';
+                  if (selectedValues.length === 1) {
+                    const encontrada = opcionesCategoria.find((item) => item.value === selectedValues[0]);
+                    return encontrada?.label || selectedValues[0];
+                  }
+                  return `${selectedValues.length} categorias`;
+                }
+              }}
+              sx={{
+                minWidth: { xs: 150, md: 175 },
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+              }}
+            >
+              <MenuItem value={ALL_CATEGORIAS_VALUE}>
+                <Checkbox size="small" checked={filtroCategoria.length === 0} />
+                <Typography sx={{ fontSize: 13.5, color: '#475569', fontWeight: 600 }}>Todas las categorias</Typography>
+              </MenuItem>
+              {opcionesCategoria.map((categoria) => (
+                <MenuItem key={categoria.value} value={categoria.value}>
+                  <Checkbox size="small" checked={filtroCategoria.includes(categoria.value)} />
+                  <Typography sx={{ fontSize: 13.5, color: '#475569', fontWeight: 600 }}>{categoria.label}</Typography>
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              size="small"
+              label="Sexo"
+              value={filtroSexo}
+              onChange={(event) => {
+                setFiltroSexo(event.target.value);
                 setPagina(0);
               }}
               sx={{
@@ -1208,9 +1324,9 @@ function ListadoSolicitudesUniformes() {
                 '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
               }}
             >
-              <MenuItem value="todas">Todas las categorias</MenuItem>
-              {opcionesCategoria.map((categoria) => (
-                <MenuItem key={categoria.value} value={categoria.value}>{categoria.label}</MenuItem>
+              <MenuItem value="todos">Todos</MenuItem>
+              {opcionesSexo.map((sexo) => (
+                <MenuItem key={sexo.value} value={sexo.value}>{sexo.label}</MenuItem>
               ))}
             </TextField>
           </Box>
@@ -1336,6 +1452,23 @@ function ListadoSolicitudesUniformes() {
                       checked={selectedPedidoIds.includes(String(pedido._id))}
                       onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
                     />
+                    {pedido.alumno ? (
+                      <Tooltip title={getTooltipEstadoAlumno(pedido.alumno)} arrow>
+                        <Box
+                          sx={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            bgcolor: esAlumnoActivo(pedido.alumno) ? '#16a34a' : '#dc2626',
+                            boxShadow: esAlumnoActivo(pedido.alumno)
+                              ? '0 0 0 3px rgba(22, 163, 74, 0.14)'
+                              : '0 0 0 3px rgba(220, 38, 38, 0.14)',
+                            flexShrink: 0,
+                            mr: 0.5
+                          }}
+                        />
+                      </Tooltip>
+                    ) : null}
                     <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
                       {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
                     </Typography>
@@ -1451,7 +1584,29 @@ function ListadoSolicitudesUniformes() {
                       onChange={() => handleTogglePedidoSeleccionado(pedido._id)}
                     />
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>{pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: '#1f2937' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                      {pedido.alumno ? (
+                        <Tooltip title={getTooltipEstadoAlumno(pedido.alumno)} arrow>
+                          <Box
+                            sx={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: '50%',
+                              bgcolor: esAlumnoActivo(pedido.alumno) ? '#16a34a' : '#dc2626',
+                              boxShadow: esAlumnoActivo(pedido.alumno)
+                                ? '0 0 0 3px rgba(22, 163, 74, 0.14)'
+                                : '0 0 0 3px rgba(220, 38, 38, 0.14)',
+                              flexShrink: 0
+                            }}
+                          />
+                        </Tooltip>
+                      ) : null}
+                      <Typography sx={{ fontWeight: 600, color: '#1f2937' }}>
+                        {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
+                      </Typography>
+                    </Box>
+                  </TableCell>
                   <TableCell sx={{ color: '#475569' }}>{pedido.sede?.nombre || '-'}</TableCell>
                   <TableCell sx={{ color: '#1f2937' }}>{pedido.prenda}</TableCell>
                   <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{pedido.talla}</TableCell>
