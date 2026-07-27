@@ -15,17 +15,9 @@ import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlin
 import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
+import { BANCOS_PAGO_MOVIL } from '../constants/pagos';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
-
-const BANCOS_PAGO_MOVIL = [
-  { codigo: '0102', nombre: 'BANCO DE VENEZUELA' },
-  { codigo: '0105', nombre: 'BANCO MERCANTIL' },
-  { codigo: '0108', nombre: 'BANCO PROVINCIAL' },
-  { codigo: '0134', nombre: 'BANESCO' },
-  { codigo: '0163', nombre: 'BANCO DEL TESORO' },
-  { codigo: '0172', nombre: 'BANCAMIGA' }
-];
 
 const EMPTY_CONFIG = {
   pagos: {

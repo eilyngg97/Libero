@@ -6,6 +6,277 @@
   max-width: 900px;
   margin: 0 auto;
 }
+.entrenadores-page {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 6px;
+}
+.entrenadores-toolbar-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.entrenadores-primary-btn {
+  border-radius: 999px !important;
+  background: #f43f5e !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+  box-shadow: 0 16px 30px rgba(244, 63, 94, 0.18) !important;
+}
+.entrenadores-primary-btn:hover {
+  background: #e11d48 !important;
+}
+.entrenadores-filters-shell {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid #e6ecf5;
+  border-radius: 26px;
+  padding: 14px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.06);
+}
+.entrenadores-filter-field .MuiOutlinedInput-root {
+  min-height: 46px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.entrenadores-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.entrenadores-count-copy {
+  font-size: 14px !important;
+  color: #64748b;
+  font-weight: 600 !important;
+}
+.entrenadores-meta-hint {
+  font-size: 12px !important;
+  color: #94a3b8;
+  font-weight: 700 !important;
+}
+.entrenadores-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.entrenadores-empty-state {
+  grid-column: 1 / -1;
+  border-radius: 24px !important;
+  border: 1px dashed #dbe4f0;
+  padding: 28px;
+  text-align: center;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+.entrenadores-empty-title {
+  font-size: 1rem !important;
+  font-weight: 900 !important;
+  color: #0f172a;
+}
+.entrenadores-empty-copy {
+  margin-top: 6px !important;
+  color: #64748b;
+  font-size: 0.92rem !important;
+}
+.entrenador-card {
+  border-radius: 24px !important;
+  border: 1px solid #eef2f7;
+  padding: 16px;
+  box-shadow: 0 18px 42px rgba(148, 163, 184, 0.08) !important;
+  display: grid;
+  gap: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.entrenador-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  opacity: 0.95;
+}
+.entrenador-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 46px rgba(15, 23, 42, 0.1) !important;
+  border-color: #e2e8f0;
+}
+.entrenador-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.entrenador-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.entrenador-card-name {
+  font-size: 1.1rem !important;
+  font-weight: 900 !important;
+  color: #0f172a;
+  line-height: 1.1 !important;
+}
+.entrenador-card-cedula {
+  margin-top: 4px !important;
+  color: #64748b;
+  font-size: 0.85rem !important;
+}
+.estado-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+.estado-activo.estado-pill {
+  background: #edfdf4;
+  color: #15803d;
+}
+.estado-inactivo.estado-pill {
+  background: #fef2f2;
+  color: #dc2626;
+}
+.entrenador-card-summary {
+  color: #334155;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+}
+.entrenador-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.entrenador-mini-tag {
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.entrenador-mini-tag.tone-0 {
+  background: #fff1f2;
+  color: #be185d;
+}
+.entrenador-mini-tag.tone-1 {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.entrenador-mini-tag.tone-2 {
+  background: #ecfeff;
+  color: #0f766e;
+}
+.entrenador-mini-tag.tone-3 {
+  background: #fff7ed;
+  color: #c2410c;
+}
+.entrenador-mini-tag.muted {
+  background: #f1f5f9;
+}
+.entrenador-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 13px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border: 1px solid #eef2f7;
+}
+.entrenador-stat-item {
+  text-align: center;
+}
+.entrenador-stat-value {
+  color: #0f766e;
+  font-size: 1.7rem !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+.entrenador-stat-value.purple {
+  color: #7c3aed;
+}
+.entrenador-stat-value.green {
+  color: #15803d;
+}
+.entrenador-stat-label {
+  margin-top: 4px !important;
+  color: #64748b;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  text-transform: uppercase;
+}
+.entrenador-card-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.entrenador-card-footer-row.between {
+  border-top: 1px solid #eef2f7;
+  padding-top: 10px;
+  align-items: flex-start;
+}
+.entrenador-footer-pill,
+.entrenador-footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+.entrenador-footer-pill.contract {
+  background: #fff7ed;
+  color: #b45309;
+}
+.entrenador-footer-pill.payment {
+  max-width: 100%;
+  background: #ecfdf5;
+  color: #15803d;
+}
+.entrenador-footer-pill.phone {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.entrenador-footer-link {
+  max-width: 100%;
+  background: #f8fafc;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.entrenador-footer-link.wide {
+  background: #f8fafc;
+}
+.entrenador-footer-link.subtle {
+  background: #ffffff;
+  color: #94a3b8;
+  padding-left: 0;
+  padding-right: 0;
+}
+.entrenador-footer-stack {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.entrenadores-pagination-shell {
+  border-radius: 20px !important;
+  border: 1px solid #eef2f7;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05) !important;
+  overflow: hidden;
+}
 .filtros-entrenadores {
   display: flex;
   gap: 16px;
@@ -62,20 +333,22 @@
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(30,41,59,0.4);
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 24px;
 }
 .modal-content {
   background: #fff;
-  border-radius: 12px;
-  padding: 32px 24px 24px 24px;
-  box-shadow: 0 4px 24px rgba(30,41,59,0.18);
+  border-radius: 28px;
+  padding: 0;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
   min-width: 400px;
-  max-width: 900px;
-  width: 90vw;
+  max-width: 980px;
+  width: min(92vw, 980px);
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
@@ -83,11 +356,32 @@
   flex-direction: column;
 }
 @media (max-width: 700px) {
+  .entrenadores-toolbar-header {
+    align-items: stretch;
+  }
+  .entrenadores-meta-row {
+    align-items: flex-start;
+  }
+  .entrenadores-primary-btn {
+    width: 100%;
+  }
+  .entrenador-card {
+    border-radius: 20px !important;
+  }
+  .entrenador-card-stats {
+    padding: 10px;
+  }
+  .entrenador-stat-value {
+    font-size: 1.35rem !important;
+  }
+  .entrenador-card-footer-row {
+    gap: 8px;
+  }
   .modal-content {
     min-width: 0;
-    width: 98vw;
-    max-width: 98vw;
-    padding: 12px 4px 12px 4px;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 24px;
   }
 }
 .cerrar-modal-btn {
@@ -120,14 +414,23 @@
 }
 .cerrar-modal-x {
   position: absolute;
-  top: 12px;
-  right: 18px;
-  font-size: 2rem;
+  top: 16px;
+  right: 20px;
+  font-size: 1.9rem;
   color: #64748b;
   cursor: pointer;
   z-index: 10;
-  transition: color 0.2s;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  transition: color 0.2s, transform 0.2s;
 }
 .cerrar-modal-x:hover {
   color: #475569;
+  transform: scale(1.04);
 }

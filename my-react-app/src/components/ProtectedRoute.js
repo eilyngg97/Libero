@@ -4,7 +4,7 @@ import { getStoredPermissions, hasAllPermissions, hasAnyPermission } from '../ut
 
 function ProtectedRoute({ children, allowedRoles, requiredPermissions = [], requireAllPermissions = true }) {
   const token = localStorage.getItem('token');
-  const rol = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+  const rol = String(localStorage.getItem('rolActivo') || localStorage.getItem('rol') || '').trim().toLowerCase();
 
   if (!token) {
     return <Navigate to="/login" replace />;

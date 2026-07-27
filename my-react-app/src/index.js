@@ -112,6 +112,7 @@ function clearAuthStorage() {
   localStorage.removeItem('token');
   localStorage.removeItem('usuario');
   localStorage.removeItem('rol');
+  localStorage.removeItem('rolActivo');
   localStorage.removeItem('tenantId');
   localStorage.removeItem('sedeSeleccionada');
 }

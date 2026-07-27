@@ -40,7 +40,7 @@ import Recaudos from './components/Recaudos';
 import TerminosCondiciones from './components/TerminosCondiciones';
 import UsuariosAccesos from './components/UsuariosAccesos';
 import CumpleanosPostGenerator from './components/CumpleanosPostGenerator';
-
+import SeleccionarPerfil from './components/SeleccionarPerfil';
 import { SedeProvider, useSede } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
 import './App.css';
@@ -58,7 +58,7 @@ function BackNavigationButton() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const rutasSinBotonVolver = ['/dashboard', '/dashboard-usuario', '/panelOpciones'];
+  const rutasSinBotonVolver = ['/dashboard', '/dashboard-usuario', '/panelOpciones', '/entrenadores'];
   const mostrarBotonVolver = !rutasSinBotonVolver.includes(location.pathname);
 
   if (!mostrarBotonVolver) return null;
@@ -330,6 +330,7 @@ function App() {
             <TenantHostGate>
               <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/seleccionar-perfil" element={<ProtectedRoute><SeleccionarPerfil /></ProtectedRoute>} />
               <Route path="/" element={<LandingEntryRoute />} />
               <Route path="/*" element={
                 <ProtectedRoute>

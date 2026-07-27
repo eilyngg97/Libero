@@ -487,6 +487,78 @@
   padding: 14px 14px 16px;
 }
 
+.actividades-panel {
+  border: 1px solid #e8edf4;
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, #ffffff 0%, #ffffff 100%);
+  padding: 14px 14px 16px;
+}
+
+.actividades-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.actividad-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: #f8fafc;
+}
+
+.actividad-item.is-clickable {
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.actividad-item.is-clickable:hover {
+  transform: translateY(-1px);
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+}
+
+.actividad-item.is-clickable:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
+
+.actividad-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.actividad-main strong {
+  font-size: 0.88rem;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.actividad-main span {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.actividad-meta span {
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  padding: 4px 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
 .revision-total-badge {
   display: inline-flex;
   background: #fff2e5;

@@ -1,29 +1,86 @@
-import React, { useState, useEffect } from 'react';
-import { Avatar, Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, MenuItem } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
-import useMediaQuery from '@mui/material/useMediaQuery';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import VisibilityIcon from '@mui/icons-material/Visibility';
+import React, { useMemo, useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { Avatar, Box, Button, Paper, Typography, TablePagination, TextField, MenuItem, InputAdornment } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
+import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded';
 import EntrenadorForm from './EntrenadorForm';
+import EntrenadorDetalleView from './EntrenadorDetalleView';
 import { mediaUrl } from '../utils/mediaUrl';
 import './EntrenadoresList.css';
 
+const avatarPalettes = [
+  { bg: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)', color: '#ffffff' },
+  { bg: 'linear-gradient(135deg, #14b8a6 0%, #0f766e 100%)', color: '#ffffff' },
+  { bg: 'linear-gradient(135deg, #fb923c 0%, #f97316 100%)', color: '#ffffff' },
+  { bg: 'linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)', color: '#ffffff' },
+  { bg: 'linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)', color: '#ffffff' }
+];
+
+function formatContractLabel(value) {
+  if (!value) return 'Sin contrato';
+  return value.replaceAll('_', ' ');
+}
+
+function getAvatarPalette(seed) {
+  const normalized = String(seed || 'entrenador');
+  const hash = normalized.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return avatarPalettes[hash % avatarPalettes.length];
+}
+
+function getEdad(fechaNacimiento) {
+  if (!fechaNacimiento) return '--';
+  const fecha = new Date(fechaNacimiento);
+  if (Number.isNaN(fecha.getTime())) return '--';
+
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - fecha.getFullYear();
+  const yaCumplioEsteAnio =
+    hoy.getMonth() > fecha.getMonth()
+    || (hoy.getMonth() === fecha.getMonth() && hoy.getDate() >= fecha.getDate());
+
+  if (!yaCumplioEsteAnio) edad -= 1;
+  return edad >= 0 ? edad : '--';
+}
+
 function EntrenadoresList() {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const location = useLocation();
   const [entrenadores, setEntrenadores] = useState([]);
+  const [sedes, setSedes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [estadoFiltro, setEstadoFiltro] = useState('todos');
+  const [sedeFiltro, setSedeFiltro] = useState('todas');
+  const [contratoFiltro, setContratoFiltro] = useState('todos');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [showModal, setShowModal] = useState(false);
   const [reload, setReload] = useState(false);
+  const [entrenadorDetalleId, setEntrenadorDetalleId] = useState('');
+  const [entrenadorDetalleTab, setEntrenadorDetalleTab] = useState('resumen');
+  const [entrenadorPagoPrefill, setEntrenadorPagoPrefill] = useState(null);
+
+  useEffect(() => {
+    const targetId = String(location.state?.entrenadorId || '').trim();
+    const targetTab = String(location.state?.activeTab || '').trim();
+
+    if (!targetId) return;
+
+    setEntrenadorDetalleId(targetId);
+    setEntrenadorDetalleTab(targetTab || 'resumen');
+    setEntrenadorPagoPrefill(
+      location.state?.pagoPrefill && typeof location.state.pagoPrefill === 'object'
+        ? location.state.pagoPrefill
+        : null
+    );
+  }, [location.state]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/api/entrenadores`, {
+    const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
+
+    fetch(`${apiBase}/api/entrenadores`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -37,7 +94,26 @@ function EntrenadoresList() {
         }
       })
       .catch(() => setEntrenadores([]));
+
+    fetch(`${apiBase}/api/sedes`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSedes(data);
+        } else {
+          setSedes([]);
+        }
+      })
+      .catch(() => setSedes([]));
   }, [reload]);
+
+  const sedesById = useMemo(() => {
+    return new Map(sedes.map((sede) => [String(sede._id || sede.id), sede]));
+  }, [sedes]);
 
   const entrenadoresFiltrados = Array.isArray(entrenadores)
     ? entrenadores.filter(e => {
@@ -45,14 +121,45 @@ function EntrenadoresList() {
         const cedula = String(e.cedula || '').toLowerCase();
         const coincideBusqueda = nombreCompleto.includes(busqueda.toLowerCase()) || cedula.includes(busqueda.toLowerCase());
         const coincideEstado = estadoFiltro === 'todos' || e.estado === estadoFiltro;
-        return coincideBusqueda && coincideEstado;
+        const sedesStaff = Array.isArray(e.sedes_staff) ? e.sedes_staff.map((id) => String(id)) : [];
+        const coincideSede = sedeFiltro === 'todas' || sedesStaff.includes(sedeFiltro);
+        const coincideContrato = contratoFiltro === 'todos' || (e.tipo_contrato || '') === contratoFiltro;
+        return coincideBusqueda && coincideEstado && coincideSede && coincideContrato;
       })
     : [];
 
   const entrenadoresPagina = entrenadoresFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const entrenadorDetalle = useMemo(() => {
+    if (!entrenadorDetalleId) return null;
+    return entrenadores.find((item) => String(item._id || item.id) === entrenadorDetalleId) || null;
+  }, [entrenadorDetalleId, entrenadores]);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
+  };
+
+
+  const getTrainerPhoto = (entrenador) => {
+    const normalizedFoto = mediaUrl(entrenador.foto);
+    if (normalizedFoto && normalizedFoto.startsWith('/uploads/') && process.env.REACT_APP_API_URL) {
+      return `${process.env.REACT_APP_API_URL}${normalizedFoto}`;
+    }
+    return normalizedFoto || '';
+  };
+
+  const getTrainerSedes = (entrenador) => {
+    const ids = Array.isArray(entrenador.sedes_staff) ? entrenador.sedes_staff : [];
+    return ids
+      .map((id) => sedesById.get(String(id))?.nombre)
+      .filter(Boolean);
+  };
+
+  const getPaymentMethods = (entrenador) => {
+    const methods = entrenador?.pago_config?.metodos;
+    if (Array.isArray(methods) && methods.length) {
+      return methods.map((method) => method === 'pago_movil' ? 'Pago movil' : 'Transferencia');
+    }
+    return [];
   };
 
   const handleChangeRowsPerPage = (event) => {
@@ -60,46 +167,184 @@ function EntrenadoresList() {
     setPage(0);
   };
 
+  const filterLabelSx = {
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#94a3b8',
+    letterSpacing: '0.06em',
+    mb: 0.5,
+    textTransform: 'uppercase'
+  };
+
+  const filterFieldSx = {
+    width: '100%',
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      backgroundColor: '#fff'
+    },
+    '& .MuiInputBase-input, & .MuiSelect-select': {
+      py: 0.8,
+      fontSize: 13
+    }
+  };
+
+  const handleEntrenadorUpdated = (updatedEntrenador) => {
+    const updatedId = String(updatedEntrenador?._id || updatedEntrenador?.id || '');
+    if (!updatedId) return;
+    setEntrenadores((prev) => prev.map((item) => {
+      const currentId = String(item._id || item.id || '');
+      return currentId === updatedId ? { ...item, ...updatedEntrenador } : item;
+    }));
+  };
+
+  const handleEntrenadorDeleted = (deletedId) => {
+    const targetId = String(deletedId || '');
+    if (!targetId) return;
+    setEntrenadores((prev) => prev.filter((item) => String(item._id || item.id || '') !== targetId));
+    setEntrenadorDetalleId('');
+    setEntrenadorDetalleTab('resumen');
+    setEntrenadorPagoPrefill(null);
+  };
+
+  if (entrenadorDetalle) {
+    const photo = getTrainerPhoto(entrenadorDetalle);
+    const palette = getAvatarPalette(`${entrenadorDetalle.nombre}${entrenadorDetalle.apellido}`);
+    const trainerSedes = getTrainerSedes(entrenadorDetalle);
+    const contractLabel = formatContractLabel(entrenadorDetalle.tipo_contrato);
+    const paymentMethods = getPaymentMethods(entrenadorDetalle);
+
+    return (
+      <EntrenadorDetalleView
+        entrenador={entrenadorDetalle}
+        photo={photo}
+        palette={palette}
+        trainerSedes={trainerSedes}
+        paymentMethods={paymentMethods}
+        contractLabel={contractLabel}
+        initialActiveTab={entrenadorDetalleTab}
+        initialPagoPrefill={entrenadorPagoPrefill}
+        onUpdated={handleEntrenadorUpdated}
+        onDeleted={handleEntrenadorDeleted}
+        onBack={() => {
+          setEntrenadorDetalleId('');
+          setEntrenadorDetalleTab('resumen');
+          setEntrenadorPagoPrefill(null);
+        }}
+      />
+    );
+  }
+
   return (
-    <div>
-      <Typography variant="h5" sx={{ mb: 2, fontWeight: 800 }}>Entrenadores</Typography>
+    <div className="entrenadores-page">
+      <Box className="entrenadores-toolbar-header">
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a' }}>Entrenadores</Typography>
+          <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: 14 }}>
+            Gestiona el staff tecnico de tu academia.
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          className="entrenadores-primary-btn"
+          startIcon={<AddIcon />}
+          onClick={() => setShowModal(true)}
+        >
+          Nuevo entrenador
+        </Button>
+      </Box>
+
       <Box
+        className="entrenadores-filters-shell"
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-          gap: 1.25,
-          mb: 2,
-          width: '100%',
-          maxWidth: 640
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(260px, 1.5fr) repeat(3, minmax(170px, 1fr))' },
+          gap: 1.5,
+          mb: 2.25,
+          bgcolor: '#fff',
+          border: '1px solid #eef0f3',
+          borderRadius: 3,
+          p: 2,
+          boxShadow: 'none'
         }}
       >
-        <TextField
-          label="Buscar por nombre o cédula"
-          size="small"
-          value={busqueda}
-          onChange={(event) => setBusqueda(event.target.value)}
-        />
-        <TextField
-          select
-          label="Estado"
-          size="small"
-          value={estadoFiltro}
-          onChange={(event) => setEstadoFiltro(event.target.value)}
-        >
-          <MenuItem value="todos">Todos</MenuItem>
-          <MenuItem value="activo">Activo</MenuItem>
-          <MenuItem value="inactivo">Inactivo</MenuItem>
-        </TextField>
+        <Box>
+          <Typography sx={filterLabelSx}>Entrenador</Typography>
+          <TextField
+            className="entrenadores-filter-field"
+            placeholder="Nombre o cédula"
+            size="small"
+            value={busqueda}
+            onChange={(event) => setBusqueda(event.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchRoundedIcon fontSize="small" />
+                </InputAdornment>
+              )
+            }}
+            sx={filterFieldSx}
+          />
+        </Box>
+        <Box>
+          <Typography sx={filterLabelSx}>Estado</Typography>
+          <TextField
+            className="entrenadores-filter-field"
+            select
+            size="small"
+            value={estadoFiltro}
+            onChange={(event) => setEstadoFiltro(event.target.value)}
+            sx={filterFieldSx}
+          >
+            <MenuItem value="todos">Todos</MenuItem>
+            <MenuItem value="activo">Activo</MenuItem>
+            <MenuItem value="inactivo">Inactivo</MenuItem>
+          </TextField>
+        </Box>
+        <Box>
+          <Typography sx={filterLabelSx}>Sede</Typography>
+          <TextField
+            className="entrenadores-filter-field"
+            select
+            size="small"
+            value={sedeFiltro}
+            onChange={(event) => setSedeFiltro(event.target.value)}
+            sx={filterFieldSx}
+          >
+            <MenuItem value="todas">Todas las sedes</MenuItem>
+            {sedes.map((sede) => (
+              <MenuItem key={sede._id || sede.id} value={String(sede._id || sede.id)}>
+                {sede.nombre}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Box>
+        <Box>
+          <Typography sx={filterLabelSx}>Contrato</Typography>
+          <TextField
+            className="entrenadores-filter-field"
+            select
+            size="small"
+            value={contratoFiltro}
+            onChange={(event) => setContratoFiltro(event.target.value)}
+            sx={filterFieldSx}
+          >
+            <MenuItem value="todos">Todos</MenuItem>
+            <MenuItem value="fijo">Fijo</MenuItem>
+            <MenuItem value="por_horas">Por horas</MenuItem>
+            <MenuItem value="honorarios_profesionales">Honorarios</MenuItem>
+          </TextField>
+        </Box>
       </Box>
-      <Button
-        variant="contained"
-        color="secondary"
-        sx={{ mb: 2, borderRadius: 999 }}
-        startIcon={<AddIcon />}
-        onClick={() => setShowModal(true)}
-      >
-        Nuevo Entrenador
-      </Button>
+
+      <Box className="entrenadores-meta-row">
+        <Typography className="entrenadores-count-copy">
+          Mostrando {entrenadoresPagina.length} de {entrenadoresFiltrados.length} entrenadores
+        </Typography>
+        <Typography className="entrenadores-meta-hint">
+          Vista resumida del staff tecnico por tarjeta.
+        </Typography>
+      </Box>
+
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -114,142 +359,133 @@ function EntrenadoresList() {
           </div>
         </div>
       )}
-      {isMobile ? (
-        <Box sx={{ display: 'grid', gap: 1.25 }}>
-          {entrenadoresPagina.map((e) => (
-            <Paper key={e._id || e.id} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #eef0f3' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+
+      <Box className="entrenadores-grid">
+        {!entrenadoresPagina.length && (
+          <Paper className="entrenadores-empty-state">
+            <Typography className="entrenadores-empty-title">No hay entrenadores para esos filtros</Typography>
+            <Typography className="entrenadores-empty-copy">
+              Ajusta la busqueda o limpia algun filtro para volver a ver resultados.
+            </Typography>
+          </Paper>
+        )}
+
+        {entrenadoresPagina.map((entrenador) => {
+          const photo = getTrainerPhoto(entrenador);
+          const palette = getAvatarPalette(`${entrenador.nombre}${entrenador.apellido}`);
+          const trainerSedes = getTrainerSedes(entrenador);
+          const paymentMethods = getPaymentMethods(entrenador);
+          const edad = getEdad(entrenador.fecha_nacimiento);
+          const paymentSummary = paymentMethods.length ? paymentMethods.join(' · ') : 'Sin metodo de pago';
+
+          return (
+            <Paper
+              key={entrenador._id || entrenador.id}
+              className="entrenador-card"
+              onClick={() => {
+                setEntrenadorDetalleId(String(entrenador._id || entrenador.id));
+                setEntrenadorDetalleTab('resumen');
+                setEntrenadorPagoPrefill(null);
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setEntrenadorDetalleId(String(entrenador._id || entrenador.id));
+                  setEntrenadorDetalleTab('resumen');
+                  setEntrenadorPagoPrefill(null);
+                }
+              }}
+              sx={{ cursor: 'pointer' }}
+            >
+              <Box className="entrenador-card-top">
+                <Box className="entrenador-card-identity">
                   <Avatar
-                    src={(() => {
-                      const normalizedFoto = mediaUrl(e.foto);
-                      if (normalizedFoto && normalizedFoto.startsWith('/uploads/') && process.env.REACT_APP_API_URL) {
-                        return `${process.env.REACT_APP_API_URL}${normalizedFoto}`;
-                      }
-                      return normalizedFoto || '';
-                    })()}
-                    alt={`${e.nombre || ''} ${e.apellido || ''}`.trim()}
-                    sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}
+                    src={photo}
+                    alt={`${entrenador.nombre || ''} ${entrenador.apellido || ''}`.trim()}
+                    sx={{
+                      width: 56,
+                      height: 56,
+                      background: palette.bg,
+                      color: palette.color,
+                      fontSize: 22,
+                      fontWeight: 800,
+                      boxShadow: '0 12px 28px rgba(15, 23, 42, 0.14)'
+                    }}
                   >
-                    {`${e.nombre?.[0] || ''}${e.apellido?.[0] || ''}`.toUpperCase()}
+                    {`${entrenador.nombre?.[0] || ''}${entrenador.apellido?.[0] || ''}`.toUpperCase()}
                   </Avatar>
-                  <Typography sx={{ fontWeight: 700, color: '#1f2937' }} noWrap>
-                    {e.nombre} {e.apellido}
-                  </Typography>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography className="entrenador-card-name">
+                      {entrenador.nombre} {entrenador.apellido}
+                    </Typography>
+                    <Typography className="entrenador-card-cedula">
+                      V-{entrenador.cedula || 'Sin cedula'}
+                    </Typography>
+                  </Box>
                 </Box>
-                <span className={`estado-${e.estado}`}>{e.estado}</span>
+                <span className={`estado-pill estado-${entrenador.estado}`}>{entrenador.estado || 'sin estado'}</span>
               </Box>
 
-              <Box sx={{ display: 'grid', gap: 0.4, mb: 0.8 }}>
-                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Cédula:</b> {e.cedula || '-'}</Typography>
-                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Especialidad:</b> {e.especialidad || '-'}</Typography>
-                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Teléfono:</b> {e.telefono || '-'}</Typography>
-                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Tipo contrato:</b> {e.tipo_contrato ? e.tipo_contrato.replaceAll('_', ' ') : '-'}</Typography>
+              <Typography className="entrenador-card-summary">
+                Voleibol {entrenador.especialidad ? `— ${entrenador.especialidad}` : '— Staff tecnico'}
+              </Typography>
+              <Box className="entrenador-card-stats">
+                <Box className="entrenador-stat-item">
+                  <Typography className="entrenador-stat-value">{trainerSedes.length || 0}</Typography>
+                  <Typography className="entrenador-stat-label">Sedes</Typography>
+                </Box>
+                <Box className="entrenador-stat-item">
+                  <Typography className="entrenador-stat-value purple">{entrenador.certificaciones?.length || 0}</Typography>
+                  <Typography className="entrenador-stat-label">Certifs.</Typography>
+                </Box>
+                <Box className="entrenador-stat-item">
+                  <Typography className="entrenador-stat-value green">{edad}</Typography>
+                  <Typography className="entrenador-stat-label">Edad</Typography>
+                </Box>
               </Box>
 
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                <IconButton aria-label="ver" size="small" sx={{ color: '#757575' }}>
-                  <VisibilityIcon />
-                </IconButton>
-                <IconButton aria-label="editar" size="small" sx={{ color: '#757575' }}>
-                  <EditIcon />
-                </IconButton>
-                <IconButton aria-label="eliminar" size="small" sx={{ color: '#757575' }}>
-                  <DeleteIcon />
-                </IconButton>
+              <Box className="entrenador-card-footer-row">
+                <span className="entrenador-footer-pill payment">
+                  <PhoneOutlinedIcon sx={{ fontSize: 14 }} />
+                  {paymentSummary}
+                </span>
+                <span className="entrenador-footer-pill contract">
+                  <WorkOutlineRoundedIcon sx={{ fontSize: 14 }} />
+                  {formatContractLabel(entrenador.tipo_contrato)}
+                </span>
+              </Box>
+
+              <Box className="entrenador-card-footer-row between">
+                <Box className="entrenador-footer-stack">
+                  <span className="entrenador-footer-link wide">
+                    <BusinessOutlinedIcon sx={{ fontSize: 14 }} />
+                    {trainerSedes.length ? trainerSedes.join(', ') : 'Sin sede asignada'}
+                  </span>
+                  <span className="entrenador-footer-link subtle">
+                    <PhoneOutlinedIcon sx={{ fontSize: 14 }} />
+                    {entrenador.telefono || 'Sin telefono'}
+                  </span>
+                </Box>
               </Box>
             </Paper>
-          ))}
+          );
+        })}
+      </Box>
 
-          <Paper sx={{ borderRadius: 2.5, border: '1px solid #eef0f3' }}>
-            <TablePagination
-              component="div"
-              count={entrenadoresFiltrados.length}
-              page={page}
-              onPageChange={handleChangePage}
-              rowsPerPage={rowsPerPage}
-              onRowsPerPageChange={handleChangeRowsPerPage}
-              rowsPerPageOptions={[5, 10, 25]}
-              labelRowsPerPage="Filas por página:"
-            />
-          </Paper>
-        </Box>
-      ) : (
-        <TableContainer
-          component={Paper}
-          sx={{
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            maxWidth: '100%'
-          }}
-        >
-          <Table sx={{ minWidth: 760 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Nombre</TableCell>
-                <TableCell>Cédula</TableCell>
-                <TableCell>Estado</TableCell>
-                <TableCell>Especialidad</TableCell>
-                <TableCell>Teléfono</TableCell>
-                <TableCell>Tipo contrato</TableCell>
-                <TableCell>Acciones</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {entrenadoresPagina.map(e => (
-                <TableRow key={e._id || e.id}>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Avatar
-                        src={(() => {
-                          const normalizedFoto = mediaUrl(e.foto);
-                          if (normalizedFoto && normalizedFoto.startsWith('/uploads/') && process.env.REACT_APP_API_URL) {
-                            return `${process.env.REACT_APP_API_URL}${normalizedFoto}`;
-                          }
-                          return normalizedFoto || '';
-                        })()}
-                        alt={`${e.nombre || ''} ${e.apellido || ''}`.trim()}
-                        sx={{ width: 30, height: 30, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 12, fontWeight: 700 }}
-                      >
-                        {`${e.nombre?.[0] || ''}${e.apellido?.[0] || ''}`.toUpperCase()}
-                      </Avatar>
-                      <Typography sx={{ fontWeight: 600, color: '#1f2937' }}>
-                        {e.nombre} {e.apellido}
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell>{e.cedula || '-'}</TableCell>
-                  <TableCell><span className={`estado-${e.estado}`}>{e.estado}</span></TableCell>
-                  <TableCell>{e.especialidad || '-'}</TableCell>
-                  <TableCell>{e.telefono}</TableCell>
-                  <TableCell>{e.tipo_contrato ? e.tipo_contrato.replaceAll('_', ' ') : '-'}</TableCell>
-                  <TableCell>
-                    <IconButton aria-label="ver" size="small" sx={{ color: '#757575', mr: 1 }}>
-                      <VisibilityIcon />
-                    </IconButton>
-                    <IconButton aria-label="editar" size="small" sx={{ color: '#757575', mr: 1 }}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton aria-label="eliminar" size="small" sx={{ color: '#757575' }}>
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <TablePagination
-            component="div"
-            count={entrenadoresFiltrados.length}
-            page={page}
-            onPageChange={handleChangePage}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            rowsPerPageOptions={[5, 10, 25]}
-            labelRowsPerPage="Filas por página:"
-          />
-        </TableContainer>
-      )}
+      <Paper className="entrenadores-pagination-shell">
+        <TablePagination
+          component="div"
+          count={entrenadoresFiltrados.length}
+          page={page}
+          onPageChange={handleChangePage}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+          rowsPerPageOptions={[4, 8, 12]}
+          labelRowsPerPage="Filas por pagina:"
+        />
+      </Paper>
     </div>
   );
 }

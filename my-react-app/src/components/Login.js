@@ -121,7 +121,13 @@ function Login({ onLogin }) {
       localStorage.setItem('usuario', JSON.stringify(data.user));
       localStorage.setItem('rol', data.user.rol);
       window.dispatchEvent(new Event('auth-changed'));
+      localStorage.setItem('rolActivo', data.user.rolActivo || data.user.rol);
       if (onLogin) onLogin(data);
+
+      if (data?.requiereSeleccionRol && Array.isArray(data?.user?.roles) && data.user.roles.length > 1) {
+        navigate('/seleccionar-perfil', { replace: true });
+        return;
+      }
 
       if (redirectAfterLogin) {
         navigate(redirectAfterLogin, { replace: true });

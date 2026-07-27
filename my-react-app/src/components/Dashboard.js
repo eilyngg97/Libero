@@ -31,11 +31,13 @@ function Dashboard() {
   const [ingresosMensualidadesMes, setIngresosMensualidadesMes] = useState(0);
   const [ingresosInscripcionesMes, setIngresosInscripcionesMes] = useState(0);
   const [revisionPorSede, setRevisionPorSede] = useState({ mes: null, anio: null, sedes: [] });
+  const [actividadesPendientesNomina, setActividadesPendientesNomina] = useState([]);
   const [resumenLoading, setResumenLoading] = useState(false);
   const [dolaresLoading, setDolaresLoading] = useState(false);
   const [uniformesLoading, setUniformesLoading] = useState(false);
   const [ingresosMesLoading, setIngresosMesLoading] = useState(false);
   const [revisionLoading, setRevisionLoading] = useState(false);
+  const [actividadesLoading, setActividadesLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [nuevosAlumnosMes, setNuevosAlumnosMes] = useState(0);
   const [resumenAlumnos, setResumenAlumnos] = useState({ total: 0, activos: 0, bajas: 0, becados: 0 });
@@ -356,6 +358,27 @@ function Dashboard() {
   }, [apiBase, mesGraficaSeleccionado]);
 
   useEffect(() => {
+    const fetchActividadesPendientesNomina = async () => {
+      setActividadesLoading(true);
+      try {
+        const res = await fetchConSesion(`${apiBase}/api/entrenadores/actividades-pendientes-nomina`);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data?.actividades)) {
+          setActividadesPendientesNomina(data.actividades);
+        } else {
+          setActividadesPendientesNomina([]);
+        }
+      } catch {
+        setActividadesPendientesNomina([]);
+      } finally {
+        setActividadesLoading(false);
+      }
+    };
+
+    fetchActividadesPendientesNomina();
+  }, [apiBase]);
+
+  useEffect(() => {
     const fetchRevisionPorSede = async () => {
       setRevisionLoading(true);
       try {
@@ -456,6 +479,33 @@ function Dashboard() {
     return parsed.getMonth() + 1 === Number(mes) && parsed.getFullYear() === Number(anio);
   };
 
+  const parseFechaSimple = (value) => {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const parsed = new Date(year, month, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const formatFechaAviso = (value) => {
+    const parsed = parseFechaSimple(value);
+    if (!parsed) return '';
+    const dia = String(parsed.getDate()).padStart(2, '0');
+    const mes = String(parsed.getMonth() + 1).padStart(2, '0');
+    return `${dia}/${mes}`;
+  };
+
+  const isAtrasada = (value) => {
+    const fechaAviso = parseFechaSimple(value);
+    if (!fechaAviso) return false;
+    const hoy = new Date();
+    const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    return hoySinHora > fechaAviso;
+  };
+
   const handleExportExcel = async () => {
     setExportLoading(true);
     try {
@@ -547,6 +597,53 @@ function Dashboard() {
     setSedeSeleccionada(sedeSeleccion);
     navigate('/mensualidades');
   };
+
+  const resolvePeriodoSugeridoActividad = (actividad) => {
+    const frecuencia = String(actividad?.frecuencia_pago || '').trim().toLowerCase();
+    const periodoClave = String(actividad?.periodo_clave || '').trim().toLowerCase();
+
+    if (frecuencia === 'mensual') {
+      return 'Mes completo';
+    }
+
+    if (frecuencia === 'quincenal') {
+      if (periodoClave.endsWith('-q2')) return '2da quincena';
+      return '1ra quincena';
+    }
+
+    if (frecuencia === 'semanal') {
+      const fechaAviso = parseFechaSimple(actividad?.fecha_aviso);
+      if (!fechaAviso) return '';
+      const semanaMes = Math.min(4, Math.max(1, Math.ceil(fechaAviso.getDate() / 7)));
+      return `Semana ${semanaMes}`;
+    }
+
+    return '';
+  };
+
+  const handleActividadPendienteClick = (actividad) => {
+    const entrenadorId = String(
+      actividad?.entrenadorId
+      || actividad?.entrenador_id
+      || actividad?.entrenador?._id
+      || actividad?.entrenador?.id
+      || ''
+    ).trim();
+
+    if (!entrenadorId) return;
+
+    navigate('/entrenadores', {
+      state: {
+        entrenadorId,
+        activeTab: 'pagos',
+        pagoPrefill: {
+          periodo: resolvePeriodoSugeridoActividad(actividad),
+          periodoClave: String(actividad?.periodo_clave || '').trim()
+        }
+      }
+    });
+  };
+
   const getProgressStatus = (progress) => {
     if (progress >= 80) return 'Excelente';
     if (progress >= 50) return 'Estable';
@@ -896,6 +993,65 @@ function Dashboard() {
           </div>
         </div>
         <div className="dashboard-right">
+          <div className="dashboard-card actividades-panel">
+            <div className="pagos-sede-header">
+              <h3>Actividades pendientes</h3>
+            </div>
+
+            {actividadesLoading ? (
+              <div className="pagos-sede-empty">Cargando actividades...</div>
+            ) : actividadesPendientesNomina.length === 0 ? (
+              <div className="pagos-sede-empty">Sin actividades pendientes para hoy</div>
+            ) : (
+              <div className="actividades-list">
+                {actividadesPendientesNomina.map((actividad, idx) => (
+                  (() => {
+                    const entrenadorId = String(
+                      actividad?.entrenadorId
+                      || actividad?.entrenador_id
+                      || actividad?.entrenador?._id
+                      || actividad?.entrenador?.id
+                      || ''
+                    ).trim();
+                    const esClickable = Boolean(entrenadorId);
+
+                    return (
+                  <div
+                    key={`${actividad.entrenadorId || 'entrenador'}-${actividad.periodo_clave || idx}`}
+                    className={`actividad-item${esClickable ? ' is-clickable' : ''}`}
+                    onClick={() => {
+                      if (esClickable) handleActividadPendienteClick(actividad);
+                    }}
+                    role={esClickable ? 'button' : undefined}
+                    tabIndex={esClickable ? 0 : undefined}
+                    onKeyDown={(event) => {
+                      if (!esClickable) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleActividadPendienteClick(actividad);
+                      }
+                    }}
+                  >
+                    <div className="actividad-main">
+                      <strong>{actividad.entrenadorNombre || 'Entrenador'}</strong>
+                      <span>{actividad.actividad || 'Pago de nomina'}</span>
+                      {!!actividad?.fecha_aviso && isAtrasada(actividad.fecha_aviso) && (
+                        <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: 12 }}>
+                          Atrasado desde: {formatFechaAviso(actividad.fecha_aviso)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="actividad-meta">
+                      <span>{actividad.frecuencia_pago || 'mensual'}</span>
+                    </div>
+                  </div>
+                    );
+                  })()
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="dashboard-card revision-sede-panel">
             <div className="pagos-sede-header">
               <h3>Pagos en revisión</h3>

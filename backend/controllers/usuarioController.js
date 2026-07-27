@@ -24,8 +24,21 @@ async function getTenantModels(req) {
 }
 
 function toUserPayload(user, role) {
+  const roles = Array.isArray(user?.roles)
+    ? user.roles.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    : [];
   const rolLegacy = String(user?.rol || '').trim().toLowerCase();
-  const roleSlug = String(role?.slug || rolLegacy || 'usuario').trim().toLowerCase();
+  const roleSlug = String(role?.slug || rolLegacy || roles[0] || 'usuario').trim().toLowerCase();
+  const roleIds = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(user?.roleIds) ? user.roleIds : []),
+        user?.roleId
+      ]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    )
+  );
   const permisos = role?.activo !== false
     ? normalizePermissionList(role?.permisos || getDefaultPermissionsByLegacyRole(roleSlug))
     : normalizePermissionList(getDefaultPermissionsByLegacyRole(roleSlug));
@@ -36,6 +49,8 @@ function toUserPayload(user, role) {
     email: user?.email,
     rol: roleSlug,
     roleId: role?._id || user?.roleId || null,
+    roles: roles.length > 0 ? roles : [roleSlug],
+    roleIds,
     roleNombre: role?.nombre || user?.rol || roleSlug,
     permisos,
     createdAt: user?.createdAt,
@@ -46,7 +61,7 @@ function toUserPayload(user, role) {
 exports.listarUsuarios = async (req, res) => {
   try {
     const { TenantUser, TenantRole } = await getTenantModels(req);
-    const users = await TenantUser.find({}).select('nombre email rol roleId createdAt updatedAt').sort({ createdAt: -1 });
+    const users = await TenantUser.find({}).select('nombre email rol roleId roles roleIds createdAt updatedAt').sort({ createdAt: -1 });
 
     const roleIds = users
       .map((item) => String(item.roleId || '').trim())
@@ -95,7 +110,9 @@ exports.crearUsuario = async (req, res) => {
       email: emailLimpio,
       password,
       rol: rolLegacy,
-      roleId: role?._id || null
+      roleId: role?._id || null,
+      roles: [rolLegacy],
+      roleIds: role?._id ? [role._id] : []
     });
     await user.save();
 
@@ -126,6 +143,8 @@ exports.actualizarRolUsuario = async (req, res) => {
 
     user.roleId = role?._id || null;
     user.rol = role ? String(role.slug || '').trim().toLowerCase() : getSafeRoleSlug(rol || user.rol || 'usuario');
+    user.roles = [user.rol];
+    user.roleIds = role?._id ? [role._id] : [];
     await user.save();
 
     return res.json({ msg: 'Rol actualizado', user: toUserPayload(user, role) });

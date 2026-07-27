@@ -93,7 +93,7 @@ function normalizePermissionList(permisos = []) {
 
 function getStoredRole() {
   try {
-    return String(localStorage.getItem('rol') || '').trim().toLowerCase();
+    return String(localStorage.getItem('rolActivo') || localStorage.getItem('rol') || '').trim().toLowerCase();
   } catch (_) {
     return '';
   }
