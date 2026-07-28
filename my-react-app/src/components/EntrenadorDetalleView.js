@@ -464,7 +464,7 @@ function EntrenadorDetalleView({
     setEstadoDialogOpen(false);
     setDeleteDialogOpen(false);
     setConfirmarPagoDialogOpen(false);
-  }, [entrenador]);
+  }, [entrenador?._id, entrenador?.id]);
 
   useEffect(() => {
     setActiveTab(activeTabFromNavigation);
@@ -793,6 +793,7 @@ function EntrenadorDetalleView({
         Volver a lista de entrenadores
       </Button>
 
+      {!isEditing && (
       <Paper sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 3.5, border: '1px solid #e5e7eb', boxShadow: '0 14px 28px rgba(15, 23, 42, 0.06)' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1.5, flexWrap: 'wrap' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.4, minWidth: 0 }}>
@@ -1023,6 +1024,7 @@ function EntrenadorDetalleView({
           </Box>
         </Box>
       </Paper>
+      )}
 
       {isEditing && (
         <EntrenadorForm
@@ -1034,6 +1036,7 @@ function EntrenadorDetalleView({
             if (updatedEntrenador && onUpdated) {
               onUpdated(updatedEntrenador);
             }
+            setAccionPerfilFeedback('Cambios guardados con exito.');
             setIsEditing(false);
             setActiveTab('resumen');
           }}

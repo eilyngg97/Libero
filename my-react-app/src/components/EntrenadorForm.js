@@ -97,10 +97,10 @@ const fieldSx = {
 };
 
 const panelSx = {
-  borderRadius: 5,
-  border: '1px solid #e5e7eb',
-  backgroundColor: '#ffffff',
-  boxShadow: '0 18px 48px rgba(15, 23, 42, 0.08)'
+  borderRadius: 0,
+  border: 'none',
+  backgroundColor: 'transparent',
+  boxShadow: 'none'
 };
 
 const scrollableStepSx = {
@@ -308,6 +308,11 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (tab < TAB_ADMINISTRATIVO) {
+      setTab((current) => Math.min(current + 1, TAB_ADMINISTRATIVO));
+      return;
+    }
+
     if (!canSubmit) {
       setError('Completa los campos obligatorios: nombre, apellido y cédula.');
       return;
@@ -441,6 +446,11 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
 
   const nextTab = () => setTab((current) => Math.min(current + 1, TAB_ADMINISTRATIVO));
   const prevTab = () => setTab((current) => Math.max(current - 1, TAB_BASICO));
+  const handleNextTabClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    nextTab();
+  };
 
   const basicStep = (
     <Box
@@ -570,7 +580,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
   );
 
   const certificationStep = (
-    <Box sx={{ ...scrollableStepSx, display: 'grid', gap: 1.75 }}>
+    <Box sx={{ ...scrollableStepSx, display: 'grid', gap: 1.75, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
       {renderInput({
         label: 'Nivel de instruccion',
         field: 'nivel_instruccion',
@@ -597,11 +607,11 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         gridColumn: { xs: 'auto', md: '1 / -1' }
       })}
 
-      <Typography sx={{ mt: -1.25, fontSize: 12, color: '#94a3b8' }}>
+      <Typography sx={{ mt: -1.25, fontSize: 12, color: '#94a3b8', gridColumn: { xs: 'auto', md: '1 / -1' } }}>
         Resumen breve. Aparecera en el perfil publico.
       </Typography>
 
-      <Box>
+      <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
         <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#334155', mb: 1.25 }}>
           Subir certificaciones
         </Typography>
@@ -945,14 +955,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         display: 'flex',
         flexDirection: 'column',
         gap: 0,
-        bgcolor: '#ffffff',
-        borderRadius: { xs: 4, md: 5 },
-        overflow: 'hidden',
-        minHeight: 0,
-        maxHeight: { xs: 'none', md: 'calc(100vh - 200px)' },
-        '@media (max-height: 860px)': {
-          maxHeight: 'calc(100vh - 220px)'
-        }
+        minHeight: 0
       }}
     >
       <Box
@@ -1053,28 +1056,13 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         </Box>
       </Box>
 
-      <Box sx={{ p: { xs: 1.5, md: 2 }, backgroundColor: '#fcfcfd', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <Paper
-          elevation={0}
+      <Box sx={{ p: { xs: 1.5, md: 2 }, backgroundColor: '#fcfcfd', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Box
           sx={{
             ...panelSx,
             p: { xs: 1.5, md: 2 },
             flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            scrollbarWidth: 'thin',
-            '&::-webkit-scrollbar': {
-              width: 8
-            },
-            '&::-webkit-scrollbar-thumb': {
-              backgroundColor: '#cbd5e1',
-              borderRadius: 999
-            },
-            '&::-webkit-scrollbar-track': {
-              backgroundColor: '#f8fafc',
-              borderRadius: 999
-            }
+            minHeight: 0
           }}
         >
           {tab === TAB_BASICO && basicStep}
@@ -1083,7 +1071,7 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
 
           {!!error && <Alert severity="error" sx={{ mt: 2.5, borderRadius: 3 }}>{error}</Alert>}
           {!!success && <Alert severity="success" sx={{ mt: 2.5, borderRadius: 3 }}>{success}</Alert>}
-        </Paper>
+        </Box>
 
         <Box
           sx={{
@@ -1093,13 +1081,9 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
             gap: 1.5,
             mt: 1.5,
             flexWrap: 'wrap',
-            position: 'sticky',
-            bottom: 0,
-            zIndex: 2,
+            position: 'static',
             py: 0.9,
-            px: 0.5,
-            background: 'linear-gradient(180deg, rgba(252, 252, 253, 0.85) 0%, #fcfcfd 18px)',
-            borderTop: '1px solid #eef2f7'
+            px: 0
           }}
         >
           <Button
@@ -1133,9 +1117,10 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
 
             {tab < TAB_ADMINISTRATIVO ? (
               <Button
+                key="form-next-step"
                 type="button"
                 variant="contained"
-                onClick={nextTab}
+                onClick={handleNextTabClick}
                 endIcon={<ArrowForwardRoundedIcon />}
                 sx={{
                   borderRadius: 3,
@@ -1153,22 +1138,24 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
               </Button>
             ) : (
               <Button
+                key="form-submit"
                 type="submit"
                 variant="contained"
                 disabled={saving || !canSubmit}
                 sx={{
-                  borderRadius: 3,
-                  px: 2.1,
-                  minHeight: 42,
+                  borderRadius: '14px !important',
+                  px: 1,
+                  minHeight: 34,
                   backgroundColor: '#0f172a',
                   boxShadow: '0 14px 26px rgba(15, 23, 42, 0.18)',
                   fontWeight: 800,
+                  fontSize: 12,
                   '&:hover': {
                     backgroundColor: '#1e293b'
                   }
                 }}
               >
-                {saving ? 'Guardando...' : (isEditMode ? 'Guardar cambios' : 'Crear entrenador')}
+                {saving ? 'Guardando...' : (isEditMode ? 'Guardar' : 'Crear entrenador')}
               </Button>
             )}
           </Box>
