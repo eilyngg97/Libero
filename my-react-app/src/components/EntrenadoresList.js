@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Avatar, Box, Button, Paper, Typography, TablePagination, TextField, MenuItem, InputAdornment } from '@mui/material';
+import { Alert, Avatar, Box, Button, Paper, Typography, TablePagination, TextField, MenuItem, InputAdornment } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
 import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined';
@@ -60,6 +60,7 @@ function EntrenadoresList() {
   const [entrenadorDetalleId, setEntrenadorDetalleId] = useState('');
   const [entrenadorDetalleTab, setEntrenadorDetalleTab] = useState('resumen');
   const [entrenadorPagoPrefill, setEntrenadorPagoPrefill] = useState(null);
+  const [feedbackLista, setFeedbackLista] = useState('');
 
   useEffect(() => {
     const targetId = String(location.state?.entrenadorId || '').trim();
@@ -110,6 +111,16 @@ function EntrenadoresList() {
       })
       .catch(() => setSedes([]));
   }, [reload]);
+
+  useEffect(() => {
+    if (!feedbackLista) return undefined;
+
+    const timeoutId = setTimeout(() => {
+      setFeedbackLista('');
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  }, [feedbackLista]);
 
   const sedesById = useMemo(() => {
     return new Map(sedes.map((sede) => [String(sede._id || sede.id), sede]));
@@ -204,6 +215,7 @@ function EntrenadoresList() {
     setEntrenadorDetalleId('');
     setEntrenadorDetalleTab('resumen');
     setEntrenadorPagoPrefill(null);
+    setFeedbackLista('Entrenador eliminado con exito.');
   };
 
   if (entrenadorDetalle) {
@@ -252,6 +264,12 @@ function EntrenadoresList() {
           Nuevo entrenador
         </Button>
       </Box>
+
+      {feedbackLista && (
+        <Alert severity="success" sx={{ mb: 2, borderRadius: 2.5 }}>
+          {feedbackLista}
+        </Alert>
+      )}
 
       <Box
         className="entrenadores-filters-shell"

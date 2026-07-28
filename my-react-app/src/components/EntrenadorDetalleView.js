@@ -471,6 +471,17 @@ function EntrenadorDetalleView({
   }, [activeTabFromNavigation, entrenadorId]);
 
   useEffect(() => {
+    if (!accionPerfilFeedback) return undefined;
+    if (/no se pudo|error/i.test(accionPerfilFeedback)) return undefined;
+
+    const timeoutId = setTimeout(() => {
+      setAccionPerfilFeedback('');
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  }, [accionPerfilFeedback]);
+
+  useEffect(() => {
     setPagoForm((prev) => ({
       ...prev,
       monto_base: montoBasePorPago
