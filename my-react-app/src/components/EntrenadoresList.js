@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { Alert, Avatar, Box, Button, Paper, Typography, TablePagination, TextField, MenuItem, InputAdornment } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
@@ -56,6 +57,7 @@ function EntrenadoresList() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [showModal, setShowModal] = useState(false);
+  const [modalOffsetX, setModalOffsetX] = useState(0);
   const [reload, setReload] = useState(false);
   const [entrenadorDetalleId, setEntrenadorDetalleId] = useState('');
   const [entrenadorDetalleTab, setEntrenadorDetalleTab] = useState('resumen');
@@ -121,6 +123,37 @@ function EntrenadoresList() {
 
     return () => clearTimeout(timeoutId);
   }, [feedbackLista]);
+
+  useEffect(() => {
+    if (!showModal) {
+      setModalOffsetX(0);
+      return undefined;
+    }
+
+    const computeModalOffset = () => {
+      const hasPermanentDrawer = window.matchMedia('(min-width:900px)').matches;
+      if (!hasPermanentDrawer) {
+        setModalOffsetX(0);
+        return;
+      }
+
+      const drawerPaper = document.querySelector('.MuiDrawer-docked .MuiDrawer-paper');
+      if (!drawerPaper) {
+        setModalOffsetX(0);
+        return;
+      }
+
+      const drawerWidth = drawerPaper.getBoundingClientRect().width;
+      setModalOffsetX(drawerWidth > 0 ? drawerWidth / 2 : 0);
+    };
+
+    computeModalOffset();
+    window.addEventListener('resize', computeModalOffset);
+
+    return () => {
+      window.removeEventListener('resize', computeModalOffset);
+    };
+  }, [showModal]);
 
   const sedesById = useMemo(() => {
     return new Map(sedes.map((sede) => [String(sede._id || sede.id), sede]));
@@ -363,9 +396,13 @@ function EntrenadoresList() {
         </Typography>
       </Box>
 
-      {showModal && (
+      {showModal && createPortal(
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal-content"
+            style={{ '--modal-offset-x': `${modalOffsetX}px` }}
+            onClick={e => e.stopPropagation()}
+          >
             <span className="cerrar-modal-x" onClick={() => setShowModal(false)}>&times;</span>
             <EntrenadorForm
               onCancel={() => setShowModal(false)}
@@ -375,7 +412,8 @@ function EntrenadoresList() {
               }}
             />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <Box className="entrenadores-grid">

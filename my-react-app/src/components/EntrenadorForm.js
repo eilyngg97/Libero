@@ -955,7 +955,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         display: 'flex',
         flexDirection: 'column',
         gap: 0,
-        minHeight: 0
+        minHeight: 0,
+        height: '100%'
       }}
     >
       <Box
@@ -1056,13 +1057,25 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         </Box>
       </Box>
 
-      <Box sx={{ p: { xs: 1.5, md: 2 }, backgroundColor: '#fcfcfd', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <Box
+        sx={{
+          p: { xs: 1.5, md: 2 },
+          backgroundColor: '#fcfcfd',
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}
+      >
         <Box
           sx={{
             ...panelSx,
             p: { xs: 1.5, md: 2 },
             flex: 1,
-            minHeight: 0
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden'
           }}
         >
           {tab === TAB_BASICO && basicStep}
@@ -1083,7 +1096,9 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
             flexWrap: 'wrap',
             position: 'static',
             py: 0.9,
-            px: 0
+            px: 0,
+            borderTop: '1px solid #eef2f7',
+            backgroundColor: '#fcfcfd'
           }}
         >
           <Button
