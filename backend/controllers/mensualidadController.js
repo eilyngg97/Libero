@@ -1327,15 +1327,20 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     const montoEquivalenteBsNormalizado = normalizarMontoOpcional(monto_equivalente_bs);
     const montoEsperadoBsBase = normalizarMontoOpcional(monto_esperado_bs);
 
-    const montoEsperado = esRegistroAlumno && (montoInscripcionNormalizado !== undefined || montoPrimeraMensualidadNormalizado !== undefined)
+    const tieneComponentesRegistro =
+      montoInscripcionNormalizado !== undefined || montoPrimeraMensualidadNormalizado !== undefined;
+
+    // Si llegan componentes de inscripción/reingreso, priorizamos su suma sobre monto_esperado
+    // para evitar inconsistencias cuando el cliente envía ambos valores.
+    const montoEsperado = (esRegistroAlumno || tieneComponentesRegistro)
       ? redondearMonto((montoInscripcionNormalizado || 0) + (montoPrimeraMensualidadNormalizado || 0))
       : montoEsperadoBase;
 
-    const montoEsperadoBsNormalizado = esRegistroAlumno
+    const montoEsperadoBsNormalizado = (esRegistroAlumno || tieneComponentesRegistro)
       ? (montoEquivalenteBsNormalizado ?? montoEsperadoBsBase)
       : montoEsperadoBsBase;
 
-    if (!id_alumno || !monto_esperado) {
+    if (!id_alumno || (!monto_esperado && !tieneComponentesRegistro)) {
       return res.status(400).json({ error: 'Faltan datos requeridos' });
     }
     if (!Number.isFinite(montoEsperado) || montoEsperado <= 0) {
@@ -1377,6 +1382,10 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     };
 
     const periodoActual = getPeriodoZonaCaracas();
+    const periodoInicioCobro = obtenerPeriodoInicioCobroAlumno(alumno, periodoActual);
+    const periodoObjetivo = compararPeriodos(periodoInicioCobro, periodoActual) > 0
+      ? periodoInicioCobro
+      : periodoActual;
     const configCobro = await obtenerConfigCobro({ TenantConfig: TenantConfigModel });
     const resultados = await generarMensualidadesPendientesAlumno(alumno, {
       models: {
@@ -1388,10 +1397,10 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
         TenantConfig: TenantConfigModel
       },
       cobroConfig: configCobro,
-      periodoFin: periodoActual,
+      periodoFin: periodoObjetivo,
       overridePeriodoActual: {
-        mes: periodoActual.mes,
-        anio: periodoActual.anio,
+        mes: periodoObjetivo.mes,
+        anio: periodoObjetivo.anio,
         montoBaseManual: montoEsperado,
         estatusManual: estatusPrimeraMensualidad,
         fechaVencimientoManual: fecha_vencimiento,
@@ -1402,16 +1411,26 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     });
 
     const creadas = resultados.filter((resultado) => resultado.creada).length;
-    const mensualidadActual = resultados.find(
+    const mensualidadObjetivo = resultados.find(
       (resultado) =>
         resultado.mensualidad &&
-        resultado.mensualidad.mes === periodoActual.mes &&
-        resultado.mensualidad.anio === periodoActual.anio
+        resultado.mensualidad.mes === periodoObjetivo.mes &&
+        resultado.mensualidad.anio === periodoObjetivo.anio
     );
+
+    const mensualidadRespuesta = mensualidadObjetivo?.mensualidad
+      || resultados.find((resultado) => resultado?.mensualidad)?.mensualidad
+      || null;
+
+    if (!mensualidadRespuesta) {
+      return res.status(500).json({
+        error: 'No se pudo generar ni localizar la mensualidad objetivo para el alumno.'
+      });
+    }
 
     return res.json({
       message: `Mensualidades procesadas: ${creadas}`,
-      mensualidad: mensualidadActual?.mensualidad || null,
+      mensualidad: mensualidadRespuesta,
       mensualidades_creadas: creadas,
       mensualidades: resultados.map((resultado) => resultado.mensualidad).filter(Boolean)
     });
