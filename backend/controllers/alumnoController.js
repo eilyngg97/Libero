@@ -3332,7 +3332,7 @@ exports.reactivarAlumno = async (req, res) => {
       return res.status(400).json({ error: 'fecha_reingreso es requerida y debe ser valida.' });
     }
 
-    if (!Number.isFinite(montoReingreso) || montoReingreso <= 0) {
+    if (!Number.isFinite(montoReingreso) || montoReingreso < 0) {
       return res.status(400).json({ error: 'monto_reingreso invalido' });
     }
     if (!Number.isFinite(montoPrimeraMensualidad) || montoPrimeraMensualidad <= 0) {

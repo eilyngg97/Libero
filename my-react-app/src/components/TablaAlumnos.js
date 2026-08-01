@@ -637,8 +637,8 @@ function TablaAlumnos() {
 
     const montoReingreso = Number(reactivarForm.montoReingreso);
     const montoPrimeraMensualidad = Number(reactivarForm.montoMensualidad);
-    if (!Number.isFinite(montoReingreso) || montoReingreso <= 0) {
-      setReactivarError('Debes ingresar un monto de reingreso valido.');
+    if (!Number.isFinite(montoReingreso) || montoReingreso < 0) {
+      setReactivarError('Debes ingresar un monto de reingreso valido (mayor o igual a 0).');
       return;
     }
     if (!Number.isFinite(montoPrimeraMensualidad) || montoPrimeraMensualidad <= 0) {
