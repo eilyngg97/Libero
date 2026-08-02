@@ -1383,7 +1383,11 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
 
     const periodoActual = getPeriodoZonaCaracas();
     const periodoInicioCobro = obtenerPeriodoInicioCobroAlumno(alumno, periodoActual);
-    const periodoObjetivo = compararPeriodos(periodoInicioCobro, periodoActual) > 0
+    // Regla: la inscripcion y su pago deben registrarse en el mes de inicio de cobro.
+    const periodoObjetivo = periodoInicioCobro;
+    // Para no dejar huecos, generamos mensualidades hasta el periodo mas reciente entre
+    // inicio de cobro y periodo actual.
+    const periodoFinGeneracion = compararPeriodos(periodoInicioCobro, periodoActual) > 0
       ? periodoInicioCobro
       : periodoActual;
     const configCobro = await obtenerConfigCobro({ TenantConfig: TenantConfigModel });
@@ -1397,7 +1401,7 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
         TenantConfig: TenantConfigModel
       },
       cobroConfig: configCobro,
-      periodoFin: periodoObjetivo,
+      periodoFin: periodoFinGeneracion,
       overridePeriodoActual: {
         mes: periodoObjetivo.mes,
         anio: periodoObjetivo.anio,

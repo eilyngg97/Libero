@@ -283,4 +283,163 @@ describe('registrarPrimeraMensualidad', () => {
       })
     );
   });
+
+  test('cuando inicio de cobro es julio y hoy es agosto, aplica inscripcion/pago en julio y no en agosto', async () => {
+    jest.setSystemTime(new Date('2026-08-01T12:00:00.000Z'));
+
+    const alumnoDoc = {
+      _id: 'a3',
+      activo: true,
+      dado_de_baja: false,
+      tipo_mensualidad: 'monto_sede',
+      fecha_inscripcion: new Date('2026-07-01T12:00:00.000Z'),
+      fecha_inicio_cobro: new Date('2026-07-01T12:00:00.000Z'),
+      sede: 's1',
+      saldo_a_favor_mensualidades: 0,
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const mensualidadesPopuladas = {
+      'm-jul': {
+        _id: 'm-jul',
+        id_alumno: alumnoDoc,
+        mes: 7,
+        anio: 2026,
+        estatus: 'Pagado',
+        es_inscripcion: true
+      },
+      'm-ago': {
+        _id: 'm-ago',
+        id_alumno: alumnoDoc,
+        mes: 8,
+        anio: 2026,
+        estatus: 'Pendiente',
+        es_inscripcion: false
+      }
+    };
+
+    const TenantAlumno = {
+      findById: jest.fn().mockResolvedValue(alumnoDoc)
+    };
+
+    const TenantMensualidad = {
+      findOne: jest.fn().mockReturnValue({
+        populate: jest.fn().mockResolvedValue(null)
+      }),
+      create: jest
+        .fn()
+        .mockResolvedValueOnce({ _id: 'm-jul' })
+        .mockResolvedValueOnce({ _id: 'm-ago' }),
+      findById: jest.fn().mockImplementation((id) => ({
+        populate: jest.fn().mockResolvedValue(mensualidadesPopuladas[id])
+      }))
+    };
+
+    const TenantSede = {
+      findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 30 })
+    };
+
+    const TenantReposo = {
+      findOne: jest.fn().mockReturnValue({
+        sort: jest.fn().mockResolvedValue(null)
+      }),
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          sort: jest.fn().mockResolvedValue([])
+        })
+      })
+    };
+
+    const TenantConfig = {
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            cobro: {
+              dia_cobro: 1,
+              dia_vencimiento: 5,
+              dias_gracia: 0,
+              recargo_usd: 0
+            }
+          })
+        })
+      })
+    };
+
+    const PagoDetalleModel = { create: jest.fn() };
+
+    getTenantModel.mockImplementation((connection, modelName) => {
+      const models = {
+        Alumno: TenantAlumno,
+        Mensualidad: TenantMensualidad,
+        PagoDetalle: PagoDetalleModel,
+        Sede: TenantSede,
+        Reposo: TenantReposo,
+        Representante: {},
+        TenantConfig
+      };
+      return models[modelName];
+    });
+
+    const req = {
+      tenantId: 'pruebas',
+      body: {
+        es_registro_alumno: 'true',
+        id_alumno: 'a3',
+        monto_esperado: 20,
+        monto_inscripcion: 15,
+        monto_primera_mensualidad: 25,
+        monto_pagado: 40,
+        fecha_pago: '2026-07-02',
+        metodo_pago: 'Transferencia',
+        referencia: '701278',
+        estatus: 'Pagado'
+      }
+    };
+
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn()
+    };
+
+    await mensualidadController.registrarPrimeraMensualidad(req, res);
+
+    expect(TenantMensualidad.create).toHaveBeenCalledTimes(2);
+    expect(TenantMensualidad.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        id_alumno: 'a3',
+        mes: 7,
+        anio: 2026,
+        monto_base: 40,
+        monto_esperado: 40,
+        estatus: 'Pagado',
+        es_inscripcion: true,
+        monto_inscripcion: 15,
+        monto_primera_mensualidad: 25,
+        referencia: '701278'
+      })
+    );
+    expect(TenantMensualidad.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        id_alumno: 'a3',
+        mes: 8,
+        anio: 2026,
+        monto_base: 30
+      })
+    );
+
+    expect(PagoDetalleModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referencia: '701278',
+        monto_pagado: 40
+      })
+    );
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mensualidad: expect.objectContaining({ mes: 7, anio: 2026 })
+      })
+    );
+  });
 });
