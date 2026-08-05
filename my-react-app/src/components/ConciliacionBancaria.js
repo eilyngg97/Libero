@@ -30,9 +30,11 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
 import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded';
 import { useDolar } from '../context/DolarContext';
+import { BANCOS_PAGO_MOVIL, normalizeNombreBanco } from '../constants/pagos';
 import './ConciliacionBancaria.css';
 
 const MONTO_TOLERANCIA_BS = 100;
+const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 const TIPO_CONCILIACION = {
   MENSUALIDADES: 'mensualidades',
   UNIFORMES: 'uniformes'
@@ -134,6 +136,7 @@ export default function ConciliacionBancaria() {
   const [success, setSuccess] = useState('');
   const [resultado, setResultado] = useState(null);
   const [tipoConciliacion, setTipoConciliacion] = useState(TIPO_CONCILIACION.MENSUALIDADES);
+  const [bancoConciliacion, setBancoConciliacion] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const theme = useTheme();
@@ -145,6 +148,42 @@ export default function ConciliacionBancaria() {
     const token = localStorage.getItem('token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchBancoDefault = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/configuracion/pagos`, {
+          headers
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !isMounted) return;
+
+        const codigoPagoMovil = String(data?.pagos?.pago_movil?.codigo_banco || '').trim();
+        if (codigoPagoMovil && BANCOS_PAGO_MOVIL.some((item) => item.codigo === codigoPagoMovil)) {
+          setBancoConciliacion(codigoPagoMovil);
+          return;
+        }
+
+        const bancoTransferencia = normalizeNombreBanco(data?.pagos?.transferencia?.banco);
+        const bancoPagoMovil = normalizeNombreBanco(data?.pagos?.pago_movil?.banco);
+        const bancoPorNombre = bancoTransferencia || bancoPagoMovil;
+        const matchByName = BANCOS_PAGO_MOVIL.find((item) => item.nombre === bancoPorNombre);
+
+        if (matchByName) {
+          setBancoConciliacion(matchByName.codigo);
+        }
+      } catch {
+        // El selector sigue disponible aunque no se pueda resolver el valor por defecto.
+      }
+    };
+
+    fetchBancoDefault();
+    return () => {
+      isMounted = false;
+    };
+  }, [headers]);
 
   const procesarArchivo = async (fileToProcess = archivo) => {
     if (!fileToProcess) {
@@ -162,9 +201,15 @@ export default function ConciliacionBancaria() {
     try {
       const formData = new FormData();
       formData.append('archivo', fileToProcess);
-      const query = new URLSearchParams({ tipo_conciliacion: tipoConciliacion }).toString();
+      const queryParams = {
+        tipo_conciliacion: tipoConciliacion
+      };
+      if (bancoConciliacion) {
+        queryParams.banco = bancoConciliacion;
+      }
+      const query = new URLSearchParams(queryParams).toString();
 
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/conciliacion/previsualizar?${query}`, {
+      const res = await fetch(`${API_BASE}/api/conciliacion/previsualizar?${query}`, {
         method: 'POST',
         headers,
         body: formData
@@ -192,7 +237,7 @@ export default function ConciliacionBancaria() {
     setConfirmando(true);
     setError('');
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/conciliacion/confirmar-match-total`, {
+      const res = await fetch(`${API_BASE}/api/conciliacion/confirmar-match-total`, {
         method: 'POST',
         headers: {
           ...headers,
@@ -394,6 +439,24 @@ export default function ConciliacionBancaria() {
             >
               <MenuItem value={TIPO_CONCILIACION.MENSUALIDADES}>Mensualidades</MenuItem>
               <MenuItem value={TIPO_CONCILIACION.UNIFORMES}>Uniformes</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" fullWidth sx={{ mb: 1 }}>
+            <InputLabel id="banco-conciliacion-label">Banco</InputLabel>
+            <Select
+              labelId="banco-conciliacion-label"
+              value={bancoConciliacion}
+              label="Banco"
+              onChange={(event) => {
+                setBancoConciliacion(event.target.value);
+                setResultado(null);
+              }}
+            >
+              <MenuItem value="">Seleccione un banco</MenuItem>
+              {BANCOS_PAGO_MOVIL.map((item) => (
+                <MenuItem key={`conc-${item.codigo}`} value={item.codigo}>{`${item.codigo}-${item.nombre}`}</MenuItem>
+              ))}
             </Select>
           </FormControl>
 
