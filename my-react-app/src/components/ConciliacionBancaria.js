@@ -2,8 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -137,6 +143,8 @@ export default function ConciliacionBancaria() {
   const [resultado, setResultado] = useState(null);
   const [tipoConciliacion, setTipoConciliacion] = useState(TIPO_CONCILIACION.MENSUALIDADES);
   const [bancoConciliacion, setBancoConciliacion] = useState('');
+  const [parcialesSeleccionados, setParcialesSeleccionados] = useState([]);
+  const [dialogConfirmParcialesOpen, setDialogConfirmParcialesOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const theme = useTheme();
@@ -255,11 +263,65 @@ export default function ConciliacionBancaria() {
       const actualizados = data.registros_actualizados ?? data.mensualidades_actualizadas ?? data.pedidos_actualizados ?? 0;
       const etiqueta = tipoConciliacion === TIPO_CONCILIACION.UNIFORMES ? 'pedidos de uniforme' : 'mensualidades';
       setSuccess(`Se actualizaron ${actualizados} ${etiqueta}.`);
+      setParcialesSeleccionados([]);
       if (archivo) {
         await procesarArchivo(archivo);
       }
     } catch (err) {
       setError(err.message || 'Error al confirmar conciliacion');
+    } finally {
+      setConfirmando(false);
+    }
+  };
+
+  const toggleParcialSeleccionado = (pagoId) => {
+    if (!pagoId) return;
+    setParcialesSeleccionados((prev) => (
+      prev.includes(pagoId)
+        ? prev.filter((id) => id !== pagoId)
+        : [...prev, pagoId]
+    ));
+  };
+
+  const confirmarParcialesSeleccionados = () => {
+    if (!parcialesSeleccionados.length) {
+      setError('Selecciona al menos un match parcial para confirmar.');
+      return;
+    }
+
+    setDialogConfirmParcialesOpen(true);
+  };
+
+  const ejecutarConfirmacionParciales = async () => {
+    setDialogConfirmParcialesOpen(false);
+
+    setConfirmando(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/conciliacion/confirmar-match-total`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          pago_ids: parcialesSeleccionados,
+          tipo_conciliacion: tipoConciliacion
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al confirmar parciales');
+
+      const actualizados = data.registros_actualizados ?? data.mensualidades_actualizadas ?? data.pedidos_actualizados ?? 0;
+      const etiqueta = tipoConciliacion === TIPO_CONCILIACION.UNIFORMES ? 'pedidos de uniforme' : 'mensualidades';
+      setSuccess(`Se confirmaron ${actualizados} ${etiqueta} desde match parcial.`);
+      setParcialesSeleccionados([]);
+      if (archivo) {
+        await procesarArchivo(archivo);
+      }
+    } catch (err) {
+      setError(err.message || 'Error al confirmar match parcial');
     } finally {
       setConfirmando(false);
     }
@@ -283,6 +345,7 @@ export default function ConciliacionBancaria() {
 
     const total = (resultado.match_total || []).map((row) => ({
       tipo: 'match_total',
+      pagoId: row.sistema?.pago_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
@@ -305,6 +368,7 @@ export default function ConciliacionBancaria() {
 
     const parcial = (resultado.match_parcial || []).map((row) => ({
       tipo: 'match_parcial',
+      pagoId: row.sistema?.pago_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
@@ -327,6 +391,7 @@ export default function ConciliacionBancaria() {
 
     const noSistema = (resultado.sin_coincidencia_sistema || []).map((row) => ({
       tipo: 'sin_coincidencia',
+      pagoId: row.sistema?.pago_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
@@ -349,6 +414,7 @@ export default function ConciliacionBancaria() {
 
     const noExcel = (resultado.sin_coincidencia_excel || []).map((row) => ({
       tipo: 'sin_coincidencia',
+      pagoId: '',
       alumno: '-',
       contextoSistema: '',
       referenciaSistema: '-',
@@ -381,6 +447,10 @@ export default function ConciliacionBancaria() {
   useEffect(() => {
     setPage(0);
   }, [resultado]);
+
+  useEffect(() => {
+    setParcialesSeleccionados([]);
+  }, [resultado, tipoConciliacion]);
 
   const handleChangePage = (_, nuevaPagina) => {
     setPage(nuevaPagina);
@@ -524,6 +594,30 @@ export default function ConciliacionBancaria() {
             >
               {confirmando ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'Confirmar Todo'}
             </Button>
+
+            <Button
+              variant="outlined"
+              onClick={confirmarParcialesSeleccionados}
+              disabled={!parcialesSeleccionados.length || confirmando}
+              sx={{
+                borderRadius: 999,
+                textTransform: 'none',
+                fontWeight: 700,
+                bgcolor: 'transparent',
+                borderColor: '#6b7280',
+                color: '#4b5563',
+                '&:hover': {
+                  bgcolor: '#f3f4f6',
+                  borderColor: '#4b5563'
+                },
+                '&.Mui-disabled': {
+                  borderColor: '#d1d5db',
+                  color: '#9ca3af'
+                }
+              }}
+            >
+              Confirmar parciales ({parcialesSeleccionados.length})
+            </Button>
           </div>
         </Paper>
 
@@ -563,6 +657,19 @@ export default function ConciliacionBancaria() {
               {filasPaginadas.map((fila, idx) => (
                 <article className="conciliacionMobileCard" key={`${fila.tipo}-${page * rowsPerPage + idx}`}>
                   <div className="conciliacionMobileCardHead">{estadoChip(fila.tipo)}</div>
+
+                  {fila.tipo === 'match_parcial' && fila.pagoId && (
+                    <div className="conciliacionMobileRow">
+                      <span className="label">Seleccionar</span>
+                      <span className="value">
+                        <Checkbox
+                          size="small"
+                          checked={parcialesSeleccionados.includes(fila.pagoId)}
+                          onChange={() => toggleParcialSeleccionado(fila.pagoId)}
+                        />
+                      </span>
+                    </div>
+                  )}
 
                   <div className="conciliacionMobileRow">
                     <span className="label">Alumno</span>
@@ -667,6 +774,7 @@ export default function ConciliacionBancaria() {
               <Table size="small" stickyHeader className="conciliacionTable">
                 <TableHead>
                   <TableRow sx={{ bgcolor: '#fdfdfd' }}>
+                    <TableCell>Sel.</TableCell>
                     <TableCell>Estado</TableCell>
                     <TableCell>Alumno</TableCell>
                     <TableCell>Ref. Sistema</TableCell>
@@ -690,6 +798,15 @@ export default function ConciliacionBancaria() {
                 <TableBody>
                   {filasPaginadas.map((fila, idx) => (
                     <TableRow key={`${fila.tipo}-${page * rowsPerPage + idx}`}>
+                      <TableCell>
+                        {fila.tipo === 'match_parcial' && fila.pagoId ? (
+                          <Checkbox
+                            size="small"
+                            checked={parcialesSeleccionados.includes(fila.pagoId)}
+                            onChange={() => toggleParcialSeleccionado(fila.pagoId)}
+                          />
+                        ) : '-'}
+                      </TableCell>
                       <TableCell>{estadoChip(fila.tipo)}</TableCell>
                       <TableCell>
                         <div className="conciliacionAlumnoCell">
@@ -719,7 +836,7 @@ export default function ConciliacionBancaria() {
                   ))}
                   {filasComparativas.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={18}>
+                      <TableCell colSpan={19}>
                         <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
                           No hay filas para mostrar.
                         </Typography>
@@ -752,6 +869,51 @@ export default function ConciliacionBancaria() {
       <Snackbar open={!!success} autoHideDuration={2800} onClose={() => setSuccess('')} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert severity="success" onClose={() => setSuccess('')} sx={{ width: '100%' }}>{success}</Alert>
       </Snackbar>
+
+      <Dialog
+        open={dialogConfirmParcialesOpen}
+        onClose={() => setDialogConfirmParcialesOpen(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Confirmar matches parciales</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ color: '#334155' }}>
+            Se confirmaran {parcialesSeleccionados.length} coincidencias parciales seleccionadas.
+          </DialogContentText>
+          <Alert severity="warning" sx={{ mt: 1.5, mb: 1.5 }}>
+            Verifica que las referencias parciales sean correctas antes de confirmar.
+          </Alert>
+          <DialogContentText sx={{ mt: 1, color: '#334155' }}>
+            Esta acción actualizará esos registros en revisión a estado pagado. ¿Deseas continuar?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={() => setDialogConfirmParcialesOpen(false)}
+            disabled={confirmando}
+            sx={{
+              borderColor: '#94a3b8',
+              color: '#475569',
+              '&:hover': {
+                borderColor: '#64748b',
+                backgroundColor: '#f8fafc'
+              }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={ejecutarConfirmacionParciales}
+            variant="contained"
+            disabled={confirmando}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
+          >
+            {confirmando ? 'Confirmando...' : 'Confirmar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }
