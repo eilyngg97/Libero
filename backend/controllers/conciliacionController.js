@@ -12,6 +12,10 @@ const TIPO_CONCILIACION = {
   UNIFORMES: 'uniformes'
 };
 
+const BANCO_CONCILIACION = {
+  PROVINCIAL: 'provincial'
+};
+
 async function getTenantConciliacionModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
@@ -38,6 +42,24 @@ function resolveTipoConciliacion(rawTipo) {
     return tipo;
   }
   return null;
+}
+
+function resolveBancoConciliacion(rawBanco) {
+  const raw = String(rawBanco || '').trim();
+  if (!raw) return '';
+
+  const normalized = normalizarTexto(raw);
+  const soloDigitos = raw.replace(/\D/g, '');
+
+  if (
+    soloDigitos === '0108'
+    || normalized.includes('provincial')
+    || normalized.includes('bbva provincial')
+  ) {
+    return BANCO_CONCILIACION.PROVINCIAL;
+  }
+
+  return normalized;
 }
 
 function normalizarTexto(value) {
@@ -560,6 +582,8 @@ exports.previsualizarConciliacion = async (req, res) => {
     } = resolveConciliacionModels(tenantModels);
 
     const tipoConciliacion = resolveTipoConciliacion(req.query?.tipo_conciliacion);
+    const bancoConciliacion = resolveBancoConciliacion(req.query?.banco);
+    const priorizarDescripcionProvincial = bancoConciliacion === BANCO_CONCILIACION.PROVINCIAL;
     if (!tipoConciliacion) {
       return res.status(400).json({
         error: `tipo_conciliacion invalido. Usa ${TIPO_CONCILIACION.MENSUALIDADES} o ${TIPO_CONCILIACION.UNIFORMES}`
@@ -653,37 +677,40 @@ exports.previsualizarConciliacion = async (req, res) => {
     const matchParcial = [];
 
     // Nivel 1: match total por referencia + monto dentro de tolerancia.
-    for (const sistemaIdx of [...sistemaDisponibles]) {
-      const sistema = sistemaRows[sistemaIdx];
-      const candidatos = [...bancoDisponibles]
-        .map((idx) => ({ idx, row: bancoRows[idx] }))
-        .filter(({ row }) => (
-          areAmountsEqual(row.monto_bs, sistema.monto_pagado_bs)
-          && row.referencia
-          && sistema.referencia
-          && referenciasCoinciden(row.referencia, sistema.referencia)
-        ))
-        .map(({ idx, row }) => row);
+    // Para banco Provincial se omite este nivel y se prioriza descripcion.
+    if (!priorizarDescripcionProvincial) {
+      for (const sistemaIdx of [...sistemaDisponibles]) {
+        const sistema = sistemaRows[sistemaIdx];
+        const candidatos = [...bancoDisponibles]
+          .map((idx) => ({ idx, row: bancoRows[idx] }))
+          .filter(({ row }) => (
+            areAmountsEqual(row.monto_bs, sistema.monto_pagado_bs)
+            && row.referencia
+            && sistema.referencia
+            && referenciasCoinciden(row.referencia, sistema.referencia)
+          ))
+          .map(({ idx, row }) => row);
 
-      if (!candidatos.length) continue;
+        if (!candidatos.length) continue;
 
-      const mejor = rankByDateSimilarity(candidatos, sistema.fecha_pago)[0];
-      const bancoIdx = bancoRows.findIndex((row) => row.excelRow === mejor.excelRow);
+        const mejor = rankByDateSimilarity(candidatos, sistema.fecha_pago)[0];
+        const bancoIdx = bancoRows.findIndex((row) => row.excelRow === mejor.excelRow);
 
-      bancoDisponibles.delete(bancoIdx);
-      sistemaDisponibles.delete(sistemaIdx);
-      matchTotal.push(buildMatchRecord({
-        banco: mejor,
-        sistema,
-        tipo: 'match_total',
-        motivo: [`referencia (completa o ultimos 6) y monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS}`],
-        matchPor: 'referencia',
-        identificadorBanco: mejor.referencia || '',
-        identificadorSistema: sistema.referencia || ''
-      }));
+        bancoDisponibles.delete(bancoIdx);
+        sistemaDisponibles.delete(sistemaIdx);
+        matchTotal.push(buildMatchRecord({
+          banco: mejor,
+          sistema,
+          tipo: 'match_total',
+          motivo: [`referencia (completa o ultimos 6) y monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS}`],
+          matchPor: 'referencia',
+          identificadorBanco: mejor.referencia || '',
+          identificadorSistema: sistema.referencia || ''
+        }));
+      }
     }
 
-    // Nivel 1.5 (solo formato Provincial): match total por telefono o cedula en descripcion + monto.
+    // Nivel 1.5 (formato Provincial o banco Provincial): match total por telefono o cedula en descripcion + monto.
     for (const sistemaIdx of [...sistemaDisponibles]) {
       const sistema = sistemaRows[sistemaIdx];
       if (!sistema.telefono_pago_cmp && !sistema.cedula_titular_cmp) continue;
@@ -725,7 +752,7 @@ exports.previsualizarConciliacion = async (req, res) => {
           };
         })
         .filter(({ row, matchPor }) => (
-          row.es_formato_provincial === true
+          (row.es_formato_provincial === true || priorizarDescripcionProvincial)
           && areAmountsEqual(row.monto_bs, sistema.monto_pagado_bs)
           && Boolean(matchPor)
           && areDatesWithinDays(row.fecha, sistema.fecha_pago, 1)
@@ -742,7 +769,7 @@ exports.previsualizarConciliacion = async (req, res) => {
         banco: mejor.row,
         sistema,
         tipo: 'match_total',
-        motivo: [`telefono o cedula en descripcion (formato Provincial), monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS} y fecha dentro de ±1 dia`],
+        motivo: [`telefono o cedula en descripcion (${priorizarDescripcionProvincial ? 'banco Provincial' : 'formato Provincial'}), monto dentro de tolerancia de Bs ${MONTO_TOLERANCIA_BS} y fecha dentro de ±1 dia`],
         matchPor: mejor.matchPor,
         identificadorBanco: mejor.identificadorBanco,
         identificadorSistema: mejor.identificadorSistema
@@ -756,7 +783,16 @@ exports.previsualizarConciliacion = async (req, res) => {
 
       for (const bancoIdx of [...bancoDisponibles]) {
         const banco = bancoRows[bancoIdx];
-        if (!areAmountsEqual(banco.monto_bs, sistema.monto_pagado_bs)) continue;
+        const montoDentroDeTolerancia = areAmountsEqual(banco.monto_bs, sistema.monto_pagado_bs);
+        const coincideReferenciaExacta = Boolean(
+          !priorizarDescripcionProvincial
+          && banco.referencia
+          && sistema.referencia
+          && referenciasCoinciden(banco.referencia, sistema.referencia)
+        );
+
+        // Si no hay monto cercano ni referencia igual, no califica para parcial.
+        if (!montoDentroDeTolerancia && !coincideReferenciaExacta) continue;
 
         const telefonosCandidatos = [banco.telefono_movimiento, ...((String(banco.descripcion || '').match(/\d+/g) || [])
           .flatMap((token) => token.match(/(?:58)?0?4\d{9}/g) || []))]
@@ -783,11 +819,16 @@ exports.previsualizarConciliacion = async (req, res) => {
 
         // Evita falsos parciales por fecha+monto cuando el banco trae identificador
         // (telefono/cedula) y este contradice al pago del sistema.
-        if (bancoTraeIdentificador && sistemaTieneDatoComparable && !coincideIdentificador) continue;
+        if (!coincideReferenciaExacta && bancoTraeIdentificador && sistemaTieneDatoComparable && !coincideIdentificador) continue;
 
         const motivos = [];
         let score = 0;
-        if (banco.referencia && sistema.referencia) {
+        if (coincideReferenciaExacta && !montoDentroDeTolerancia) {
+          motivos.push('misma referencia con diferencia de monto');
+          score += 3;
+        }
+
+        if (!priorizarDescripcionProvincial && banco.referencia && sistema.referencia) {
           const refBancoComparable = ultimosDigitosReferencia(banco.referencia);
           const refSistemaComparable = ultimosDigitosReferencia(sistema.referencia);
           const dist = levenshteinDistance(refBancoComparable, refSistemaComparable);
@@ -818,7 +859,9 @@ exports.previsualizarConciliacion = async (req, res) => {
         sistema,
         tipo: 'match_parcial',
         motivo: mejor.motivos,
-        matchPor: mejor.motivos.includes('referencia con diferencia minima') ? 'referencia_aproximada' : 'fecha'
+        matchPor: mejor.motivos.includes('misma referencia con diferencia de monto')
+          ? 'referencia'
+          : (mejor.motivos.includes('referencia con diferencia minima') ? 'referencia_aproximada' : 'fecha')
       }));
     }
 
@@ -863,6 +906,7 @@ exports.previsualizarConciliacion = async (req, res) => {
 
     return res.json({
       tipo_conciliacion: tipoConciliacion,
+      banco_conciliacion: bancoConciliacion || '',
       summary: {
         total_excel: bancoRows.length,
         total_sistema_en_revision: sistemaRows.length,

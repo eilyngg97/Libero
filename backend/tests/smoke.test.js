@@ -382,6 +382,58 @@ describe('Backend smoke tests', () => {
     }));
   });
 
+  test('POST /api/conciliacion/previsualizar marca match parcial cuando referencia coincide y monto excel supera tolerancia', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 100,
+      estatus: 'En revision',
+      id_alumno: {
+        nombres: 'Leticia',
+        apellidos: 'Garcia'
+      }
+    };
+
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([mensualidadDoc])
+      })
+    });
+
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([
+        {
+          _id: 'p1',
+          id_mensualidad: 'm1',
+          referencia: '62138367408',
+          monto_pagado_bs: 12000,
+          monto_esperado_bs: 12000,
+          monto_esperado_usd: 100,
+          fecha_pago: '2026-03-06'
+        }
+      ])
+    });
+
+    const archivoTxt = Buffer.from('Referencia;Monto;Fecha\n62138367408;12250;06/03/2026\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.match_total).toHaveLength(0);
+    expect(response.body.match_parcial).toHaveLength(1);
+    expect(response.body.match_parcial[0]).toEqual(expect.objectContaining({
+      match_por: 'referencia',
+      motivo: expect.arrayContaining(['misma referencia con diferencia de monto'])
+    }));
+  });
+
   test('POST /api/conciliacion/previsualizar hace match por cedula en descripcion TRAV con bloque largo', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 
@@ -432,6 +484,60 @@ describe('Backend smoke tests', () => {
     expect(response.body.match_total[0]).toEqual(expect.objectContaining({
       match_por: 'cedula',
       identificador_banco: '17011969'
+    }));
+  });
+
+  test('POST /api/conciliacion/previsualizar?banco=0108 prioriza descripcion para Provincial aunque exista referencia no util', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const mensualidadDoc = {
+      _id: 'm1',
+      monto_esperado: 20,
+      estatus: 'En revision',
+      id_alumno: {
+        nombres: 'Victoria',
+        apellidos: 'Alvarado'
+      }
+    };
+
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue([mensualidadDoc])
+      })
+    });
+
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([
+        {
+          _id: 'p-victoria',
+          id_mensualidad: 'm1',
+          referencia: '701278',
+          telefono_pago: '04121234567',
+          cedula_titular: 'V-17012780',
+          monto_pagado_bs: 13050,
+          monto_esperado_bs: 13050,
+          monto_esperado_usd: 20,
+          fecha_pago: '2026-05-08'
+        }
+      ])
+    });
+
+    const archivoTxt = Buffer.from('Fecha;Referencia;Descripcion;Monto\n08/05/2026;1871;TRAV001701278000014442;13.050,00\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar?banco=0108')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion_provincial_con_referencia.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.banco_conciliacion).toBe('provincial');
+    expect(response.body.match_total).toHaveLength(1);
+    expect(response.body.match_total[0]).toEqual(expect.objectContaining({
+      match_por: 'cedula',
+      identificador_banco: '17012780'
     }));
   });
 
