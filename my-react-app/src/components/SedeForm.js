@@ -9,12 +9,21 @@ import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Checkbox from '@mui/material/Checkbox';
 import { useDolar } from '../context/DolarContext';
 
 
 function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 	const { dolar } = useDolar();
 	const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+	const shouldUseGlobalRecargo = (sede = null) => {
+		if (sede?.usar_recargo_global !== undefined && sede?.usar_recargo_global !== null) {
+			return sede.usar_recargo_global !== false;
+		}
+
+		return !(Number(sede?.recargo_usd || 0) > 0);
+	};
 	const token = localStorage.getItem('token');
 	const authHeaders = {
 		...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -23,8 +32,9 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 	const [direccion, setDireccion] = useState('');
 	const [costo, setCosto] = useState('');
 	const [montoInscripcion, setMontoInscripcion] = useState('');
+	const [recargoUsd, setRecargoUsd] = useState('');
+	const [usarRecargoGlobal, setUsarRecargoGlobal] = useState(true);
 	const [estado, setEstado] = useState('Activa');
-	const [horarioConstancia, setHorarioConstancia] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
 
@@ -34,17 +44,21 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 			setDireccion(sedeEditar.direccion || '');
 			setCosto(sedeEditar.costo || '');
 			setMontoInscripcion(sedeEditar.monto_inscripcion || '');
+			setRecargoUsd(sedeEditar.recargo_usd ?? '');
+			setUsarRecargoGlobal(shouldUseGlobalRecargo(sedeEditar));
 			setEstado(sedeEditar.estado || 'Activa');
-			setHorarioConstancia(sedeEditar.horario_constancia || '');
 		} else {
 			setNombre('');
 			setDireccion('');
 			setCosto('');
 			setMontoInscripcion('');
+			setRecargoUsd('');
+			setUsarRecargoGlobal(true);
 			setEstado('Activa');
-			setHorarioConstancia('');
 		}
 	}, [modoEdicion, sedeEditar]);
+
+	const recargoPayload = usarRecargoGlobal ? null : recargoUsd;
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
@@ -65,8 +79,9 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 						direccion,
 						costo,
 						monto_inscripcion: montoInscripcion,
-						estado,
-						horario_constancia: horarioConstancia
+						recargo_usd: recargoPayload,
+						usar_recargo_global: usarRecargoGlobal,
+						estado
 					})
 				});
 				const data = await res.json();
@@ -93,8 +108,9 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 						direccion,
 						costo,
 						monto_inscripcion: montoInscripcion,
-						estado,
-						horario_constancia: horarioConstancia
+						recargo_usd: recargoPayload,
+						usar_recargo_global: usarRecargoGlobal,
+						estado
 					})
 				});
 				const data = await res.json();
@@ -113,8 +129,9 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 				setDireccion('');
 				setCosto('');
 				setMontoInscripcion('');
+				setRecargoUsd('');
+				setUsarRecargoGlobal(true);
 				setEstado('Activa');
-				setHorarioConstancia('');
 				if (typeof onAgregarSede === 'function') onAgregarSede(sedeCreada);
 			}
 		} catch (err) {
@@ -162,12 +179,22 @@ function SedeForm({ onAgregarSede, modoEdicion, sedeEditar, onEditSede }) {
 					margin="normal"
 				/>
 				<TextField
-					label="Horario para constancia"
-					value={horarioConstancia}
-					onChange={e => setHorarioConstancia(e.target.value)}
+					label={`Monto Recargo mensualidad (${monedaActiva})`}
+					type="number"
+					value={recargoUsd}
+					onChange={e => setRecargoUsd(e.target.value)}
+					disabled={usarRecargoGlobal}
 					fullWidth
 					margin="normal"
-					placeholder="Ej: los días lunes y miércoles de 6:00 pm a 8:00 pm y sábados de 10:00 am a 12:00 pm"
+				/>
+				<FormControlLabel
+					control={
+						<Checkbox
+							checked={usarRecargoGlobal}
+							onChange={(e) => setUsarRecargoGlobal(e.target.checked)}
+						/>
+					}
+					label="Usar monto global de recargo de la academia"
 				/>
 				<FormControl fullWidth margin="normal">
 					<InputLabel id="estado-label">Estado</InputLabel>

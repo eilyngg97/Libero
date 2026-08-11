@@ -92,6 +92,19 @@ function construirFechaPeriodoConDia(mes, anio, dia, { finDelDia = false } = {})
   ));
 }
 
+function formatearFechaZonaCaracas(fecha) {
+  if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) {
+    return 'fecha no disponible';
+  }
+
+  return new Intl.DateTimeFormat('es-VE', {
+    timeZone: 'America/Caracas',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(fecha);
+}
+
 function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
 }
@@ -447,7 +460,7 @@ async function obtenerAlumnoParaRecargo(mensualidad, models = {}) {
 
   if (typeof consultaAlumno.select === 'function') {
     const consultaSeleccionada = consultaAlumno
-      .select('tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado fecha_inicio_cobro fecha_inscripcion');
+      .select('tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado fecha_inicio_cobro fecha_inscripcion sede');
     return typeof consultaSeleccionada?.lean === 'function'
       ? consultaSeleccionada.lean()
       : consultaSeleccionada;
@@ -458,6 +471,55 @@ async function obtenerAlumnoParaRecargo(mensualidad, models = {}) {
   }
 
   return Promise.resolve(consultaAlumno);
+}
+
+function normalizarMontoSedeRecargo(sede) {
+  if (!sede) return null;
+
+  const tieneFlagGlobal = sede.usar_recargo_global !== undefined && sede.usar_recargo_global !== null;
+  const recargoSede = Number(sede.recargo_usd);
+  const recargoSedeValido = Number.isFinite(recargoSede) ? redondearMonto(Math.max(0, recargoSede)) : null;
+
+  if (tieneFlagGlobal) {
+    return sede.usar_recargo_global === true ? null : recargoSedeValido;
+  }
+
+  if (recargoSedeValido !== null && recargoSedeValido > 0) {
+    return recargoSedeValido;
+  }
+
+  return null;
+}
+
+async function obtenerRecargoEfectivoAlumno(alumno, models = {}, configCobroBase = null) {
+  const configCobro = configCobroBase || await obtenerConfigCobro(models);
+  const { Sede: SedeModel } = resolveMensualidadModels(models);
+
+  if (!alumno) {
+    return { recargoUsd: configCobro.recargo_usd, configCobro, sede: null, usaGlobal: true };
+  }
+
+  const sedePopulate = alumno?.sede;
+  let sede = null;
+
+  if (sedePopulate && typeof sedePopulate === 'object' && sedePopulate._id) {
+    sede = sedePopulate;
+  } else {
+    const sedeId = sedePopulate?._id || sedePopulate;
+    if (sedeId && SedeModel && typeof SedeModel.findById === 'function') {
+      const consultaSede = SedeModel.findById(sedeId).select('recargo_usd usar_recargo_global');
+      sede = typeof consultaSede?.lean === 'function'
+        ? await consultaSede.lean()
+        : await consultaSede;
+    }
+  }
+
+  const recargoSede = normalizarMontoSedeRecargo(sede);
+  if (recargoSede !== null) {
+    return { recargoUsd: recargoSede, configCobro, sede, usaGlobal: false };
+  }
+
+  return { recargoUsd: configCobro.recargo_usd, configCobro, sede, usaGlobal: true };
 }
 
 function calcularSnapshotRecargo({
@@ -492,6 +554,8 @@ async function aplicarRecargoMensualidadSegunConfig(
 
   const configCobro = cobroConfig || await obtenerConfigCobro(models);
   const alumno = await obtenerAlumnoParaRecargo(mensualidad, models);
+  const recargoEfectivo = await obtenerRecargoEfectivoAlumno(alumno, models, configCobro);
+  const recargoUsdEfectivo = Number(recargoEfectivo.recargoUsd) || 0;
 
   // Regla de negocio: la mensualidad inicial de inscripción no lleva recargo.
   if (mensualidad.es_inscripcion) {
@@ -536,7 +600,7 @@ async function aplicarRecargoMensualidadSegunConfig(
     !recargoBloqueadoManual &&
     elegibleEstatus.includes(estatusActual) &&
     montoSinRecargoActual > 0 &&
-    (Number(configCobro.recargo_usd) || 0) > 0 &&
+    recargoUsdEfectivo > 0 &&
     correspondePorFecha;
 
   if (!correspondeRecargo) {
@@ -549,7 +613,7 @@ async function aplicarRecargoMensualidadSegunConfig(
 
   const snapshot = calcularSnapshotRecargo({
     montoSinRecargo: montoSinRecargoActual,
-    recargoUsd: configCobro.recargo_usd,
+    recargoUsd: recargoUsdEfectivo,
     aplicaRecargo: true
   });
 
@@ -680,6 +744,9 @@ async function crearMensualidadParaPeriodo(
     monto = credito.montoEsperado;
   }
 
+  const recargoEfectivo = await obtenerRecargoEfectivoAlumno(alumno, models, configCobro);
+  const recargoUsdEfectivo = Number(recargoEfectivo.recargoUsd) || 0;
+
   let aplicaRecargo = false;
   if (!esInscripcion) {
     const aplicaRecargoAlumno = alumno?.aplicar_recargo_mensualidad !== false;
@@ -692,7 +759,7 @@ async function crearMensualidadParaPeriodo(
   }
   const snapshotRecargo = calcularSnapshotRecargo({
     montoSinRecargo: monto,
-    recargoUsd: configCobro?.recargo_usd,
+    recargoUsd: recargoUsdEfectivo,
     aplicaRecargo
   });
 
@@ -1033,6 +1100,7 @@ async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero, ti
   if (tipo !== 'inscripciones') {
     filtroAlumnos.$or = [
       { tipo_mensualidad: 'monto_sede' },
+      { tipo_mensualidad: 'monto_personalizado' },
       { tipo_mensualidad: { $exists: false } }
     ];
   }
@@ -1055,6 +1123,42 @@ async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero, ti
       return Number(componentes?.componenteInscripcion || 0) > 0;
     })
     : mensualidadesBase;
+
+  return { alumnos, mensualidades };
+}
+
+async function obtenerObjetivoRecargoPorSede({ id_sede, mesNumero, anioNumero }, models = {}) {
+  const {
+    Alumno: AlumnoModel,
+    Mensualidad: MensualidadModel
+  } = resolveMensualidadModels(models);
+
+  const filtroAlumnos = {
+    sede: id_sede,
+    activo: { $ne: false },
+    dado_de_baja: { $ne: true }
+  };
+
+  filtroAlumnos.$or = [
+    { tipo_mensualidad: 'monto_sede' },
+    { tipo_mensualidad: 'monto_personalizado' },
+    { tipo_mensualidad: { $exists: false } }
+  ];
+
+  const alumnos = await AlumnoModel.find(filtroAlumnos).select('_id nombres apellidos cedula saldo_a_favor_mensualidades');
+
+  if (alumnos.length === 0) {
+    return { alumnos: [], mensualidades: [] };
+  }
+
+  const mensualidades = await MensualidadModel.find({
+    id_alumno: { $in: alumnos.map((alumno) => alumno._id) },
+    mes: mesNumero,
+    anio: anioNumero
+  }).populate({
+    path: 'id_alumno',
+    select: 'nombres apellidos cedula tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado fecha_inscripcion'
+  });
 
   return { alumnos, mensualidades };
 }
@@ -1084,6 +1188,267 @@ function obtenerMotivoOmitirAjusteSede(mensualidad) {
   }
 
   return null;
+}
+
+function obtenerMontoSinRecargoMensualidad(mensualidad) {
+  const tieneRecargoPrevio = Number(mensualidad?.recargo_aplicado_usd || 0) > 0 || mensualidad?.aplica_recargo === true || !!mensualidad?.fecha_aplicacion_recargo;
+  const valorExplcito = Number(mensualidad?.monto_sin_recargo_usd);
+  if (tieneRecargoPrevio && Number.isFinite(valorExplcito)) {
+    return redondearMonto(Math.max(0, valorExplcito));
+  }
+
+  const montoEsperado = redondearMonto(mensualidad?.monto_esperado || 0);
+  const recargoActual = redondearMonto(mensualidad?.recargo_aplicado_usd || 0);
+  return redondearMonto(Math.max(0, montoEsperado - recargoActual));
+}
+
+function obtenerMotivoOmitirRecargoSede(mensualidad, { configCobro = null, fechaReferencia = new Date() } = {}) {
+  if (mensualidad?.es_inscripcion === true) {
+    return {
+      code: 'NO_APLICABLE_INSCRIPCION',
+      message: 'Mensualidad de inscripción no lleva recargo'
+    };
+  }
+
+  const alumno = mensualidad?.id_alumno;
+  if (alumno?.aplicar_recargo_mensualidad === false) {
+    return {
+      code: 'NO_APLICABLE_ALUMNO_DESACTIVADO',
+      message: 'Alumno con recargo desactivado'
+    };
+  }
+
+  if (esTipoMensualidadBecaCompleta(alumno?.tipo_mensualidad)) {
+    return {
+      code: 'NO_APLICABLE_BECA_COMPLETA',
+      message: 'Alumno con beca completa'
+    };
+  }
+
+  const estatusActual = String(mensualidad?.estatus || '').toLowerCase();
+  if (!['pendiente', 'insolvente', 'abono'].includes(estatusActual)) {
+    return {
+      code: 'NO_APLICABLE_ESTATUS',
+      message: 'Mensualidad con estatus no ajustable'
+    };
+  }
+  if (mensualidad?.bloqueo_recargo_automatico === true) {
+    return {
+      code: 'NO_APLICABLE_BLOQUEO',
+      message: 'Recargo bloqueado manualmente'
+    };
+  }
+
+  const montoSinRecargo = obtenerMontoSinRecargoMensualidad(mensualidad);
+  if (montoSinRecargo <= 0) {
+    return {
+      code: 'NO_APLICABLE_MONTO_BASE_CERO',
+      message: 'Monto base no ajustable'
+    };
+  }
+
+  if (configCobro) {
+    const fechaRecargo = obtenerFechaRecargoAlumnoPeriodo(
+      Number(mensualidad?.mes),
+      Number(mensualidad?.anio),
+      configCobro,
+      alumno
+    );
+
+    if (fechaRecargo && fechaReferencia < fechaRecargo) {
+      const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado, null);
+      const aplicaDesde = formatearFechaZonaCaracas(fechaRecargo);
+      const evaluadaEn = formatearFechaZonaCaracas(fechaReferencia);
+      const detalleRegla = diaLimitePersonalizado
+        ? `según día límite personalizado del alumno (${diaLimitePersonalizado})`
+        : 'según configuración general de cobro';
+
+      return {
+        code: 'NO_APLICABLE_FECHA_NO_CORRESPONDE',
+        message: `Aún no corresponde aplicar recargo: aplica desde ${aplicaDesde} ${detalleRegla}. Fecha evaluada: ${evaluadaEn}.`
+      };
+    }
+  }
+
+  return null;
+}
+
+function construirDetalleActualizableRecargoSede(mensualidad, nuevoRecargo) {
+  const alumnoRef = mensualidad?.id_alumno;
+  const alumnoId = String(alumnoRef?._id || alumnoRef || '');
+  const nombres = String(alumnoRef?.nombres || '').trim();
+  const apellidos = String(alumnoRef?.apellidos || '').trim();
+  const nombreCompleto = `${nombres} ${apellidos}`.trim();
+  const recargoActual = redondearMonto(mensualidad?.recargo_aplicado_usd || 0);
+  const recargoNuevo = redondearMonto(Math.max(0, Number(nuevoRecargo) || 0));
+
+  return {
+    mensualidad_id: String(mensualidad?._id || ''),
+    alumno_id: alumnoId,
+    alumno_nombre: nombreCompleto || 'Alumno sin nombre',
+    alumno_cedula: String(alumnoRef?.cedula || '').trim(),
+    estatus: String(mensualidad?.estatus || ''),
+    recargo_anterior_usd: recargoActual,
+    recargo_nuevo_usd: recargoNuevo,
+    delta_recargo_usd: redondearMonto(recargoNuevo - recargoActual)
+  };
+}
+
+function construirDetalleOmitidaRecargoSede(mensualidad, motivo) {
+  const alumnoRef = mensualidad?.id_alumno;
+  const alumnoId = String(alumnoRef?._id || alumnoRef || '');
+  const nombres = String(alumnoRef?.nombres || '').trim();
+  const apellidos = String(alumnoRef?.apellidos || '').trim();
+  const nombreCompleto = `${nombres} ${apellidos}`.trim();
+
+  return {
+    mensualidad_id: String(mensualidad?._id || ''),
+    alumno_id: alumnoId,
+    alumno_nombre: nombreCompleto || 'Alumno sin nombre',
+    alumno_cedula: String(alumnoRef?.cedula || '').trim(),
+    estatus: String(mensualidad?.estatus || ''),
+    motivo_code: String(motivo?.code || ''),
+    motivo: String(motivo?.message || 'Omitida por regla de negocio')
+  };
+}
+
+function generarVistaPreviaRecargoSede(mensualidades, nuevoRecargo, options = {}) {
+  let actualizables = 0;
+  let omitidas = 0;
+  let sinCambio = 0;
+  let recargoActualTotal = 0;
+  let recargoNuevoTotal = 0;
+  const actualizablesDetalle = [];
+  const omitidasDetalle = [];
+
+  for (const mensualidad of mensualidades) {
+    const motivoOmitida = obtenerMotivoOmitirRecargoSede(mensualidad, options);
+    if (motivoOmitida) {
+      omitidas += 1;
+      omitidasDetalle.push(construirDetalleOmitidaRecargoSede(mensualidad, motivoOmitida));
+      continue;
+    }
+
+    const recargoActual = redondearMonto(mensualidad?.recargo_aplicado_usd || 0);
+    const recargoNuevo = redondearMonto(Math.max(0, Number(nuevoRecargo) || 0));
+    recargoActualTotal = redondearMonto(recargoActualTotal + recargoActual);
+    recargoNuevoTotal = redondearMonto(recargoNuevoTotal + recargoNuevo);
+
+    if (recargoActual === recargoNuevo) {
+      sinCambio += 1;
+      continue;
+    }
+
+    actualizablesDetalle.push(construirDetalleActualizableRecargoSede(mensualidad, recargoNuevo));
+    actualizables += 1;
+  }
+
+  return {
+    mensualidades_actualizables: actualizables,
+    mensualidades_omitidas: omitidas,
+    mensualidades_sin_cambio: sinCambio,
+    actualizables_detalle: actualizablesDetalle,
+    omitidas_detalle: omitidasDetalle,
+    recargo_actual_total: recargoActualTotal,
+    recargo_nuevo_total: recargoNuevoTotal,
+    delta_total_recargo: redondearMonto(recargoNuevoTotal - recargoActualTotal)
+  };
+}
+
+async function aplicarRecargoPorSedeCore({ id_sede, mesNumero, anioNumero, nuevoRecargo, descripcion }, models = {}, req = null) {
+  const {
+    Mensualidad: MensualidadModel
+  } = resolveMensualidadModels(models);
+
+  const { alumnos, mensualidades } = await obtenerObjetivoRecargoPorSede({ id_sede, mesNumero, anioNumero }, models);
+  const configCobro = await obtenerConfigCobro(models);
+  const opcionesElegibilidad = { configCobro, fechaReferencia: new Date() };
+  const preview = generarVistaPreviaRecargoSede(mensualidades, nuevoRecargo, opcionesElegibilidad);
+
+  let actualizadas = 0;
+  let omitidasNoAplicables = 0;
+  const omitidasDetalle = [];
+  const recargoNormalizado = redondearMonto(Math.max(0, Number(nuevoRecargo) || 0));
+
+  const alumnoMap = new Map(alumnos.map((alumno) => [String(alumno._id), alumno]));
+
+  for (const mensualidad of mensualidades) {
+    const motivoNoAplicable = obtenerMotivoOmitirRecargoSede(mensualidad, opcionesElegibilidad);
+    if (motivoNoAplicable) {
+      omitidasNoAplicables += 1;
+      const alumnoRef = mensualidad?.id_alumno;
+      const alumnoId = String(alumnoRef?._id || alumnoRef || '');
+      const alumnoInfo = alumnoMap.get(alumnoId);
+      omitidasDetalle.push({
+        mensualidad_id: String(mensualidad?._id || ''),
+        alumno_id: alumnoId,
+        alumno_nombre: `${String(alumnoRef?.nombres || alumnoInfo?.nombres || '').trim()} ${String(alumnoRef?.apellidos || alumnoInfo?.apellidos || '').trim()}`.trim() || 'Alumno sin nombre',
+        alumno_cedula: String(alumnoRef?.cedula || alumnoInfo?.cedula || ''),
+        estatus: String(mensualidad?.estatus || ''),
+        motivo_code: String(motivoNoAplicable?.code || ''),
+        motivo: String(motivoNoAplicable?.message || 'Omitida por regla de negocio')
+      });
+      continue;
+    }
+
+    const snapshotAnterior = {
+      monto_esperado: redondearMonto(mensualidad.monto_esperado || 0),
+      estatus: String(mensualidad.estatus || ''),
+      ajuste_extraordinario: redondearMonto(mensualidad.ajuste_extraordinario || 0),
+      ajuste_descripcion: String(mensualidad.ajuste_descripcion || ''),
+      saldo_a_favor_generado: redondearMonto(mensualidad.saldo_a_favor_generado || 0)
+    };
+
+    const recargoActual = redondearMonto(mensualidad?.recargo_aplicado_usd || 0);
+    const montoSinRecargo = obtenerMontoSinRecargoMensualidad(mensualidad);
+
+    mensualidad.aplica_recargo = recargoNormalizado > 0;
+    mensualidad.monto_sin_recargo_usd = montoSinRecargo;
+    mensualidad.recargo_aplicado_usd = recargoNormalizado;
+    mensualidad.monto_con_recargo_usd = redondearMonto(montoSinRecargo + recargoNormalizado);
+    mensualidad.monto_esperado = mensualidad.monto_con_recargo_usd;
+    mensualidad.fecha_aplicacion_recargo = recargoNormalizado > 0 ? new Date() : null;
+    mensualidad.ajuste_descripcion = descripcion ? String(descripcion).trim() : 'Ajuste de recargo por sede';
+
+    try {
+      registrarHistorialEdicionMensualidad(mensualidad, req || {}, {
+        accion: 'ajuste_recargo_sede',
+        nota: mensualidad.ajuste_descripcion,
+        anterior: snapshotAnterior,
+        nuevo: {
+          monto_esperado: mensualidad.monto_esperado,
+          estatus: String(mensualidad.estatus || ''),
+          ajuste_extraordinario: redondearMonto(mensualidad.ajuste_extraordinario || 0),
+          ajuste_descripcion: mensualidad.ajuste_descripcion,
+          saldo_a_favor_generado: redondearMonto(mensualidad.saldo_a_favor_generado || 0)
+        }
+      });
+    } catch {
+      // No bloquea la aplicación si el historial no puede serializarse.
+    }
+
+    const resultado = await recalcularMensualidadPorPagos(mensualidad, {
+      models,
+      actorRol: 'admin',
+      estatusAnterior: mensualidad.estatus,
+      preservarPagadoSinPagos: true,
+      preservarInsolventeSinPagosCuandoMontoCero: true,
+      omitirRecargoAutomatico: true
+    });
+
+    if (Number(resultado?.totalPagado || 0) >= 0 || recargoActual !== recargoNormalizado) {
+      actualizadas += 1;
+    }
+  }
+
+  return {
+    alumnos,
+    mensualidades,
+    preview,
+    actualizadas,
+    omitidasNoAplicables,
+    omitidasDetalle
+  };
 }
 
 function construirDetalleOmitidaAjusteSede(mensualidad, alumnoMap, motivo) {
@@ -1592,6 +1957,127 @@ exports.previewAjusteExtraordinarioSede = async (req, res) => {
       mes: mesNumero,
       anio: anioNumero,
       tipo: tipoAjuste
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.previewRecargoExtraordinarioSede = async (req, res) => {
+  try {
+    const tenantModels = await getTenantMensualidadModels(req);
+    const { id_sede, mes, anio, nuevo_recargo_usd } = req.body;
+
+    if (!id_sede || !mes || !anio || nuevo_recargo_usd === undefined || nuevo_recargo_usd === null || nuevo_recargo_usd === '') {
+      return res.status(400).json({ error: 'id_sede, mes, anio y nuevo_recargo_usd son requeridos' });
+    }
+
+    const mesNumero = Number(mes);
+    const anioNumero = Number(anio);
+    const nuevoRecargo = redondearMonto(nuevo_recargo_usd);
+
+    if (!Number.isInteger(mesNumero) || mesNumero < 1 || mesNumero > 12) {
+      return res.status(400).json({ error: 'Mes inválido' });
+    }
+
+    if (!Number.isInteger(anioNumero) || anioNumero < 2000) {
+      return res.status(400).json({ error: 'Año inválido' });
+    }
+
+    if (nuevoRecargo < 0) {
+      return res.status(400).json({ error: 'El nuevo recargo no puede ser negativo' });
+    }
+
+    const { alumnos, mensualidades } = await obtenerObjetivoRecargoPorSede({ id_sede, mesNumero, anioNumero }, tenantModels);
+    if (alumnos.length === 0) {
+      return res.status(404).json({ error: 'No hay alumnos activos con monto por sede en esta sede' });
+    }
+
+    if (mensualidades.length === 0) {
+      return res.status(404).json({ error: 'No hay mensualidades generadas para esa sede en el periodo indicado' });
+    }
+
+    const configCobro = await obtenerConfigCobro(tenantModels);
+    const preview = generarVistaPreviaRecargoSede(mensualidades, nuevoRecargo, {
+      configCobro,
+      fechaReferencia: new Date()
+    });
+
+    return res.json({
+      message: 'Vista previa de recargo generada correctamente',
+      total_mensualidades_evaluadas: mensualidades.length,
+      ...preview,
+      nuevo_recargo_usd: nuevoRecargo,
+      mes: mesNumero,
+      anio: anioNumero
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.aplicarRecargoExtraordinarioSede = async (req, res) => {
+  try {
+    const tenantModels = await getTenantMensualidadModels(req);
+    const { id_sede, mes, anio, nuevo_recargo_usd, descripcion } = req.body;
+
+    if (!id_sede || !mes || !anio || nuevo_recargo_usd === undefined || nuevo_recargo_usd === null || nuevo_recargo_usd === '') {
+      return res.status(400).json({ error: 'id_sede, mes, anio y nuevo_recargo_usd son requeridos' });
+    }
+
+    const mesNumero = Number(mes);
+    const anioNumero = Number(anio);
+    const nuevoRecargo = redondearMonto(nuevo_recargo_usd);
+
+    if (!Number.isInteger(mesNumero) || mesNumero < 1 || mesNumero > 12) {
+      return res.status(400).json({ error: 'Mes inválido' });
+    }
+
+    if (!Number.isInteger(anioNumero) || anioNumero < 2000) {
+      return res.status(400).json({ error: 'Año inválido' });
+    }
+
+    if (nuevoRecargo < 0) {
+      return res.status(400).json({ error: 'El nuevo recargo no puede ser negativo' });
+    }
+
+    const resultado = await aplicarRecargoPorSedeCore(
+      {
+        id_sede,
+        mesNumero,
+        anioNumero,
+        nuevoRecargo,
+        descripcion
+      },
+      tenantModels,
+      req
+    );
+
+    if (resultado.alumnos.length === 0) {
+      return res.status(404).json({ error: 'No hay alumnos activos con monto por sede en esta sede' });
+    }
+
+    if (resultado.mensualidades.length === 0) {
+      return res.status(404).json({ error: 'No hay mensualidades generadas para esa sede en el periodo indicado' });
+    }
+
+    return res.json({
+      message: 'Recargo por sede aplicado correctamente',
+      mensualidades_actualizadas: resultado.actualizadas,
+      mensualidades_omitidas_no_aplicables: resultado.omitidasNoAplicables,
+      mensualidades_omitidas_detalle: resultado.omitidasDetalle,
+      resumen_ajuste: {
+        procesadas_total: resultado.preview.mensualidades_actualizables + resultado.preview.mensualidades_omitidas + resultado.preview.mensualidades_sin_cambio,
+        correctas: resultado.actualizadas,
+        omitidas_total: resultado.omitidasNoAplicables,
+        omitidas_no_aplicables: resultado.omitidasNoAplicables,
+        omitidas_conflicto_saldo: 0,
+        omitidas_detalle: resultado.omitidasDetalle,
+        delta_total_recargo: resultado.preview.delta_total_recargo
+      },
+      nuevo_recargo_usd: nuevoRecargo,
+      mes: mesNumero,
+      anio: anioNumero
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

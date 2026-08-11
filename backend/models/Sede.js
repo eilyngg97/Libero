@@ -5,8 +5,9 @@ const SedeSchema = new mongoose.Schema({
   direccion: { type: String, required: true },
   costo: { type: Number, required: true },
   monto_inscripcion: { type: Number, default: 0 },
-  estado: { type: String },
-  horario_constancia: { type: String }
+  recargo_usd: { type: Number, default: 0, min: 0 },
+  usar_recargo_global: { type: Boolean, default: true },
+  estado: { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Sede', SedeSchema);

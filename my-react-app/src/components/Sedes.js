@@ -15,6 +15,17 @@ import CloseIcon from '@mui/icons-material/Close';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
 import AddIcon from '@mui/icons-material/Add';
+import TextField from '@mui/material/TextField';
+import Alert from '@mui/material/Alert';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import TablePagination from '@mui/material/TablePagination';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
 import { useDolar } from '../context/DolarContext';
 
 
@@ -22,6 +33,13 @@ function Sedes() {
   const { dolar } = useDolar();
   const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
+  const usaRecargoGlobal = (sede) => {
+    if (sede?.usar_recargo_global !== undefined && sede?.usar_recargo_global !== null) {
+      return sede.usar_recargo_global !== false;
+    }
+
+    return !(Number(sede?.recargo_usd || 0) > 0);
+  };
   const [sedes, setSedes] = useState([]);
   const [open, setOpen] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
@@ -30,6 +48,38 @@ function Sedes() {
   const [openConfirm, setOpenConfirm] = useState(false);
   const [sedeAEliminar, setSedeAEliminar] = useState(null);
   const [eliminandoSede, setEliminandoSede] = useState(false);
+  const [openRecargo, setOpenRecargo] = useState(false);
+  const [sedeAjusteRecargo, setSedeAjusteRecargo] = useState(null);
+  const [recargoMes, setRecargoMes] = useState(() => String(new Date().getMonth() + 1));
+  const [recargoAnio, setRecargoAnio] = useState(() => String(new Date().getFullYear()));
+  const [nuevoRecargo, setNuevoRecargo] = useState('');
+  const [descripcionRecargo, setDescripcionRecargo] = useState('');
+  const [previewRecargo, setPreviewRecargo] = useState(null);
+  const [previewRecargoLoading, setPreviewRecargoLoading] = useState(false);
+  const [previewRecargoError, setPreviewRecargoError] = useState('');
+  const [aplicandoRecargo, setAplicandoRecargo] = useState(false);
+  const [openImpactoRecargo, setOpenImpactoRecargo] = useState(false);
+  const [impactoPage, setImpactoPage] = useState(0);
+  const [impactoRowsPerPage, setImpactoRowsPerPage] = useState(10);
+  const [omitidasPage, setOmitidasPage] = useState(0);
+  const [omitidasRowsPerPage, setOmitidasRowsPerPage] = useState(10);
+  const [impactoTab, setImpactoTab] = useState('actualizables');
+
+  const formatMoney = (value) => Number(value || 0).toFixed(2);
+  const detalleImpacto = Array.isArray(previewRecargo?.actualizables_detalle)
+    ? previewRecargo.actualizables_detalle
+    : [];
+  const detalleOmitidas = Array.isArray(previewRecargo?.omitidas_detalle)
+    ? previewRecargo.omitidas_detalle
+    : [];
+  const detalleImpactoPaginado = detalleImpacto.slice(
+    impactoPage * impactoRowsPerPage,
+    impactoPage * impactoRowsPerPage + impactoRowsPerPage
+  );
+  const detalleOmitidasPaginado = detalleOmitidas.slice(
+    omitidasPage * omitidasRowsPerPage,
+    omitidasPage * omitidasRowsPerPage + omitidasRowsPerPage
+  );
 
   // Cargar sedes desde el backend al montar
   const fetchSedes = async () => {
@@ -102,6 +152,166 @@ function Sedes() {
     setOpen(true);
   };
 
+  const abrirAjusteRecargo = (sede) => {
+    setSedeAjusteRecargo(sede || null);
+    setRecargoMes(String(new Date().getMonth() + 1));
+    setRecargoAnio(String(new Date().getFullYear()));
+    setNuevoRecargo(String(Number(sede?.recargo_usd || 0)));
+    setDescripcionRecargo('Ajuste de recargo por sede');
+    setPreviewRecargo(null);
+    setPreviewRecargoError('');
+    setOpenRecargo(true);
+  };
+
+  const cerrarAjusteRecargo = () => {
+    if (aplicandoRecargo) return;
+    setOpenRecargo(false);
+    setOpenImpactoRecargo(false);
+    setSedeAjusteRecargo(null);
+    setRecargoMes(String(new Date().getMonth() + 1));
+    setRecargoAnio(String(new Date().getFullYear()));
+    setNuevoRecargo('');
+    setDescripcionRecargo('');
+    setPreviewRecargo(null);
+    setPreviewRecargoError('');
+  };
+
+  const obtenerPreviewRecargo = React.useCallback(async () => {
+    if (!openRecargo || !sedeAjusteRecargo?._id) return;
+
+    const mesNumero = Number(recargoMes);
+    const anioNumero = Number(recargoAnio);
+    const recargoNumero = Number(nuevoRecargo);
+
+    if (!Number.isInteger(mesNumero) || mesNumero < 1 || mesNumero > 12) return;
+    if (!Number.isInteger(anioNumero) || anioNumero < 2000) return;
+    if (!Number.isFinite(recargoNumero) || recargoNumero < 0) return;
+
+    try {
+      setPreviewRecargoLoading(true);
+      setPreviewRecargoError('');
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/recargo-sede/preview`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id_sede: sedeAjusteRecargo._id,
+          mes: mesNumero,
+          anio: anioNumero,
+          nuevo_recargo_usd: recargoNumero
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'No se pudo calcular la vista previa');
+      setPreviewRecargo(data);
+    } catch (err) {
+      setPreviewRecargo(null);
+      setPreviewRecargoError(err.message || 'No se pudo calcular la vista previa');
+    } finally {
+      setPreviewRecargoLoading(false);
+    }
+  }, [openRecargo, sedeAjusteRecargo?._id, recargoMes, recargoAnio, nuevoRecargo]);
+
+  React.useEffect(() => {
+    if (!openRecargo) return;
+    const timer = setTimeout(() => {
+      obtenerPreviewRecargo();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [openRecargo, obtenerPreviewRecargo]);
+
+  React.useEffect(() => {
+    if (!openImpactoRecargo) return;
+    setImpactoPage(0);
+    setOmitidasPage(0);
+    if (detalleImpacto.length > 0) {
+      setImpactoTab('actualizables');
+      return;
+    }
+    if (detalleOmitidas.length > 0) {
+      setImpactoTab('omitidas');
+    }
+  }, [openImpactoRecargo, detalleImpacto.length, detalleOmitidas.length]);
+
+  React.useEffect(() => {
+    if (!openImpactoRecargo) return;
+    if (impactoTab === 'actualizables') {
+      setImpactoPage(0);
+      return;
+    }
+    setOmitidasPage(0);
+  }, [impactoTab, openImpactoRecargo]);
+
+  const aplicarRecargoSede = async () => {
+    if (!sedeAjusteRecargo?._id || aplicandoRecargo) return;
+
+    const mesNumero = Number(recargoMes);
+    const anioNumero = Number(recargoAnio);
+    const recargoNumero = Number(nuevoRecargo);
+
+    if (!Number.isInteger(mesNumero) || mesNumero < 1 || mesNumero > 12) {
+      setPreviewRecargoError('Selecciona un mes válido.');
+      return;
+    }
+
+    if (!Number.isInteger(anioNumero) || anioNumero < 2000) {
+      setPreviewRecargoError('Selecciona un año válido.');
+      return;
+    }
+
+    if (!Number.isFinite(recargoNumero) || recargoNumero < 0) {
+      setPreviewRecargoError('Ingresa un recargo válido.');
+      return;
+    }
+
+    try {
+      setAplicandoRecargo(true);
+      setPreviewRecargoError('');
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/recargo-sede`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id_sede: sedeAjusteRecargo._id,
+          mes: mesNumero,
+          anio: anioNumero,
+          nuevo_recargo_usd: recargoNumero,
+          descripcion: descripcionRecargo.trim()
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'No se pudo aplicar el recargo');
+
+      const resumen = data?.resumen_ajuste || {
+        procesadas_total: (data?.mensualidades_actualizadas || 0) + (data?.mensualidades_omitidas_no_aplicables || 0),
+        correctas: data?.mensualidades_actualizadas || 0,
+        omitidas_total: data?.mensualidades_omitidas_no_aplicables || 0,
+        omitidas_no_aplicables: data?.mensualidades_omitidas_no_aplicables || 0,
+        omitidas_conflicto_saldo: 0,
+        omitidas_detalle: Array.isArray(data?.mensualidades_omitidas_detalle) ? data.mensualidades_omitidas_detalle : []
+      };
+
+      setPreviewRecargo(data);
+      setAlert({
+        open: true,
+        message: `Recargo aplicado: ${resumen.correctas || 0} actualizadas, ${resumen.omitidas_total || 0} omitidas.`,
+        severity: 'success'
+      });
+      await fetchSedes();
+      cerrarAjusteRecargo();
+    } catch (err) {
+      setPreviewRecargoError(err.message || 'No se pudo aplicar el recargo');
+    } finally {
+      setAplicandoRecargo(false);
+    }
+  };
+
   return (
     <div>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -168,14 +378,38 @@ function Sedes() {
                   <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>
                     Inscripción: {simboloMonedaActiva}{sede.monto_inscripcion || '-'}
                   </Typography>
+                  <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>
+                    Recargo: {usaRecargoGlobal(sede) ? 'Global' : `${simboloMonedaActiva}${sede.recargo_usd || 0}`}
+                  </Typography>
                 </Box>
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 180 }}>
-                <Typography sx={{ fontSize: 13, color: '#64748b', fontWeight: 700, mb: 0.5 }}>Horario constancia</Typography>
-                <Typography sx={{ fontSize: 15, color: '#0f172a', fontWeight: 700 }}>{sede.horario_constancia || '-'}</Typography>
               </Box>
               <Box sx={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
                 <Box sx={{ display: 'flex', gap: 1 }}>
+                    {!usaRecargoGlobal(sede) && (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => abrirAjusteRecargo(sede)}
+                        sx={{
+                          borderRadius: 2,
+                          color: '#b45309',
+                          borderColor: '#fdba74',
+                          bgcolor: '#fff',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          boxShadow: 'none',
+                          letterSpacing: 1,
+                          px: 2.5,
+                          '&:hover': {
+                            bgcolor: '#fff7ed',
+                            borderColor: '#fb923c',
+                            boxShadow: 'none'
+                          }
+                        }}
+                      >
+                        Recalcular recargo
+                      </Button>
+                    )}
                     <Button
                       variant="outlined"
                       size="small"
@@ -251,6 +485,316 @@ function Sedes() {
           <Button onClick={eliminarSede} color="error" variant="contained" disabled={eliminandoSede}>
             {eliminandoSede ? 'Eliminando...' : 'Eliminar'}
           </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={openRecargo}
+        onClose={cerrarAjusteRecargo}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, border: '1px solid #d1d5db', backgroundColor: '#f8fafc' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#1f2937', pr: 6, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f3f4f6' }}>
+          Recalcular recargo por sede
+          <IconButton
+            aria-label="Cerrar"
+            onClick={cerrarAjusteRecargo}
+            disabled={aplicandoRecargo}
+            sx={{ position: 'absolute', right: 8, top: 8, color: '#6b7280' }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1.5 }}>
+          <Alert severity="info" sx={{ mb: 2, borderColor: '#cbd5e1', color: '#334155', backgroundColor: '#f8fafc' }}>
+            Este ajuste recalcula las mensualidades activas de la sede del periodo indicado, incluyendo montos por sede y montos personalizados.
+          </Alert>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <Button
+              onClick={obtenerPreviewRecargo}
+              disabled={aplicandoRecargo || previewRecargoLoading}
+              variant="outlined"
+              sx={{
+                borderColor: '#9ca3af',
+                color: '#4b5563',
+                fontWeight: 700,
+                '&:hover': {
+                  borderColor: '#6b7280',
+                  backgroundColor: '#f3f4f6'
+                }
+              }}
+            >
+              Recalcular vista previa
+            </Button>
+          </Box>
+          <TextField
+            label="Sede"
+            fullWidth
+            margin="normal"
+            value={sedeAjusteRecargo?.nombre || ''}
+            disabled
+          />
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+            <TextField
+              label="Mes"
+              type="number"
+              fullWidth
+              margin="normal"
+              value={recargoMes}
+              onChange={(e) => {
+                setRecargoMes(e.target.value);
+                setPreviewRecargo(null);
+              }}
+              inputProps={{ min: 1, max: 12, step: 1 }}
+            />
+            <TextField
+              label="Año"
+              type="number"
+              fullWidth
+              margin="normal"
+              value={recargoAnio}
+              onChange={(e) => {
+                setRecargoAnio(e.target.value);
+                setPreviewRecargo(null);
+              }}
+              inputProps={{ min: 2000, step: 1 }}
+            />
+          </Box>
+          <TextField
+            label={`Nuevo recargo (${simboloMonedaActiva})`}
+            type="number"
+            fullWidth
+            margin="normal"
+            value={nuevoRecargo}
+            onChange={(e) => {
+              setNuevoRecargo(e.target.value);
+              setPreviewRecargo(null);
+            }}
+            inputProps={{ min: 0, step: '0.01' }}
+          />
+          <TextField
+            label="Nota"
+            fullWidth
+            margin="normal"
+            value={descripcionRecargo}
+            onChange={(e) => setDescripcionRecargo(e.target.value)}
+            multiline
+            minRows={2}
+            placeholder="Motivo del cambio de recargo"
+          />
+          {previewRecargoError && <Alert severity="error" sx={{ mt: 2 }}>{previewRecargoError}</Alert>}
+          {previewRecargo && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity={Number(previewRecargo.mensualidades_actualizables || 0) > 0 ? 'success' : 'info'}>
+                Impacto estimado: {previewRecargo.mensualidades_actualizables || 0} actualizables, {previewRecargo.mensualidades_omitidas || 0} omitidas, {previewRecargo.mensualidades_sin_cambio || 0} sin cambio.
+              </Alert>
+            </Box>
+          )}
+          {previewRecargoLoading && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Calculando vista previa...
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, display: 'flex', justifyContent: 'flex-end', gap: 1.2, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+            <Button
+              onClick={() => setOpenImpactoRecargo(true)}
+              variant="outlined"
+              disabled={
+                aplicandoRecargo ||
+                previewRecargoLoading ||
+                !previewRecargo ||
+                (
+                  (!Array.isArray(previewRecargo.actualizables_detalle) || previewRecargo.actualizables_detalle.length === 0) &&
+                  (!Array.isArray(previewRecargo.omitidas_detalle) || previewRecargo.omitidas_detalle.length === 0)
+                )
+              }
+              sx={{
+                borderColor: '#94a3b8',
+                color: '#64748b',
+                fontWeight: 700,
+                '&:hover': {
+                  borderColor: '#7b8794',
+                  backgroundColor: '#f8fafc'
+                }
+              }}
+            >
+              Ver impacto
+            </Button>
+            <Button
+              onClick={aplicarRecargoSede}
+              variant="contained"
+              disabled={aplicandoRecargo || previewRecargoLoading || !(previewRecargo?.mensualidades_actualizables > 0)}
+              sx={{
+                bgcolor: '#f97316',
+                '&:hover': { bgcolor: '#ea580c' },
+                fontWeight: 700,
+                borderRadius: 2,
+                py: 1.2,
+                '&.Mui-disabled': { backgroundColor: '#d1d5db', color: '#6b7280' }
+              }}
+            >
+              {aplicandoRecargo ? 'Aplicando...' : 'Aplicar recargo'}
+            </Button>
+          </Box>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={openImpactoRecargo}
+        onClose={() => setOpenImpactoRecargo(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, border: '1px solid #d1d5db', backgroundColor: '#f8fafc' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#1f2937', pr: 6, borderBottom: '1px solid #e5e7eb', backgroundColor: '#f3f4f6' }}>
+          Impacto del recargo por alumno
+          <IconButton
+            aria-label="Cerrar"
+            onClick={() => setOpenImpactoRecargo(false)}
+            sx={{ position: 'absolute', right: 8, top: 8, color: '#6b7280' }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1.5 }}>
+          {(detalleImpacto.length > 0 || detalleOmitidas.length > 0) ? (
+            <>
+              <Tabs
+                value={impactoTab}
+                onChange={(_, value) => setImpactoTab(value)}
+                sx={{
+                  mb: 1.5,
+                  borderBottom: '1px solid #d1d5db',
+                  '& .MuiTabs-indicator': {
+                    backgroundColor: '#6b7280'
+                  }
+                }}
+                variant="fullWidth"
+              >
+                <Tab
+                  value="actualizables"
+                  label={`Actualizables (${detalleImpacto.length})`}
+                  disabled={detalleImpacto.length === 0}
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    color: '#6b7280',
+                    '&.Mui-selected': { color: '#374151' }
+                  }}
+                />
+                <Tab
+                  value="omitidas"
+                  label={`Omitidas (${detalleOmitidas.length})`}
+                  disabled={detalleOmitidas.length === 0}
+                  sx={{
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    color: '#6b7280',
+                    '&.Mui-selected': { color: '#374151' }
+                  }}
+                />
+              </Tabs>
+
+              {impactoTab === 'actualizables' && (
+                <>
+                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1 }}>Actualizables</Typography>
+                  {detalleImpacto.length > 0 ? (
+                    <>
+                      <TableContainer component={Paper} variant="outlined" sx={{ borderColor: '#d1d5db', maxHeight: 420, backgroundColor: '#ffffff' }}>
+                        <Table stickyHeader size="small" aria-label="detalle mensualidades actualizables">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 800 }}>Alumno</TableCell>
+                              <TableCell sx={{ fontWeight: 800 }}>Cédula</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800 }}>Recargo anterior</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800 }}>Recargo nuevo</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {detalleImpactoPaginado.map((item) => (
+                              <TableRow key={item?.mensualidad_id || `${item?.alumno_id || 'alumno'}-${item?.alumno_cedula || 'cedula'}`} hover>
+                                <TableCell>{item?.alumno_nombre || 'Alumno sin nombre'}</TableCell>
+                                <TableCell>{item?.alumno_cedula || '-'}</TableCell>
+                                <TableCell align="right">{`${simboloMonedaActiva}${formatMoney(item?.recargo_anterior_usd)}`}</TableCell>
+                                <TableCell align="right">{`${simboloMonedaActiva}${formatMoney(item?.recargo_nuevo_usd)}`}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                      <TablePagination
+                        component="div"
+                        count={detalleImpacto.length}
+                        page={impactoPage}
+                        onPageChange={(_, newPage) => setImpactoPage(newPage)}
+                        rowsPerPage={impactoRowsPerPage}
+                        onRowsPerPageChange={(event) => {
+                          setImpactoRowsPerPage(Number(event.target.value));
+                          setImpactoPage(0);
+                        }}
+                        rowsPerPageOptions={[5, 10, 25, 50]}
+                        labelRowsPerPage="Filas por página"
+                      />
+                    </>
+                  ) : (
+                    <Alert severity="info">No hay mensualidades actualizables para mostrar.</Alert>
+                  )}
+                </>
+              )}
+              {impactoTab === 'omitidas' && (
+                <>
+                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1 }}>Omitidas</Typography>
+                  {detalleOmitidas.length > 0 ? (
+                    <>
+                      <TableContainer component={Paper} variant="outlined" sx={{ borderColor: '#d1d5db', maxHeight: 420, backgroundColor: '#ffffff' }}>
+                        <Table stickyHeader size="small" aria-label="detalle mensualidades omitidas">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 800 }}>Alumno</TableCell>
+                              <TableCell sx={{ fontWeight: 800 }}>Cédula</TableCell>
+                              <TableCell sx={{ fontWeight: 800 }}>Estatus</TableCell>
+                              <TableCell sx={{ fontWeight: 800 }}>Motivo</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {detalleOmitidasPaginado.map((item) => (
+                              <TableRow key={item?.mensualidad_id || `${item?.alumno_id || 'alumno'}-${item?.motivo_code || 'motivo'}`} hover>
+                                <TableCell>{item?.alumno_nombre || 'Alumno sin nombre'}</TableCell>
+                                <TableCell>{item?.alumno_cedula || '-'}</TableCell>
+                                <TableCell>{item?.estatus || '-'}</TableCell>
+                                <TableCell>{item?.motivo || 'Omitida por regla de negocio'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                      <TablePagination
+                        component="div"
+                        count={detalleOmitidas.length}
+                        page={omitidasPage}
+                        onPageChange={(_, newPage) => setOmitidasPage(newPage)}
+                        rowsPerPage={omitidasRowsPerPage}
+                        onRowsPerPageChange={(event) => {
+                          setOmitidasRowsPerPage(Number(event.target.value));
+                          setOmitidasPage(0);
+                        }}
+                        rowsPerPageOptions={[5, 10, 25, 50]}
+                        labelRowsPerPage="Filas por página"
+                      />
+                    </>
+                  ) : (
+                    <Alert severity="info">No hay mensualidades omitidas para mostrar.</Alert>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <Alert severity="info">No hay mensualidades actualizables para mostrar.</Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setOpenImpactoRecargo(false)}>Cerrar</Button>
         </DialogActions>
       </Dialog>
     </div>

@@ -54,6 +54,10 @@ router.get('/ingresos-por-sede', authMiddleware, permisoMiddleware('mensualidade
 router.post('/ajuste-sede/preview', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.previewAjusteExtraordinarioSede);
 // Aplicar ajuste extraordinario por sede y periodo
 router.post('/ajuste-sede', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.aplicarAjusteExtraordinarioSede);
+// Vista previa del impacto del recargo por sede y periodo
+router.post('/recargo-sede/preview', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.previewRecargoExtraordinarioSede);
+// Aplicar recargo por sede y periodo
+router.post('/recargo-sede', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.aplicarRecargoExtraordinarioSede);
 // Confirmar mensualidad
 router.patch('/:id/confirmar', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.confirmarMensualidad);
 // Editar mensualidad individual (monto y/o estatus)

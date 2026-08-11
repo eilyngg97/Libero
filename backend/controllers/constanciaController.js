@@ -368,7 +368,7 @@ function normalizarHorarioDesdeRequest(reqBody = {}, alumno = {}) {
     return diasTexto;
   }
 
-  return String(alumno?.sede?.horario_constancia || 'horario no especificado').trim();
+  return 'horario no especificado';
 }
 
 function mapLogoUrlsToLocalPaths(logoUrls = []) {
