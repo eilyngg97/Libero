@@ -11,7 +11,6 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
-  Menu,
   MenuItem,
   Paper,
   Snackbar,
@@ -119,7 +118,6 @@ function ListadoSolicitudesUniformes() {
   const [filtroSexo, setFiltroSexo] = useState('todos');
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(10);
-  const [exportMenuAnchorEl, setExportMenuAnchorEl] = useState(null);
   const [selectedPedidoIds, setSelectedPedidoIds] = useState([]);
   const [submittingSolicitudPagoLote, setSubmittingSolicitudPagoLote] = useState(false);
   const [confirmSolicitudPagoLoteOpen, setConfirmSolicitudPagoLoteOpen] = useState(false);
@@ -410,56 +408,53 @@ function ListadoSolicitudesUniformes() {
     pedidosPaginados.length > 0 &&
     pedidosPaginados.every((pedido) => selectedPedidoIds.includes(String(pedido._id)));
 
-  const buildExcelRows = (rows) => rows.map((pedido) => ({
-    Sede: pedido.sede?.nombre || pedido.sede?.sede || '-',
-    Alumno: pedido.alumno ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim() : '-',
-    Prenda: pedido.prenda || '-',
-    Talla: pedido.talla || '-',
-    'Nombre deportivo': pedido.nombre_personalizado || '-',
-    'Numero franela': pedido.numero_franela || '-'
-  }));
+  const buildExcelRows = (rows) => rows.map((pedido) => {
+    const estadoKey = String(pedido?.estado || '').trim().toLowerCase();
+    return {
+      Sede: pedido.sede?.nombre || pedido.sede?.sede || '-',
+      Alumno: pedido.alumno ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim() : '-',
+      Categoria: pedido.alumno?.categoria || '-',
+      Fecha: formatFecha(pedido.createdAt || pedido.fecha_solicitud || pedido.fechaSolicitud),
+      Estado: ESTADO_LABELS[estadoKey] || (pedido.estado || '-'),
+      Prenda: pedido.prenda || '-',
+      Talla: pedido.talla || '-',
+      'Nombre deportivo': pedido.nombre_personalizado || '-',
+      'Numero franela': pedido.numero_franela || '-'
+    };
+  });
 
-  const exportPedidosExcel = async (mode) => {
-    const baseRows = mode === 'verificados'
-      ? pedidosFiltrados.filter((pedido) => String(pedido.estado || '').toLowerCase() === 'verificado')
-      : pedidosFiltrados;
-
-    const rows = buildExcelRows(baseRows);
-    const suffix = mode === 'verificados' ? '_verificados' : '_todos';
+  const exportPedidosExcel = async () => {
+    const rows = buildExcelRows(pedidosFiltrados);
+    const exportaTodo = pedidos.length > 0 && pedidosFiltrados.length === pedidos.length;
+    const suffix = exportaTodo ? '_todos' : '_filtrados';
     const sedeSuffix = sedeSeleccionada?.nombre
       ? `_${String(sedeSeleccionada.nombre).trim().replace(/\s+/g, '_')}`
       : '';
     const fileName = `solicitudes_uniformes${sedeSuffix}${suffix}.xlsx`;
 
     if (rows.length === 0) {
-      setError(mode === 'verificados'
-        ? 'No hay solicitudes verificadas para exportar.'
-        : 'No hay solicitudes para exportar.');
+      setError('No hay solicitudes para exportar.');
       return;
     }
 
-    await exportToExcel(rows, fileName, ['Sede', 'Alumno', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela']);
-    setSuccessMessage(mode === 'verificados'
-      ? 'Excel de solicitudes verificadas (segun filtros) exportado'
-      : 'Excel de solicitudes filtradas exportado');
-  };
-
-  const handleOpenExportMenu = (event) => {
-    setExportMenuAnchorEl(event.currentTarget);
-  };
-
-  const handleCloseExportMenu = () => {
-    setExportMenuAnchorEl(null);
-  };
-
-  const handleExportAll = async () => {
-    handleCloseExportMenu();
-    await exportPedidosExcel('all');
-  };
-
-  const handleExportVerified = async () => {
-    handleCloseExportMenu();
-    await exportPedidosExcel('verificados');
+    await exportToExcel(
+      rows,
+      fileName,
+      ['Sede', 'Alumno', 'Categoria', 'Fecha', 'Estado', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela'],
+      {
+        statusColumnName: 'Estado',
+        statusStyleMap: {
+          pendiente: { bg: '#e2e8f0', color: '#475569' },
+          esperando_pago: { bg: '#fef3c7', color: '#92400e' },
+          abono: { bg: '#ffedd5', color: '#9a3412' },
+          pago_en_revision: { bg: '#dbeafe', color: '#1d4ed8' },
+          verificado: { bg: '#dcfce7', color: '#166534' },
+          entregado: { bg: '#dcfce7', color: '#166534' },
+          cancelado: { bg: '#fee2e2', color: '#b91c1c' }
+        }
+      }
+    );
+    setSuccessMessage('Excel de solicitudes exportado segun filtros visibles');
   };
 
   const montoTotalDivisa = Number(pedidoSeleccionado?.precio);
@@ -1389,7 +1384,7 @@ function ListadoSolicitudesUniformes() {
             <Button
               variant="outlined"
               startIcon={<DownloadIcon />}
-              onClick={handleOpenExportMenu}
+              onClick={exportPedidosExcel}
               sx={{
                 textTransform: 'none',
                 fontWeight: 700,
@@ -1403,17 +1398,6 @@ function ListadoSolicitudesUniformes() {
             </Button>
           </Box>
         </Box>
-
-        <Menu
-          anchorEl={exportMenuAnchorEl}
-          open={Boolean(exportMenuAnchorEl)}
-          onClose={handleCloseExportMenu}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        >
-          <MenuItem onClick={handleExportAll}>Exportar todos los registros</MenuItem>
-          <MenuItem onClick={handleExportVerified}>Exportar solo verificados</MenuItem>
-        </Menu>
       </Paper>
 
       <Box sx={{ mb: 1.1 }}>
