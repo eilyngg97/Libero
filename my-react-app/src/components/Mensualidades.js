@@ -162,9 +162,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [guardandoEdicionMensualidad, setGuardandoEdicionMensualidad] = useState(false);
 	const [modalExportExcelOpen, setModalExportExcelOpen] = useState(false);
 	const [opcionesExportExcel, setOpcionesExportExcel] = useState({
-		mesCompleto: true,
-		insolventesRepresentante: false,
-		insolventesAlumnoRepresentante: false
+		incluirNombreAtleta: true,
+		incluirNombreRepresentante: true
 	});
 	const [alumnoAvatarMap, setAlumnoAvatarMap] = useState(() => loadAvatarCacheFromSession());
 	const avatarFetchInFlightRef = React.useRef(new Set());
@@ -1630,16 +1629,12 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const exportarExcelSeleccionado = async () => {
-		const seleccionadas = Object.entries(opcionesExportExcel)
-			.filter(([, activa]) => !!activa)
-			.map(([clave]) => clave);
-
-		if (seleccionadas.length === 0) {
-			alert('Selecciona al menos una opcion para exportar.');
+		if (!opcionesExportExcel.incluirNombreAtleta && !opcionesExportExcel.incluirNombreRepresentante) {
+			alert('Selecciona al menos una columna de nombre para exportar.');
 			return;
 		}
 
-		const fuente = Array.isArray(mensualidadesBD) ? mensualidadesBD : [];
+		const fuente = Array.isArray(mensualidades) ? mensualidades : [];
 		if (fuente.length === 0) {
 			alert('No hay datos para exportar.');
 			return;
@@ -1647,80 +1642,60 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 		const nombreSede = normalizarNombreArchivo(sedeSeleccionada?.nombre || 'sede');
 		const nombreMes = filtroMes ? normalizarNombreArchivo(meses[Number(filtroMes) - 1] || 'mes') : 'todos_los_meses';
+		const exportaTodo = Array.isArray(mensualidadesBD)
+			&& mensualidadesBD.length > 0
+			&& fuente.length === mensualidadesBD.length;
+		const scopeSuffix = exportaTodo ? 'todos' : 'filtrados';
 
-		if (opcionesExportExcel.mesCompleto) {
-			const rowsMesCompleto = fuente
-				.filter((m) => !esAlumnoDeBajaMensualidad(m))
-				.map((m) => ({
-				Alumno: obtenerNombreAlumnoMensualidad(m),
-				Representante: obtenerNombreRepresentanteMensualidad(m),
+		const nombreColumnas = [];
+		if (opcionesExportExcel.incluirNombreAtleta) nombreColumnas.push('Alumno');
+		if (opcionesExportExcel.incluirNombreRepresentante) nombreColumnas.push('Representante');
+
+		const rows = fuente.map((m) => {
+			const row = {
 				Categoria: m.id_alumno?.categoria || '-',
 				Mes: meses[(m.mes || 1) - 1],
 				Anio: m.anio || '-',
-				Monto: Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2),
-				Recargo: Number(m.recargo_aplicado_usd || 0).toFixed(2),
+				Monto: Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2)),
+				Recargo: Number(Number(m.recargo_aplicado_usd || 0).toFixed(2)),
 				Estado: m.estatus || '-'
-			}));
+			};
 
-			await exportToExcel(
-				rowsMesCompleto,
-				`mes_completo_${nombreMes}_${nombreSede}.xlsx`,
-				['Alumno', 'Representante', 'Categoria', 'Mes', 'Anio', 'Monto', 'Recargo', 'Estado'],
-				{ statusColumnName: 'Estado', statusStyleMap: estilosEstadoExcel }
-			);
-		}
+			if (opcionesExportExcel.incluirNombreAtleta) {
+				row.Alumno = obtenerNombreAlumnoMensualidad(m);
+			}
+			if (opcionesExportExcel.incluirNombreRepresentante) {
+				row.Representante = obtenerNombreRepresentanteMensualidad(m);
+			}
 
-		const insolventes = fuente.filter((m) => {
-			const estatusInsolvente = ['retrasado', 'insolvente'].includes(String(m.estatus || '').toLowerCase());
-			return estatusInsolvente && !esAlumnoDeBajaMensualidad(m);
+			return row;
 		});
 
-		if (opcionesExportExcel.insolventesRepresentante) {
-			const rowsRepresentante = insolventes.map((m) => {
-				const alumnoNombre = obtenerNombreAlumnoMensualidad(m);
-				const representanteOriginal = obtenerNombreRepresentanteMensualidad(m);
-				const representante = representanteOriginal === 'Sin representante'
-					? alumnoNombre
-					: representanteOriginal;
+		const headers = [
+			...nombreColumnas,
+			'Categoria',
+			'Mes',
+			'Anio',
+			'Monto',
+			'Recargo',
+			'Estado'
+		];
 
-				return {
-					Representante: representante,
-					Categoria: m.id_alumno?.categoria || '-',
-					Mes: meses[(m.mes || 1) - 1],
-					Anio: m.anio || '-',
-					Monto: Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2),
-					Recargo: Number(m.recargo_aplicado_usd || 0).toFixed(2),
-					Estado: 'Insolvente'
-				};
-			});
+		const nombreCampos = opcionesExportExcel.incluirNombreAtleta && opcionesExportExcel.incluirNombreRepresentante
+			? 'atleta_representante'
+			: (opcionesExportExcel.incluirNombreAtleta ? 'atleta' : 'representante');
 
-			await exportToExcel(
-				rowsRepresentante,
-				`insolventes_por_representante_${nombreMes}_${nombreSede}.xlsx`,
-				['Representante', 'Categoria', 'Mes', 'Anio', 'Monto', 'Recargo', 'Estado'],
-				{ statusColumnName: 'Estado', statusStyleMap: estilosEstadoExcel }
-			);
-		}
-
-		if (opcionesExportExcel.insolventesAlumnoRepresentante) {
-			const rowsAlumnoRepresentante = insolventes.map((m) => ({
-				Alumno: obtenerNombreAlumnoMensualidad(m),
-				Representante: obtenerNombreRepresentanteMensualidad(m),
-				Categoria: m.id_alumno?.categoria || '-',
-				Mes: meses[(m.mes || 1) - 1],
-				Anio: m.anio || '-',
-				Monto: Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2),
-				Recargo: Number(m.recargo_aplicado_usd || 0).toFixed(2),
-				Estado: 'Insolvente'
-			}));
-
-			await exportToExcel(
-				rowsAlumnoRepresentante,
-				`insolventes_alumno_representante_${nombreMes}_${nombreSede}.xlsx`,
-				['Alumno', 'Representante', 'Categoria', 'Mes', 'Anio', 'Monto', 'Recargo', 'Estado'],
-				{ statusColumnName: 'Estado', statusStyleMap: estilosEstadoExcel }
-			);
-		}
+		await exportToExcel(
+			rows,
+			`mensualidades_${scopeSuffix}_${nombreCampos}_${nombreMes}_${nombreSede}.xlsx`,
+			headers,
+			{
+				statusColumnName: 'Estado',
+				statusStyleMap: estilosEstadoExcel,
+				numberColumns: ['Monto', 'Recargo'],
+				numberFormat: '#,##0.00'
+			}
+		);
 
 		setModalExportExcelOpen(false);
 	};
@@ -1919,7 +1894,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					className="mensualidades-export-btn"
 					variant="contained"
 					onClick={() => setModalExportExcelOpen(true)}
-					disabled={(mensualidadesBD || []).length === 0}
+					disabled={(mensualidades || []).length === 0}
 					sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: '10px' }}
 				>
 					Exportar Excel
@@ -2998,20 +2973,16 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Exportar Excel</DialogTitle>
 				<DialogContent>
 					<Typography sx={{ color: '#64748b', mb: 1.5 }}>
-						Selecciona una o varias opciones y luego presiona Aplicar para descargar archivos XLSX.
+						Se exportarán las mensualidades visibles según los filtros actuales. Elige qué columna(s) de nombre incluir.
 					</Typography>
 					<FormGroup>
 						<FormControlLabel
-							control={<Checkbox checked={opcionesExportExcel.mesCompleto} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, mesCompleto: e.target.checked }))} />}
-							label="Mes completo"
+							control={<Checkbox checked={opcionesExportExcel.incluirNombreAtleta} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, incluirNombreAtleta: e.target.checked }))} />}
+							label="Incluir nombre de atleta"
 						/>
 						<FormControlLabel
-							control={<Checkbox checked={opcionesExportExcel.insolventesRepresentante} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, insolventesRepresentante: e.target.checked }))} />}
-							label="Insolventes nombre de representante"
-						/>
-						<FormControlLabel
-							control={<Checkbox checked={opcionesExportExcel.insolventesAlumnoRepresentante} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, insolventesAlumnoRepresentante: e.target.checked }))} />}
-							label="Insolventes alumno + representante"
+							control={<Checkbox checked={opcionesExportExcel.incluirNombreRepresentante} onChange={(e) => setOpcionesExportExcel((prev) => ({ ...prev, incluirNombreRepresentante: e.target.checked }))} />}
+							label="Incluir nombre de representante"
 						/>
 					</FormGroup>
 				</DialogContent>

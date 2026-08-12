@@ -23,6 +23,8 @@ export async function exportToExcel(rows, fileName = 'export.xlsx', headers = []
   const headerKeys = headers.length ? headers : Object.keys(rows[0]);
   const statusColumnName = options.statusColumnName || 'Estado';
   const statusStyleMap = options.statusStyleMap || {};
+  const numberColumns = Array.isArray(options.numberColumns) ? options.numberColumns : [];
+  const numberFormat = options.numberFormat || '#,##0.00';
 
   worksheet.addRow(headerKeys);
   const headerRow = worksheet.getRow(1);
@@ -64,6 +66,23 @@ export async function exportToExcel(rows, fileName = 'export.xlsx', headers = []
         bold: true,
         color: { argb: toArgb(style.color) }
       };
+    }
+  }
+
+  if (numberColumns.length > 0) {
+    const numberColumnIndexes = numberColumns
+      .map((columnName) => headerKeys.findIndex((key) => key === columnName) + 1)
+      .filter((index) => index > 0);
+
+    for (let rowIndex = 2; rowIndex <= worksheet.rowCount; rowIndex += 1) {
+      const row = worksheet.getRow(rowIndex);
+      numberColumnIndexes.forEach((colIndex) => {
+        const cell = row.getCell(colIndex);
+        if (typeof cell.value === 'number' && Number.isFinite(cell.value)) {
+          cell.numFmt = numberFormat;
+          cell.alignment = { ...(cell.alignment || {}), horizontal: 'right' };
+        }
+      });
     }
   }
 
