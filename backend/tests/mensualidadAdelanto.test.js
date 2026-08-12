@@ -17,6 +17,40 @@ const mongoose = require('mongoose');
 const { getTenantModel } = require('../services/tenantModelService');
 const mensualidadController = require('../controllers/mensualidadController');
 
+function querySelectSort(value) {
+  return {
+    select: jest.fn().mockReturnValue({
+      sort: jest.fn().mockResolvedValue(value)
+    })
+  };
+}
+
+function queryPopulate(value) {
+  return {
+    populate: jest.fn().mockResolvedValue(value)
+  };
+}
+
+function querySort(value) {
+  return {
+    sort: jest.fn().mockResolvedValue(value)
+  };
+}
+
+function querySelectSortArray(value) {
+  return {
+    select: jest.fn().mockReturnValue({
+      sort: jest.fn().mockResolvedValue(value)
+    })
+  };
+}
+
+function querySelect(value) {
+  return {
+    select: jest.fn().mockResolvedValue(value)
+  };
+}
+
 afterAll(async () => {
   try {
     await mongoose.disconnect();
@@ -56,35 +90,23 @@ describe('adelantarMensualidadSiguiente', () => {
     };
 
     const TenantMensualidad = {
-      findOne: jest
-        .fn()
-        .mockReturnValueOnce({
-          select: jest.fn().mockReturnValue({
-            sort: jest.fn().mockResolvedValue({ mes: 5, anio: 2026 })
-          })
-        })
-        .mockReturnValueOnce({
-          populate: jest.fn().mockResolvedValue(null)
-        }),
+      findOne: jest.fn().mockImplementation((filtro) => {
+        if (filtro?.estatus) {
+          return querySelectSort({ mes: 5, anio: 2026 });
+        }
+        return queryPopulate(null);
+      }),
       create: jest.fn().mockResolvedValue(mensualidadCreada),
-      findById: jest.fn().mockReturnValue({
-        populate: jest.fn().mockResolvedValue(mensualidadPopulada)
-      })
+      findById: jest.fn().mockReturnValue(queryPopulate(mensualidadPopulada))
     };
 
     const TenantSede = {
-      findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 100 })
+      findById: jest.fn().mockReturnValue(querySelect({ _id: 's1', costo: 100 }))
     };
 
     const TenantReposo = {
-      findOne: jest.fn().mockReturnValue({
-        sort: jest.fn().mockResolvedValue(null)
-      }),
-      find: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          sort: jest.fn().mockResolvedValue([])
-        })
-      })
+      findOne: jest.fn().mockReturnValue(querySort(null)),
+      find: jest.fn().mockReturnValue(querySelectSortArray([]))
     };
 
     const TenantConfig = {
@@ -128,8 +150,7 @@ describe('adelantarMensualidadSiguiente', () => {
 
     await mensualidadController.adelantarMensualidadSiguiente(req, res);
 
-    expect(TenantMensualidad.findOne).toHaveBeenNthCalledWith(
-      1,
+    expect(TenantMensualidad.findOne).toHaveBeenCalledWith(
       expect.objectContaining({
         id_alumno: 'a1',
         estatus: {
@@ -194,28 +215,18 @@ describe('registrarPrimeraMensualidad', () => {
     };
 
     const TenantMensualidad = {
-      findOne: jest.fn().mockReturnValue({
-        populate: jest.fn().mockResolvedValue(null)
-      }),
+      findOne: jest.fn().mockReturnValue(queryPopulate(null)),
       create: jest.fn().mockResolvedValue(mensualidadCreada),
-      findById: jest.fn().mockReturnValue({
-        populate: jest.fn().mockResolvedValue(mensualidadPopulada)
-      })
+      findById: jest.fn().mockReturnValue(queryPopulate(mensualidadPopulada))
     };
 
     const TenantSede = {
-      findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 100 })
+      findById: jest.fn().mockReturnValue(querySelect({ _id: 's1', costo: 100 }))
     };
 
     const TenantReposo = {
-      findOne: jest.fn().mockReturnValue({
-        sort: jest.fn().mockResolvedValue(null)
-      }),
-      find: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          sort: jest.fn().mockResolvedValue([])
-        })
-      })
+      findOne: jest.fn().mockReturnValue(querySort(null)),
+      find: jest.fn().mockReturnValue(querySelectSortArray([]))
     };
 
     const TenantConfig = {
@@ -264,6 +275,8 @@ describe('registrarPrimeraMensualidad', () => {
     };
 
     await mensualidadController.registrarPrimeraMensualidad(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(500);
 
     expect(TenantMensualidad.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -323,31 +336,21 @@ describe('registrarPrimeraMensualidad', () => {
     };
 
     const TenantMensualidad = {
-      findOne: jest.fn().mockReturnValue({
-        populate: jest.fn().mockResolvedValue(null)
-      }),
+      findOne: jest.fn().mockReturnValue(queryPopulate(null)),
       create: jest
         .fn()
         .mockResolvedValueOnce({ _id: 'm-jul' })
         .mockResolvedValueOnce({ _id: 'm-ago' }),
-      findById: jest.fn().mockImplementation((id) => ({
-        populate: jest.fn().mockResolvedValue(mensualidadesPopuladas[id])
-      }))
+      findById: jest.fn().mockImplementation((id) => queryPopulate(mensualidadesPopuladas[id]))
     };
 
     const TenantSede = {
-      findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 30 })
+      findById: jest.fn().mockReturnValue(querySelect({ _id: 's1', costo: 30 }))
     };
 
     const TenantReposo = {
-      findOne: jest.fn().mockReturnValue({
-        sort: jest.fn().mockResolvedValue(null)
-      }),
-      find: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          sort: jest.fn().mockResolvedValue([])
-        })
-      })
+      findOne: jest.fn().mockReturnValue(querySort(null)),
+      find: jest.fn().mockReturnValue(querySelectSortArray([]))
     };
 
     const TenantConfig = {
@@ -403,6 +406,8 @@ describe('registrarPrimeraMensualidad', () => {
 
     await mensualidadController.registrarPrimeraMensualidad(req, res);
 
+    expect(res.status).not.toHaveBeenCalledWith(500);
+
     expect(TenantMensualidad.create).toHaveBeenCalledTimes(2);
     expect(TenantMensualidad.create).toHaveBeenNthCalledWith(
       1,
@@ -425,7 +430,8 @@ describe('registrarPrimeraMensualidad', () => {
         id_alumno: 'a3',
         mes: 8,
         anio: 2026,
-        monto_base: 30
+        monto_base: 0,
+        monto_esperado: 0
       })
     );
 

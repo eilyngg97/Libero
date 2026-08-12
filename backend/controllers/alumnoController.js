@@ -823,9 +823,15 @@ async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models 
   const consultaAlumno = AlumnoModel.findById(alumnoId);
   if (!consultaAlumno) return null;
 
-  const alumno = typeof consultaAlumno.select === 'function'
-    ? await consultaAlumno.select('tipo_mensualidad').lean()
-    : await Promise.resolve(consultaAlumno);
+  let alumno;
+  if (typeof consultaAlumno.select === 'function') {
+    const seleccion = consultaAlumno.select('tipo_mensualidad');
+    alumno = typeof seleccion?.lean === 'function'
+      ? await seleccion.lean()
+      : await Promise.resolve(seleccion);
+  } else {
+    alumno = await Promise.resolve(consultaAlumno);
+  }
   return alumno?.tipo_mensualidad || null;
 }
 
@@ -894,6 +900,204 @@ function compararPeriodos(a, b) {
   return mesA - mesB;
 }
 
+function esMensualidadRegistroInicialInscripcion(mensualidad) {
+  if (!mensualidad) return false;
+  if (mensualidad.es_inscripcion === true) return true;
+  if (String(mensualidad.tipo_registro_inicial || '').toLowerCase() === 'inscripcion') return true;
+  const tieneMontoInscripcion = mensualidad.monto_inscripcion !== undefined && mensualidad.monto_inscripcion !== null;
+  const tieneMontoPrimera = mensualidad.monto_primera_mensualidad !== undefined && mensualidad.monto_primera_mensualidad !== null;
+  return tieneMontoInscripcion || tieneMontoPrimera;
+}
+
+function obtenerMontoEsperadoRegistroInscripcion(mensualidad) {
+  const montoInscripcion = redondearMonto(mensualidad?.monto_inscripcion || 0);
+  const montoPrimeraMensualidad = redondearMonto(mensualidad?.monto_primera_mensualidad || 0);
+  const totalComponentes = redondearMonto(montoInscripcion + montoPrimeraMensualidad);
+  if (totalComponentes > 0) return totalComponentes;
+  return redondearMonto(mensualidad?.monto_esperado || 0);
+}
+
+async function mensualidadTienePagos(mensualidadId, PagoDetalleModel) {
+  if (!mensualidadId || !PagoDetalleModel || typeof PagoDetalleModel.find !== 'function') return false;
+  const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidadId });
+  return Array.isArray(pagos) && pagos.length > 0;
+}
+
+function aplicarDatosRegistroInicialInscripcion(destino, origen, montoEsperado) {
+  destino.es_inscripcion = true;
+  destino.tipo_registro_inicial = 'inscripcion';
+  destino.monto_inscripcion = redondearMonto(origen?.monto_inscripcion || 0);
+  destino.monto_primera_mensualidad = redondearMonto(origen?.monto_primera_mensualidad || 0);
+  destino.monto_base = redondearMonto(montoEsperado);
+  destino.credito_aplicado = 0;
+  destino.ajuste_extraordinario = 0;
+  destino.aplica_recargo = false;
+  destino.recargo_aplicado_usd = 0;
+  destino.fecha_aplicacion_recargo = undefined;
+  destino.monto_sin_recargo_usd = redondearMonto(montoEsperado);
+  destino.monto_con_recargo_usd = redondearMonto(montoEsperado);
+  destino.monto_esperado = redondearMonto(montoEsperado);
+  destino.monto_equivalente_bs = origen?.monto_equivalente_bs;
+  destino.fecha_pago = origen?.fecha_pago;
+  destino.metodo_pago = origen?.metodo_pago;
+  destino.referencia = origen?.referencia;
+  destino.comprobante_url = origen?.comprobante_url;
+}
+
+function limpiarDatosRegistroInicialInscripcion(mensualidad) {
+  mensualidad.es_inscripcion = false;
+  if (String(mensualidad.tipo_registro_inicial || '').toLowerCase() === 'inscripcion') {
+    mensualidad.tipo_registro_inicial = undefined;
+  }
+  mensualidad.monto_inscripcion = undefined;
+  mensualidad.monto_primera_mensualidad = undefined;
+  mensualidad.monto_equivalente_bs = undefined;
+  mensualidad.fecha_pago = undefined;
+  mensualidad.metodo_pago = undefined;
+  mensualidad.referencia = undefined;
+  mensualidad.comprobante_url = undefined;
+}
+
+async function reubicarMensualidadRegistroInicialPorInicioCobro(alumno, periodoInicioCobro, models = {}) {
+  if (!periodoInicioCobro) return;
+
+  const MensualidadModel = models.Mensualidad || Mensualidad;
+  const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
+  const SedeModel = models.Sede || Sede;
+  const AlumnoModel = models.Alumno || Alumno;
+
+  const mensualidades = await MensualidadModel.find({ id_alumno: alumno._id });
+  if (!Array.isArray(mensualidades) || mensualidades.length === 0) return;
+
+  const registroInicial = mensualidades
+    .filter(esMensualidadRegistroInicialInscripcion)
+    .sort((a, b) => {
+      const cmpAnio = Number(a?.anio || 0) - Number(b?.anio || 0);
+      if (cmpAnio !== 0) return cmpAnio;
+      const cmpMes = Number(a?.mes || 0) - Number(b?.mes || 0);
+      if (cmpMes !== 0) return cmpMes;
+      return new Date(a?.createdAt || 0).getTime() - new Date(b?.createdAt || 0).getTime();
+    })[0];
+
+  if (!registroInicial) return;
+
+  const montoEsperadoRegistro = obtenerMontoEsperadoRegistroInscripcion(registroInicial);
+  const periodoRegistroActual = {
+    mes: Number(registroInicial.mes),
+    anio: Number(registroInicial.anio)
+  };
+  const mismoPeriodo = compararPeriodos(periodoRegistroActual, periodoInicioCobro) === 0;
+  const seMueveHaciaFuturo = compararPeriodos(periodoRegistroActual, periodoInicioCobro) < 0;
+
+  if (mismoPeriodo) {
+    aplicarDatosRegistroInicialInscripcion(registroInicial, registroInicial, montoEsperadoRegistro);
+    const estatusAnterior = registroInicial.estatus;
+    await recalcularMensualidadPorPagos(registroInicial, estatusAnterior, {
+      Alumno: AlumnoModel,
+      Sede: SedeModel,
+      Mensualidad: MensualidadModel,
+      PagoDetalle: PagoDetalleModel
+    });
+    return;
+  }
+
+  const mensualidadDestinoExistente = mensualidades.find(
+    (mensualidad) =>
+      Number(mensualidad?.mes) === Number(periodoInicioCobro.mes) &&
+      Number(mensualidad?.anio) === Number(periodoInicioCobro.anio)
+  );
+
+  if (!mensualidadDestinoExistente) {
+    registroInicial.mes = Number(periodoInicioCobro.mes);
+    registroInicial.anio = Number(periodoInicioCobro.anio);
+    aplicarDatosRegistroInicialInscripcion(registroInicial, registroInicial, montoEsperadoRegistro);
+    const estatusAnterior = registroInicial.estatus;
+    await recalcularMensualidadPorPagos(registroInicial, estatusAnterior, {
+      Alumno: AlumnoModel,
+      Sede: SedeModel,
+      Mensualidad: MensualidadModel,
+      PagoDetalle: PagoDetalleModel
+    });
+    return;
+  }
+
+  const destino = mensualidadDestinoExistente;
+  if (seMueveHaciaFuturo && typeof PagoDetalleModel.updateMany === 'function') {
+    await PagoDetalleModel.updateMany(
+      { id_mensualidad: registroInicial._id },
+      { $set: { id_mensualidad: destino._id } }
+    );
+  }
+
+  aplicarDatosRegistroInicialInscripcion(destino, registroInicial, montoEsperadoRegistro);
+  const estatusAnteriorDestino = destino.estatus;
+  await recalcularMensualidadPorPagos(destino, estatusAnteriorDestino, {
+    Alumno: AlumnoModel,
+    Sede: SedeModel,
+    Mensualidad: MensualidadModel,
+    PagoDetalle: PagoDetalleModel
+  });
+
+  if (seMueveHaciaFuturo) {
+    await MensualidadModel.deleteMany({ _id: registroInicial._id });
+    return;
+  }
+
+  limpiarDatosRegistroInicialInscripcion(registroInicial);
+  const montoBaseActualizado = await resolverMontoBaseAlumno(alumno, {
+    Sede: SedeModel
+  });
+  const creditoAplicado = redondearMonto(registroInicial.credito_aplicado || 0);
+  const ajusteExtraordinario = redondearMonto(registroInicial.ajuste_extraordinario || 0);
+  const montoSinRecargo = redondearMonto(
+    Math.max(0, montoBaseActualizado - creditoAplicado - ajusteExtraordinario)
+  );
+  const recargoAplicado = redondearMonto(registroInicial.recargo_aplicado_usd || 0);
+
+  registroInicial.monto_base = redondearMonto(montoBaseActualizado);
+  registroInicial.monto_sin_recargo_usd = montoSinRecargo;
+  registroInicial.monto_con_recargo_usd = redondearMonto(montoSinRecargo + recargoAplicado);
+  registroInicial.monto_esperado = redondearMonto(montoSinRecargo + recargoAplicado);
+
+  const estatusAnteriorRegistro = registroInicial.estatus;
+  await recalcularMensualidadPorPagos(registroInicial, estatusAnteriorRegistro, {
+    Alumno: AlumnoModel,
+    Sede: SedeModel,
+    Mensualidad: MensualidadModel,
+    PagoDetalle: PagoDetalleModel
+  });
+}
+
+async function eliminarMensualidadesPreviasSinPago(alumno, periodoInicioCobro, models = {}) {
+  if (!periodoInicioCobro) return;
+
+  const MensualidadModel = models.Mensualidad || Mensualidad;
+  const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
+
+  const mensualidades = await MensualidadModel.find({ id_alumno: alumno._id });
+  if (!Array.isArray(mensualidades) || mensualidades.length === 0) return;
+
+  const estatusEliminables = new Set(['pendiente', 'insolvente', 'retrasado', 'abono']);
+
+  for (const mensualidad of mensualidades) {
+    const periodoMensualidad = {
+      mes: Number(mensualidad?.mes),
+      anio: Number(mensualidad?.anio)
+    };
+
+    if (compararPeriodos(periodoMensualidad, periodoInicioCobro) >= 0) continue;
+    if (esMensualidadRegistroInicialInscripcion(mensualidad)) continue;
+
+    const estatusNormalizado = normalizarEstatusTexto(mensualidad?.estatus);
+    if (!estatusEliminables.has(estatusNormalizado)) continue;
+
+    const tienePagos = await mensualidadTienePagos(mensualidad._id, PagoDetalleModel);
+    if (tienePagos) continue;
+
+    await MensualidadModel.deleteMany({ _id: mensualidad._id });
+  }
+}
+
 function formatPeriodoTexto(periodo) {
   const mes = Number(periodo?.mes);
   const anio = Number(periodo?.anio);
@@ -912,7 +1116,10 @@ async function resolverMontoBaseAlumno(alumno, models = {}) {
   const SedeModel = models.Sede || Sede;
   if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
     const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
-    const sede = await SedeModel.findById(sedeId).select('costo');
+    const consultaSede = SedeModel.findById(sedeId);
+    const sede = typeof consultaSede?.select === 'function'
+      ? await consultaSede.select('costo')
+      : await Promise.resolve(consultaSede);
     return redondearMonto(sede && sede.costo ? sede.costo : 0);
   }
 
@@ -2939,6 +3146,10 @@ exports.updateAlumno = async (req, res) => {
       );
 
       for (const mensualidad of mensualidadesPendientes) {
+        if (esMensualidadRegistroInicialInscripcion(mensualidad)) {
+          continue;
+        }
+
         const creditoAplicado = redondearMonto(mensualidad.credito_aplicado || 0);
         const ajusteExtraordinario = redondearMonto(mensualidad.ajuste_extraordinario || 0);
         const montoSinRecargo = redondearMonto(
@@ -2965,6 +3176,20 @@ exports.updateAlumno = async (req, res) => {
     }
 
     if (fechaInicioCobroCambio) {
+      const periodoInicioCobroActualizado = obtenerPeriodoDesdeFecha(alumno?.fecha_inicio_cobro);
+
+      await reubicarMensualidadRegistroInicialPorInicioCobro(alumno, periodoInicioCobroActualizado, {
+        Alumno: TenantAlumno,
+        Sede: TenantSede,
+        Mensualidad: TenantMensualidad,
+        PagoDetalle: TenantPagoDetalle
+      });
+
+      await eliminarMensualidadesPreviasSinPago(alumno, periodoInicioCobroActualizado, {
+        Mensualidad: TenantMensualidad,
+        PagoDetalle: TenantPagoDetalle
+      });
+
       await generarMensualidadesPendientesAlumno(alumno, {
         models: {
           Alumno: TenantAlumno,
