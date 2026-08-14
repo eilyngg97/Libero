@@ -5,6 +5,7 @@ const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
 const TenantConfig = require('../models/TenantConfig');
 const Representante = require('../models/Representante');
+const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
 const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
@@ -28,6 +29,7 @@ async function getTenantMensualidadModels(req) {
   const TenantSede = getTenantModel(connection, 'Sede');
   const TenantReposo = getTenantModel(connection, 'Reposo');
   const TenantConfigModel = getTenantModel(connection, 'TenantConfig');
+  const TenantHistorialEstadoAlumno = getTenantModel(connection, 'HistorialEstadoAlumno');
 
   return {
     Representante: TenantRepresentante,
@@ -37,6 +39,7 @@ async function getTenantMensualidadModels(req) {
     Sede: TenantSede,
     Reposo: TenantReposo,
     TenantConfig: TenantConfigModel,
+    HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
     connection
   };
 }
@@ -49,7 +52,8 @@ function resolveMensualidadModels(models = {}) {
     PagoDetalle: models.PagoDetalle || PagoDetalle,
     Sede: models.Sede || Sede,
     Reposo: models.Reposo || Reposo,
-    TenantConfig: models.TenantConfig || TenantConfig
+    TenantConfig: models.TenantConfig || TenantConfig,
+    HistorialEstadoAlumno: models.HistorialEstadoAlumno || HistorialEstadoAlumno
   };
 }
 
@@ -268,6 +272,41 @@ function listarPeriodosEntrePeriodos(inicio, fin) {
   }
 
   return periodos;
+}
+
+function obtenerPeriodoMasReciente(base, candidato) {
+  if (!base) return candidato;
+  if (!candidato) return base;
+  return compararPeriodos(candidato, base) > 0 ? candidato : base;
+}
+
+async function obtenerPeriodoInicioGeneracionAlumno(alumno, models = {}, periodoFallback = getPeriodoZonaCaracas()) {
+  const periodoInicioCobro = obtenerPeriodoInicioCobroAlumno(alumno, periodoFallback);
+  const { HistorialEstadoAlumno: HistorialEstadoAlumnoModel } = resolveMensualidadModels(models);
+
+  if (!alumno?._id || !HistorialEstadoAlumnoModel || typeof HistorialEstadoAlumnoModel.findOne !== 'function') {
+    return periodoInicioCobro;
+  }
+
+  const consultaUltimoReingreso = HistorialEstadoAlumnoModel.findOne({
+    id_alumno: alumno._id,
+    tipo_movimiento: 'REINGRESO'
+  }).sort({ fecha_evento: -1, createdAt: -1 });
+
+  const ultimoReingreso = typeof consultaUltimoReingreso?.select === 'function'
+    ? await consultaUltimoReingreso.select('fecha_evento')
+    : await Promise.resolve(consultaUltimoReingreso);
+
+  const fechaReingreso = ultimoReingreso?.fecha_evento instanceof Date
+    ? ultimoReingreso.fecha_evento
+    : (ultimoReingreso?.fecha_evento ? new Date(ultimoReingreso.fecha_evento) : null);
+
+  if (!fechaReingreso || Number.isNaN(fechaReingreso.getTime())) {
+    return periodoInicioCobro;
+  }
+
+  const periodoReingreso = obtenerPeriodoDesdeFecha(fechaReingreso, periodoInicioCobro);
+  return obtenerPeriodoMasReciente(periodoInicioCobro, periodoReingreso);
 }
 
 function obtenerFechaVencimientoPeriodo(mes, anio, diaVencimiento = 5) {
@@ -839,7 +878,8 @@ async function generarMensualidadesPendientesAlumno(
   } = {}
 ) {
   const periodoActual = periodoFin || getPeriodoZonaCaracas();
-  const periodoInicial = periodoInicio || obtenerPeriodoInicioCobroAlumno(alumno, periodoActual);
+  const periodoInicial = periodoInicio
+    || await obtenerPeriodoInicioGeneracionAlumno(alumno, models, periodoActual);
   const periodos = listarPeriodosEntrePeriodos(periodoInicial, periodoActual);
   const resultados = [];
 

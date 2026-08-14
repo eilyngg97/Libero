@@ -12,6 +12,7 @@ jest.mock('../models/Sede', () => ({}));
 jest.mock('../models/Reposo', () => ({}));
 jest.mock('../models/PagoDetalle', () => ({}));
 jest.mock('../models/Representante', () => ({}));
+jest.mock('../models/HistorialEstadoAlumno', () => ({}));
 
 const mongoose = require('mongoose');
 const { getTenantModel } = require('../services/tenantModelService');
@@ -48,6 +49,14 @@ function querySelectSortArray(value) {
 function querySelect(value) {
   return {
     select: jest.fn().mockResolvedValue(value)
+  };
+}
+
+function querySortSelect(value) {
+  return {
+    sort: jest.fn().mockReturnValue({
+      select: jest.fn().mockResolvedValue(value)
+    })
   };
 }
 
@@ -445,6 +454,100 @@ describe('registrarPrimeraMensualidad', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         mensualidad: expect.objectContaining({ mes: 7, anio: 2026 })
+      })
+    );
+  });
+});
+
+describe('generarMensualidadesMesCore', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-14T12:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('no genera mensualidades entre baja y reingreso durante catch-up', async () => {
+    const alumnoDoc = {
+      _id: 'a-reingreso',
+      activo: true,
+      dado_de_baja: false,
+      tipo_mensualidad: 'monto_sede',
+      fecha_inicio_cobro: new Date('2026-02-01T12:00:00.000Z'),
+      sede: 's1',
+      saldo_a_favor_mensualidades: 0,
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    const TenantAlumno = {
+      find: jest.fn().mockResolvedValue([alumnoDoc])
+    };
+
+    const TenantMensualidad = {
+      findOne: jest.fn().mockReturnValue(queryPopulate(null)),
+      create: jest.fn().mockResolvedValue({ _id: 'm-ago' }),
+      findById: jest.fn().mockReturnValue(queryPopulate({
+        _id: 'm-ago',
+        id_alumno: alumnoDoc,
+        mes: 8,
+        anio: 2026,
+        estatus: 'Pendiente',
+        monto_esperado: 100
+      }))
+    };
+
+    const TenantSede = {
+      findById: jest.fn().mockReturnValue(querySelect({ _id: 's1', costo: 100 }))
+    };
+
+    const TenantReposo = {
+      findOne: jest.fn().mockReturnValue(querySort(null)),
+      find: jest.fn().mockReturnValue(querySelectSortArray([]))
+    };
+
+    const TenantConfig = {
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            cobro: {
+              dia_cobro: 1,
+              dia_vencimiento: 5,
+              dias_gracia: 0,
+              recargo_usd: 0
+            }
+          })
+        })
+      })
+    };
+
+    const TenantHistorialEstadoAlumno = {
+      findOne: jest.fn().mockReturnValue(
+        querySortSelect({ fecha_evento: new Date('2026-08-01T12:00:00.000Z') })
+      )
+    };
+
+    const creadas = await mensualidadController.generarMensualidadesMesCore({
+      models: {
+        Alumno: TenantAlumno,
+        Mensualidad: TenantMensualidad,
+        PagoDetalle: {},
+        Sede: TenantSede,
+        Reposo: TenantReposo,
+        TenantConfig,
+        HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+      }
+    });
+
+    expect(creadas).toBe(1);
+    expect(TenantMensualidad.create).toHaveBeenCalledTimes(1);
+    expect(TenantMensualidad.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id_alumno: 'a-reingreso',
+        mes: 8,
+        anio: 2026
       })
     );
   });
