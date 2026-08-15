@@ -722,12 +722,12 @@ function Dashboard() {
                 </div>
                 <span className="dashboard-kpi-inline-change">{variacionAlumnosReal}</span>
               </div>
-              <div className="dashboard-kpi-inline-label">Total de alumnos</div>
-              <div className="dashboard-kpi-inline-value">{resumenAlumnos.total}</div>
-              <div className="dashboard-kpi-inline-sub">Activos, bajas y becados</div>
+              <div className="dashboard-kpi-inline-label">Total de alumnos activos</div>
+              <div className="dashboard-kpi-inline-value">{resumenAlumnos.activos}</div>
+              <div className="dashboard-kpi-inline-sub">Activos</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#ecfdf5', color: '#166534', fontSize: 14, fontWeight: 800 }}>
-                  Activos: {resumenAlumnos.activos}
+                <div style={{ padding: '6px 10px', borderRadius: 999, background: '#f3f3f3', color: '#767676', fontSize: 14, fontWeight: 800 }}>
+                  Total: {resumenAlumnos.total}
                 </div>
                 <div style={{ padding: '6px 10px', borderRadius: 999, background: '#fef2f2', color: '#991b1b', fontSize: 14, fontWeight: 800 }}>
                   Baja: {resumenAlumnos.bajas}
