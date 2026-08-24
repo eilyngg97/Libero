@@ -4,9 +4,11 @@ import {
   Box,
   Button,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  IconButton,
   InputLabel,
   MenuItem,
   Paper,
@@ -16,8 +18,11 @@ import {
   TableCell,
   TableHead,
   TableRow,
-  Typography
+  Typography,
+  useMediaQuery
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { Bar, BarChart, Cell, CartesianGrid, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { mediaUrl } from '../utils/mediaUrl';
 import { useDolar } from '../context/DolarContext';
@@ -30,6 +35,8 @@ const LABELS_MESES = [
 const CHART_FILL_COLORS = ['#0B0F2A', '#d92b73'];
 
 function Estadisticas() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const currentYear = new Date().getFullYear();
   const { dolar } = useDolar();
   const [anio, setAnio] = useState(currentYear);
@@ -374,10 +381,12 @@ function Estadisticas() {
     });
   };
 
+  const cerrarDialogo = () => setDialogo({ open: false, titulo: '', items: [] });
+
   return (
     <Box className="estadisticas-page">
       <Box className="estadisticas-header">
-        <Typography variant="h5" sx={{ fontWeight: 800, color: '#0b0f2a' }}>
+        <Typography variant={isMobile ? 'h6' : 'h5'} sx={{ fontWeight: 800, color: '#0b0f2a' }}>
           Estadisticas de Alumnos
         </Typography>
         <Typography sx={{ color: '#475569', fontSize: 14 }}>
@@ -387,7 +396,7 @@ function Estadisticas() {
 
       <Paper className="estadisticas-card" elevation={0}>
         <Box className="estadisticas-toolbar">
-          <FormControl size="small" sx={{ minWidth: 130 }}>
+          <FormControl size="small" sx={{ minWidth: isMobile ? 0 : 130, width: isMobile ? '100%' : 'auto' }}>
             <InputLabel id="anio-estadisticas-label">Año</InputLabel>
             <Select
               labelId="anio-estadisticas-label"
@@ -401,7 +410,7 @@ function Estadisticas() {
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 180 }}>
+          <FormControl size="small" sx={{ minWidth: isMobile ? 0 : 180, width: isMobile ? '100%' : 'auto' }}>
             <InputLabel id="sede-estadisticas-label">Sede</InputLabel>
             <Select
               labelId="sede-estadisticas-label"
@@ -429,12 +438,17 @@ function Estadisticas() {
           <Typography sx={{ color: '#dc2626', py: 4 }}>{error}</Typography>
         ) : (
           <>
-            <Box sx={{ width: '100%', height: 320, mt: 1 }}>
+            <Box sx={{ width: '100%', height: isMobile ? 250 : 320, mt: 1 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dataGrafica} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 12 }} />
-                  <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                  <XAxis
+                    dataKey="mes"
+                    interval={isMobile ? 1 : 0}
+                    minTickGap={isMobile ? 18 : 8}
+                    tick={{ fill: '#64748b', fontSize: isMobile ? 11 : 12 }}
+                  />
+                  <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: isMobile ? 11 : 12 }} />
                   <Tooltip />
                   <Bar dataKey="inscritos" name="Inscritos" fill="#0B0F2A" radius={[5, 5, 0, 0]} />
                   <Bar dataKey="reingresos" name="Reingresos" fill="#0ea5e9" radius={[5, 5, 0, 0]} />
@@ -443,64 +457,101 @@ function Estadisticas() {
               </ResponsiveContainer>
             </Box>
 
-            <Table size="small" sx={{ mt: 1 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Mes</TableCell>
-                  <TableCell align="center">Inscritos</TableCell>
-                  <TableCell align="center">Reingresos</TableCell>
-                  <TableCell align="center">Retirados</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+            {isMobile ? (
+              <Box className="stats-mobile-list" sx={{ mt: 1 }}>
                 {(resumen.meses || []).map((mesObj) => (
-                  <TableRow key={`stats-mes-${mesObj.mes}`}>
-                    <TableCell>{LABELS_MESES[mesObj.mes - 1]}</TableCell>
-                    <TableCell align="center">
+                  <Box key={`stats-mes-mobile-${mesObj.mes}`} className="stats-mobile-card">
+                    <Typography className="stats-mobile-month">{LABELS_MESES[mesObj.mes - 1]}</Typography>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Inscritos</Typography>
                       <Box className="stats-cell-actions">
                         <span>{mesObj.inscritos || 0}</span>
-                        <Button
-                          size="small"
-                          onClick={() => abrirDialogoDetalle(mesObj, 'inscritos')}
-                          disabled={!mesObj.inscritos}
-                          sx={{ textTransform: 'none' }}
-                        >
+                        <Button size="small" onClick={() => abrirDialogoDetalle(mesObj, 'inscritos')} disabled={!mesObj.inscritos} sx={{ textTransform: 'none' }}>
                           Ver
                         </Button>
                       </Box>
-                    </TableCell>
-                    <TableCell align="center">
+                    </Box>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Reingresos</Typography>
                       <Box className="stats-cell-actions">
                         <span>{mesObj.reingresos || 0}</span>
-                        <Button
-                          size="small"
-                          color="info"
-                          onClick={() => abrirDialogoDetalle(mesObj, 'reingresos')}
-                          disabled={!mesObj.reingresos}
-                          sx={{ textTransform: 'none' }}
-                        >
+                        <Button size="small" color="info" onClick={() => abrirDialogoDetalle(mesObj, 'reingresos')} disabled={!mesObj.reingresos} sx={{ textTransform: 'none' }}>
                           Ver
                         </Button>
                       </Box>
-                    </TableCell>
-                    <TableCell align="center">
+                    </Box>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Retirados</Typography>
                       <Box className="stats-cell-actions">
                         <span>{mesObj.retirados || 0}</span>
-                        <Button
-                          size="small"
-                          color="secondary"
-                          onClick={() => abrirDialogoDetalle(mesObj, 'retirados')}
-                          disabled={!mesObj.retirados}
-                          sx={{ textTransform: 'none' }}
-                        >
+                        <Button size="small" color="secondary" onClick={() => abrirDialogoDetalle(mesObj, 'retirados')} disabled={!mesObj.retirados} sx={{ textTransform: 'none' }}>
                           Ver
                         </Button>
                       </Box>
-                    </TableCell>
-                  </TableRow>
+                    </Box>
+                  </Box>
                 ))}
-              </TableBody>
-            </Table>
+              </Box>
+            ) : (
+              <Table size="small" sx={{ mt: 1 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Mes</TableCell>
+                    <TableCell align="center">Inscritos</TableCell>
+                    <TableCell align="center">Reingresos</TableCell>
+                    <TableCell align="center">Retirados</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(resumen.meses || []).map((mesObj) => (
+                    <TableRow key={`stats-mes-${mesObj.mes}`}>
+                      <TableCell>{LABELS_MESES[mesObj.mes - 1]}</TableCell>
+                      <TableCell align="center">
+                        <Box className="stats-cell-actions">
+                          <span>{mesObj.inscritos || 0}</span>
+                          <Button
+                            size="small"
+                            onClick={() => abrirDialogoDetalle(mesObj, 'inscritos')}
+                            disabled={!mesObj.inscritos}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            Ver
+                          </Button>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box className="stats-cell-actions">
+                          <span>{mesObj.reingresos || 0}</span>
+                          <Button
+                            size="small"
+                            color="info"
+                            onClick={() => abrirDialogoDetalle(mesObj, 'reingresos')}
+                            disabled={!mesObj.reingresos}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            Ver
+                          </Button>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box className="stats-cell-actions">
+                          <span>{mesObj.retirados || 0}</span>
+                          <Button
+                            size="small"
+                            color="secondary"
+                            onClick={() => abrirDialogoDetalle(mesObj, 'retirados')}
+                            disabled={!mesObj.retirados}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            Ver
+                          </Button>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </>
         )}
       </Paper>
@@ -519,12 +570,17 @@ function Estadisticas() {
           <Typography sx={{ color: '#dc2626', py: 3 }}>{errorIngresos}</Typography>
         ) : (
           <>
-            <Box sx={{ width: '100%', height: 330, mt: 0.5 }}>
+            <Box sx={{ width: '100%', height: isMobile ? 260 : 330, mt: 0.5 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dataGraficaIngresos} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 12 }} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
+                  <XAxis
+                    dataKey="mes"
+                    interval={isMobile ? 1 : 0}
+                    minTickGap={isMobile ? 18 : 8}
+                    tick={{ fill: '#64748b', fontSize: isMobile ? 11 : 12 }}
+                  />
+                  <YAxis tick={{ fill: '#64748b', fontSize: isMobile ? 11 : 12 }} />
                   <Tooltip formatter={(value, name) => [formatMoney(value), name]} />
                   <Legend />
                   <Bar dataKey="mensualidades" stackId="ingresos" name="Mensualidades" fill="#0B0F2A" radius={[4, 4, 0, 0]} />
@@ -534,28 +590,54 @@ function Estadisticas() {
               </ResponsiveContainer>
             </Box>
 
-            <Table size="small" sx={{ mt: 1 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Mes</TableCell>
-                  <TableCell align="right">Mensualidades</TableCell>
-                  <TableCell align="right">Inscripciones</TableCell>
-                  <TableCell align="right">Uniformes</TableCell>
-                  <TableCell align="right">Total</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+            {isMobile ? (
+              <Box className="stats-mobile-list" sx={{ mt: 1 }}>
                 {dataGraficaIngresos.map((item) => (
-                  <TableRow key={`ingresos-mes-${item.mes}`}>
-                    <TableCell>{item.mes}</TableCell>
-                    <TableCell align="right">{formatMoney(item.mensualidades)}</TableCell>
-                    <TableCell align="right">{formatMoney(item.inscripciones)}</TableCell>
-                    <TableCell align="right">{formatMoney(item.uniformes)}</TableCell>
-                    <TableCell align="right">{formatMoney(item.total)}</TableCell>
-                  </TableRow>
+                  <Box key={`ingresos-mes-mobile-${item.mes}`} className="stats-mobile-card">
+                    <Typography className="stats-mobile-month">{item.mes}</Typography>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Mensualidades</Typography>
+                      <Typography className="stats-mobile-value">{formatMoney(item.mensualidades)}</Typography>
+                    </Box>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Inscripciones</Typography>
+                      <Typography className="stats-mobile-value">{formatMoney(item.inscripciones)}</Typography>
+                    </Box>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Uniformes</Typography>
+                      <Typography className="stats-mobile-value">{formatMoney(item.uniformes)}</Typography>
+                    </Box>
+                    <Box className="stats-mobile-row total">
+                      <Typography className="stats-mobile-label">Total</Typography>
+                      <Typography className="stats-mobile-value">{formatMoney(item.total)}</Typography>
+                    </Box>
+                  </Box>
                 ))}
-              </TableBody>
-            </Table>
+              </Box>
+            ) : (
+              <Table size="small" sx={{ mt: 1 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Mes</TableCell>
+                    <TableCell align="right">Mensualidades</TableCell>
+                    <TableCell align="right">Inscripciones</TableCell>
+                    <TableCell align="right">Uniformes</TableCell>
+                    <TableCell align="right">Total</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {dataGraficaIngresos.map((item) => (
+                    <TableRow key={`ingresos-mes-${item.mes}`}>
+                      <TableCell>{item.mes}</TableCell>
+                      <TableCell align="right">{formatMoney(item.mensualidades)}</TableCell>
+                      <TableCell align="right">{formatMoney(item.inscripciones)}</TableCell>
+                      <TableCell align="right">{formatMoney(item.uniformes)}</TableCell>
+                      <TableCell align="right">{formatMoney(item.total)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </>
         )}
       </Paper>
@@ -582,7 +664,7 @@ function Estadisticas() {
         ) : (
           <>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(280px, 360px) 1fr' }, gap: 2.5, mt: 1 }}>
-              <Box sx={{ width: '100%', height: 320 }}>
+              <Box sx={{ width: '100%', height: isMobile ? 260 : 320 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -642,24 +724,42 @@ function Estadisticas() {
               </Box>
             </Box>
 
-            <Table size="small" sx={{ mt: 1 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Sede</TableCell>
-                  <TableCell align="right">Participacion</TableCell>
-                  <TableCell align="right">Ingresos</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+            {isMobile ? (
+              <Box className="stats-mobile-list" sx={{ mt: 1 }}>
                 {dataComparativaSedes.map((sede) => (
-                  <TableRow key={`ingresos-sede-${sede.sedeId || sede.sedeNombre}`}>
-                    <TableCell>{sede.sedeNombre || 'Sin sede'}</TableCell>
-                    <TableCell align="right">{sede.porcentaje.toFixed(1)}%</TableCell>
-                    <TableCell align="right">{formatMoney(sede.total_pagado)}</TableCell>
-                  </TableRow>
+                  <Box key={`ingresos-sede-mobile-${sede.sedeId || sede.sedeNombre}`} className="stats-mobile-card">
+                    <Typography className="stats-mobile-month">{sede.sedeNombre || 'Sin sede'}</Typography>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Participacion</Typography>
+                      <Typography className="stats-mobile-value">{sede.porcentaje.toFixed(1)}%</Typography>
+                    </Box>
+                    <Box className="stats-mobile-row">
+                      <Typography className="stats-mobile-label">Ingresos</Typography>
+                      <Typography className="stats-mobile-value">{formatMoney(sede.total_pagado)}</Typography>
+                    </Box>
+                  </Box>
                 ))}
-              </TableBody>
-            </Table>
+              </Box>
+            ) : (
+              <Table size="small" sx={{ mt: 1 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Sede</TableCell>
+                    <TableCell align="right">Participacion</TableCell>
+                    <TableCell align="right">Ingresos</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {dataComparativaSedes.map((sede) => (
+                    <TableRow key={`ingresos-sede-${sede.sedeId || sede.sedeNombre}`}>
+                      <TableCell>{sede.sedeNombre || 'Sin sede'}</TableCell>
+                      <TableCell align="right">{sede.porcentaje.toFixed(1)}%</TableCell>
+                      <TableCell align="right">{formatMoney(sede.total_pagado)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </>
         )}
       </Paper>
@@ -667,11 +767,21 @@ function Estadisticas() {
 
       <Dialog
         open={dialogo.open}
-        onClose={() => setDialogo({ open: false, titulo: '', items: [] })}
+        onClose={cerrarDialogo}
+        fullScreen={isMobile}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ fontWeight: 800 }}>{dialogo.titulo}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 800, pr: 6 }}>
+          {dialogo.titulo}
+          <IconButton
+            aria-label="Cerrar"
+            onClick={cerrarDialogo}
+            sx={{ position: 'absolute', right: 10, top: 10 }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+        </DialogTitle>
         <DialogContent dividers>
           {dialogo.items.length === 0 ? (
             <Typography sx={{ color: '#64748b' }}>No hay alumnos para este filtro.</Typography>
@@ -694,6 +804,18 @@ function Estadisticas() {
             </Box>
           )}
         </DialogContent>
+        {isMobile && (
+          <DialogActions sx={{ px: 2, pb: 2 }}>
+            <Button
+              variant="contained"
+              onClick={cerrarDialogo}
+              fullWidth
+              sx={{ bgcolor: '#0b0f2a', '&:hover': { bgcolor: '#11183f' } }}
+            >
+              Cerrar
+            </Button>
+          </DialogActions>
+        )}
       </Dialog>
     </Box>
   );
