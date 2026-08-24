@@ -1609,7 +1609,10 @@ exports.getAlumnos = async (req, res) => {
 
 exports.getEstadisticasInscritosRetirados = async (req, res) => {
   try {
-    const { Alumno: TenantAlumno } = await getTenantAlumnoReadModels(req);
+    const {
+      Alumno: TenantAlumno,
+      HistorialEstadoAlumno: TenantHistorialEstadoAlumno
+    } = await getTenantAlumnoReadModels(req);
 
     const anioInput = Number(req.query.anio);
     const anioActual = new Date().getUTCFullYear();
@@ -1631,7 +1634,7 @@ exports.getEstadisticasInscritosRetirados = async (req, res) => {
     const inicioAnio = new Date(Date.UTC(anio, 0, 1, 0, 0, 0, 0));
     const finAnio = new Date(Date.UTC(anio + 1, 0, 1, 0, 0, 0, 0));
 
-    const [inscritos, retirados] = await Promise.all([
+    const [inscritos, retirados, historialReingresos] = await Promise.all([
       TenantAlumno.find({
         ...filtroSede,
         fecha_inscripcion: { $gte: inicioAnio, $lt: finAnio }
@@ -1645,24 +1648,80 @@ exports.getEstadisticasInscritosRetirados = async (req, res) => {
       })
         .select('nombres apellidos foto sede categoria fecha_baja')
         .populate('sede', 'nombre')
+        .lean(),
+      TenantHistorialEstadoAlumno.find({
+        fecha_evento: { $gte: inicioAnio, $lt: finAnio },
+        $or: [
+          { tipo_movimiento: 'REINGRESO' },
+          {
+            tipo_movimiento: 'REACTIVACION',
+            'metadata.tipo_operacion': { $ne: 'ANULACION_BAJA' }
+          }
+        ]
+      })
+        .select('id_alumno fecha_evento tipo_movimiento metadata')
         .lean()
     ]);
+
+    const idsReingreso = Array.from(
+      new Set(
+        (historialReingresos || [])
+          .map((mov) => String(mov?.id_alumno || ''))
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      )
+    ).map((id) => new mongoose.Types.ObjectId(id));
+
+    const alumnosReingreso = idsReingreso.length > 0
+      ? await TenantAlumno.find({
+          _id: { $in: idsReingreso },
+          ...filtroSede
+        })
+          .select('nombres apellidos foto sede categoria')
+          .populate('sede', 'nombre')
+          .lean()
+      : [];
+
+    const alumnoReingresoMap = new Map(
+      (alumnosReingreso || []).map((alumno) => [String(alumno._id), alumno])
+    );
 
     const meses = Array.from({ length: 12 }, (_, index) => ({
       mes: index + 1,
       inscritos: 0,
+      reingresos: 0,
       retirados: 0,
       detalle: {
         inscritos: [],
+        reingresos: [],
         retirados: []
       }
     }));
+
+    const normalizarFotoEstadistica = (fotoRaw) => {
+      const foto = String(fotoRaw || '').trim();
+      if (!foto) return '';
+
+      if (foto.startsWith('http://') || foto.startsWith('https://') || foto.startsWith('data:') || foto.startsWith('blob:')) {
+        return foto;
+      }
+
+      const conSlash = foto.replace(/\\/g, '/');
+      if (conSlash.startsWith('/uploads/')) return conSlash;
+      if (conSlash.startsWith('uploads/')) return `/${conSlash}`;
+
+      const idxUploads = conSlash.toLowerCase().indexOf('/uploads/');
+      if (idxUploads >= 0) {
+        return conSlash.slice(idxUploads);
+      }
+
+      return conSlash;
+    };
 
     const normalizarAlumno = (alumno) => ({
       _id: alumno._id,
       nombres: alumno.nombres || '',
       apellidos: alumno.apellidos || '',
-      foto: alumno.foto || '',
+      foto: normalizarFotoEstadistica(alumno.foto),
       categoria: alumno.categoria || '-',
       sede: alumno?.sede?.nombre || 'Sin sede'
     });
@@ -1687,11 +1746,27 @@ exports.getEstadisticasInscritosRetirados = async (req, res) => {
       meses[mesIndex].detalle.retirados.push(normalizarAlumno(alumno));
     });
 
+    historialReingresos.forEach((movimiento) => {
+      const fecha = new Date(movimiento?.fecha_evento);
+      if (Number.isNaN(fecha.getTime())) return;
+      const mesIndex = fecha.getUTCMonth();
+      if (mesIndex < 0 || mesIndex > 11) return;
+
+      const alumno = alumnoReingresoMap.get(String(movimiento?.id_alumno || ''));
+      if (!alumno) return;
+
+      meses[mesIndex].reingresos += 1;
+      meses[mesIndex].detalle.reingresos.push(normalizarAlumno(alumno));
+    });
+
+    const totalReingresos = meses.reduce((acc, item) => acc + Number(item?.reingresos || 0), 0);
+
     return res.json({
       anio,
       meses,
       totales: {
         inscritos: inscritos.length,
+        reingresos: totalReingresos,
         retirados: retirados.length
       }
     });

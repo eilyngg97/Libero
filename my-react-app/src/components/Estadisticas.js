@@ -37,7 +37,7 @@ function Estadisticas() {
   const [sedeSeleccionada, setSedeSeleccionada] = useState('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [resumen, setResumen] = useState({ anio: currentYear, meses: [], totales: { inscritos: 0, retirados: 0 } });
+  const [resumen, setResumen] = useState({ anio: currentYear, meses: [], totales: { inscritos: 0, reingresos: 0, retirados: 0 } });
   const [loadingIngresos, setLoadingIngresos] = useState(false);
   const [errorIngresos, setErrorIngresos] = useState('');
   const [resumenIngresos, setResumenIngresos] = useState({
@@ -52,6 +52,32 @@ function Estadisticas() {
   const [dialogo, setDialogo] = useState({ open: false, titulo: '', items: [] });
   const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
+
+  const resolveFotoAlumno = (fotoRaw) => {
+    const foto = String(fotoRaw || '').trim();
+    if (!foto) return undefined;
+
+    const normalizada = foto.replace(/\\/g, '/');
+    if (
+      normalizada.startsWith('http://') ||
+      normalizada.startsWith('https://') ||
+      normalizada.startsWith('data:') ||
+      normalizada.startsWith('blob:')
+    ) {
+      return normalizada;
+    }
+
+    if (normalizada.startsWith('uploads/')) {
+      return mediaUrl(`/${normalizada}`) || undefined;
+    }
+
+    const idxUploads = normalizada.toLowerCase().indexOf('/uploads/');
+    if (idxUploads >= 0) {
+      return mediaUrl(normalizada.slice(idxUploads)) || undefined;
+    }
+
+    return mediaUrl(normalizada) || undefined;
+  };
 
   const anios = useMemo(() => {
     const base = [];
@@ -115,12 +141,13 @@ function Estadisticas() {
           meses,
           totales: {
             inscritos: Number(data?.totales?.inscritos || 0),
+            reingresos: Number(data?.totales?.reingresos || 0),
             retirados: Number(data?.totales?.retirados || 0)
           }
         });
       } catch (err) {
         setError(err?.message || 'No se pudieron cargar las estadisticas.');
-        setResumen({ anio, meses: [], totales: { inscritos: 0, retirados: 0 } });
+        setResumen({ anio, meses: [], totales: { inscritos: 0, reingresos: 0, retirados: 0 } });
       } finally {
         setLoading(false);
       }
@@ -291,6 +318,7 @@ function Estadisticas() {
       return {
         mes: label,
         inscritos: Number(item?.inscritos || 0),
+        reingresos: Number(item?.reingresos || 0),
         retirados: Number(item?.retirados || 0)
       };
     });
@@ -331,12 +359,17 @@ function Estadisticas() {
   const tieneComparativaSedes = (resumenIngresosSede.sedes || []).length > 1;
 
   const abrirDialogoDetalle = (mesObj, tipo) => {
-    const listado = tipo === 'inscritos' ? (mesObj?.detalle?.inscritos || []) : (mesObj?.detalle?.retirados || []);
+    const listado = mesObj?.detalle?.[tipo] || [];
     const nombreMes = LABELS_MESES[Math.max(0, Number(mesObj?.mes || 1) - 1)] || '-';
+    const nombreTipo = tipo === 'inscritos'
+      ? 'Inscritos'
+      : tipo === 'reingresos'
+        ? 'Reingresos'
+        : 'Retirados';
 
     setDialogo({
       open: true,
-      titulo: `${tipo === 'inscritos' ? 'Inscritos' : 'Retirados'} - ${nombreMes} ${resumen.anio}`,
+      titulo: `${nombreTipo} - ${nombreMes} ${resumen.anio}`,
       items: listado
     });
   };
@@ -348,7 +381,7 @@ function Estadisticas() {
           Estadisticas de Alumnos
         </Typography>
         <Typography sx={{ color: '#475569', fontSize: 14 }}>
-          Seguimiento mensual de inscritos y retirados.
+          Seguimiento mensual de inscritos, reingresos y retirados.
         </Typography>
       </Box>
 
@@ -385,6 +418,7 @@ function Estadisticas() {
 
           <Box className="estadisticas-totales">
             <Typography><strong>Inscritos:</strong> {resumen.totales.inscritos}</Typography>
+            <Typography><strong>Reingresos:</strong> {resumen.totales.reingresos}</Typography>
             <Typography><strong>Retirados:</strong> {resumen.totales.retirados}</Typography>
           </Box>
         </Box>
@@ -403,6 +437,7 @@ function Estadisticas() {
                   <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                   <Tooltip />
                   <Bar dataKey="inscritos" name="Inscritos" fill="#0B0F2A" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="reingresos" name="Reingresos" fill="#0ea5e9" radius={[5, 5, 0, 0]} />
                   <Bar dataKey="retirados" name="Retirados" fill="#d92b73" radius={[5, 5, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -413,6 +448,7 @@ function Estadisticas() {
                 <TableRow>
                   <TableCell>Mes</TableCell>
                   <TableCell align="center">Inscritos</TableCell>
+                  <TableCell align="center">Reingresos</TableCell>
                   <TableCell align="center">Retirados</TableCell>
                 </TableRow>
               </TableHead>
@@ -427,6 +463,20 @@ function Estadisticas() {
                           size="small"
                           onClick={() => abrirDialogoDetalle(mesObj, 'inscritos')}
                           disabled={!mesObj.inscritos}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          Ver
+                        </Button>
+                      </Box>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Box className="stats-cell-actions">
+                        <span>{mesObj.reingresos || 0}</span>
+                        <Button
+                          size="small"
+                          color="info"
+                          onClick={() => abrirDialogoDetalle(mesObj, 'reingresos')}
+                          disabled={!mesObj.reingresos}
                           sx={{ textTransform: 'none' }}
                         >
                           Ver
@@ -629,7 +679,7 @@ function Estadisticas() {
             <Box className="stats-dialog-list">
               {dialogo.items.map((alumno) => (
                 <Box key={alumno._id} className="stats-dialog-item">
-                  <Avatar src={mediaUrl(alumno.foto) || ''} alt={alumno.nombres} sx={{ width: 44, height: 44 }}>
+                  <Avatar src={resolveFotoAlumno(alumno.foto)} alt={alumno.nombres} sx={{ width: 44, height: 44 }}>
                     {!alumno.foto ? (alumno.nombres || '').charAt(0) : ''}
                   </Avatar>
                   <Box sx={{ minWidth: 0 }}>
