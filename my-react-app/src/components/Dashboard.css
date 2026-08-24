@@ -24,6 +24,26 @@
   color: #7b8798;
 }
 
+.dashboard-header-bcv {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashboard-header-bcv.is-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
 .dashboard-export-btn {
   background: linear-gradient(90deg, #d7267a 0%, #ff7a18 100%);
   color: #fff;
@@ -170,7 +190,7 @@
 
 .dashboard-kpis-inline-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
   width: 100%;
 }
@@ -216,6 +236,11 @@
 .dashboard-kpi-inline-icon-orange {
   background: #fff3e6;
   color: #f28a3f;
+}
+
+.dashboard-kpi-inline-icon-red {
+  background: #fee2e2;
+  color: #dc2626;
 }
 
 .dashboard-kpi-inline-change {

@@ -6,6 +6,8 @@ import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import CakeIcon from '@mui/icons-material/Cake';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import BalanceIcon from '@mui/icons-material/Balance';
 import GroupIcon from '@mui/icons-material/Group';
 import LocationCityIcon from '@mui/icons-material/LocationCity';
 import Avatar from '@mui/material/Avatar';
@@ -19,7 +21,7 @@ function Dashboard() {
   const chartFillColors = ['#d92b73', '#f59e0b', '#2563eb', '#10b981'];
   const ingresosDonutColors = ['#2563eb', '#f28a3f'];
   const { setSedeSeleccionada } = useSede();
-  const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
+  const { dolar, loading: dolarLoading, error: dolarError, refreshDolar } = useDolar();
   const navigate = useNavigate();
   const [sedes, setSedes] = useState([]);
   const [alumnosPorSede, setAlumnosPorSede] = useState({});
@@ -30,12 +32,14 @@ function Dashboard() {
   const [ingresosUniformesMes, setIngresosUniformesMes] = useState(0);
   const [ingresosMensualidadesMes, setIngresosMensualidadesMes] = useState(0);
   const [ingresosInscripcionesMes, setIngresosInscripcionesMes] = useState(0);
+  const [egresosMes, setEgresosMes] = useState(0);
   const [revisionPorSede, setRevisionPorSede] = useState({ mes: null, anio: null, sedes: [] });
   const [actividadesPendientesNomina, setActividadesPendientesNomina] = useState([]);
   const [resumenLoading, setResumenLoading] = useState(false);
   const [dolaresLoading, setDolaresLoading] = useState(false);
   const [uniformesLoading, setUniformesLoading] = useState(false);
   const [ingresosMesLoading, setIngresosMesLoading] = useState(false);
+  const [egresosMesLoading, setEgresosMesLoading] = useState(false);
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [actividadesLoading, setActividadesLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
@@ -44,9 +48,11 @@ function Dashboard() {
   const [mesSeleccionado, setMesSeleccionado] = useState(mesActual);
   const [mesGraficaSeleccionado, setMesGraficaSeleccionado] = useState(mesActual);
   const [mesRevisionSeleccionado, setMesRevisionSeleccionado] = useState(mesActual);
+  const [monedaCobroConfig, setMonedaCobroConfig] = useState('USD');
   const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
-  const nombreMonedaActiva = monedaActiva === 'EUR' ? 'euro' : 'dolar';
+  const nombreMonedaConfig = monedaCobroConfig === 'EUR' ? 'euro' : 'dolar';
+  const tasaMonedaSincronizada = String(dolar?.moneda || 'USD').toUpperCase() === monedaCobroConfig;
 
   const fetchConSesion = async (url, options = {}, retryOn401 = true) => {
     const token = localStorage.getItem('token');
@@ -99,6 +105,34 @@ function Dashboard() {
   const cumplePorPagina = 10;
   const totalPaginasCumple = Math.ceil(cumpleaneros.length / cumplePorPagina);
   const cumpleanerosPagina = cumpleaneros.slice((cumplePage - 1) * cumplePorPagina, cumplePage * cumplePorPagina);
+
+  useEffect(() => {
+    const fetchMonedaCobroConfig = async () => {
+      try {
+        const res = await fetchConSesion(`${apiBase}/api/configuracion/pagos`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMonedaCobroConfig('USD');
+          return;
+        }
+
+        const monedaConfigurada = String(data?.cobro?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+        setMonedaCobroConfig(monedaConfigurada);
+      } catch {
+        setMonedaCobroConfig('USD');
+      }
+    };
+
+    fetchMonedaCobroConfig();
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (!monedaCobroConfig) return;
+    const monedaContexto = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+    if (monedaContexto !== monedaCobroConfig) {
+      refreshDolar();
+    }
+  }, [monedaCobroConfig, dolar?.moneda, refreshDolar]);
 
   useEffect(() => {
     const fetchCumpleaneros = async () => {
@@ -358,6 +392,38 @@ function Dashboard() {
   }, [apiBase, mesGraficaSeleccionado]);
 
   useEffect(() => {
+    const fetchEgresosMes = async () => {
+      setEgresosMesLoading(true);
+      try {
+        const anioActual = new Date().getFullYear();
+        const res = await fetchConSesion(`${apiBase}/api/egresos?limit=500`);
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !Array.isArray(data?.items)) {
+          setEgresosMes(0);
+          return;
+        }
+
+        const total = data.items.reduce((acc, egreso) => {
+          if (!fechaPerteneceMesAnio(egreso?.fecha_pago || egreso?.fecha_emision || egreso?.createdAt, mesGraficaSeleccionado, anioActual)) {
+            return acc;
+          }
+          return acc + (Number(egreso?.monto) || 0);
+        }, 0);
+
+        setEgresosMes(total);
+      } catch {
+        setEgresosMes(0);
+      } finally {
+        setEgresosMesLoading(false);
+      }
+    };
+
+    fetchEgresosMes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBase, mesGraficaSeleccionado]);
+
+  useEffect(() => {
     const fetchActividadesPendientesNomina = async () => {
       setActividadesLoading(true);
       try {
@@ -414,6 +480,13 @@ function Dashboard() {
   const formatMontoBarra = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '$0';
     return `${simboloMonedaActiva}${Number(value).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  };
+
+  const formatMontoBarraConSigno = (value) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return `${simboloMonedaActiva}0`;
+    const numeric = Number(value);
+    const sign = numeric > 0 ? '+' : numeric < 0 ? '-' : '';
+    return `${sign}${simboloMonedaActiva}${Math.abs(numeric).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
   const formatFechaNacimiento = (iso) => {
@@ -689,12 +762,20 @@ function Dashboard() {
   const totalIngresosMensualidadesMes = Number(ingresosMensualidadesMes || 0);
   const totalIngresosInscripcionesMes = Number(ingresosInscripcionesMes || 0);
   const totalIngresosMes = totalIngresosMensualidadesMes + totalIngresosInscripcionesMes + ingresosUniformesMes;
+  const totalEgresosMes = Number(egresosMes || 0);
+  const flujoNetoMes = totalIngresosMes - totalEgresosMes;
+  const flujoNetoPositivo = flujoNetoMes >= 0;
   const mesIngresosLabel = mesesAnio.find((mes) => mes.value === mesGraficaSeleccionado)?.label || 'mes';
   const ingresosDonutData = [
     { name: 'Mensualidades', value: totalIngresosMensualidadesMes },
     { name: 'Uniformes', value: ingresosUniformesMes }
   ];
   const variacionAlumnosReal = `+${nuevosAlumnosMes} este mes`;
+  const tasaBcvHeaderTexto = (dolarLoading || !tasaMonedaSincronizada)
+    ? `Tasa ${nombreMonedaConfig} BCV: Cargando...`
+    : dolarError
+      ? `Tasa ${nombreMonedaConfig} BCV: No disponible`
+      : `Tasa ${nombreMonedaConfig} BCV: Bs. ${formatDolar(dolar?.promedio)}`;
 
   return (
     <div className="dashboard-container">
@@ -702,6 +783,7 @@ function Dashboard() {
         <div className="dashboard-header-copy">
           <h2>Bienvenido, Admin</h2>
           <p>Resumen de la actividad en tu academia · {mesActualLabel} {new Date().getFullYear()}</p>
+          <div className={`dashboard-header-bcv ${dolarError ? 'is-error' : ''}`}>{tasaBcvHeaderTexto}</div>
         </div>
         <button
           type="button"
@@ -736,23 +818,6 @@ function Dashboard() {
                   Becados: {resumenAlumnos.becados}
                 </div>
               </div>
-            </div>
-
-            <div className="dashboard-kpi-inline-card">
-              <div className="dashboard-kpi-inline-top">
-                <div className="dashboard-kpi-inline-icon dashboard-kpi-inline-icon-green">
-                  <AttachMoneyIcon sx={{ fontSize: 16 }} />
-                </div>
-              </div>
-              <div className="dashboard-kpi-inline-label">Tasa del {nombreMonedaActiva} BCV</div>
-              {dolarLoading && <div className="dashboard-kpi-inline-loading">Cargando...</div>}
-              {dolarError && <div className="dashboard-kpi-inline-loading">No disponible</div>}
-              {!dolarLoading && !dolarError && (
-                <>
-                  <div className="dashboard-kpi-inline-value">Bs. {formatDolar(dolar?.promedio)}</div>
-                  <div className="dashboard-kpi-inline-sub">Actualizado hoy, 00:00</div>
-                </>
-              )}
             </div>
 
             <div className="dashboard-kpi-inline-card">
@@ -805,6 +870,47 @@ function Dashboard() {
                     </div>
                   </div>
                   <div className="dashboard-kpi-inline-sub">{monedaActiva} recaudados en {mesIngresosLabel.toLowerCase()}</div>
+                </>
+              )}
+            </div>
+
+            <div className="dashboard-kpi-inline-card">
+              <div className="dashboard-kpi-inline-top">
+                <div className="dashboard-kpi-inline-icon dashboard-kpi-inline-icon-red">
+                  <PaymentsIcon sx={{ fontSize: 16 }} />
+                </div>
+              </div>
+              <div className="dashboard-kpi-inline-label">Egresos del mes</div>
+              {egresosMesLoading ? (
+                <div className="dashboard-kpi-inline-loading">Cargando...</div>
+              ) : (
+                <>
+                  <div className="dashboard-kpi-inline-value dashboard-kpi-inline-value-income">{formatMontoBarra(totalEgresosMes)}</div>
+                  <div className="dashboard-kpi-inline-sub">{monedaActiva} egresados en {mesIngresosLabel.toLowerCase()}</div>
+                </>
+              )}
+            </div>
+
+            <div className="dashboard-kpi-inline-card">
+              <div className="dashboard-kpi-inline-top">
+                <div className="dashboard-kpi-inline-icon dashboard-kpi-inline-icon-blue">
+                  <BalanceIcon sx={{ fontSize: 16 }} />
+                </div>
+              </div>
+              <div className="dashboard-kpi-inline-label">Flujo neto del mes</div>
+              {dolaresLoading || uniformesLoading || ingresosMesLoading || egresosMesLoading ? (
+                <div className="dashboard-kpi-inline-loading">Cargando...</div>
+              ) : (
+                <>
+                  <div
+                    className="dashboard-kpi-inline-value dashboard-kpi-inline-value-income"
+                    style={{ color: flujoNetoPositivo ? '#16a34a' : '#dc2626' }}
+                  >
+                    {formatMontoBarraConSigno(flujoNetoMes)}
+                  </div>
+                  <div className="dashboard-kpi-inline-sub">
+                    {flujoNetoPositivo ? 'Saldo positivo' : 'Saldo negativo'} en {mesIngresosLabel.toLowerCase()}
+                  </div>
                 </>
               )}
             </div>

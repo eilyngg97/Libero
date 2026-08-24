@@ -35,8 +35,11 @@ import GeneralConfig from './components/GeneralConfig';
 import CategoriasConfig from './components/CategoriasConfig';
 import ConciliacionBancaria from './components/ConciliacionBancaria';
 import Estadisticas from './components/Estadisticas';
+import EstadisticasFinanzas from './components/EstadisticasFinanzas';
 import MiPerfil from './components/MiPerfil';
 import Recaudos from './components/Recaudos';
+import Egresos from './components/Egresos';
+import CatalogoCategoriasEgresos from './components/CatalogoCategoriasEgresos';
 import TerminosCondiciones from './components/TerminosCondiciones';
 import UsuariosAccesos from './components/UsuariosAccesos';
 import CumpleanosPostGenerator from './components/CumpleanosPostGenerator';
@@ -392,13 +395,21 @@ function App() {
                           <Route path="config-categorias" element={<ProtectedRoute allowedRoles={adminOnly}><CategoriasConfig /></ProtectedRoute>} />
                           <Route path="config-pagos" element={<Navigate to="/configuracion" replace />} />
                           <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><Aspirantes /></TenantOnlyRoute></ProtectedRoute>} />
-                          <Route path="estadisticas" element={<ProtectedRoute allowedRoles={adminOnly}><Estadisticas /></ProtectedRoute>} />
+                          <Route path="estadisticas" element={<Navigate to="/estadisticas/resumen" replace />} />
+                          <Route path="estadisticas/resumen" element={<ProtectedRoute allowedRoles={adminOnly}><Estadisticas /></ProtectedRoute>} />
+                          <Route path="estadisticas/finanzas" element={<Navigate to="/estadisticas/financiero" replace />} />
+                          <Route path="estadisticas/finanzas/ingresos" element={<Navigate to="/estadisticas/financiero" replace />} />
+                          <Route path="estadisticas/finanzas/egresos" element={<Navigate to="/estadisticas/financiero" replace />} />
+                          <Route path="estadisticas/finanzas/balance" element={<Navigate to="/estadisticas/financiero" replace />} />
+                          <Route path="estadisticas/financiero" element={<ProtectedRoute allowedRoles={adminOnly}><EstadisticasFinanzas /></ProtectedRoute>} />
                           <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><LandingConfig /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
                           <Route path="mi-perfil" element={<ProtectedRoute allowedRoles={adminOnly}><MiPerfil /></ProtectedRoute>} />
                           <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
                           <Route path="recaudos" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['recaudos.view']}><Recaudos /></ProtectedRoute>} />
+                          <Route path="egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><Egresos /></ProtectedRoute>} />
+                          <Route path="config-catalogo-egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><CatalogoCategoriasEgresos /></ProtectedRoute>} />
                           <Route path="publicaciones/cumpleanos" element={<ProtectedRoute allowedRoles={adminOnly}><CumpleanosPostGenerator /></ProtectedRoute>} />
                           <Route path="terminos-condiciones" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['reglamento.view']}><TerminosCondiciones /></ProtectedRoute>} />
                           <Route path="usuarios" element={<ProtectedRoute allowedRoles={['super_admin']} requiredPermissions={['usuarios.manage']}><UsuariosAccesos /></ProtectedRoute>} />

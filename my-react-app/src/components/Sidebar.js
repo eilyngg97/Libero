@@ -29,6 +29,8 @@ import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import SportsIcon from '@mui/icons-material/Sports';
 import SettingsIcon from '@mui/icons-material/Settings';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
@@ -39,7 +41,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   let rol = null;
   let tenantId = '';
   try {
-    rol = String(localStorage.getItem('rol') || '').trim().toLowerCase();
+    rol = String(localStorage.getItem('rolActivo') || localStorage.getItem('rol') || '').trim().toLowerCase();
     tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
   } catch {}
   const dashboardPath = rol === 'usuario'
@@ -52,6 +54,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   const esAdminLegacy = rol === 'admin' || rol === 'super_admin';
   const canViewConstancias = hasPermission('constancias.view') || esAdminLegacy;
   const canViewRecaudos = hasPermission('recaudos.view') || esAdminLegacy;
+  const canViewEgresos = hasPermission('egresos.view') || esAdminLegacy;
   const canViewReglamento = hasPermission('reglamento.view') || esAdminLegacy;
   const canViewTienda = hasPermission('tienda.view') || esAdminLegacy;
   const canViewSolicitudesConstancias = hasPermission('solicitudes_constancias.view') || esAdminLegacy;
@@ -75,6 +78,9 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
     if (canViewRecaudos) {
       options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
     }
+    if (canViewEgresos) {
+      options.push({ text: 'Egresos', icon: <AttachMoneyIcon />, path: '/egresos' });
+    }
     if (canViewReglamento) {
       options.push({ text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' });
     }
@@ -93,7 +99,14 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
     options.push({ text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' });
   }
   if (canViewEstadisticas) {
-    options.push({ text: 'Estadisticas', icon: <QueryStatsIcon />, path: '/estadisticas' });
+    options.push({
+      text: 'Estadisticas',
+      icon: <QueryStatsIcon />,
+      children: [
+        { text: 'Resumen general', icon: <TrendingUpIcon />, path: '/estadisticas/resumen' },
+        { text: 'Reporte financiero', icon: <AssessmentOutlinedIcon />, path: '/estadisticas/financiero' }
+      ]
+    });
   }
   if (canViewConciliacion) {
     options.push({ text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' });
@@ -109,7 +122,8 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
         children: [
           { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' },
           { text: 'Constancias', icon: <SettingsIcon />, path: '/config-general' },
-          { text: 'Categorias', icon: <Groups2OutlinedIcon />, path: '/config-categorias' }
+          { text: 'Categorias', icon: <Groups2OutlinedIcon />, path: '/config-categorias' },
+          { text: 'Catalogo egresos', icon: <AttachMoneyIcon />, path: '/config-catalogo-egresos' }
         ]
       });
     }
@@ -137,7 +151,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
-  const [openConfiguraciones, setOpenConfiguraciones] = useState(false);
+  const [openSubmenus, setOpenSubmenus] = useState({});
 
   const drawerWidth = collapsed ? 64 : 220;
 
@@ -151,7 +165,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
   };
 
   const handleDashboardNavigation = async () => {
-    const rol = localStorage.getItem('rol');
+    const rol = String(localStorage.getItem('rolActivo') || localStorage.getItem('rol') || '').trim().toLowerCase();
     if (rol === 'entrenador') {
       navigate('/sin-acceso');
       if (variant === 'temporary' && onClose) onClose();
@@ -264,7 +278,9 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
       <List>
         {menuOptions.map((option) => {
           if (Array.isArray(option.children) && option.children.length > 0) {
-            const submenuSelected = option.children.some((child) => location.pathname === child.path);
+            const submenuKey = option.text;
+            const submenuSelected = option.children.some((child) => location.pathname === child.path || location.pathname.startsWith(`${child.path}/`));
+            const submenuOpen = Boolean(openSubmenus[submenuKey] || submenuSelected);
 
             return (
               <React.Fragment key={option.text}>
@@ -277,7 +293,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
                         if (variant === 'temporary' && onClose) onClose();
                         return;
                       }
-                      setOpenConfiguraciones((prev) => !prev);
+                      setOpenSubmenus((prev) => ({ ...prev, [submenuKey]: !submenuOpen }));
                     }}
                     selected={submenuSelected}
                     sx={{
@@ -324,17 +340,17 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
                           primary={option.text}
                           sx={{ color: submenuSelected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.92)', pl: 2 }}
                         />
-                        {openConfiguraciones ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                        {submenuOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                       </>
                     )}
                   </ListItemButton>
                 </ListItem>
 
                 {!collapsed && (
-                  <Collapse in={openConfiguraciones} timeout="auto" unmountOnExit>
+                  <Collapse in={submenuOpen} timeout="auto" unmountOnExit>
                     <List component="div" disablePadding>
                       {option.children.map((child) => {
-                        const childSelected = location.pathname === child.path;
+                        const childSelected = location.pathname === child.path || location.pathname.startsWith(`${child.path}/`);
                         return (
                           <ListItem key={child.text} disablePadding sx={{ justifyContent: 'center' }}>
                             <ListItemButton

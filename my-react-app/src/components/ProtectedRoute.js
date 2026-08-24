@@ -43,6 +43,7 @@ function ProtectedRoute({ children, allowedRoles, requiredPermissions = [], requ
       if (permisos.includes('dashboard.view')) return '/dashboard';
       if (permisos.includes('constancias.view')) return '/constancias';
       if (permisos.includes('recaudos.view')) return '/recaudos';
+      if (permisos.includes('egresos.view')) return '/egresos';
       if (permisos.includes('reglamento.view')) return '/terminos-condiciones';
       if (permisos.includes('tienda.view')) return '/uniformes';
       return '/login';
