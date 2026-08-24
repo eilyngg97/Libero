@@ -14,6 +14,8 @@ const LandingAtletaFoto = require('../models/LandingAtletaFoto');
 const Entrenador = require('../models/Entrenador');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
 const Recaudo = require('../models/Recaudo');
+const EgresoCategoria = require('../models/EgresoCategoria');
+const Egreso = require('../models/Egreso');
 const TerminoCondicion = require('../models/TerminoCondicion');
 const TerminoAceptacion = require('../models/TerminoAceptacion');
 const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
@@ -35,6 +37,8 @@ const modelSchemaMap = {
   Entrenador: Entrenador.schema,
   HistorialEstadoAlumno: HistorialEstadoAlumno.schema,
   Recaudo: Recaudo.schema,
+  EgresoCategoria: EgresoCategoria.schema,
+  Egreso: Egreso.schema,
   TerminoCondicion: TerminoCondicion.schema,
   TerminoAceptacion: TerminoAceptacion.schema,
   ConstanciaSolicitud: ConstanciaSolicitud.schema

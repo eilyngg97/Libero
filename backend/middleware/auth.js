@@ -76,9 +76,9 @@ exports.permisoMiddleware = (...permisos) => (req, res, next) => {
   }
 
   const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
-  const permisosUsuario = Array.isArray(req.user?.permisos)
-    ? req.user.permisos
-    : getDefaultPermissionsByLegacyRole(rolUsuario);
+  const permisosToken = Array.isArray(req.user?.permisos) ? req.user.permisos : [];
+  const permisosRol = getDefaultPermissionsByLegacyRole(rolUsuario);
+  const permisosUsuario = [...permisosToken, ...permisosRol];
 
   const usuarioSet = new Set(
     permisosUsuario
