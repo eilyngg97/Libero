@@ -396,22 +396,39 @@ function Dashboard() {
       setEgresosMesLoading(true);
       try {
         const anioActual = new Date().getFullYear();
-        const res = await fetchConSesion(`${apiBase}/api/egresos?limit=500`);
-        const data = await res.json().catch(() => ({}));
+        const [resEgresos, resEntrenadores] = await Promise.all([
+          fetchConSesion(`${apiBase}/api/egresos?limit=500`),
+          fetchConSesion(`${apiBase}/api/entrenadores`)
+        ]);
+        const dataEgresos = await resEgresos.json().catch(() => ({}));
+        const dataEntrenadores = await resEntrenadores.json().catch(() => ([]));
 
-        if (!res.ok || !Array.isArray(data?.items)) {
+        if (!resEgresos.ok || !Array.isArray(dataEgresos?.items)) {
           setEgresosMes(0);
           return;
         }
 
-        const total = data.items.reduce((acc, egreso) => {
-          if (!fechaPerteneceMesAnio(egreso?.fecha_pago || egreso?.fecha_emision || egreso?.createdAt, mesGraficaSeleccionado, anioActual)) {
+        const totalEgresosManuales = dataEgresos.items.reduce((acc, egreso) => {
+          if (!fechaPerteneceMesAnio(egreso?.fecha_emision || egreso?.createdAt, mesGraficaSeleccionado, anioActual)) {
             return acc;
           }
           return acc + (Number(egreso?.monto) || 0);
         }, 0);
 
-        setEgresosMes(total);
+        const entrenadores = resEntrenadores.ok && Array.isArray(dataEntrenadores) ? dataEntrenadores : [];
+        const totalNominaEntrenadores = entrenadores
+          .flatMap((entrenador) => (Array.isArray(entrenador?.pagos_nomina) ? entrenador.pagos_nomina : []))
+          .reduce((acc, pago) => {
+            if (!fechaPerteneceMesAnio(pago?.fecha_pago || pago?.createdAt, mesGraficaSeleccionado, anioActual)) {
+              return acc;
+            }
+            const montoNomina = extractMontoValue(
+              pago?.monto_total_usd ?? pago?.monto_total_ves ?? pago?.monto_total
+            );
+            return acc + montoNomina;
+          }, 0);
+
+        setEgresosMes(totalEgresosManuales + totalNominaEntrenadores);
       } catch {
         setEgresosMes(0);
       } finally {
@@ -550,6 +567,42 @@ function Dashboard() {
     const parsed = parseFechaSinDesfase(fecha);
     if (!parsed) return false;
     return parsed.getMonth() + 1 === Number(mes) && parsed.getFullYear() === Number(anio);
+  };
+
+  const extractMontoValue = (raw) => {
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) ? raw : 0;
+    }
+
+    if (typeof raw === 'string') {
+      let normalized = raw.trim();
+      if (!normalized) return 0;
+
+      normalized = normalized.replace(/[^\d,.-]/g, '');
+
+      const commaCount = (normalized.match(/,/g) || []).length;
+      const dotCount = (normalized.match(/\./g) || []).length;
+
+      if (commaCount > 0 && dotCount > 0) {
+        const lastComma = normalized.lastIndexOf(',');
+        const lastDot = normalized.lastIndexOf('.');
+        if (lastComma > lastDot) {
+          normalized = normalized.replace(/\./g, '').replace(',', '.');
+        } else {
+          normalized = normalized.replace(/,/g, '');
+        }
+      } else if (commaCount > 0 && dotCount === 0) {
+        normalized = normalized.replace(',', '.');
+      } else {
+        normalized = normalized.replace(/,/g, '');
+      }
+
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? numeric : 0;
   };
 
   const parseFechaSimple = (value) => {
