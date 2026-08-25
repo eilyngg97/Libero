@@ -1133,16 +1133,19 @@ function ListadoSolicitudesUniformes() {
             gap: 1,
             flexWrap: { xs: 'wrap', xl: 'nowrap' },
             alignItems: { xs: 'stretch', xl: 'center' },
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            width: '100%'
           }}
         >
           <Box
             sx={{
-              display: 'flex',
+              display: { xs: 'grid', md: 'flex' },
+              gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))' },
               gap: 1,
               flexWrap: 'wrap',
               flexGrow: 1,
-              minWidth: 0
+              minWidth: 0,
+              width: '100%'
             }}
           >
             <TextField
@@ -1155,7 +1158,7 @@ function ListadoSolicitudesUniformes() {
                 setPagina(0);
               }}
               sx={{
-                minWidth: { xs: 150, md: 170 },
+                minWidth: { xs: 0, md: 170 },
                 '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
               }}
             >
@@ -1175,7 +1178,7 @@ function ListadoSolicitudesUniformes() {
                 setPagina(0);
               }}
               sx={{
-                minWidth: { xs: 150, md: 175 },
+                minWidth: { xs: 0, md: 175 },
                 '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
               }}
             >
@@ -1222,7 +1225,8 @@ function ListadoSolicitudesUniformes() {
                 }
               }}
               sx={{
-                minWidth: { xs: 150, md: 175 },
+                minWidth: { xs: 0, md: 175 },
+                gridColumn: { xs: '1 / -1', sm: 'auto' },
                 '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
               }}
             >
@@ -1297,7 +1301,8 @@ function ListadoSolicitudesUniformes() {
                 }
               }}
               sx={{
-                minWidth: { xs: 150, md: 175 },
+                minWidth: { xs: 0, md: 175 },
+                gridColumn: { xs: '1 / -1', sm: 'auto' },
                 '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
               }}
             >
@@ -1323,7 +1328,7 @@ function ListadoSolicitudesUniformes() {
                 setPagina(0);
               }}
               sx={{
-                minWidth: { xs: 150, md: 175 },
+                minWidth: { xs: 0, md: 175 },
                 '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
               }}
             >
@@ -1336,7 +1341,8 @@ function ListadoSolicitudesUniformes() {
 
           <Box
             sx={{
-              display: 'flex',
+              display: { xs: 'grid', sm: 'flex' },
+              gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))' },
               gap: 1,
               flexWrap: 'wrap',
               justifyContent: { xs: 'flex-start', xl: 'flex-end' },
@@ -1355,7 +1361,8 @@ function ListadoSolicitudesUniformes() {
                 borderRadius: 2,
                 minHeight: 40,
                 px: 1.5,
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                width: { xs: '100%', sm: 'auto' }
               }}
             >
               {submittingSolicitudPagoLote
@@ -1374,7 +1381,8 @@ function ListadoSolicitudesUniformes() {
                 borderRadius: 2,
                 minHeight: 40,
                 px: 1.5,
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                width: { xs: '100%', sm: 'auto' }
               }}
             >
               {submittingEliminarLote
@@ -1391,7 +1399,9 @@ function ListadoSolicitudesUniformes() {
                 borderRadius: 2,
                 minHeight: 40,
                 px: 1.5,
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                width: { xs: '100%', sm: 'auto' },
+                gridColumn: { xs: '1 / -1', sm: 'auto' }
               }}
             >
               Exportar Excel
