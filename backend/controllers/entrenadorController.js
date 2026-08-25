@@ -187,6 +187,49 @@ function resolvePeriodoClave({ frecuenciaPago, fechaPago }) {
   return `${year}-${month}`;
 }
 
+function resolvePeriodoClaveFromPeriodoTexto({ frecuenciaPago, periodo, fechaPago }) {
+  const rawPeriodo = normalizeLowerTrim(periodo);
+  if (!rawPeriodo || !(fechaPago instanceof Date) || Number.isNaN(fechaPago.getTime())) {
+    return '';
+  }
+
+  const year = fechaPago.getFullYear();
+  const month = String(fechaPago.getMonth() + 1).padStart(2, '0');
+
+  if (frecuenciaPago === 'quincenal') {
+    if (rawPeriodo.includes('1ra') || rawPeriodo.includes('primera') || rawPeriodo.includes('q1')) {
+      return `${year}-${month}-q1`;
+    }
+    if (rawPeriodo.includes('2da') || rawPeriodo.includes('segunda') || rawPeriodo.includes('q2')) {
+      return `${year}-${month}-q2`;
+    }
+  }
+
+  if (frecuenciaPago === 'mensual') {
+    return `${year}-${month}`;
+  }
+
+  return '';
+}
+
+function resolvePagoPeriodoClaveForMatch({ pago, frecuenciaPagoFallback }) {
+  const explicitKey = trimValue(pago?.periodo_clave);
+  if (explicitKey) return explicitKey;
+
+  const frecuenciaPago = normalizeFrecuenciaPago(pago?.frecuencia_pago) || frecuenciaPagoFallback || 'mensual';
+  const fechaPago = pago?.fecha_pago ? new Date(pago.fecha_pago) : null;
+  if (!(fechaPago instanceof Date) || Number.isNaN(fechaPago.getTime())) return '';
+
+  const fromLabel = resolvePeriodoClaveFromPeriodoTexto({
+    frecuenciaPago,
+    periodo: pago?.periodo,
+    fechaPago
+  });
+  if (fromLabel) return fromLabel;
+
+  return resolvePeriodoClave({ frecuenciaPago, fechaPago });
+}
+
 function getMontoBaseMensualUsd(entrenador = {}) {
   const raw = entrenador?.pago_config?.monto_base_usd;
   const numeric = Number(raw);
@@ -840,10 +883,17 @@ exports.registrarPagoNominaEntrenador = async (req, res) => {
     const deduccionUsd = monedaSeleccionada === 'USD' ? deduccion : round2(deduccion / tasaBcv);
     const deduccionVes = monedaSeleccionada === 'VES' ? deduccion : round2(deduccion * tasaBcv);
 
-    const periodoClave = trimValue(req.body?.periodo_clave) || resolvePeriodoClave({ frecuenciaPago, fechaPago });
+    const periodoTexto = trimValue(req.body?.periodo);
+    const periodoClaveRequest = trimValue(req.body?.periodo_clave);
+    const periodoClaveInferidaPorTexto = resolvePeriodoClaveFromPeriodoTexto({
+      frecuenciaPago,
+      periodo: periodoTexto,
+      fechaPago
+    });
+    const periodoClave = periodoClaveRequest || periodoClaveInferidaPorTexto || resolvePeriodoClave({ frecuenciaPago, fechaPago });
     const pagoPayload = {
       fecha_pago: fechaPago,
-      periodo: trimValue(req.body?.periodo),
+      periodo: periodoTexto,
       periodo_clave: periodoClave,
       frecuencia_pago: frecuenciaPago,
       moneda_seleccionada: monedaSeleccionada,
@@ -915,7 +965,10 @@ exports.listarActividadesPendientesNomina = async (req, res) => {
       if (!periodoClavePendiente) return acc;
 
       const pagosNomina = Array.isArray(entrenador?.pagos_nomina) ? entrenador.pagos_nomina : [];
-      const pagoYaRegistrado = pagosNomina.some((pago) => trimValue(pago?.periodo_clave) === periodoClavePendiente);
+      const pagoYaRegistrado = pagosNomina.some((pago) => {
+        const pagoPeriodoClave = resolvePagoPeriodoClaveForMatch({ pago, frecuenciaPagoFallback: frecuenciaPago });
+        return pagoPeriodoClave === periodoClavePendiente;
+      });
       if (pagoYaRegistrado) return acc;
 
       acc.push({

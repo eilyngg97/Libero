@@ -457,6 +457,9 @@ function EntrenadorDetalleView({
   const periodoPrefillFromNavigation = useMemo(() => {
     return String(initialPagoPrefill?.periodo || '').trim();
   }, [initialPagoPrefill]);
+  const periodoClavePrefillFromNavigation = useMemo(() => {
+    return String(initialPagoPrefill?.periodoClave || initialPagoPrefill?.periodo_clave || '').trim();
+  }, [initialPagoPrefill]);
 
   useEffect(() => {
     setIsEditing(false);
@@ -638,7 +641,29 @@ function EntrenadorDetalleView({
       const token = localStorage.getItem('token');
       const apiBase = process.env.REACT_APP_API_URL || '';
       const payload = new FormData();
+      const periodoSeleccionado = String(pagoForm.periodo || '').trim().toLowerCase();
+      const periodoPrefill = String(periodoPrefillFromNavigation || '').trim().toLowerCase();
+      const fechaPagoBase = parseDateLocalSafe(pagoForm.fecha_pago) || new Date();
+      const year = fechaPagoBase.getFullYear();
+      const month = String(fechaPagoBase.getMonth() + 1).padStart(2, '0');
+
+      let periodoClavePayload = '';
+      if (periodoClavePrefillFromNavigation && periodoSeleccionado && periodoSeleccionado === periodoPrefill) {
+        periodoClavePayload = periodoClavePrefillFromNavigation;
+      } else if (frecuenciaPago === 'quincenal') {
+        if (periodoSeleccionado.includes('1ra')) {
+          periodoClavePayload = `${year}-${month}-q1`;
+        } else if (periodoSeleccionado.includes('2da')) {
+          periodoClavePayload = `${year}-${month}-q2`;
+        }
+      } else if (frecuenciaPago === 'mensual') {
+        periodoClavePayload = `${year}-${month}`;
+      }
+
       payload.append('periodo', pagoForm.periodo || '');
+      if (periodoClavePayload) {
+        payload.append('periodo_clave', periodoClavePayload);
+      }
       payload.append('fecha_pago', pagoForm.fecha_pago || '');
       payload.append('monto_base', String(Number(pagoForm.monto_base) || 0));
       payload.append('monto_base_usd', String(Number(pagoForm.monto_base) || 0));
