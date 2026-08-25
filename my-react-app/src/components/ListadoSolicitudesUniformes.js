@@ -37,9 +37,14 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import DownloadIcon from '@mui/icons-material/Download';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import PaymentIcon from '@mui/icons-material/Payment';
+import PaidIcon from '@mui/icons-material/Paid';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { mediaUrl } from '../utils/mediaUrl';
 import { useSede } from '../context/SedeContext';
+import { useDolar } from '../context/DolarContext';
 import { exportToExcel } from '../utils/exportExcel';
+import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 
 const ESTADO_LABELS = {
   pendiente: 'Pendiente',
@@ -81,6 +86,15 @@ const ESTADOS_SOLICITUD_ACTIVA = new Set([
 
 const ALL_PRENDAS_VALUE = '__all__';
 const ALL_CATEGORIAS_VALUE = '__all__';
+const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Tarjeta', 'Efectivo'];
+
+function getLocalInputDate() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 function ListadoSolicitudesUniformes() {
   const [pedidos, setPedidos] = useState([]);
@@ -104,6 +118,19 @@ function ListadoSolicitudesUniformes() {
   });
   const [detallePagoOpen, setDetallePagoOpen] = useState(false);
   const [submittingVerificacion, setSubmittingVerificacion] = useState(false);
+  const [registrarPagoOpen, setRegistrarPagoOpen] = useState(false);
+  const [submittingRegistroPago, setSubmittingRegistroPago] = useState(false);
+  const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
+  const [registroPagoData, setRegistroPagoData] = useState({
+    metodoPago: 'Pago movil',
+    referencia: '',
+    telefonoPago: '',
+    cedulaTitular: '',
+    nota: '',
+    fechaPago: getLocalInputDate(),
+    montoPagado: '',
+    comprobante: null
+  });
   const [confirmEntregarId, setConfirmEntregarId] = useState(null);
   const [entregandoId, setEntregandoId] = useState(null);
   const [confirmEliminarId, setConfirmEliminarId] = useState(null);
@@ -128,6 +155,26 @@ function ListadoSolicitudesUniformes() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const { sedeSeleccionada } = useSede();
+  const { dolar } = useDolar();
+
+  const inputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      backgroundColor: '#ffffff'
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: '#e2e8f0'
+    },
+    '& .MuiInputLabel-root': {
+      color: '#64748b'
+    }
+  };
+
+  const actionIconButtonSx = {
+    color: '#6b7280',
+    bgcolor: '#fdfdfd',
+    '&:hover': { bgcolor: '#e2e8f0' }
+  };
 
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -478,6 +525,31 @@ function ListadoSolicitudesUniformes() {
     return montoEsperadoDivisa * tasaAplicadaNumero;
   })();
 
+  const metodoPagoRequiereReferencia = registroPagoData.metodoPago === 'Transferencia' || registroPagoData.metodoPago === 'Pago movil';
+  const referenciaDigitsRegistro = String(registroPagoData.referencia || '').replace(/\D/g, '');
+  const referenciaRegistroValida = !metodoPagoRequiereReferencia || referenciaDigitsRegistro.length >= 6;
+  const monedaPagoRegistro = normalizarMoneda(pedidoSeleccionado?.moneda || dolar?.moneda || 'USD');
+
+  const obtenerTasaHistoricaSegunMoneda = useCallback(async (fechaIso, tasaFallback, moneda) => {
+    if (String(moneda || 'USD').toUpperCase() === 'EUR') {
+      return obtenerTasaEuroOficialPorFecha(fechaIso, tasaFallback);
+    }
+    return obtenerTasaOficialPorFecha(fechaIso, tasaFallback);
+  }, []);
+
+  const tasaFallbackRegistro = Number(dolar?.promedio) || 0;
+  const tasaPagoActiva = Number(tasaPagoHistorica) > 0 ? Number(tasaPagoHistorica) : tasaFallbackRegistro;
+  const montoPagadoBsCalculado = (Number(registroPagoData.montoPagado) || 0) * (Number(tasaPagoActiva) || 0);
+  const registroPagoFormValido = Boolean(
+    String(registroPagoData.metodoPago || '').trim()
+    && String(registroPagoData.fechaPago || '').trim()
+    && Number.isFinite(Number(registroPagoData.montoPagado))
+    && Number(registroPagoData.montoPagado) > 0
+    && Number.isFinite(Number(montoPagadoBsCalculado))
+    && Number(montoPagadoBsCalculado) > 0
+    && referenciaRegistroValida
+  );
+
   const uniformeSeleccionadoEdicion = uniformesCatalogo.find((item) => String(item?._id) === String(editSolicitudData.uniformeId));
   const requiereNumeroFranelaEdicion = uniformeSeleccionadoEdicion?.lleva_numero_franela !== false;
   const muestraCampoNombreEdicion = Boolean(uniformeSeleccionadoEdicion?.lleva_nombre_atleta) || Boolean(uniformeSeleccionadoEdicion?.franela_representante);
@@ -567,6 +639,32 @@ function ListadoSolicitudesUniformes() {
     const idsValidos = new Set(pedidos.map((pedido) => String(pedido._id)));
     setSelectedPedidoIds((prev) => prev.filter((id) => idsValidos.has(String(id))));
   }, [pedidos]);
+
+  useEffect(() => {
+    if (!registrarPagoOpen || !registroPagoData.fechaPago) return;
+    let cancelado = false;
+
+    (async () => {
+      try {
+        const tasaHistorica = await obtenerTasaHistoricaSegunMoneda(
+          registroPagoData.fechaPago,
+          tasaFallbackRegistro,
+          monedaPagoRegistro
+        );
+        if (!cancelado) {
+          setTasaPagoHistorica(Number(tasaHistorica) || tasaFallbackRegistro);
+        }
+      } catch {
+        if (!cancelado) {
+          setTasaPagoHistorica(tasaFallbackRegistro);
+        }
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [registrarPagoOpen, registroPagoData.fechaPago, tasaFallbackRegistro, monedaPagoRegistro, obtenerTasaHistoricaSegunMoneda]);
 
   const handleChangePagina = (_event, nuevaPagina) => {
     setPagina(nuevaPagina);
@@ -865,6 +963,111 @@ function ListadoSolicitudesUniformes() {
     setDetallePagoOpen(true);
   };
 
+  const openRegistrarPagoDialog = (pedido) => {
+    const saldoPendiente = Number(pedido?.saldo_pendiente);
+    const precio = Number(pedido?.precio);
+    const montoPagadoActual = Number(pedido?.monto_pagado) || 0;
+    const montoSugerido = Number.isFinite(saldoPendiente) && saldoPendiente > 0
+      ? saldoPendiente
+      : Math.max((Number.isFinite(precio) ? precio : 0) - montoPagadoActual, 0);
+
+    setPedidoSeleccionado(pedido);
+    setRegistroPagoData({
+      metodoPago: 'Pago movil',
+      referencia: '',
+      telefonoPago: '',
+      cedulaTitular: '',
+      nota: '',
+      fechaPago: getLocalInputDate(),
+      montoPagado: montoSugerido > 0 ? String(Number(montoSugerido.toFixed(2))) : '',
+      comprobante: null
+    });
+    setTasaPagoHistorica(null);
+    setRegistrarPagoOpen(true);
+  };
+
+  const closeRegistrarPagoDialog = () => {
+    if (submittingRegistroPago) return;
+    setRegistrarPagoOpen(false);
+    setPedidoSeleccionado(null);
+    setRegistroPagoData({
+      metodoPago: 'Pago movil',
+      referencia: '',
+      telefonoPago: '',
+      cedulaTitular: '',
+      nota: '',
+      fechaPago: getLocalInputDate(),
+      montoPagado: '',
+      comprobante: null
+    });
+    setTasaPagoHistorica(null);
+  };
+
+  const handleRegistrarPago = async () => {
+    if (!pedidoSeleccionado?._id) return;
+
+    const montoPagado = Number(registroPagoData.montoPagado);
+    const montoPagadoBs = Number(montoPagadoBsCalculado);
+
+    if (!registroPagoData.metodoPago) {
+      setError('Selecciona un metodo de pago');
+      return;
+    }
+    if (!referenciaRegistroValida) {
+      setError('La referencia debe tener minimo 6 digitos');
+      return;
+    }
+    if (!Number.isFinite(montoPagado) || montoPagado <= 0) {
+      setError('Debes indicar un monto pagado valido');
+      return;
+    }
+    if (!Number.isFinite(montoPagadoBs) || montoPagadoBs <= 0) {
+      setError('No se pudo calcular un monto en bolivares valido para el pago');
+      return;
+    }
+
+    try {
+      setSubmittingRegistroPago(true);
+      const payload = new FormData();
+      payload.append('metodo_pago', String(registroPagoData.metodoPago || ''));
+      payload.append('monto_pagado', String(montoPagado));
+      payload.append('monto_pagado_bs', String(Number(montoPagadoBs.toFixed(2))));
+      payload.append('fecha_pago', String(registroPagoData.fechaPago || getLocalInputDate()));
+
+      if (metodoPagoRequiereReferencia && referenciaDigitsRegistro) {
+        payload.append('referencia', referenciaDigitsRegistro);
+      }
+      if (String(registroPagoData.telefonoPago || '').trim()) {
+        payload.append('telefono_pago', formatTelefonoPago(registroPagoData.telefonoPago));
+      }
+      if (String(registroPagoData.cedulaTitular || '').trim()) {
+        payload.append('cedula_titular', formatCedulaPago(registroPagoData.cedulaTitular));
+      }
+      if (String(registroPagoData.nota || '').trim()) {
+        payload.append('nota', String(registroPagoData.nota).trim());
+      }
+      if (registroPagoData.comprobante) {
+        payload.append('comprobante', registroPagoData.comprobante);
+      }
+
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoSeleccionado._id}/pagar`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: payload
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al registrar el pago');
+
+      setPedidos((prev) => prev.map((pedido) => (pedido._id === data._id ? data : pedido)));
+      closeRegistrarPagoDialog();
+      setSuccessMessage('Pago de uniforme registrado correctamente');
+    } catch (err) {
+      setError(err.message || 'Error al registrar el pago');
+    } finally {
+      setSubmittingRegistroPago(false);
+    }
+  };
+
   const closeDetallePagoDialog = () => {
     if (submittingVerificacion) return;
     setDetallePagoOpen(false);
@@ -990,7 +1193,44 @@ function ListadoSolicitudesUniformes() {
       );
     }
 
-    if (pedido.estado === 'esperando_pago' || pedido.estado === 'cancelado') {
+    if (pedido.estado === 'esperando_pago') {
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          <Tooltip title="Registrar pago">
+            <IconButton
+              size="small"
+              onClick={() => openRegistrarPagoDialog(pedido)}
+              aria-label="Registrar pago"
+              sx={actionIconButtonSx}
+            >
+              <PaidIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={eliminandoId === pedido._id ? 'Eliminando...' : 'Eliminar solicitud'}>
+            <span>
+              <IconButton
+                size="small"
+                disabled={eliminandoId === pedido._id}
+                onClick={() => setConfirmEliminarId(pedido._id)}
+                aria-label="Eliminar solicitud"
+                sx={{
+                  bgcolor: '#fee2e2',
+                  color: '#b91c1c',
+                  '&:hover': { bgcolor: '#fecaca' },
+                  '&:disabled': { bgcolor: '#e5e7eb', color: '#94a3b8' }
+                }}
+              >
+                {eliminandoId === pedido._id
+                  ? <CircularProgress size={16} sx={{ color: '#b91c1c' }} />
+                  : <DeleteOutlineIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
+      );
+    }
+
+    if (pedido.estado === 'cancelado') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
           <Tooltip title={eliminandoId === pedido._id ? 'Eliminando...' : 'Eliminar solicitud'}>
@@ -1017,7 +1257,38 @@ function ListadoSolicitudesUniformes() {
       );
     }
 
-    if (pedido.estado === 'pago_en_revision' || pedido.estado === 'abono') {
+    if (pedido.estado === 'abono') {
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          <Tooltip title="Registrar pago">
+            <IconButton
+              size="small"
+              onClick={() => openRegistrarPagoDialog(pedido)}
+              aria-label="Registrar pago"
+              sx={actionIconButtonSx}
+            >
+              <PaidIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Ver detalle de pago">
+            <IconButton
+              size="small"
+              onClick={() => openDetallePagoDialog(pedido)}
+              aria-label="Ver detalle de pago"
+              sx={{
+                bgcolor: '#eef2ff',
+                color: '#1d4ed8',
+                '&:hover': { bgcolor: '#e0e7ff' }
+              }}
+            >
+              <VisibilityIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      );
+    }
+
+    if (pedido.estado === 'pago_en_revision') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
           <Tooltip title="Ver detalle de pago">
@@ -1713,6 +1984,297 @@ function ListadoSolicitudesUniformes() {
             sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none', px: 2.2 }}
           >
             {submittingSolicitudPago ? 'Procesando...' : 'Confirmar solicitud de pago'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={registrarPagoOpen}
+        onClose={closeRegistrarPagoDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <DialogTitle
+          disableTypography
+          sx={{
+            p: 3,
+            pb: 1.5,
+            backgroundColor: '#ffffff'
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 2,
+                  backgroundColor: '#fff2e7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <PaymentIcon sx={{ color: '#ff7a00' }} />
+              </Box>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a' }}>
+                  Registrar Pago
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.25 }}>
+                  Ingresa los detalles de tu transferencia para procesar la inscripcion.
+                </Typography>
+              </Box>
+            </Box>
+            <IconButton size="small" onClick={closeRegistrarPagoDialog} disabled={submittingRegistroPago} sx={{ color: '#6b7280' }}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3, pt: 1.5, bgcolor: '#f8fafc' }}>
+          {String(pedidoSeleccionado?.estado || '').toLowerCase() === 'abono' && (
+            <Button
+              variant="text"
+              size="small"
+              onClick={() => {
+                setRegistrarPagoOpen(false);
+                openDetallePagoDialog(pedidoSeleccionado);
+              }}
+              sx={{ mt: 1, color: '#f97316', fontWeight: 700 }}
+            >
+              Ver historial de abonos
+            </Button>
+          )}
+
+          {pedidoSeleccionado?.alumno && (
+            <Box
+              sx={{
+                mb: 2,
+                px: 1.75,
+                py: 1.25,
+                borderRadius: 2,
+                border: '1px solid #e2e8f0',
+                bgcolor: '#ffffff'
+              }}
+            >
+              <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: '#94a3b8' }}>
+                ALUMNO SELECCIONADO
+              </Typography>
+              <Typography sx={{ mt: 0.45, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                {`${pedidoSeleccionado.alumno.nombres || ''} ${pedidoSeleccionado.alumno.apellidos || ''}`.trim() || '-'}
+              </Typography>
+            </Box>
+          )}
+
+          <TextField
+            select
+            label="Método de pago"
+            fullWidth
+            margin="normal"
+            size="small"
+            sx={inputSx}
+            value={registroPagoData.metodoPago}
+            onChange={(event) => {
+              const metodo = event.target.value;
+              setRegistroPagoData((prev) => ({
+                ...prev,
+                metodoPago: metodo,
+                referencia: metodo === 'Transferencia' || metodo === 'Pago movil' ? prev.referencia : ''
+              }));
+            }}
+          >
+            {METODOS_PAGO.map((metodo) => (
+              <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            label="¿Cuándo se realizó el pago?"
+            type="date"
+            fullWidth
+            margin="normal"
+            size="small"
+            sx={inputSx}
+            value={registroPagoData.fechaPago}
+            onChange={(event) => setRegistroPagoData((prev) => ({ ...prev, fechaPago: event.target.value }))}
+            InputLabelProps={{ shrink: true }}
+          />
+
+          <TextField
+            label={`Monto a pagar (${normalizarMoneda(pedidoSeleccionado?.moneda)})`}
+            type="number"
+            fullWidth
+            margin="normal"
+            size="small"
+            sx={inputSx}
+            value={registroPagoData.montoPagado}
+            onChange={(event) => setRegistroPagoData((prev) => ({ ...prev, montoPagado: event.target.value }))}
+            inputProps={{ min: 0, step: '0.01' }}
+          />
+
+          <Typography variant="body2" sx={{ mt: -0.5, mb: 1, color: '#64748b' }}>
+            Monto en Bs: {formatMoney(montoPagadoBsCalculado)} Bs
+          </Typography>
+          <Typography variant="caption" sx={{ mt: -0.5, mb: 1, color: '#94a3b8', display: 'block' }}>
+            Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/{monedaPagoRegistro}
+          </Typography>
+
+          {metodoPagoRequiereReferencia && (
+            <TextField
+              label="Referencia (mínimo 6 últimos dígitos)"
+              fullWidth
+              margin="normal"
+              size="small"
+              sx={inputSx}
+              value={registroPagoData.referencia}
+              onChange={(event) => setRegistroPagoData((prev) => ({ ...prev, referencia: event.target.value.replace(/[^0-9]/g, '') }))}
+              inputProps={{ minLength: 6 }}
+            />
+          )}
+
+          <TextField
+            label="Telefono de pago"
+            fullWidth
+            margin="normal"
+            size="small"
+            sx={inputSx}
+            value={registroPagoData.telefonoPago}
+            onChange={(event) => setRegistroPagoData((prev) => ({ ...prev, telefonoPago: event.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+            inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+            helperText="Opcional. Solo numeros, hasta 10 digitos."
+          />
+
+          <TextField
+            label="Cedula titular"
+            fullWidth
+            margin="normal"
+            size="small"
+            sx={inputSx}
+            value={registroPagoData.cedulaTitular}
+            onChange={(event) => setRegistroPagoData((prev) => ({ ...prev, cedulaTitular: event.target.value }))}
+          />
+
+          <TextField
+            label="Nota para administración (opcional)"
+            fullWidth
+            multiline
+            minRows={2}
+            margin="normal"
+            size="small"
+            sx={inputSx}
+            value={registroPagoData.nota}
+            onChange={(event) => setRegistroPagoData((prev) => ({ ...prev, nota: event.target.value.slice(0, 500) }))}
+            helperText="Usa este campo para justificar pagos cargados tarde en sistema."
+          />
+
+          <Box
+            component="label"
+            sx={{
+              mt: 2,
+              border: '1px dashed #cbd5f0',
+              borderRadius: 2,
+              p: 2,
+              textAlign: 'center',
+              backgroundColor: '#f8fafc',
+              display: 'block',
+              cursor: 'pointer'
+            }}
+          >
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                backgroundColor: '#fff2e7',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mx: 'auto',
+                mb: 1
+              }}
+            >
+              <PaymentIcon sx={{ color: '#ff7a00', fontSize: 18 }} />
+            </Box>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>
+              Haz clic para adjuntar comprobante
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+              PNG, JPG o PDF hasta 5MB
+            </Typography>
+            <input
+              type="file"
+              hidden
+              accept="image/*,application/pdf"
+              onChange={(event) => {
+                const file = event.target.files?.[0] || null;
+                setRegistroPagoData((prev) => ({ ...prev, comprobante: file }));
+              }}
+            />
+          </Box>
+
+          {registroPagoData.comprobante && (
+            <Box
+              sx={{
+                mt: 1.5,
+                px: 1.5,
+                py: 1,
+                borderRadius: 2,
+                border: '1px solid #e2e8f0',
+                backgroundColor: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 1
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <InsertDriveFileIcon sx={{ color: '#fb923c', fontSize: 18 }} />
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: '#475569',
+                    fontSize: 12,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
+                  {registroPagoData.comprobante.name}
+                </Typography>
+              </Box>
+              <IconButton size="small" onClick={() => setRegistroPagoData((prev) => ({ ...prev, comprobante: null }))}>
+                <CloseIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+              </IconButton>
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1, justifyContent: 'flex-end', gap: 1.5 }}>
+          <Button onClick={closeRegistrarPagoDialog} disabled={submittingRegistroPago} sx={{ color: '#475569', textTransform: 'none', fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleRegistrarPago}
+            variant="contained"
+            disabled={submittingRegistroPago || !registroPagoFormValido}
+            sx={{
+              bgcolor: '#ff7a00',
+              '&:hover': { bgcolor: '#f97316' },
+              fontWeight: 800,
+              borderRadius: 2,
+              px: 3,
+              textTransform: 'none'
+            }}
+          >
+            {submittingRegistroPago ? 'Guardando...' : 'Registrar'}
           </Button>
         </DialogActions>
       </Dialog>

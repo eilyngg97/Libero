@@ -502,14 +502,30 @@ exports.registrarPagoPedido = async (req, res) => {
   try {
     const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
     const { metodo_pago, referencia, fecha_pago, monto_pagado, monto_pagado_bs, telefono_pago, cedula_titular, nota } = req.body;
-    const pedido = await TenantUniformePedido.findOne({
-      _id: req.params.id,
-      solicitado_por: req.user?.id,
-      estado: { $in: [ESTADOS_PEDIDO.ESPERANDO_PAGO, ESTADOS_PEDIDO.ABONO] }
-    });
+    const pedido = await TenantUniformePedido.findById(req.params.id);
 
     if (!pedido) {
-      return res.status(404).json({ error: 'Pedido no encontrado o no disponible para pago' });
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+    const permisosToken = Array.isArray(req.user?.permisos) ? req.user.permisos : [];
+    const permisosRol = getDefaultPermissionsByLegacyRole(rolUsuario);
+    const permisosUsuario = new Set(
+      [...permisosToken, ...permisosRol]
+        .map((permiso) => String(permiso || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const puedeGestionar = permisosUsuario.has('solicitudes_uniformes.manage');
+    const esPropietario = String(pedido?.solicitado_por || '') === String(req.user?.id || '');
+
+    if (!puedeGestionar && !esPropietario) {
+      return res.status(403).json({ error: 'No tienes permiso para registrar pago en esta solicitud' });
+    }
+
+    if (![ESTADOS_PEDIDO.ESPERANDO_PAGO, ESTADOS_PEDIDO.ABONO].includes(String(pedido.estado || '').trim().toLowerCase())) {
+      return res.status(400).json({ error: 'Pedido no disponible para pago' });
     }
 
     if (!metodo_pago) {
@@ -557,15 +573,15 @@ exports.registrarPagoPedido = async (req, res) => {
     pedido.monto_ultimo_pago = montoPagadoAplicado;
     pedido.monto_ultimo_pago_bs = montoPagadoBsAplicado;
 
-    if (esPagoCompleto) {
-      // El pago completo requiere revisión administrativa antes de marcar como verificado.
+    const totalPagado = (Number(pedido.monto_pagado) || 0) + montoPagadoAplicado;
+    const totalPagadoBs = (Number(pedido.monto_pagado_bs) || 0) + montoPagadoBsAplicado;
+    const saldoPendienteNuevo = Math.max(totalPedido - totalPagado, 0);
+
+    if (esPagoCompleto && !puedeGestionar) {
+      // Si lo registra el usuario final y completa el saldo, queda en revisión administrativa.
       pedido.estado = ESTADOS_PEDIDO.PAGO_EN_REVISION;
     } else {
-      // El abono parcial se acumula inmediatamente y queda listo para próximos pagos.
-      const totalPagado = (Number(pedido.monto_pagado) || 0) + montoPagadoAplicado;
-      const totalPagadoBs = (Number(pedido.monto_pagado_bs) || 0) + montoPagadoBsAplicado;
-      const saldoPendienteNuevo = Math.max(totalPedido - totalPagado, 0);
-
+      // Cuando lo registra admin/gestion, o cuando es abono parcial, se acumula de inmediato.
       pedido.pagos_historial = Array.isArray(pedido.pagos_historial) ? pedido.pagos_historial : [];
       pedido.pagos_historial.push({
         monto_pagado: montoPagadoAplicado,
@@ -582,7 +598,9 @@ exports.registrarPagoPedido = async (req, res) => {
       pedido.monto_pagado = totalPagado;
       pedido.monto_pagado_bs = totalPagadoBs;
       pedido.saldo_pendiente = saldoPendienteNuevo;
-      pedido.estado = ESTADOS_PEDIDO.ABONO;
+      pedido.estado = esPagoCompleto ? ESTADOS_PEDIDO.VERIFICADO : ESTADOS_PEDIDO.ABONO;
+      pedido.monto_ultimo_pago = 0;
+      pedido.monto_ultimo_pago_bs = 0;
     }
 
     await pedido.save();
