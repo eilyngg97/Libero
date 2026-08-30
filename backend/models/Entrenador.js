@@ -24,7 +24,7 @@ const EntrenadorSchema = new mongoose.Schema({
   contratos: [{ type: String }],
   pago_config: {
     monto_base_usd: { type: Number, default: 0 },
-    frecuencia_pago: { type: String, enum: ['quincenal', 'semanal', 'por_sesion'], default: 'quincenal' },
+    frecuencia_pago: { type: String, enum: ['quincenal', 'semanal', 'por_sesion', 'abonos', 'mensual'], default: 'quincenal' },
     metodos: [{ type: String, enum: ['pago_movil', 'transferencia'] }],
     pago_movil: {
       banco: { type: String, default: '' },
@@ -43,7 +43,7 @@ const EntrenadorSchema = new mongoose.Schema({
     fecha_pago: { type: Date, required: true },
     periodo: { type: String, default: '' },
     periodo_clave: { type: String, default: '' },
-    frecuencia_pago: { type: String, enum: ['mensual', 'quincenal', 'semanal', 'por_sesion'], default: 'mensual' },
+    frecuencia_pago: { type: String, enum: ['mensual', 'quincenal', 'semanal', 'por_sesion', 'abonos'], default: 'mensual' },
     moneda_seleccionada: { type: String, enum: ['USD', 'VES'], default: 'USD' },
     tasa_bcv: { type: Number, default: 0 },
     monto_base_mensual_usd: { type: Number, default: 0 },

@@ -162,7 +162,7 @@ function parsePaymentConfig(rawValue) {
 function normalizeFrecuenciaPago(value) {
   const raw = trimValue(value).toLowerCase();
   if (!raw) return '';
-  if (['quincenal', 'semanal', 'por_sesion'].includes(raw)) return raw;
+  if (['quincenal', 'semanal', 'por_sesion', 'abonos', 'mensual'].includes(raw)) return raw;
   return null;
 }
 

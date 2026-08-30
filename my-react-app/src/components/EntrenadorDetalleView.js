@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, MenuItem, Paper, TextField, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, LinearProgress, MenuItem, Paper, TextField, Typography } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
@@ -101,6 +101,12 @@ function formatMoney(value, currency = 'USD') {
   return `${currency === 'USD' ? '$' : ''}${amount.toFixed(2)}`;
 }
 
+function round2(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Number(numeric.toFixed(2));
+}
+
 function getFileLabelFromPath(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'Certificación.pdf';
@@ -123,6 +129,7 @@ function normalizeFrecuenciaPago(value) {
   if (raw === 'quincenal') return 'quincenal';
   if (raw === 'semanal') return 'semanal';
   if (raw === 'mensual') return 'mensual';
+  if (raw === 'abonos') return 'abonos';
   if (raw === 'por_sesion') return 'por_sesion';
   return 'mensual';
 }
@@ -136,7 +143,8 @@ function getDivisorFrecuencia(frecuencia) {
 function getFrecuenciaLabel(frecuencia) {
   if (frecuencia === 'quincenal') return 'Quincenal';
   if (frecuencia === 'semanal') return 'Semanal';
-  if (frecuencia === 'por_sesion') return 'Por sesion';
+  if (frecuencia === 'abonos') return 'Abonos / Flexible';
+  if (frecuencia === 'por_sesion') return 'Por sesión';
   return 'Mensual';
 }
 
@@ -251,11 +259,59 @@ function EntrenadorDetalleView({
     return Number.isFinite(numeric) ? numeric : 0;
   }, [entrenador]);
 
+  const pagosNominaOrdenados = useMemo(() => {
+    const pagos = Array.isArray(entrenador?.pagos_nomina) ? entrenador.pagos_nomina : [];
+
+    return pagos
+      .map((pago, index) => ({ pago, index }))
+      .sort((a, b) => {
+        const fechaA = new Date(a.pago?.fecha_pago || 0).getTime();
+        const fechaB = new Date(b.pago?.fecha_pago || 0).getTime();
+
+        if (Number.isFinite(fechaA) && Number.isFinite(fechaB) && fechaA !== fechaB) {
+          return fechaB - fechaA;
+        }
+
+        return b.index - a.index;
+      })
+      .map((item) => item.pago);
+  }, [entrenador?.pagos_nomina]);
+
+  const mesReferenciaPago = useMemo(() => {
+    return formatMonthYear(pagoForm.fecha_pago).toLowerCase();
+  }, [pagoForm.fecha_pago]);
+
+  const pagosMesActual = useMemo(() => {
+    return pagosNominaOrdenados.filter(
+      (pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferenciaPago
+    );
+  }, [pagosNominaOrdenados, mesReferenciaPago]);
+
+  const totalAbonadoMesUsd = useMemo(() => {
+    return round2(
+      pagosMesActual.reduce((acc, pago) => acc + (Number(pago?.monto_total_usd) || Number(pago?.monto_base_pago_usd) || 0), 0)
+    );
+  }, [pagosMesActual]);
+
+  const saldoRestanteMesUsd = useMemo(() => {
+    if (montoBaseConfigurado <= 0) return 0;
+    return Math.max(0, round2(montoBaseConfigurado - totalAbonadoMesUsd));
+  }, [montoBaseConfigurado, totalAbonadoMesUsd]);
+
+  const porcentajeAbonadoMes = useMemo(() => {
+    if (montoBaseConfigurado <= 0) return 100;
+    return Math.min(100, Math.round((totalAbonadoMesUsd / montoBaseConfigurado) * 100));
+  }, [montoBaseConfigurado, totalAbonadoMesUsd]);
+
   const montoBasePorPago = useMemo(() => {
+    if (frecuenciaPago === 'abonos') {
+      if (saldoRestanteMesUsd > 0) return Number(saldoRestanteMesUsd.toFixed(2));
+      return Number(montoBaseConfigurado.toFixed(2));
+    }
     const divisor = getDivisorFrecuencia(frecuenciaPago);
     if (divisor <= 1) return Number(montoBaseConfigurado.toFixed(2));
     return Number((montoBaseConfigurado / divisor).toFixed(2));
-  }, [montoBaseConfigurado, frecuenciaPago]);
+  }, [montoBaseConfigurado, frecuenciaPago, saldoRestanteMesUsd]);
 
   const periodOptions = useMemo(() => {
     if (frecuenciaPago === 'quincenal') {
@@ -282,8 +338,20 @@ function EntrenadorDetalleView({
       ];
     }
 
+    if (frecuenciaPago === 'abonos') {
+      const existingCount = pagosMesActual.length;
+      const count = Math.max(existingCount + 2, 4);
+      const list = [];
+      for (let i = 1; i <= count; i += 1) {
+        list.push({ value: `Abono ${i}`, label: `Abono ${i}` });
+      }
+      list.push({ value: 'Liquidacion final', label: 'Liquidación final' });
+      list.push({ value: 'Abono libre', label: 'Abono libre' });
+      return list;
+    }
+
     return [{ value: 'Mes completo', label: 'Mes completo' }];
-  }, [frecuenciaPago]);
+  }, [frecuenciaPago, pagosMesActual]);
 
   const totalPago = useMemo(() => {
     const montoBase = Number(pagoForm.monto_base) || 0;
@@ -356,24 +424,6 @@ function EntrenadorDetalleView({
     return 'Pago en efectivo: no requiere datos bancarios del entrenador.';
   }, [entrenador, pagoForm.metodo_pago]);
 
-  const pagosNominaOrdenados = useMemo(() => {
-    const pagos = Array.isArray(entrenador?.pagos_nomina) ? entrenador.pagos_nomina : [];
-
-    return pagos
-      .map((pago, index) => ({ pago, index }))
-      .sort((a, b) => {
-        const fechaA = new Date(a.pago?.fecha_pago || 0).getTime();
-        const fechaB = new Date(b.pago?.fecha_pago || 0).getTime();
-
-        if (Number.isFinite(fechaA) && Number.isFinite(fechaB) && fechaA !== fechaB) {
-          return fechaB - fechaA;
-        }
-
-        return b.index - a.index;
-      })
-      .map((item) => item.pago);
-  }, [entrenador?.pagos_nomina]);
-
   const historialMesOptions = useMemo(() => {
     const meses = new Map();
 
@@ -439,16 +489,17 @@ function EntrenadorDetalleView({
   const pagoPeriodoActualRegistrado = useMemo(() => {
     const periodoActual = String(pagoForm.periodo || '').trim().toLowerCase();
     if (!periodoActual) return false;
+    if (frecuenciaPago === 'abonos' && periodoActual === 'abono libre') return false;
 
     const mesActualPago = formatMonthYear(pagoForm.fecha_pago).toLowerCase();
     if (!mesActualPago) return false;
 
     return pagosNominaOrdenados.some((pago) => {
-      const periodoPago = String(pago?.periodo || '').trim().toLowerCase();
+      const periodoPago = String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase();
       const mesPago = formatMonthYear(pago?.fecha_pago).toLowerCase();
       return periodoPago === periodoActual && mesPago === mesActualPago;
     });
-  }, [pagoForm.periodo, pagoForm.fecha_pago, pagosNominaOrdenados]);
+  }, [pagoForm.periodo, pagoForm.fecha_pago, pagosNominaOrdenados, frecuenciaPago]);
 
   const periodoSugerido = useMemo(() => {
     if (!periodOptions.length) return '';
@@ -466,9 +517,15 @@ function EntrenadorDetalleView({
   }, [periodOptions, pagoForm.fecha_pago, pagosNominaOrdenados]);
 
   const periodoSugeridoLabel = useMemo(() => {
+    if (frecuenciaPago === 'abonos') {
+      if (saldoRestanteMesUsd > 0) {
+        return `Abono sugerido (Resta ${formatMoney(saldoRestanteMesUsd, pagoForm.moneda)})`;
+      }
+      return 'Salario base del mes cubierto (puedes registrar abonos adicionales si aplica)';
+    }
     if (!periodoSugerido) return 'Todos los periodos de este mes ya están cubiertos';
     return periodOptions.find((option) => option.value === periodoSugerido)?.label || periodoSugerido;
-  }, [periodOptions, periodoSugerido]);
+  }, [periodOptions, periodoSugerido, frecuenciaPago, saldoRestanteMesUsd, pagoForm.moneda]);
 
   const mostrarReferencia = pagoForm.metodo_pago === 'transferencia' || pagoForm.metodo_pago === 'pago_movil';
   const formularioPagoBloqueado = pagoPeriodoActualRegistrado;
@@ -1565,6 +1622,72 @@ function EntrenadorDetalleView({
                   </Typography>
                 </Box>
               </Paper>
+
+              {frecuenciaPago === 'abonos' && (
+                <Paper
+                  sx={{
+                    p: 1.6,
+                    borderRadius: 2.5,
+                    border: '1px solid #e0e7ff',
+                    bgcolor: '#f8faff',
+                    mb: 1.8
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                    <Box>
+                      <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#4338ca', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Control de abonos · {formatMonthYear(pagoForm.fecha_pago) || 'Mes en curso'}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.2 }}>
+                        {pagosMesActual.length} abono{pagosMesActual.length === 1 ? '' : 's'} registrado{pagosMesActual.length === 1 ? '' : 's'} en este mes
+                      </Typography>
+                    </Box>
+                    <Chip
+                      size="small"
+                      label={saldoRestanteMesUsd <= 0 ? 'Meta mensual cubierta' : `Resta ${formatMoney(saldoRestanteMesUsd, 'USD')}`}
+                      color={saldoRestanteMesUsd <= 0 ? 'success' : 'primary'}
+                      sx={{ fontWeight: 800 }}
+                    />
+                  </Box>
+
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 1, my: 1 }}>
+                    <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                      <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Salario base</Typography>
+                      <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>{formatMoney(montoBaseConfigurado, 'USD')}</Typography>
+                    </Box>
+                    <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                      <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Total abonado</Typography>
+                      <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#059669' }}>{formatMoney(totalAbonadoMesUsd, 'USD')}</Typography>
+                    </Box>
+                    <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                      <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Saldo restante</Typography>
+                      <Typography sx={{ fontSize: 15, fontWeight: 900, color: saldoRestanteMesUsd > 0 ? '#d97706' : '#64748b' }}>
+                        {formatMoney(saldoRestanteMesUsd, 'USD')}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ mt: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography sx={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>Progreso del mes</Typography>
+                      <Typography sx={{ fontSize: 11, color: '#4338ca', fontWeight: 800 }}>{porcentajeAbonadoMes}%</Typography>
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={porcentajeAbonadoMes}
+                      sx={{
+                        height: 8,
+                        borderRadius: 4,
+                        bgcolor: '#e2e8f0',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: porcentajeAbonadoMes >= 100 ? '#059669' : '#4f46e5',
+                          borderRadius: 4
+                        }
+                      }}
+                    />
+                  </Box>
+                </Paper>
+              )}
 
               <Paper sx={{ p: 1.8, borderRadius: 2.5, border: '1px solid #e8edf3', boxShadow: 'none', mb: 1.5 }}>
                 <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 1.4 }}>1. Periodo y monto</Typography>

@@ -936,8 +936,10 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         children: [
           <MenuItem key="frecuencia-empty" value="">Sin definir</MenuItem>,
           <MenuItem key="quincenal" value="quincenal">Quincenal</MenuItem>,
+          <MenuItem key="mensual" value="mensual">Mensual</MenuItem>,
           <MenuItem key="semanal" value="semanal">Semanal</MenuItem>,
-          <MenuItem key="por_sesion" value="por_sesion">Por sesion</MenuItem>
+          <MenuItem key="abonos" value="abonos">Abonos / Flexible</MenuItem>,
+          <MenuItem key="por_sesion" value="por_sesion">Por sesión</MenuItem>
         ]
       })}
 
