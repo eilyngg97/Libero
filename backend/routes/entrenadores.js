@@ -12,7 +12,9 @@ function resolveTenantId(req) {
 }
 
 function resolveEntrenadorUploadDir(req, file) {
-	const subfolder = file?.fieldname === 'certificaciones' ? 'certificaciones' : '';
+	let subfolder = '';
+	if (file?.fieldname === 'certificaciones') subfolder = 'certificaciones';
+	if (file?.fieldname === 'contratos') subfolder = 'contratos';
 	const uploadDir = path.join(__dirname, '..', 'uploads', resolveTenantId(req), 'entrenadores', subfolder);
 	fs.mkdirSync(uploadDir, { recursive: true });
 	return uploadDir;
@@ -30,10 +32,10 @@ const storage = multer.diskStorage({
 const upload = multer({
 	storage,
 	fileFilter: (req, file, cb) => {
-		if (file.fieldname === 'certificaciones') {
+		if (file.fieldname === 'certificaciones' || file.fieldname === 'contratos') {
 			const isPdf = path.extname(file.originalname || '').toLowerCase() === '.pdf';
 			if (!isPdf) {
-				return cb(new Error('Solo se permiten archivos PDF para certificaciones'));
+				return cb(new Error(`Solo se permiten archivos PDF para ${file.fieldname}`));
 			}
 		}
 
@@ -55,7 +57,8 @@ router.patch(
 	rolMiddleware('admin'),
 	upload.fields([
 		{ name: 'foto', maxCount: 1 },
-		{ name: 'certificaciones', maxCount: 10 }
+		{ name: 'certificaciones', maxCount: 10 },
+		{ name: 'contratos', maxCount: 10 }
 	]),
 	entrenadorController.editarEntrenador
 );
@@ -65,7 +68,8 @@ router.post(
 	rolMiddleware('admin'),
 	upload.fields([
 		{ name: 'foto', maxCount: 1 },
-		{ name: 'certificaciones', maxCount: 10 }
+		{ name: 'certificaciones', maxCount: 10 },
+		{ name: 'contratos', maxCount: 10 }
 	]),
 	entrenadorController.crearEntrenador
 );

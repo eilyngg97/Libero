@@ -47,6 +47,37 @@ function buildUploadUrl(req, file, folder) {
   return `/uploads/${tenantId}/${folder}/${file.filename}`;
 }
 
+function normalizeCertificacionUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.includes('/entrenadores/certificaciones/')) return url;
+  if (url.includes('/entrenadores/contratos/')) return url;
+  if (url.includes('/entrenadores/')) {
+    return url.replace('/entrenadores/', '/entrenadores/certificaciones/');
+  }
+  return url;
+}
+
+function normalizeContratoUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.includes('/entrenadores/contratos/')) return url;
+  if (url.includes('/entrenadores/certificaciones/')) return url;
+  if (url.includes('/entrenadores/')) {
+    return url.replace('/entrenadores/', '/entrenadores/contratos/');
+  }
+  return url;
+}
+
+function normalizeEntrenadorMedia(entrenador) {
+  if (!entrenador) return entrenador;
+  if (Array.isArray(entrenador.certificaciones)) {
+    entrenador.certificaciones = entrenador.certificaciones.map(normalizeCertificacionUrl);
+  }
+  if (Array.isArray(entrenador.contratos)) {
+    entrenador.contratos = entrenador.contratos.map(normalizeContratoUrl);
+  }
+  return entrenador;
+}
+
 function parseTallaUniforme(rawValue) {
   if (!rawValue) return {};
   if (typeof rawValue === 'object') return rawValue;
@@ -366,6 +397,7 @@ async function getTenantEntrenadorModels(req) {
 function buildEntrenadorPayload(body = {}) {
   const tallaUniformeRaw = parseTallaUniforme(body.talla_uniforme);
   const certificaciones = parseStringArray(body.certificaciones_existentes);
+  const contratos = parseStringArray(body.contratos_existentes);
   const sedesStaff = parseStringArray(body.sedes_staff)
     .filter((id) => mongoose.Types.ObjectId.isValid(id))
     .map((id) => new mongoose.Types.ObjectId(id));
@@ -402,6 +434,7 @@ function buildEntrenadorPayload(body = {}) {
     nivel_instruccion: trimValue(body.nivel_instruccion),
     experiencia_previa: trimValue(body.experiencia_previa),
     certificaciones,
+    contratos,
     talla_uniforme: {
       franela: trimValue(tallaUniformeRaw?.franela),
       short: trimValue(tallaUniformeRaw?.short),
@@ -420,7 +453,8 @@ exports.listarEntrenadores = async (req, res) => {
   try {
     const { Entrenador } = await getTenantEntrenadorModels(req);
     const entrenadores = await Entrenador.find().sort({ createdAt: -1 }).lean();
-    return res.json(entrenadores);
+    const sanitizados = entrenadores.map(normalizeEntrenadorMedia);
+    return res.json(sanitizados);
   } catch (err) {
     return res.status(500).json({ error: 'No se pudieron listar los entrenadores' });
   }
@@ -439,10 +473,11 @@ exports.listarStaffPorSede = async (req, res) => {
     const entrenadores = await Entrenador.find().sort({ nombre: 1, apellido: 1 }).lean();
 
     const data = entrenadores.map((entrenador) => {
-      const sedesStaff = Array.isArray(entrenador.sedes_staff) ? entrenador.sedes_staff : [];
+      const normalizado = normalizeEntrenadorMedia(entrenador);
+      const sedesStaff = Array.isArray(normalizado.sedes_staff) ? normalizado.sedes_staff : [];
       const vinculado = sedesStaff.some((id) => String(id) === String(sedeObjectId));
       return {
-        ...entrenador,
+        ...normalizado,
         vinculado,
         sedes_staff_count: sedesStaff.length
       };
@@ -516,6 +551,7 @@ exports.editarEntrenador = async (req, res) => {
 
     const fotoFile = Array.isArray(req.files?.foto) ? req.files.foto[0] : null;
     const certificacionesFiles = Array.isArray(req.files?.certificaciones) ? req.files.certificaciones : [];
+    const contratosFiles = Array.isArray(req.files?.contratos) ? req.files.contratos : [];
 
     const update = {};
 
@@ -611,10 +647,22 @@ exports.editarEntrenador = async (req, res) => {
         : (Array.isArray(entrenadorActual.certificaciones) ? entrenadorActual.certificaciones : []);
 
       const nuevasCertificaciones = certificacionesFiles
-        .map((file) => buildUploadUrl(req, file, 'entrenadores'))
+        .map((file) => buildUploadUrl(req, file, 'entrenadores/certificaciones'))
         .filter(Boolean);
 
-      update.certificaciones = [...certificacionesExistentes, ...nuevasCertificaciones];
+      update.certificaciones = [...certificacionesExistentes, ...nuevasCertificaciones].map(normalizeCertificacionUrl);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'contratos_existentes') || contratosFiles.length) {
+      const contratosExistentes = Object.prototype.hasOwnProperty.call(req.body, 'contratos_existentes')
+        ? parseStringArray(req.body.contratos_existentes)
+        : (Array.isArray(entrenadorActual.contratos) ? entrenadorActual.contratos : []);
+
+      const nuevosContratos = contratosFiles
+        .map((file) => buildUploadUrl(req, file, 'entrenadores/contratos'))
+        .filter(Boolean);
+
+      update.contratos = [...contratosExistentes, ...nuevosContratos].map(normalizeContratoUrl);
     }
 
     if (fotoFile) {
@@ -626,7 +674,7 @@ exports.editarEntrenador = async (req, res) => {
       runValidators: true
     }).lean();
 
-    return res.json({ entrenador, mensaje: 'Perfil de entrenador actualizado' });
+    return res.json({ entrenador: normalizeEntrenadorMedia(entrenador), mensaje: 'Perfil de entrenador actualizado' });
   } catch (err) {
     if (err?.code === 11000) {
       return res.status(409).json({ error: resolveDuplicateMessage(err) });
@@ -710,6 +758,7 @@ exports.crearEntrenador = async (req, res) => {
 
     const fotoFile = Array.isArray(req.files?.foto) ? req.files.foto[0] : req.file;
     const certificacionesFiles = Array.isArray(req.files?.certificaciones) ? req.files.certificaciones : [];
+    const contratosFiles = Array.isArray(req.files?.contratos) ? req.files.contratos : [];
 
     if (fotoFile) {
       payload.foto = buildUploadUrl(req, fotoFile, 'entrenadores') || '';
@@ -719,9 +768,18 @@ exports.crearEntrenador = async (req, res) => {
       payload.certificaciones = [
         ...payload.certificaciones,
         ...certificacionesFiles
-          .map((file) => buildUploadUrl(req, file, 'entrenadores'))
+          .map((file) => buildUploadUrl(req, file, 'entrenadores/certificaciones'))
           .filter(Boolean)
-      ];
+      ].map(normalizeCertificacionUrl);
+    }
+
+    if (contratosFiles.length) {
+      payload.contratos = [
+        ...payload.contratos,
+        ...contratosFiles
+          .map((file) => buildUploadUrl(req, file, 'entrenadores/contratos'))
+          .filter(Boolean)
+      ].map(normalizeContratoUrl);
     }
 
     if (!payload.nombre || !payload.apellido || !payload.cedula) {
@@ -781,8 +839,10 @@ exports.crearEntrenador = async (req, res) => {
       usuario: user._id
     });
 
+    const entrenadorObj = entrenador.toObject ? entrenador.toObject() : entrenador;
+
     return res.status(201).json({
-      entrenador,
+      entrenador: normalizeEntrenadorMedia(entrenadorObj),
       usuario: {
         id: user._id,
         email: user.email,

@@ -21,6 +21,7 @@ const EntrenadorSchema = new mongoose.Schema({
     type: String,
     enum: ['fijo', 'por_horas', 'honorarios_profesionales']
   },
+  contratos: [{ type: String }],
   pago_config: {
     monto_base_usd: { type: Number, default: 0 },
     frecuencia_pago: { type: String, enum: ['quincenal', 'semanal', 'por_sesion'], default: 'quincenal' },

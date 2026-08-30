@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, MenuItem, Paper, TextField, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, MenuItem, Paper, TextField, Typography } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
@@ -18,7 +18,13 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded';
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
+import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import EntrenadorForm from './EntrenadorForm';
+import { mediaUrl } from '../utils/mediaUrl';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
@@ -93,6 +99,15 @@ function getTodayIsoDate() {
 function formatMoney(value, currency = 'USD') {
   const amount = Number(value) || 0;
   return `${currency === 'USD' ? '$' : ''}${amount.toFixed(2)}`;
+}
+
+function getFileLabelFromPath(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Certificación.pdf';
+  const parts = raw.split('/').filter(Boolean);
+  const lastPart = parts.length ? parts[parts.length - 1] : raw;
+  // Limpiar timestamp o prefijos si los hay, pero mantener nombre legible
+  return decodeURIComponent(lastPart);
 }
 
 function pickFirstNumber(...values) {
@@ -186,6 +201,16 @@ function EntrenadorDetalleView({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [confirmarPagoDialogOpen, setConfirmarPagoDialogOpen] = useState(false);
   const [comprobantePago, setComprobantePago] = useState(null);
+  const [pdfModalState, setPdfModalState] = useState({
+    open: false,
+    url: '',
+    rawPath: '',
+    blobUrl: '',
+    title: '',
+    loading: false,
+    error: ''
+  });
+  const [descargandoCertifIndex, setDescargandoCertifIndex] = useState(null);
   const [historialMesFiltro, setHistorialMesFiltro] = useState('todos');
   const [historialPeriodoFiltro, setHistorialPeriodoFiltro] = useState('todos');
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
@@ -810,6 +835,98 @@ function EntrenadorDetalleView({
     }
   };
 
+  const handleVerCertificacion = async (certifPath) => {
+    const url = mediaUrl(certifPath);
+    if (!url) return;
+    const label = getFileLabelFromPath(certifPath);
+
+    if (pdfModalState.blobUrl) {
+      window.URL.revokeObjectURL(pdfModalState.blobUrl);
+    }
+
+    setPdfModalState({
+      open: true,
+      url,
+      rawPath: certifPath,
+      blobUrl: '',
+      title: label,
+      loading: true,
+      error: ''
+    });
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+
+      if (!res.ok) {
+        throw new Error('No se pudo cargar el archivo PDF');
+      }
+
+      const blob = await res.blob();
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+      const blobUrl = window.URL.createObjectURL(pdfBlob);
+
+      setPdfModalState((prev) => ({
+        ...prev,
+        blobUrl,
+        loading: false
+      }));
+    } catch (err) {
+      setPdfModalState((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || 'Error al cargar la previsualización del PDF'
+      }));
+    }
+  };
+
+  const handleCerrarPdfModal = () => {
+    if (pdfModalState.blobUrl) {
+      window.URL.revokeObjectURL(pdfModalState.blobUrl);
+    }
+    setPdfModalState({
+      open: false,
+      url: '',
+      rawPath: '',
+      blobUrl: '',
+      title: '',
+      loading: false,
+      error: ''
+    });
+  };
+
+  const handleDescargarCertificacion = async (certifPath, index) => {
+    const url = mediaUrl(certifPath);
+    if (!url) return;
+    const label = getFileLabelFromPath(certifPath);
+    try {
+      setDescargandoCertifIndex(index);
+      const token = localStorage.getItem('token');
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) {
+        throw new Error('No se pudo obtener el archivo');
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = label.endsWith('.pdf') ? label : `${label}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (_) {
+      // Fallback: abrir en nueva pestaña si falla la descarga directa por blob
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setDescargandoCertifIndex(null);
+    }
+  };
+
   return (
     <div className="entrenadores-page">
       <Button
@@ -848,7 +965,7 @@ function EntrenadorDetalleView({
                 <span className={`estado-pill estado-${entrenador.estado}`}>{entrenador.estado || 'sin estado'}</span>
               </Box>
               <Typography sx={{ color: '#64748b', mt: 0.25, fontSize: 13 }}>
-                Voleibol {entrenador.especialidad ? `- ${entrenador.especialidad}` : '- Staff tecnico'}
+                {entrenador.especialidad ? `${entrenador.especialidad}` : 'Staff tecnico'}
               </Typography>
             </Box>
           </Box>
@@ -1014,13 +1131,18 @@ function EntrenadorDetalleView({
         <Box
           sx={{
             mt: 2,
-            p: 1,
+            p: 1.25,
             borderRadius: 3,
             border: '1px solid #e8edf3',
             bgcolor: '#f8fafc',
             display: 'grid',
-            gap: 0.8,
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(5, minmax(0, 1fr))' }
+            gap: 1.2,
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(3, minmax(0, 1fr))',
+              lg: 'repeat(4, minmax(0, 1fr))'
+            }
           }}
         >
           <Box>
@@ -1035,7 +1157,7 @@ function EntrenadorDetalleView({
               <BusinessOutlinedIcon sx={{ fontSize: 13 }} />
               Sede
             </Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{trainerSedes[0] || 'Sin sede'}</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{trainerSedes.length ? trainerSedes.join(', ') : 'Sin sede'}</Typography>
           </Box>
           <Box>
             <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
@@ -1047,9 +1169,9 @@ function EntrenadorDetalleView({
           <Box>
             <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
               <CalendarMonthOutlinedIcon sx={{ fontSize: 13 }} />
-              Fecha de ingreso
+              Fecha de nacimiento
             </Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{formatDate(entrenador.fecha_ingreso)}</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{formatDate(entrenador.fecha_nacimiento)}</Typography>
           </Box>
           <Box>
             <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
@@ -1057,6 +1179,20 @@ function EntrenadorDetalleView({
               Telefono
             </Typography>
             <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{entrenador.telefono || 'Sin telefono'}</Typography>
+          </Box>
+          <Box>
+            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <EmailOutlinedIcon sx={{ fontSize: 13 }} />
+              Correo
+            </Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a', wordBreak: 'break-word' }}>{entrenador.correo || 'Sin correo'}</Typography>
+          </Box>
+          <Box sx={{ gridColumn: { xs: '1', sm: 'span 2', md: 'span 3', lg: 'span 2' } }}>
+            <Typography sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <LocationOnOutlinedIcon sx={{ fontSize: 13 }} />
+              Direccion
+            </Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0f172a', wordBreak: 'break-word' }}>{entrenador.direccion || 'Sin direccion'}</Typography>
           </Box>
         </Box>
       </Paper>
@@ -1115,20 +1251,121 @@ function EntrenadorDetalleView({
         <>
           <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: '1.2fr 1fr' } }}>
             <Paper sx={{ borderRadius: 3.5, p: 2, border: '1px solid #e6ebf2', boxShadow: 'none' }}>
-              <Typography sx={{ fontWeight: 900, color: '#0f172a', mb: 1.5 }}>Metricas del perfil</Typography>
-              <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                <Paper sx={{ p: 1.2, borderRadius: 2, border: '1px solid #e8edf3', boxShadow: 'none', bgcolor: '#f8fbff' }}>
-                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Sedes activas</Typography>
-                  <Typography sx={{ mt: 0.4, fontSize: 28, fontWeight: 900, color: '#0f766e', lineHeight: 1 }}>{trainerSedes.length || 0}</Typography>
-                </Paper>
-                <Paper sx={{ p: 1.2, borderRadius: 2, border: '1px solid #e8edf3', boxShadow: 'none', bgcolor: '#faf8ff' }}>
-                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Certificaciones</Typography>
-                  <Typography sx={{ mt: 0.4, fontSize: 28, fontWeight: 900, color: '#7c3aed', lineHeight: 1 }}>{entrenador.certificaciones?.length || 0}</Typography>
-                </Paper>
-                <Paper sx={{ p: 1.2, borderRadius: 2, border: '1px solid #e8edf3', boxShadow: 'none', bgcolor: '#f7fcfb' }}>
-                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Metodos de pago agregado</Typography>
-                  <Typography sx={{ mt: 0.4, fontSize: 28, fontWeight: 900, color: '#15803d', lineHeight: 1 }}>{paymentMethods.length || 0}</Typography>
-                </Paper>
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', mb: 1.5 }}>Informacion administrativa</Typography>
+              <Box sx={{ display: 'grid', gap: 1.2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' } }}>
+                <Box>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Tipo de contrato</Typography>
+                  <Typography sx={{ mt: 0.4, color: '#0f172a', fontWeight: 700, fontSize: 14 }}>{contractLabel}</Typography>
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Fecha de ingreso</Typography>
+                  <Typography sx={{ mt: 0.4, color: '#0f172a', fontWeight: 700, fontSize: 14 }}>{formatDate(entrenador.fecha_ingreso)}</Typography>
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Salario base</Typography>
+                  <Typography sx={{ mt: 0.4, color: '#0f172a', fontWeight: 700, fontSize: 14 }}>{formatUsd(montoBaseConfigurado)}</Typography>
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Frecuencia de pago</Typography>
+                  <Typography sx={{ mt: 0.4, color: '#0f172a', fontWeight: 700, fontSize: 14 }}>{getFrecuenciaLabel(frecuenciaPago)}</Typography>
+                </Box>
+                <Box sx={{ gridColumn: { xs: '1', sm: '1 / -1' } }}>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Metodo de pago agregado</Typography>
+                  <Typography sx={{ mt: 0.4, color: '#0f172a', fontWeight: 700, fontSize: 14 }}>
+                    {paymentMethods.length ? paymentMethods.join(' · ') : 'Sin metodo de pago agregado'}
+                  </Typography>
+                </Box>
+                <Box sx={{ gridColumn: { xs: '1', sm: '1 / -1' }, mt: 0.5 }}>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, mb: 0.8 }}>
+                    Contrato digital ({Array.isArray(entrenador.contratos) ? entrenador.contratos.length : 0})
+                  </Typography>
+                  {Array.isArray(entrenador.contratos) && entrenador.contratos.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {entrenador.contratos.map((contrato, index) => {
+                        const fileName = getFileLabelFromPath(contrato);
+                        return (
+                          <Paper
+                            key={`${contrato}-${index}`}
+                            variant="outlined"
+                            sx={{
+                              p: 1.2,
+                              borderRadius: 2,
+                              borderColor: '#e2e8f0',
+                              bgcolor: '#f8fafc',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 1.5,
+                              flexWrap: 'wrap'
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                              <PictureAsPdfOutlinedIcon sx={{ color: '#0284c7', fontSize: 24, flexShrink: 0 }} />
+                              <Typography
+                                sx={{
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                  color: '#1e293b',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  maxWidth: { xs: '180px', sm: '260px', md: '320px' }
+                                }}
+                                title={fileName}
+                              >
+                                {fileName}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, ml: 'auto' }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<VisibilityOutlinedIcon fontSize="small" />}
+                                onClick={() => handleVerCertificacion(contrato)}
+                                sx={{
+                                  textTransform: 'none',
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  borderRadius: 2,
+                                  px: 1.2,
+                                  py: 0.3,
+                                  borderColor: '#cbd5e1',
+                                  color: '#334155',
+                                  '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' }
+                                }}
+                              >
+                                Ver
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                startIcon={<FileDownloadOutlinedIcon fontSize="small" />}
+                                onClick={() => handleDescargarCertificacion(contrato, `contrato-${index}`)}
+                                disabled={descargandoCertifIndex === `contrato-${index}`}
+                                sx={{
+                                  textTransform: 'none',
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  borderRadius: 2,
+                                  px: 1.2,
+                                  py: 0.3,
+                                  bgcolor: '#0f172a',
+                                  '&:hover': { bgcolor: '#1e293b' }
+                                }}
+                              >
+                                {descargandoCertifIndex === `contrato-${index}` ? 'Descargando...' : 'Descargar'}
+                              </Button>
+                            </Box>
+                          </Paper>
+                        );
+                      })}
+                    </Box>
+                  ) : (
+                    <Typography sx={{ fontSize: 13, color: '#94a3b8', fontStyle: 'italic' }}>
+                      No posee contrato digital adjunto.
+                    </Typography>
+                  )}
+                </Box>
               </Box>
             </Paper>
 
@@ -1167,6 +1404,97 @@ function EntrenadorDetalleView({
                 <Box sx={{ gridColumn: { xs: '1', md: '1 / -1' } }}>
                   <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>Experiencia previa</Typography>
                   <Typography sx={{ mt: 0.4, color: '#334155', fontWeight: 600 }}>{entrenador.experiencia_previa || 'Sin experiencia registrada'}</Typography>
+                </Box>
+                <Box sx={{ gridColumn: { xs: '1', md: '1 / -1' }, mt: 0.5 }}>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, mb: 0.8 }}>
+                    Certificaciones adjuntas ({Array.isArray(entrenador.certificaciones) ? entrenador.certificaciones.length : 0})
+                  </Typography>
+                  {Array.isArray(entrenador.certificaciones) && entrenador.certificaciones.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {entrenador.certificaciones.map((certif, index) => {
+                        const fileName = getFileLabelFromPath(certif);
+                        return (
+                          <Paper
+                            key={`${certif}-${index}`}
+                            variant="outlined"
+                            sx={{
+                              p: 1.2,
+                              borderRadius: 2,
+                              borderColor: '#e2e8f0',
+                              bgcolor: '#f8fafc',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 1.5,
+                              flexWrap: 'wrap'
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                              <PictureAsPdfOutlinedIcon sx={{ color: '#ef4444', fontSize: 24, flexShrink: 0 }} />
+                              <Typography
+                                sx={{
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                  color: '#1e293b',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  maxWidth: { xs: '180px', sm: '260px', md: '320px' }
+                                }}
+                                title={fileName}
+                              >
+                                {fileName}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, ml: 'auto' }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<VisibilityOutlinedIcon fontSize="small" />}
+                                onClick={() => handleVerCertificacion(certif)}
+                                sx={{
+                                  textTransform: 'none',
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  borderRadius: 2,
+                                  px: 1.2,
+                                  py: 0.3,
+                                  borderColor: '#cbd5e1',
+                                  color: '#334155',
+                                  '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' }
+                                }}
+                              >
+                                Ver
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                startIcon={<FileDownloadOutlinedIcon fontSize="small" />}
+                                onClick={() => handleDescargarCertificacion(certif, index)}
+                                disabled={descargandoCertifIndex === index}
+                                sx={{
+                                  textTransform: 'none',
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  borderRadius: 2,
+                                  px: 1.2,
+                                  py: 0.3,
+                                  bgcolor: '#0f172a',
+                                  '&:hover': { bgcolor: '#1e293b' }
+                                }}
+                              >
+                                {descargandoCertifIndex === index ? 'Descargando...' : 'Descargar'}
+                              </Button>
+                            </Box>
+                          </Paper>
+                        );
+                      })}
+                    </Box>
+                  ) : (
+                    <Typography sx={{ fontSize: 13, color: '#94a3b8', fontStyle: 'italic' }}>
+                      No posee certificaciones o diplomas adjuntos.
+                    </Typography>
+                  )}
                 </Box>
               </Box>
             </Paper>
@@ -1877,6 +2205,94 @@ function EntrenadorDetalleView({
       */}
       </>
       )}
+
+      <Dialog
+        open={pdfModalState.open}
+        onClose={handleCerrarPdfModal}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3, overflow: 'hidden', height: { xs: '85vh', md: '80vh' } }
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            bgcolor: '#0f172a',
+            color: '#fff',
+            py: 1.5,
+            px: 2.5
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            <PictureAsPdfOutlinedIcon sx={{ color: '#f87171' }} />
+            <Typography sx={{ fontWeight: 800, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {pdfModalState.title || 'Certificación'}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {pdfModalState.url && (
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<FileDownloadOutlinedIcon fontSize="small" />}
+                onClick={() => handleDescargarCertificacion(pdfModalState.rawPath || pdfModalState.url, -1)}
+                sx={{
+                  color: '#fff',
+                  borderColor: 'rgba(255,255,255,0.4)',
+                  textTransform: 'none',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255,255,255,0.08)' }
+                }}
+              >
+                Descargar
+              </Button>
+            )}
+            <Button
+              onClick={handleCerrarPdfModal}
+              sx={{ minWidth: 32, width: 32, height: 32, p: 0, color: '#94a3b8', '&:hover': { color: '#fff' } }}
+            >
+              <CloseRoundedIcon />
+            </Button>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, height: '100%', bgcolor: '#f1f5f9', display: 'flex', flexDirection: 'column' }}>
+          {pdfModalState.loading ? (
+            <Box sx={{ p: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
+              <CircularProgress size={36} sx={{ color: '#0f172a' }} />
+              <Typography sx={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>Cargando documento PDF...</Typography>
+            </Box>
+          ) : pdfModalState.error ? (
+            <Box sx={{ p: 4, textAlign: 'center', m: 'auto' }}>
+              <Typography sx={{ color: '#ef4444', fontWeight: 700, mb: 1 }}>{pdfModalState.error}</Typography>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<FileDownloadOutlinedIcon />}
+                onClick={() => handleDescargarCertificacion(pdfModalState.rawPath || pdfModalState.url, -1)}
+                sx={{ textTransform: 'none', bgcolor: '#0f172a', mt: 1 }}
+              >
+                Intentar descargar directamente
+              </Button>
+            </Box>
+          ) : pdfModalState.blobUrl || pdfModalState.url ? (
+            <iframe
+              src={pdfModalState.blobUrl || pdfModalState.url}
+              title={pdfModalState.title || 'Certificación PDF'}
+              width="100%"
+              height="100%"
+              style={{ border: 'none', display: 'block', flexGrow: 1, minHeight: '500px' }}
+            />
+          ) : (
+            <Box sx={{ p: 3, textAlign: 'center', m: 'auto' }}>
+              <Typography sx={{ color: '#64748b' }}>No se pudo cargar el documento.</Typography>
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

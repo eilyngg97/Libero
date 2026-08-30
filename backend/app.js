@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 const { tenantResolver } = require('./middleware/tenantResolver');
 const { normalizeHost, resolveTenantByHost } = require('./services/tenantResolverService');
 const { getTenantConnectionMetrics } = require('./config/tenantBusinessConnection');
@@ -231,8 +232,26 @@ app.use('/api', (req, res, next) => {
 });
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.removeHeader('X-Frame-Options');
+  res.removeHeader('Content-Security-Policy');
   next();
-}, enforceTenantUploadAccess, express.static(path.join(__dirname, 'uploads')));
+}, enforceTenantUploadAccess, (req, res, next) => {
+  try {
+    const requestedPath = path.join(__dirname, 'uploads', req.path);
+    if (!fs.existsSync(requestedPath) && req.path.includes('/entrenadores/') && !req.path.includes('/entrenadores/certificaciones/') && !req.path.includes('/entrenadores/contratos/')) {
+      const certifPath = req.path.replace('/entrenadores/', '/entrenadores/certificaciones/');
+      const contratoPath = req.path.replace('/entrenadores/', '/entrenadores/contratos/');
+      if (fs.existsSync(path.join(__dirname, 'uploads', certifPath))) {
+        req.url = certifPath;
+      } else if (fs.existsSync(path.join(__dirname, 'uploads', contratoPath))) {
+        req.url = contratoPath;
+      }
+    }
+  } catch (_) {
+    // Ignorar error de verificación de ruta y continuar
+  }
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 app.use('/api', tenantResolver);
 
 app.use('/api/auth', authLimiter, require('./routes/auth'));

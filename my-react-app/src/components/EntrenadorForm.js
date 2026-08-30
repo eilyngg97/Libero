@@ -36,7 +36,7 @@ const steps = [
     id: TAB_BASICO,
     step: '1',
     title: 'Datos basicos',
-    description: 'Identidad y contacto'
+    description: 'Identidad, contacto y tallas'
   },
   {
     id: TAB_CERTIFICACIONES,
@@ -198,12 +198,16 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
   const [certificacionesFiles, setCertificacionesFiles] = useState([]);
   const [certificacionesExistentes, setCertificacionesExistentes] = useState([]);
   const [dragCertificacionesActive, setDragCertificacionesActive] = useState(false);
+  const [contratosFiles, setContratosFiles] = useState([]);
+  const [contratosExistentes, setContratosExistentes] = useState([]);
+  const [dragContratosActive, setDragContratosActive] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [sedes, setSedes] = useState([]);
   const fotoInputRef = useRef(null);
   const certificacionesInputRef = useRef(null);
+  const contratosInputRef = useRef(null);
 
   const canSubmit = useMemo(() => {
     return (
@@ -237,6 +241,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
     setFotoFile(null);
     setCertificacionesFiles([]);
     setCertificacionesExistentes(Array.isArray(entrenadorData?.certificaciones) ? entrenadorData.certificaciones : []);
+    setContratosFiles([]);
+    setContratosExistentes(Array.isArray(entrenadorData?.contratos) ? entrenadorData.contratos : []);
     setError('');
     setSuccess('');
     setTab(TAB_BASICO);
@@ -271,6 +277,10 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
     certificacionesInputRef.current?.click();
   };
 
+  const openContratosPicker = () => {
+    contratosInputRef.current?.click();
+  };
+
   const handleCertificacionesChange = (event) => {
     const files = Array.from(event.target.files || []);
     if (!files.length) {
@@ -280,6 +290,17 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
 
     const pdfFiles = files.filter((file) => String(file.type || '').includes('pdf') || String(file.name || '').toLowerCase().endsWith('.pdf'));
     setCertificacionesFiles(pdfFiles);
+  };
+
+  const handleContratosChange = (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) {
+      setContratosFiles([]);
+      return;
+    }
+
+    const pdfFiles = files.filter((file) => String(file.type || '').includes('pdf') || String(file.name || '').toLowerCase().endsWith('.pdf'));
+    setContratosFiles(pdfFiles);
   };
 
   const toggleSede = (sedeId) => {
@@ -370,6 +391,12 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
 
     formData.append('certificaciones_existentes', JSON.stringify(certificacionesExistentes || []));
 
+    contratosFiles.forEach((file) => {
+      formData.append('contratos', file);
+    });
+
+    formData.append('contratos_existentes', JSON.stringify(contratosExistentes || []));
+
     try {
       const token = localStorage.getItem('token');
       const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
@@ -397,6 +424,8 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         setPreviewFoto('');
         setCertificacionesFiles([]);
         setCertificacionesExistentes([]);
+        setContratosFiles([]);
+        setContratosExistentes([]);
         setTab(TAB_BASICO);
         if (onSuccess) onSuccess(data?.entrenador || null);
       }
@@ -575,6 +604,32 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
           placeholder: 'Ej. Av. Las Industrias...',
           icon: <HomeOutlinedIcon fontSize="small" />
         })}
+
+        <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' }, mt: 0.5 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#334155', mb: 0.5 }}>
+            Tallas de uniforme (opcional)
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: '#94a3b8', mb: 1.5 }}>
+            Referencias de indumentaria para dotaciones del personal.
+          </Typography>
+          <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' } }}>
+            {renderInput({
+              label: 'Talla franela',
+              field: 'talla_franela',
+              placeholder: 'Ej. M, L, XL'
+            })}
+            {renderInput({
+              label: 'Talla short',
+              field: 'talla_short',
+              placeholder: 'Ej. M, L, XL'
+            })}
+            {renderInput({
+              label: 'Talla mono',
+              field: 'talla_mono',
+              placeholder: 'Ej. M, L, XL'
+            })}
+          </Box>
+        </Box>
       </Box>
     </Box>
   );
@@ -782,6 +837,91 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
         shrink: true,
         icon: <CalendarMonthOutlinedIcon fontSize="small" />
       })}
+
+      <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' } }}>
+        <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#334155', mb: 1.25 }}>
+          Subir contrato
+        </Typography>
+        <Box
+          onClick={openContratosPicker}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragContratosActive(true);
+          }}
+          onDragLeave={() => setDragContratosActive(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragContratosActive(false);
+            handleContratosChange({ target: { files: event.dataTransfer.files } });
+          }}
+          sx={{
+            border: '2px dashed',
+            borderColor: dragContratosActive ? '#38bdf8' : '#d7dee9',
+            backgroundColor: dragContratosActive ? '#f0f9ff' : '#fcfdff',
+            borderRadius: 3.5,
+            minHeight: 72,
+            px: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            textAlign: 'center',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <input
+            ref={contratosInputRef}
+            hidden
+            accept="application/pdf,.pdf"
+            multiple
+            type="file"
+            onChange={handleContratosChange}
+          />
+          <Box>
+            <UploadRoundedIcon sx={{ fontSize: 22, color: '#0284c7', mb: 0.75 }} />
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#0369a1' }}>
+              Arrastra archivos aqui o haz clic
+            </Typography>
+          </Box>
+        </Box>
+        <Typography sx={{ mt: 1, fontSize: 12, color: '#94a3b8' }}>
+          Puedes adjuntar el contrato firmado en formato PDF.
+        </Typography>
+        {!!contratosFiles.length && (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
+            {contratosFiles.map((file) => (
+              <Chip
+                key={`${file.name}-${file.lastModified}`}
+                label={file.name}
+                onDelete={() => {
+                  setContratosFiles((prev) => prev.filter((item) => !(item.name === file.name && item.lastModified === file.lastModified)));
+                }}
+                sx={{ borderRadius: 999, maxWidth: '100%' }}
+              />
+            ))}
+          </Box>
+        )}
+        {!!contratosExistentes.length && (
+          <>
+            <Typography sx={{ mt: 1.25, fontSize: 12, color: '#94a3b8' }}>
+              Contratos ya registrados
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+              {contratosExistentes.map((item) => (
+                <Chip
+                  key={item}
+                  label={getFileLabelFromPath(item)}
+                  onDelete={() => {
+                    setContratosExistentes((prev) => prev.filter((value) => value !== item));
+                  }}
+                  sx={{ borderRadius: 999, maxWidth: '100%' }}
+                />
+              ))}
+            </Box>
+          </>
+        )}
+      </Box>
+
       {renderInput({
         label: 'Salario base (USD)',
         field: 'salario_base_usd',
@@ -917,32 +1057,6 @@ function EntrenadorForm({ onSuccess, onCancel, mode = 'create', entrenadorData =
             </Box>
           </Box>
         )}
-      </Box>
-
-      <Box sx={{ gridColumn: { xs: 'auto', md: '1 / -1' }, mt: 0.5 }}>
-        <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#334155', mb: 0.5 }}>
-          Prendas y tallas
-        </Typography>
-        <Typography sx={{ fontSize: 12, color: '#94a3b8', mb: 1.5 }}>
-          Registra las referencias del uniforme para futuras dotaciones.
-        </Typography>
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' } }}>
-          {renderInput({
-            label: 'Talla franela',
-            field: 'talla_franela',
-            placeholder: 'S/M/L/XL'
-          })}
-          {renderInput({
-            label: 'Talla short',
-            field: 'talla_short',
-            placeholder: 'S/M/L/XL'
-          })}
-          {renderInput({
-            label: 'Talla mono',
-            field: 'talla_mono',
-            placeholder: 'S/M/L/XL'
-          })}
-        </Box>
       </Box>
     </Box>
   );
