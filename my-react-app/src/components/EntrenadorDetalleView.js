@@ -236,15 +236,6 @@ function EntrenadorDetalleView({
     referencia: ''
   });
 
-  const proximoPago = useMemo(() => {
-    return formatUsd(
-      entrenador?.pago_config?.monto_base_usd
-      || entrenador?.pago_config?.monto_mensual_usd
-      || entrenador?.pago_config?.monto_usd
-      || entrenador?.pago_config?.monto
-    );
-  }, [entrenador]);
-
   const whatsappHref = useMemo(() => getWhatsappHref(entrenador?.telefono), [entrenador?.telefono]);
   const frecuenciaPago = useMemo(
     () => normalizeFrecuenciaPago(entrenador?.pago_config?.frecuencia_pago),
@@ -526,6 +517,87 @@ function EntrenadorDetalleView({
     if (!periodoSugerido) return 'Todos los periodos de este mes ya están cubiertos';
     return periodOptions.find((option) => option.value === periodoSugerido)?.label || periodoSugerido;
   }, [periodOptions, periodoSugerido, frecuenciaPago, saldoRestanteMesUsd, pagoForm.moneda]);
+
+  const proximoPagoInfo = useMemo(() => {
+    if (montoBaseConfigurado <= 0) {
+      return {
+        monto: '$0.00',
+        estadoBadge: 'Sin configurar',
+        badgeColor: 'default',
+        subtitulo: 'Sin salario base configurado',
+        periodo: 'Sin periodo',
+        isAlDia: false
+      };
+    }
+
+    const hoy = new Date();
+    const mesActualLabel = formatMonthYear(hoy);
+    const mesActualKey = mesActualLabel.toLowerCase();
+
+    if (frecuenciaPago === 'abonos') {
+      const pagosDelMes = pagosNominaOrdenados.filter(
+        (p) => formatMonthYear(p?.fecha_pago).toLowerCase() === mesActualKey
+      );
+      const totalAbonado = round2(
+        pagosDelMes.reduce((acc, p) => acc + (Number(p?.monto_total_usd) || Number(p?.monto_base_pago_usd) || 0), 0)
+      );
+      const restante = Math.max(0, round2(montoBaseConfigurado - totalAbonado));
+
+      if (restante <= 0) {
+        return {
+          monto: formatMoney(0, 'USD'),
+          estadoBadge: 'Al día',
+          badgeColor: 'success',
+          subtitulo: `Total abonado en ${mesActualLabel}: ${formatMoney(totalAbonado, 'USD')} de ${formatMoney(montoBaseConfigurado, 'USD')}`,
+          periodo: `${mesActualLabel} cubierto`,
+          isAlDia: true
+        };
+      }
+
+      return {
+        monto: formatMoney(restante, 'USD'),
+        estadoBadge: 'Pendiente',
+        badgeColor: 'warning',
+        subtitulo: `Abonado: ${formatMoney(totalAbonado, 'USD')} · Base: ${formatMoney(montoBaseConfigurado, 'USD')}`,
+        periodo: `Saldo restante (${mesActualLabel})`,
+        isAlDia: false
+      };
+    }
+
+    const divisor = getDivisorFrecuencia(frecuenciaPago);
+    const montoCuota = divisor > 1 ? round2(montoBaseConfigurado / divisor) : montoBaseConfigurado;
+
+    const periodosCubiertosMes = new Set(
+      pagosNominaOrdenados
+        .filter((p) => formatMonthYear(p?.fecha_pago).toLowerCase() === mesActualKey)
+        .map((p) => String(p?.periodo || p?.periodo_clave || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const proximoPendiente = periodOptions.find(
+      (opt) => !periodosCubiertosMes.has(String(opt.value).toLowerCase()) && !periodosCubiertosMes.has(String(opt.label).toLowerCase())
+    );
+
+    if (!proximoPendiente) {
+      return {
+        monto: formatMoney(0, 'USD'),
+        estadoBadge: 'Al día',
+        badgeColor: 'success',
+        subtitulo: `Todos los pagos de ${mesActualLabel} están cubiertos`,
+        periodo: `${mesActualLabel} al día`,
+        isAlDia: true
+      };
+    }
+
+    return {
+      monto: formatMoney(montoCuota, 'USD'),
+      estadoBadge: 'Pendiente',
+      badgeColor: 'warning',
+      subtitulo: `Frecuencia ${getFrecuenciaLabel(frecuenciaPago)} · Base mensual: ${formatUsd(montoBaseConfigurado)}`,
+      periodo: `${proximoPendiente.label} (${mesActualLabel})`,
+      isAlDia: false
+    };
+  }, [montoBaseConfigurado, frecuenciaPago, pagosNominaOrdenados, periodOptions]);
 
   const mostrarReferencia = pagoForm.metodo_pago === 'transferencia' || pagoForm.metodo_pago === 'pago_movil';
   const formularioPagoBloqueado = pagoPeriodoActualRegistrado;
@@ -1428,17 +1500,49 @@ function EntrenadorDetalleView({
 
             <Paper sx={{ borderRadius: 3.5, p: 2, border: '1px solid #e6ebf2', boxShadow: 'none' }}>
               <Typography sx={{ fontWeight: 900, color: '#0f172a', mb: 1.5 }}>Proximo pago</Typography>
-              <Box sx={{ p: 1.6, borderRadius: 2.5, border: '1px solid #d8efe5', background: 'linear-gradient(180deg, #ecfdf5 0%, #dcfce7 100%)' }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#15803d' }}>Configurado</Typography>
-                <Typography sx={{ mt: 0.5, fontSize: 40, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{proximoPago}</Typography>
-                <Typography sx={{ mt: 0.5, color: '#0f766e', fontWeight: 700, fontSize: 13 }}>
+              <Box
+                sx={{
+                  p: 1.6,
+                  borderRadius: 2.5,
+                  border: '1px solid',
+                  borderColor: proximoPagoInfo.isAlDia ? '#bbf7d0' : '#fed7aa',
+                  background: proximoPagoInfo.isAlDia
+                    ? 'linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)'
+                    : 'linear-gradient(180deg, #fffdfa 0%, #fff7ed 100%)'
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 0.5 }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: proximoPagoInfo.isAlDia ? '#15803d' : '#c2410c' }}>
+                    {proximoPagoInfo.periodo}
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={proximoPagoInfo.estadoBadge}
+                    color={proximoPagoInfo.badgeColor}
+                    sx={{ height: 22, fontSize: 11, fontWeight: 800 }}
+                  />
+                </Box>
+                <Typography sx={{ mt: 0.5, fontSize: 36, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>
+                  {proximoPagoInfo.monto}
+                </Typography>
+                <Typography sx={{ mt: 0.75, color: '#64748b', fontWeight: 600, fontSize: 12 }}>
+                  {proximoPagoInfo.subtitulo}
+                </Typography>
+                <Typography sx={{ mt: 0.4, color: '#0f766e', fontWeight: 700, fontSize: 12 }}>
                   {paymentMethods.length ? paymentMethods.join(' · ') : 'Sin metodo de pago configurado'}
                 </Typography>
                 <Button
                   fullWidth
                   variant="contained"
                   onClick={() => setActiveTab('pagos')}
-                  sx={{ mt: 1.8, borderRadius: 999, textTransform: 'none', fontWeight: 800, bgcolor: '#0f172a' }}
+                  sx={{
+                    mt: 1.8,
+                    borderRadius: 999,
+                    textTransform: 'none',
+                    fontWeight: 800,
+                    bgcolor: '#0f172a',
+                    '&:hover': { bgcolor: '#1e293b' }
+                  }}
                 >
                   Registrar pago
                 </Button>
