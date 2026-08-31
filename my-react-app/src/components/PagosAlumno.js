@@ -3,6 +3,7 @@ import { Card, CardContent, Typography, Box, Button, Chip, Snackbar, Alert, Dial
 import { useLocation } from 'react-router-dom';
 import ModalPago from './ModalPago';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import ErrorIcon from '@mui/icons-material/Error';
 import SchoolIcon from '@mui/icons-material/School';
@@ -99,6 +100,28 @@ function PagosAlumno(props) {
   const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
   const [adelantandoMensualidad, setAdelantandoMensualidad] = useState(false);
   const [confirmarAdelantoOpen, setConfirmarAdelantoOpen] = useState(false);
+  const [pagoSuccessDialogOpen, setPagoSuccessDialogOpen] = useState(false);
+  const [pagoSuccessData, setPagoSuccessData] = useState(null);
+
+  const construirPeriodoLegible = (pagoObj) => {
+    if (!pagoObj) return 'Mensualidad';
+    if (pagoObj.fecha) {
+      try {
+        const rawFecha = String(pagoObj.fecha);
+        const match = rawFecha.match(/^(\d{4})-(\d{2})/);
+        if (match) {
+          const anio = match[1];
+          const mesNum = Number(match[2]);
+          const fechaAux = new Date(Number(anio), mesNum - 1, 1);
+          const mesNombre = fechaAux.toLocaleString('es-ES', { month: 'long' });
+          if (mesNombre) {
+            return `Mensualidad ${mesNombre} ${anio}`;
+          }
+        }
+      } catch (_) {}
+    }
+    return pagoObj.detalle || 'Mensualidad';
+  };
 
   const mapMensualidadToPagoItem = (m) => ({
     id: m._id,
@@ -1594,9 +1617,31 @@ function PagosAlumno(props) {
         open={openModalPago}
         onClose={() => setOpenModalPago(false)}
         pago={pagoSeleccionado}
-        onSuccess={() => {
+        onSuccess={(payloadPago) => {
           fetchMensualidades();
-          setSuccessMessage('Pago registrado');
+          const periodoTxt = construirPeriodoLegible(pagoSeleccionado);
+          const monedaSimbolo = payloadPago?.moneda === 'EUR' ? '€' : '$';
+          const montoMonedaTxt = payloadPago?.montoPagadoMoneda != null
+            ? `${monedaSimbolo}${Number(payloadPago.montoPagadoMoneda).toFixed(2)} ${payloadPago.moneda || monedaConfigurada}`
+            : `${simboloMonedaConfigurada}${Number(pagoSeleccionado?.monto || 0).toFixed(2)} ${monedaConfigurada}`;
+          const montoBsTxt = payloadPago?.montoPagadoBs != null
+            ? `Bs ${Number(payloadPago.montoPagadoBs).toFixed(2)}`
+            : '';
+
+          setPagoSuccessData({
+            alumnoNombre: `${alumno?.nombres || alumno?.nombre || ''} ${alumno?.apellidos || alumno?.apellido || ''}`.trim(),
+            periodo: periodoTxt,
+            montoMoneda: montoMonedaTxt,
+            montoBs: montoBsTxt,
+            tasaBcv: payloadPago?.tasaPago ? Number(payloadPago.tasaPago).toFixed(2) : (tasa ? Number(tasa).toFixed(2) : null),
+            metodoPago: payloadPago?.metodoPago || '-',
+            referencia: payloadPago?.referencia || '',
+            fechaPago: payloadPago?.fechaPago
+              ? (payloadPago.fechaPago.includes('-') ? payloadPago.fechaPago.split('-').reverse().join('/') : payloadPago.fechaPago)
+              : new Date().toLocaleDateString('es-VE'),
+            comprobanteNombre: payloadPago?.comprobanteNombre || ''
+          });
+          setPagoSuccessDialogOpen(true);
         }}
       />
       <Dialog
@@ -1918,6 +1963,147 @@ function PagosAlumno(props) {
             disabled={adelantandoMensualidad}
           >
             {adelantandoMensualidad ? 'Procesando...' : 'Si, adelantar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={pagoSuccessDialogOpen}
+        onClose={() => {
+          setPagoSuccessDialogOpen(false);
+          setPagoSuccessData(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            textAlign: 'center',
+            p: { xs: 2, sm: 2.5 }
+          }
+        }}
+      >
+        <DialogContent sx={{ pt: 1, pb: 1.25 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
+            <CheckCircleRoundedIcon sx={{ fontSize: 64, color: '#10b981' }} />
+          </Box>
+
+          <Typography sx={{ fontWeight: 900, color: '#0f172a', mb: 0.8, letterSpacing: 0.3, fontSize: { xs: 18, sm: 20 } }}>
+            PAGO REGISTRADO EXITOSAMENTE
+          </Typography>
+
+          <Typography variant="body2" sx={{ color: '#475569', mb: 1.8 }}>
+            Tu pago ha sido registrado y enviado a revisión. El administrador validará el comprobante en breve.
+          </Typography>
+
+          <Box
+            sx={{
+              textAlign: 'left',
+              border: '1px solid #e2e8f0',
+              borderRadius: 2.5,
+              backgroundColor: '#f8fafc',
+              p: 1.6,
+              display: 'grid',
+              gap: 0.8,
+              mb: 1.2
+            }}
+          >
+            {pagoSuccessData?.alumnoNombre && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Alumno
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                  {pagoSuccessData.alumnoNombre}
+                </Typography>
+              </Box>
+            )}
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Periodo / Concepto
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {pagoSuccessData?.periodo || 'Mensualidad'}
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Monto reportado
+              </Typography>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="body2" sx={{ color: '#059669', fontWeight: 900, fontSize: 16 }}>
+                  {pagoSuccessData?.montoMoneda || '$0.00'}
+                </Typography>
+                {pagoSuccessData?.montoBs && (
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                    {pagoSuccessData.montoBs} {pagoSuccessData?.tasaBcv ? `· Tasa: ${pagoSuccessData.tasaBcv}` : ''}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Método de pago
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {pagoSuccessData?.metodoPago || '-'}
+              </Typography>
+            </Box>
+
+            {!!pagoSuccessData?.referencia && pagoSuccessData.referencia !== '-' && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Referencia
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                  {pagoSuccessData.referencia}
+                </Typography>
+              </Box>
+            )}
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...(pagoSuccessData?.comprobanteNombre ? { borderBottom: '1px solid #edf2f7', pb: 0.8 } : {}) }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Fecha de pago
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {pagoSuccessData?.fechaPago || '-'}
+              </Typography>
+            </Box>
+
+            {!!pagoSuccessData?.comprobanteNombre && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Comprobante
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#0284c7', fontWeight: 700, maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {pagoSuccessData.comprobanteNombre}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ justifyContent: 'center', pt: 0.5, pb: 0.5 }}>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setPagoSuccessDialogOpen(false);
+              setPagoSuccessData(null);
+            }}
+            sx={{
+              minWidth: 150,
+              fontWeight: 800,
+              borderRadius: 999,
+              textTransform: 'none',
+              bgcolor: '#0f172a',
+              '&:hover': {
+                bgcolor: '#1e293b'
+              }
+            }}
+          >
+            Cerrar
           </Button>
         </DialogActions>
       </Dialog>

@@ -645,7 +645,17 @@ function ModalPago({
           moneda
         });
         onClose();
-        if (onSuccess) onSuccess();
+        if (onSuccess) onSuccess({
+          pago,
+          metodoPago: metodoSeleccionado?.nombre || metodoSeleccionado?.id || '',
+          fechaPago,
+          referencia,
+          montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
+          montoPagadoBs: Number(montoPagadoBsFinal.toFixed(2)),
+          moneda,
+          tasaPago: Number(tasaPago) || null,
+          comprobanteNombre: comprobante ? comprobante.name : ''
+        });
         return;
       }
 
@@ -683,7 +693,18 @@ function ModalPago({
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Error al registrar pago');
       onClose();
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess({
+        data,
+        pago,
+        metodoPago: metodoSeleccionado?.nombre || metodoSeleccionado?.id || '',
+        fechaPago,
+        referencia,
+        montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
+        montoPagadoBs: Number(montoPagadoBsFinal.toFixed(2)),
+        moneda,
+        tasaPago: Number(tasaPago) || null,
+        comprobanteNombre: comprobante ? comprobante.name : ''
+      });
     } catch (err) {
       setSubmitError(err.message || 'Error al registrar pago');
     } finally {
