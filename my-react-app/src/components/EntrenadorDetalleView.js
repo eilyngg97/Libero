@@ -895,6 +895,34 @@ function EntrenadorDetalleView({
     }
   };
 
+  const handleCerrarPagoSuccessDialog = () => {
+    setPagoSuccessDialogOpen(false);
+    setPagoSuccessData(null);
+
+    // Calcular el próximo periodo sugerido y el nuevo monto base según los pagos actualizados
+    const mesReferencia = formatMonthYear(pagoForm.fecha_pago).toLowerCase();
+    const periodosCubiertos = new Set(
+      pagosNominaOrdenados
+        .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferencia)
+        .map((pago) => String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const proximo = periodOptions.find((opt) => !periodosCubiertos.has(String(opt.value).toLowerCase()))?.value || '';
+
+    setPagoForm((prev) => ({
+      ...prev,
+      periodo: proximo || (frecuenciaPago === 'abonos' ? 'Abono libre' : prev.periodo),
+      monto_base: Number(montoBasePorPago.toFixed(2)),
+      bono_ajuste: 0,
+      nota_bono_ajuste: '',
+      deduccion: 0,
+      nota_deduccion: '',
+      referencia: ''
+    }));
+    setComprobantePago(null);
+  };
+
   const handleAbrirConfirmarPago = () => {
     setPagoFeedback('');
     setConfirmarPagoDialogOpen(true);
@@ -2510,7 +2538,7 @@ function EntrenadorDetalleView({
 
       <Dialog
         open={pagoSuccessDialogOpen}
-        onClose={() => setPagoSuccessDialogOpen(false)}
+        onClose={handleCerrarPagoSuccessDialog}
         maxWidth="sm"
         fullWidth
         PaperProps={{
@@ -2623,7 +2651,7 @@ function EntrenadorDetalleView({
         <DialogActions sx={{ justifyContent: 'center', pt: 0.5, pb: 0.5 }}>
           <Button
             variant="contained"
-            onClick={() => setPagoSuccessDialogOpen(false)}
+            onClick={handleCerrarPagoSuccessDialog}
             sx={{
               minWidth: 150,
               fontWeight: 800,
