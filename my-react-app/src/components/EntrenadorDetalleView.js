@@ -4,6 +4,7 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -209,6 +210,8 @@ function EntrenadorDetalleView({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [confirmarPagoDialogOpen, setConfirmarPagoDialogOpen] = useState(false);
   const [comprobantePago, setComprobantePago] = useState(null);
+  const [pagoSuccessDialogOpen, setPagoSuccessDialogOpen] = useState(false);
+  const [pagoSuccessData, setPagoSuccessData] = useState(null);
   const [pdfModalState, setPdfModalState] = useState({
     open: false,
     url: '',
@@ -621,6 +624,8 @@ function EntrenadorDetalleView({
     setEstadoDialogOpen(false);
     setDeleteDialogOpen(false);
     setConfirmarPagoDialogOpen(false);
+    setPagoSuccessDialogOpen(false);
+    setPagoSuccessData(null);
   }, [entrenador?._id, entrenador?.id]);
 
   useEffect(() => {
@@ -868,8 +873,21 @@ function EntrenadorDetalleView({
 
       const totalUsd = Number(data?.pago?.monto_total_usd || 0).toFixed(2);
       const totalVes = Number(data?.pago?.monto_total_ves || 0).toFixed(2);
-      setPagoFeedback(`Pago registrado. Total USD: $${totalUsd} · Total VES: Bs ${totalVes}.${comprobantePago ? ` Comprobante: ${comprobantePago.name}.` : ''}`);
+      setPagoSuccessData({
+        entrenadorNombre: `${entrenador?.nombre || ''} ${entrenador?.apellido || ''}`.trim(),
+        entrenadorCedula: entrenador?.cedula || '',
+        periodo: data?.pago?.periodo || pagoForm.periodo || 'Pago de nómina',
+        montoUsd: `$${totalUsd}`,
+        montoVes: `Bs ${totalVes}`,
+        tasaBcv: Number(data?.pago?.tasa_bcv || tasaDiaBs || 0).toFixed(2),
+        metodoPago: metodoPagoSeleccionado.label,
+        referencia: data?.pago?.referencia || pagoForm.referencia || '',
+        fechaPago: formatDate(data?.pago?.fecha_pago || pagoForm.fecha_pago),
+        comprobanteNombre: comprobantePago ? comprobantePago.name : ''
+      });
+      setPagoSuccessDialogOpen(true);
       setComprobantePago(null);
+      setPagoFeedback('');
     } catch (_) {
       setPagoFeedback('No se pudo registrar el pago por un error de conexion');
     } finally {
@@ -2220,41 +2238,10 @@ function EntrenadorDetalleView({
                 </Alert>
               )}
 
-              {pagoFeedback && (
-                pagoFeedbackEsError ? (
-                  <Alert severity="error" sx={{ mt: 1.3, borderRadius: 2.5 }}>
-                    {pagoFeedback}
-                  </Alert>
-                ) : (
-                  <Box
-                    sx={{
-                      mt: 1.3,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.75,
-                      px: 1.25,
-                      py: 0.85,
-                      borderRadius: 1.8,
-                      border: '1px solid #6ee7b7',
-                      backgroundColor: '#d1fae5',
-                      color: '#065f46',
-                      boxShadow: '0 6px 14px rgba(15, 23, 42, 0.08)'
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        backgroundColor: '#10b981',
-                        flexShrink: 0
-                      }}
-                    />
-                    <Typography component="span" sx={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2 }}>
-                      {pagoFeedback}
-                    </Typography>
-                  </Box>
-                )
+              {pagoFeedback && pagoFeedbackEsError && (
+                <Alert severity="error" sx={{ mt: 1.3, borderRadius: 2.5 }}>
+                  {pagoFeedback}
+                </Alert>
               )}
 
               {!pagoPeriodoActualRegistrado && (
@@ -2519,6 +2506,138 @@ function EntrenadorDetalleView({
             </Box>
           )}
         </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pagoSuccessDialogOpen}
+        onClose={() => setPagoSuccessDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            textAlign: 'center',
+            p: { xs: 2, sm: 2.5 }
+          }
+        }}
+      >
+        <DialogContent sx={{ pt: 1, pb: 1.25 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
+            <CheckCircleRoundedIcon sx={{ fontSize: 64, color: '#10b981' }} />
+          </Box>
+
+          <Typography sx={{ fontWeight: 900, color: '#0f172a', mb: 0.8, letterSpacing: 0.3, fontSize: { xs: 18, sm: 20 } }}>
+            PAGO REGISTRADO EXITOSAMENTE
+          </Typography>
+
+          <Typography variant="body2" sx={{ color: '#475569', mb: 1.8 }}>
+            El pago de nómina ha sido procesado y registrado correctamente en el historial del entrenador.
+          </Typography>
+
+          <Box
+            sx={{
+              textAlign: 'left',
+              border: '1px solid #e2e8f0',
+              borderRadius: 2.5,
+              backgroundColor: '#f8fafc',
+              p: 1.6,
+              display: 'grid',
+              gap: 0.8,
+              mb: 1.2
+            }}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Entrenador
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {pagoSuccessData?.entrenadorNombre || '-'} {pagoSuccessData?.entrenadorCedula ? `(V-${pagoSuccessData.entrenadorCedula})` : ''}
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Periodo / Concepto
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {pagoSuccessData?.periodo || '-'}
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Monto total pagado
+              </Typography>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="body2" sx={{ color: '#059669', fontWeight: 900, fontSize: 16 }}>
+                  {pagoSuccessData?.montoUsd || '$0.00'}
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                  {pagoSuccessData?.montoVes || 'Bs 0.00'} {pagoSuccessData?.tasaBcv ? `· Tasa: ${pagoSuccessData.tasaBcv}` : ''}
+                </Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Método de pago
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {pagoSuccessData?.metodoPago || '-'}
+              </Typography>
+            </Box>
+
+            {!!pagoSuccessData?.referencia && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Referencia
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                  {pagoSuccessData.referencia}
+                </Typography>
+              </Box>
+            )}
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf2f7', pb: 0.8 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                Fecha de pago
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 800 }}>
+                {pagoSuccessData?.fechaPago || '-'}
+              </Typography>
+            </Box>
+
+            {!!pagoSuccessData?.comprobanteNombre && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Comprobante
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#0284c7', fontWeight: 700, maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {pagoSuccessData.comprobanteNombre}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ justifyContent: 'center', pt: 0.5, pb: 0.5 }}>
+          <Button
+            variant="contained"
+            onClick={() => setPagoSuccessDialogOpen(false)}
+            sx={{
+              minWidth: 150,
+              fontWeight: 800,
+              borderRadius: 999,
+              textTransform: 'none',
+              bgcolor: '#0f172a',
+              '&:hover': {
+                bgcolor: '#1e293b'
+              }
+            }}
+          >
+            Cerrar
+          </Button>
+        </DialogActions>
       </Dialog>
     </div>
   );
