@@ -303,7 +303,7 @@ function findColumnKey(headersMap, candidates) {
   return null;
 }
 
-function parseExcelRows(fileBuffer) {
+function parseExcelRows(fileBuffer, extension = '') {
   const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellDates: true });
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) throw new Error('El archivo Excel no tiene hojas');
@@ -324,6 +324,7 @@ function parseExcelRows(fileBuffer) {
   let referenciaIdx = null;
   let montoIdx = null;
   let descripcionIdx = null;
+  const encabezadosDetectados = new Set();
 
   // Algunos bancos agregan filas de resumen antes de los encabezados.
   for (let i = 0; i < rows.length; i += 1) {
@@ -332,7 +333,10 @@ function parseExcelRows(fileBuffer) {
 
     headerRow.forEach((header, index) => {
       const key = normalizarTexto(header);
-      if (key) headersMap[key] = index;
+      if (key) {
+        headersMap[key] = index;
+        encabezadosDetectados.add(key);
+      }
     });
 
     const currentReferenciaIdx = findColumnKey(headersMap, ['referencia', 'ref', 'nro referencia', 'numero referencia']);
@@ -352,6 +356,12 @@ function parseExcelRows(fileBuffer) {
   const esFormatoProvincial = referenciaIdx === null && descripcionIdx !== null && montoIdx !== null;
 
   if (montoIdx === null || (referenciaIdx === null && !esFormatoProvincial)) {
+    const encabezados = [...encabezadosDetectados].slice(0, 12).join(', ');
+    if (extension === '.xls') {
+      throw new Error(
+        `No se pudieron identificar los encabezados del archivo, Exportalo como .xlsx e intentalo nuevamente.`
+      );
+    }
     throw new Error('No se encontraron columnas requeridas: Referencia y/o Monto');
   }
 
@@ -598,7 +608,7 @@ exports.previsualizarConciliacion = async (req, res) => {
 
     const bancoRows = extension === '.txt'
       ? parseTxtRows(req.file.buffer)
-      : parseExcelRows(req.file.buffer);
+      : parseExcelRows(req.file.buffer, extension);
 
     let sistemaRows = [];
 
