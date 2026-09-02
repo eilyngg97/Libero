@@ -70,8 +70,14 @@ const { generarMensualidadesPendientesAlumno } = require('./mensualidadControlle
 
 const MONTO_TOLERANCIA_BS = 100;
 
-const IMPORT_FIXED_FECHA_INICIO_COBRO = new Date(Date.UTC(2026, 6, 1, 12, 0, 0));
-const IMPORT_FIXED_PERIODO_COBRO = { mes: 7, anio: 2026 };
+function getPeriodoInicioCobroImportacion() {
+  const now = new Date();
+  return {
+    fecha: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 12, 0, 0)),
+    mes: now.getUTCMonth() + 1,
+    anio: now.getUTCFullYear()
+  };
+}
 
 async function getTenantAlumnoReadModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -450,8 +456,9 @@ function splitNombreCompleto(valor) {
     return { nombres: parts[0], apellidos: 'N/A' };
   }
 
-  const apellidos = parts.slice(-1).join(' ');
-  const nombres = parts.slice(0, -1).join(' ');
+  const cantidadApellidos = parts.length >= 4 ? 2 : 1;
+  const apellidos = parts.slice(-cantidadApellidos).join(' ');
+  const nombres = parts.slice(0, -cantidadApellidos).join(' ');
   return { nombres, apellidos };
 }
 
@@ -513,7 +520,7 @@ function parseAlumnoExcelRows(fileBuffer) {
   const idxRepApellidos = findColumnIndexByCandidates(headerRow, ['APELLIDOS REPRESENTANTE', 'APELLIDO REPRESENTANTE', 'APELLIDOS DEL REPRESENTANTE']);
   const fechaNacIndexes = findColumnIndexesByCandidates(headerRow, ['FECHA NAC', 'FECHA NACIMIENTO', 'FECHA DE NACIMIENTO']);
 
-  const idxCedula = findColumnIndexByCandidates(headerRow, ['CEDULA ALUMNO', 'CEDULA ESTUDIANTE', 'CEDULA']);
+  const idxCedula = findColumnIndexByCandidates(headerRow, ['CEDULA ALUMNO', 'CEDULA ESTUDIANTE', 'CEDULA DE IDENTIDAD', 'CEDULA']);
 
   let idxRepCedula = findColumnIndexByCandidates(headerRow, ['CEDULA REPRESENTANTE', 'CEDULA DEL REPRESENTANTE']);
 
@@ -1866,6 +1873,7 @@ exports.importarAlumnosExcel = async (req, res) => {
     }
 
     const dryRun = String(req.body?.dryRun || '').trim() === '1';
+  const periodoInicioCobroImportacion = getPeriodoInicioCobroImportacion();
 
     const rows = parseAlumnoExcelRows(req.file.buffer);
     const created = [];
@@ -1901,7 +1909,7 @@ exports.importarAlumnosExcel = async (req, res) => {
           nombres: row.nombres,
           apellidos: row.apellidos,
           sede: sedeIdRaw,
-          fecha_inicio_cobro: new Date(IMPORT_FIXED_FECHA_INICIO_COBRO),
+          fecha_inicio_cobro: new Date(periodoInicioCobroImportacion.fecha),
           fecha_inscripcion: row.fecha_inscripcion || undefined,
           fecha_nacimiento: row.fecha_nacimiento || undefined,
           cedula: row.cedula || undefined,
@@ -2037,13 +2045,13 @@ exports.importarAlumnosExcel = async (req, res) => {
                 Reposo: TenantReposo,
                 TenantConfig: TenantConfigModel
               },
-              periodoInicio: IMPORT_FIXED_PERIODO_COBRO,
-              periodoFin: IMPORT_FIXED_PERIODO_COBRO,
+              periodoInicio: periodoInicioCobroImportacion,
+              periodoFin: periodoInicioCobroImportacion,
               esInscripcionOverride: false
             });
           } catch (errMensualidad) {
             await alumno.deleteOne().catch(() => {});
-            throw new Error(`No se pudo crear mensualidad inicial de julio 2026: ${errMensualidad.message}`);
+            throw new Error(`No se pudo crear mensualidad inicial del período actual: ${errMensualidad.message}`);
           }
 
           created.push({
