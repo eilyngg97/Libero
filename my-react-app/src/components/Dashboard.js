@@ -1293,6 +1293,11 @@ function Dashboard() {
                           {al.sede?.nombre || 'Sin sede'}
                           {calcularEdad(al.fecha_nacimiento) !== '' ? ` · ${calcularEdad(al.fecha_nacimiento)} años` : ''}
                         </div>
+                        {al.tipo === 'entrenador' && (
+                          <span style={{ alignSelf: 'flex-start', padding: '2px 6px', borderRadius: 8, background: '#e8f3ff', color: '#1976d2', fontSize: 10, fontWeight: 700 }}>
+                            Entrenador
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div
