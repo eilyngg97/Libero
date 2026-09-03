@@ -4,6 +4,7 @@ export const BANCOS_PAGO_MOVIL = [
   { codigo: '0108', nombre: 'BANCO PROVINCIAL' },
   { codigo: '0134', nombre: 'BANESCO' },
   { codigo: '0163', nombre: 'BANCO DEL TESORO' },
+  { codigo: '0174', nombre: 'BANPLUS' },
   { codigo: '0172', nombre: 'BANCAMIGA' }
 ];
 
