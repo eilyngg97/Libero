@@ -347,6 +347,10 @@ exports.registrarPago = async (req, res) => {
       id_mensualidad,
       monto_pagado: validacion.montoARegistrar,
       monto_pagado_bs: montoBs,
+      monto_original_usd: validacion.montoARegistrar,
+      monto_original_bs: montoBs,
+      monto_aplicado_usd: validacion.montoARegistrar,
+      monto_aplicado_bs: montoBs,
       monto_esperado_usd: Number.isFinite(montoEsperadoUsd) ? redondearMonto(montoEsperadoUsd) : undefined,
       monto_esperado_bs: montoEsperadoBs !== null ? redondearMonto(montoEsperadoBs) : undefined,
       nota: normalizarNotaPago(nota),
@@ -418,6 +422,10 @@ exports.editarPago = async (req, res) => {
     const comprobanteAnterior = pago.comprobante_url;
     pago.monto_pagado = validacion.montoARegistrar;
     pago.monto_pagado_bs = montoBs;
+    pago.monto_original_usd = validacion.montoARegistrar;
+    pago.monto_original_bs = montoBs;
+    pago.monto_aplicado_usd = validacion.montoARegistrar;
+    pago.monto_aplicado_bs = montoBs;
     if (Number.isFinite(montoEsperadoUsd)) {
       pago.monto_esperado_usd = redondearMonto(montoEsperadoUsd);
     }

@@ -613,8 +613,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const cargarUltimoPagoDraft = React.useCallback(() => {
 		if (!detallePago?._id) return;
 
-		const montoBsPago = Number(detallePago?.monto_pagado_bs);
-		const montoUsdPago = Number(detallePago?.monto_pagado);
+		const montoBsPago = Number(detallePago?.monto_original_bs ?? detallePago?.monto_pagado_bs);
+		const montoUsdPago = Number(detallePago?.monto_original_usd ?? detallePago?.monto_pagado);
 		const tasaDesdePago = (Number.isFinite(montoBsPago) && montoBsPago > 0 && Number.isFinite(montoUsdPago) && montoUsdPago > 0)
 			? (montoBsPago / montoUsdPago)
 			: 0;
@@ -638,8 +638,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		setUltimoPagoDraft({
 			metodo_pago: normalizeMetodoPago(detallePago?.metodo_pago),
 			fecha_pago: getInputDateFromApi(detallePago?.fecha_pago),
-			monto_pagado_bs: Number.isFinite(Number(detallePago?.monto_pagado_bs))
-				? Number(detallePago?.monto_pagado_bs)
+			monto_pagado_bs: Number.isFinite(Number(detallePago?.monto_original_bs ?? detallePago?.monto_pagado_bs))
+				? Number(detallePago?.monto_original_bs ?? detallePago?.monto_pagado_bs)
 				: ((Number.isFinite(montoUsdPago) && montoUsdPago > 0 && tasaInicial > 0)
 					? Number((montoUsdPago * tasaInicial).toFixed(2))
 					: ''),
@@ -659,6 +659,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		detallePago?.fecha_pago,
 		detallePago?.monto_pagado_bs,
 		detallePago?.monto_pagado,
+		detallePago?.monto_original_bs,
+		detallePago?.monto_original_usd,
 		detallePago?.monto_esperado_bs,
 		detallePago?.referencia,
 		detallePago?.telefono_pago,
@@ -1378,12 +1380,21 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const formatMontoConBs = (pago) => {
-		const montoUsd = formatMoney(pago?.monto_pagado);
-		const montoBs = pago?.monto_pagado_bs;
+		const montoUsd = formatMoney(pago?.monto_original_usd ?? pago?.monto_pagado);
+		const montoBs = pago?.monto_original_bs ?? pago?.monto_pagado_bs;
 		if (montoBs === null || montoBs === undefined || Number.isNaN(Number(montoBs))) {
 			return `${simboloMonedaCobro}${montoUsd} ${monedaCobro}`;
 		}
 		return `Bs ${formatMoney(montoBs)} / ${simboloMonedaCobro}${montoUsd} ${monedaCobro}`;
+	};
+
+	const formatMontoAplicado = (pago) => {
+		const montoOriginal = Number(pago?.monto_original_usd);
+		const montoAplicado = Number(pago?.monto_aplicado_usd ?? pago?.monto_pagado);
+		if (!Number.isFinite(montoOriginal) || !Number.isFinite(montoAplicado) || Math.abs(montoOriginal - montoAplicado) < 0.01) {
+			return '';
+		}
+		return `Aplicado a esta mensualidad: ${simboloMonedaCobro}${formatMoney(montoAplicado)} ${monedaCobro}`;
 	};
 
 	const formatRegistradoPorPago = (pago) => {
@@ -2830,6 +2841,11 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										<Box>
 											<Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Monto</Typography>
 											<Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoConBs(pago)}</Typography>
+											{formatMontoAplicado(pago) && (
+												<Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
+													{formatMontoAplicado(pago)}
+												</Typography>
+											)}
 											{formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado, true) !== '-' && (
 												<Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
 													Esperado: {formatMontoEsperadoPago(pago, mensualidadDetalle?.monto_esperado, true)}

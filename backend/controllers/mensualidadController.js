@@ -387,6 +387,24 @@ function normalizarEstatusKey(estatus) {
     .trim();
 }
 
+function construirRegistradoPorAdmin(req) {
+  const rol = String(req?.user?.rol || '').trim().toLowerCase();
+  const nombre = String(
+    req?.user?.nombre
+    || req?.user?.usuario
+    || req?.user?.email
+    || req?.user?.correo
+    || ''
+  ).trim();
+
+  return {
+    id_usuario: req?.user?.id || req?.user?._id || undefined,
+    nombre,
+    rol: rol || 'admin',
+    origen: 'admin_portal'
+  };
+}
+
 function esEstatusIngresoConfirmado(estatus) {
   const normalizado = normalizarEstatusKey(estatus);
   return normalizado === 'pagado' || normalizado === 'abono';
@@ -783,6 +801,14 @@ async function crearMensualidadParaPeriodo(
     monto = credito.montoEsperado;
   }
 
+  if (
+    creditoAplicado > 0 &&
+    estatus !== 'Exento por reposo' &&
+    estatus !== 'Becado'
+  ) {
+    estatus = monto <= 0 ? 'Pagado' : 'Abono';
+  }
+
   const recargoEfectivo = await obtenerRecargoEfectivoAlumno(alumno, models, configCobro);
   const recargoUsdEfectivo = Number(recargoEfectivo.recargoUsd) || 0;
 
@@ -851,7 +877,8 @@ async function crearMensualidadParaPeriodo(
       fecha_pago: metadataInscripcion?.fechaPago || new Date(),
       metodo_pago: metadataInscripcion?.metodoPago || 'Registro inicial admin',
       referencia: metadataInscripcion?.referencia || referenciaPago,
-      comprobante_url: metadataInscripcion?.comprobanteUrl
+      comprobante_url: metadataInscripcion?.comprobanteUrl,
+      registrado_por: metadataInscripcion?.registradoPor
     });
     pagoRegistrado = true;
     }
@@ -908,6 +935,85 @@ async function generarMensualidadesPendientesAlumno(
   }
 
   return resultados;
+}
+
+async function distribuirPagoInicialEntreMensualidades(
+  resultados,
+  {
+    alumno,
+    models = {},
+    montoPagadoUsd,
+    montoPagadoBs,
+    metadataInscripcion,
+    registradoPor,
+    referenciaPago = 'primera-mensualidad'
+  } = {}
+) {
+  const { PagoDetalle: PagoDetalleModel, Alumno: AlumnoModel } = resolveMensualidadModels(models);
+  const mensualidades = resultados
+    .map((resultado) => resultado?.mensualidad)
+    .filter(Boolean)
+    .sort((a, b) => Number(a.anio) - Number(b.anio) || Number(a.mes) - Number(b.mes));
+  const totalPagadoUsd = redondearMonto(montoPagadoUsd || 0);
+  const totalPagadoBs = redondearMonto(montoPagadoBs || 0);
+  const tasaPago = totalPagadoUsd > 0 && totalPagadoBs > 0
+    ? totalPagadoBs / totalPagadoUsd
+    : 0;
+  let restanteUsd = totalPagadoUsd;
+  let totalAsignadoUsd = 0;
+  let ultimaMensualidadConPago = null;
+  let esPrimeraAsignacion = true;
+
+  for (const mensualidad of mensualidades) {
+    const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
+    const montoAsignado = redondearMonto(Math.min(restanteUsd, montoEsperado));
+    if (montoAsignado <= 0) continue;
+
+    const montoAsignadoBs = tasaPago > 0 ? redondearMonto(montoAsignado * tasaPago) : undefined;
+    await PagoDetalleModel.create({
+      id_mensualidad: mensualidad._id,
+      monto_pagado: montoAsignado,
+      monto_pagado_bs: montoAsignadoBs,
+      monto_original_usd: esPrimeraAsignacion ? totalPagadoUsd : montoAsignado,
+      monto_original_bs: esPrimeraAsignacion && totalPagadoBs > 0 ? totalPagadoBs : montoAsignadoBs,
+      monto_aplicado_usd: montoAsignado,
+      monto_aplicado_bs: montoAsignadoBs,
+      monto_esperado_usd: montoEsperado,
+      monto_esperado_bs: tasaPago > 0 ? redondearMonto(montoEsperado * tasaPago) : metadataInscripcion?.montoEsperadoBs,
+      fecha_pago: metadataInscripcion?.fechaPago || new Date(),
+      metodo_pago: metadataInscripcion?.metodoPago || 'Registro inicial admin',
+      referencia: metadataInscripcion?.referencia || referenciaPago,
+      comprobante_url: metadataInscripcion?.comprobanteUrl,
+      registrado_por: metadataInscripcion?.registradoPor || registradoPor
+    });
+
+    await recalcularMensualidadPorPagos(mensualidad, {
+      models,
+      actorRol: 'admin',
+      omitirRecargoAutomatico: true
+    });
+
+    restanteUsd = redondearMonto(restanteUsd - montoAsignado);
+    totalAsignadoUsd = redondearMonto(totalAsignadoUsd + montoAsignado);
+    ultimaMensualidadConPago = mensualidad;
+    esPrimeraAsignacion = false;
+  }
+
+  const saldoAFavor = redondearMonto(Math.max(0, totalPagadoUsd - totalAsignadoUsd));
+  if (saldoAFavor > 0 && alumno && AlumnoModel) {
+    const saldoActual = redondearMonto(alumno.saldo_a_favor_mensualidades || 0);
+    alumno.saldo_a_favor_mensualidades = redondearMonto(saldoActual + saldoAFavor);
+    await alumno.save();
+
+    if (ultimaMensualidadConPago) {
+      ultimaMensualidadConPago.saldo_a_favor_generado = redondearMonto(
+        (ultimaMensualidadConPago.saldo_a_favor_generado || 0) + saldoAFavor
+      );
+      await ultimaMensualidadConPago.save();
+    }
+  }
+
+  return { saldoAFavor, totalAsignadoUsd };
 }
 
 async function recalcularMensualidadPorPagos(
@@ -1759,10 +1865,6 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
       return res.status(400).json({ error: 'No se puede registrar mensualidades para un alumno inactivo o dado de baja' });
     }
 
-    const estatusSolicitado = String(estatus || '').trim();
-    const estatusPrimeraMensualidad = alumno.habilitar_pago_cuotas === true
-      ? 'Abono'
-      : (estatusSolicitado || undefined);
     const comprobanteUrl = req.file
       ? `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`
       : undefined;
@@ -1772,6 +1874,11 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
         return res.status(400).json({ error: 'monto_pagado es requerido para pagos en cuotas' });
       }
     }
+
+    const estatusSolicitado = String(estatus || '').trim();
+    const estatusPrimeraMensualidad = alumno.habilitar_pago_cuotas === true
+      ? 'Pendiente'
+      : (estatusSolicitado || undefined);
 
     const metadataInscripcion = {
       montoInscripcion: montoInscripcionNormalizado,
@@ -1783,7 +1890,8 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
       fechaPago: normalizarFechaOpcional(fecha_pago),
       metodoPago: metodo_pago ? String(metodo_pago).trim() : undefined,
       referencia: referencia ? String(referencia).trim() : undefined,
-      comprobanteUrl
+      comprobanteUrl,
+      registradoPor: construirRegistradoPorAdmin(req)
     };
 
     const periodoActual = getPeriodoZonaCaracas();
@@ -1815,9 +1923,27 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
         fechaVencimientoManual: fecha_vencimiento,
         metadataInscripcion
       },
-      crearPagoSiPagado: true,
+      crearPagoSiPagado: alumno.habilitar_pago_cuotas !== true,
       referenciaPago: 'primera-mensualidad'
     });
+
+    if (alumno.habilitar_pago_cuotas === true) {
+      await distribuirPagoInicialEntreMensualidades(resultados, {
+        alumno,
+        models: {
+          Alumno: TenantAlumno,
+          Mensualidad: TenantMensualidad,
+          PagoDetalle: TenantPagoDetalle,
+          Sede: TenantSede,
+          Reposo: TenantReposo,
+          TenantConfig: TenantConfigModel
+        },
+        montoPagadoUsd,
+        montoPagadoBs: normalizarMontoOpcional(monto_pagado_bs),
+        metadataInscripcion,
+        referenciaPago: 'primera-mensualidad'
+      });
+    }
 
     const creadas = resultados.filter((resultado) => resultado.creada).length;
     const mensualidadObjetivo = resultados.find(

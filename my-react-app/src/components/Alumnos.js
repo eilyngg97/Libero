@@ -64,6 +64,36 @@ function esFechaInicioCobroDelAnioActual(valor) {
   return Number(match[1]) === ANIO_ACTUAL;
 }
 
+function obtenerPeriodoDesdeFecha(fechaRaw) {
+  const match = String(fechaRaw || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const fecha = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+}
+
+function formatearMesAnio(fecha) {
+  if (!fecha) return '';
+  return fecha.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+}
+
+function construirVistaMensualidadesInscripcion(fechaInicioCobro) {
+  const inicio = obtenerPeriodoDesdeFecha(fechaInicioCobro);
+  if (!inicio) return [];
+
+  const hoy = new Date();
+  const cursor = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
+  const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const periodos = [];
+
+  while (cursor <= fin) {
+    periodos.push(formatearMesAnio(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return periodos.length ? periodos : [formatearMesAnio(inicio)];
+}
+
 
 function Alumnos() {
   // Estado para el formulario
@@ -155,6 +185,9 @@ function Alumnos() {
   const totalInscripcionBs = tasaBCV > 0
     ? Number((totalInscripcionUsd * tasaBCV).toFixed(2))
     : null;
+  const mensualidadesInscripcionPreview = construirVistaMensualidadesInscripcion(form.fecha_inicio_cobro);
+  const primerMesCobro = mensualidadesInscripcionPreview[0] || 'el mes de inicio de cobro';
+  const ultimoMesCobro = mensualidadesInscripcionPreview[mensualidadesInscripcionPreview.length - 1] || primerMesCobro;
   const montoPagadoInscripcionBs = tasaBCV > 0
     ? Number((montoPagadoInscripcionNum * tasaBCV).toFixed(2))
     : null;
@@ -1345,6 +1378,20 @@ function Alumnos() {
           <DialogContentText sx={{ color: '#64748b', mb: 1.25 }}>
             Se sugiere el monto de inscripción y mensualidad según la sede seleccionada, pero puedes ajustarlos si aplica.
           </DialogContentText>
+          <Alert severity="info" sx={{ mb: 2, borderRadius: 2.5, alignItems: 'flex-start' }}>
+            <Typography sx={{ fontWeight: 800, mb: 0.35 }}>
+              ¿Cómo se aplicará este registro?
+            </Typography>
+            <Typography variant="body2">
+              La inscripción y la primera mensualidad se aplicarán a <strong>{primerMesCobro}</strong>, según la fecha de inicio de cobro.
+              {mensualidadesInscripcionPreview.length > 1
+                ? ` También se crearán las mensualidades desde ${primerMesCobro} hasta ${ultimoMesCobro}.`
+                : ' Se creará una mensualidad para ese periodo.'}
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.5, color: '#475569' }}>
+              Periodos: {mensualidadesInscripcionPreview.join(' · ')}
+            </Typography>
+          </Alert>
           <Box
             sx={{
               p: 2,
