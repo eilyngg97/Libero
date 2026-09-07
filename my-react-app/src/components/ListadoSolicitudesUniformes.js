@@ -139,6 +139,7 @@ function ListadoSolicitudesUniformes() {
   const [comprobanteUrl, setComprobanteUrl] = useState('');
   const [comprobanteTipo, setComprobanteTipo] = useState('imagen');
   const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
+  const [filtroAlumno, setFiltroAlumno] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [filtroPrenda, setFiltroPrenda] = useState([]);
   const [filtroCategoria, setFiltroCategoria] = useState([]);
@@ -380,6 +381,17 @@ function ListadoSolicitudesUniformes() {
   }, [pedidos]);
 
   const pedidosFiltrados = pedidos.filter((pedido) => {
+    const nombreAlumno = `${pedido?.alumno?.nombres || ''} ${pedido?.alumno?.apellidos || ''}`
+      .trim()
+      .toLocaleLowerCase('es')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const alumnoBuscado = filtroAlumno
+      .trim()
+      .toLocaleLowerCase('es')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const alumnoOk = !alumnoBuscado || nombreAlumno.includes(alumnoBuscado);
     const fechaPedido = pedido?.createdAt || pedido?.fecha_solicitud || pedido?.fechaSolicitud;
     const fechaPedidoDate = parseFechaSinDesfase(fechaPedido);
     const mesPedido = fechaPedidoDate ? (fechaPedidoDate.getMonth() + 1) : null;
@@ -405,7 +417,7 @@ function ListadoSolicitudesUniformes() {
       ? true
       : String(pedido?.alumno?.sexo || '').trim().toLowerCase() === filtroSexo;
 
-    return mesOk && estadoOk && prendaOk && categoriaOk && sexoOk;
+    return alumnoOk && mesOk && estadoOk && prendaOk && categoriaOk && sexoOk;
   });
 
   const pagosHistorialOrdenados = Array.isArray(pedidoSeleccionado?.pagos_historial)
@@ -1462,6 +1474,22 @@ function ListadoSolicitudesUniformes() {
               <MenuItem value="entregado">Entregado</MenuItem>
               <MenuItem value="cancelado">Cancelado</MenuItem>
             </TextField>
+
+            <TextField
+              size="small"
+              label="Alumno"
+              placeholder="Nombre o apellido"
+              value={filtroAlumno}
+              onChange={(event) => {
+                setFiltroAlumno(event.target.value);
+                setPagina(0);
+              }}
+              sx={{
+                minWidth: { xs: 0, md: 200 },
+                gridColumn: { xs: '1 / -1', sm: 'auto' },
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+              }}
+            />
 
             <TextField
               select
