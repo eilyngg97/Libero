@@ -208,6 +208,8 @@ function EntrenadorDetalleView({
   const [accionPerfilFeedback, setAccionPerfilFeedback] = useState('');
   const [estadoDialogOpen, setEstadoDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pagoEliminar, setPagoEliminar] = useState(null);
+  const [eliminandoPago, setEliminandoPago] = useState(false);
   const [confirmarPagoDialogOpen, setConfirmarPagoDialogOpen] = useState(false);
   const [comprobantePago, setComprobantePago] = useState(null);
   const [pagoSuccessDialogOpen, setPagoSuccessDialogOpen] = useState(false);
@@ -224,6 +226,7 @@ function EntrenadorDetalleView({
   const [descargandoCertifIndex, setDescargandoCertifIndex] = useState(null);
   const [historialMesFiltro, setHistorialMesFiltro] = useState('todos');
   const [historialPeriodoFiltro, setHistorialPeriodoFiltro] = useState('todos');
+  const [mesVistaPago, setMesVistaPago] = useState(() => formatMonthYear(getTodayIsoDate()).toLowerCase());
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
   const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
   const [pagoForm, setPagoForm] = useState({
@@ -271,9 +274,53 @@ function EntrenadorDetalleView({
       .map((item) => item.pago);
   }, [entrenador?.pagos_nomina]);
 
+  const mesVistaOptions = useMemo(() => {
+    const years = new Set([new Date().getFullYear()]);
+
+    pagosNominaOrdenados.forEach((pago) => {
+      const fechaPago = parseDateLocalSafe(pago?.fecha_pago);
+      if (fechaPago) {
+        years.add(fechaPago.getFullYear());
+      }
+    });
+
+    const opciones = [];
+    Array.from(years).forEach((year) => {
+      for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+        const date = new Date(year, monthIndex, 1);
+        const label = date.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+        opciones.push({
+          value: label.toLowerCase(),
+          label,
+          monthIndex,
+          year
+        });
+      }
+    });
+
+    return opciones.sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return a.monthIndex - b.monthIndex;
+    });
+  }, [pagosNominaOrdenados]);
+
+  useEffect(() => {
+    if (!mesVistaOptions.length) return;
+    const mesActualValido = mesVistaOptions.some((option) => option.value === mesVistaPago);
+    if (!mesActualValido) {
+      const mesActual = new Date();
+      const mesActualLabel = new Date(mesActual.getFullYear(), mesActual.getMonth(), 1).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' }).toLowerCase();
+      const mesActualExiste = mesVistaOptions.some((option) => option.value === mesActualLabel);
+      setMesVistaPago(mesActualExiste ? mesActualLabel : mesVistaOptions[0].value);
+    }
+  }, [mesVistaOptions, mesVistaPago]);
+
   const mesReferenciaPago = useMemo(() => {
-    return formatMonthYear(pagoForm.fecha_pago).toLowerCase();
-  }, [pagoForm.fecha_pago]);
+    if (mesVistaPago && mesVistaOptions.some((option) => option.value === mesVistaPago)) {
+      return mesVistaPago;
+    }
+    return mesVistaOptions[0]?.value || formatMonthYear(new Date()).toLowerCase();
+  }, [mesVistaPago, mesVistaOptions]);
 
   const pagosMesActual = useMemo(() => {
     return pagosNominaOrdenados.filter(
@@ -283,7 +330,24 @@ function EntrenadorDetalleView({
 
   const totalAbonadoMesUsd = useMemo(() => {
     return round2(
-      pagosMesActual.reduce((acc, pago) => acc + (Number(pago?.monto_total_usd) || Number(pago?.monto_base_pago_usd) || 0), 0)
+      pagosMesActual.reduce((acc, pago) => {
+        const montoBaseAbonado = pickFirstNumber(
+          pago?.monto_base_pago_usd,
+          pago?.monto_base_usd,
+          pago?.monto_base,
+          pago?.monto_total_usd
+        );
+        return acc + montoBaseAbonado;
+      }, 0)
+    );
+  }, [pagosMesActual]);
+
+  const totalBonosMesUsd = useMemo(() => {
+    return round2(
+      pagosMesActual.reduce((acc, pago) => {
+        const bonoAbonado = pickFirstNumber(pago?.bono_usd, pago?.bono_ajuste);
+        return acc + bonoAbonado;
+      }, 0)
     );
   }, [pagosMesActual]);
 
@@ -459,11 +523,10 @@ function EntrenadorDetalleView({
   }, [historialMesFiltro, historialPeriodoFiltro, pagosNominaOrdenados]);
 
   const periodStatusByValue = useMemo(() => {
-    const mesReferencia = formatMonthYear(pagoForm.fecha_pago).toLowerCase();
     const status = new Map(periodOptions.map((option) => [String(option.value), 'pendiente']));
 
     pagosNominaOrdenados
-      .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferencia)
+      .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferenciaPago)
       .forEach((pago) => {
         const periodoPago = String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase();
         const optionMatch = periodOptions.find((option) => {
@@ -478,37 +541,35 @@ function EntrenadorDetalleView({
       });
 
     return status;
-  }, [pagoForm.fecha_pago, pagosNominaOrdenados, periodOptions]);
+  }, [mesReferenciaPago, pagosNominaOrdenados, periodOptions]);
 
   const pagoPeriodoActualRegistrado = useMemo(() => {
     const periodoActual = String(pagoForm.periodo || '').trim().toLowerCase();
     if (!periodoActual) return false;
     if (frecuenciaPago === 'abonos' && periodoActual === 'abono libre') return false;
 
-    const mesActualPago = formatMonthYear(pagoForm.fecha_pago).toLowerCase();
-    if (!mesActualPago) return false;
+    if (!mesReferenciaPago) return false;
 
     return pagosNominaOrdenados.some((pago) => {
       const periodoPago = String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase();
       const mesPago = formatMonthYear(pago?.fecha_pago).toLowerCase();
-      return periodoPago === periodoActual && mesPago === mesActualPago;
+      return periodoPago === periodoActual && mesPago === mesReferenciaPago;
     });
-  }, [pagoForm.periodo, pagoForm.fecha_pago, pagosNominaOrdenados, frecuenciaPago]);
+  }, [pagoForm.periodo, pagosNominaOrdenados, frecuenciaPago, mesReferenciaPago]);
 
   const periodoSugerido = useMemo(() => {
     if (!periodOptions.length) return '';
 
-    const mesReferencia = formatMonthYear(pagoForm.fecha_pago).toLowerCase();
     const periodosCubiertos = new Set(
       pagosNominaOrdenados
-        .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferencia)
+        .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferenciaPago)
         .map((pago) => String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase())
         .filter(Boolean)
     );
 
     const siguientePendiente = periodOptions.find((option) => !periodosCubiertos.has(String(option.value).toLowerCase()));
     return siguientePendiente?.value || '';
-  }, [periodOptions, pagoForm.fecha_pago, pagosNominaOrdenados]);
+  }, [periodOptions, pagosNominaOrdenados, mesReferenciaPago]);
 
   const periodoSugeridoLabel = useMemo(() => {
     if (frecuenciaPago === 'abonos') {
@@ -542,7 +603,15 @@ function EntrenadorDetalleView({
         (p) => formatMonthYear(p?.fecha_pago).toLowerCase() === mesActualKey
       );
       const totalAbonado = round2(
-        pagosDelMes.reduce((acc, p) => acc + (Number(p?.monto_total_usd) || Number(p?.monto_base_pago_usd) || 0), 0)
+        pagosDelMes.reduce((acc, p) => {
+          const montoBaseAbonado = pickFirstNumber(
+            p?.monto_base_pago_usd,
+            p?.monto_base_usd,
+            p?.monto_base,
+            p?.monto_total_usd
+          );
+          return acc + montoBaseAbonado;
+        }, 0)
       );
       const restante = Math.max(0, round2(montoBaseConfigurado - totalAbonado));
 
@@ -703,7 +772,7 @@ function EntrenadorDetalleView({
     const periodoActual = String(pagoForm.periodo || '').trim().toLowerCase();
     if (!periodoActual) return;
 
-    const mesActual = formatMonthYear(pagoForm.fecha_pago).toLowerCase();
+    const mesActual = mesReferenciaPago;
     if (!mesActual) return;
 
     const pagoExistente = pagosNominaOrdenados.find((pago) => {
@@ -786,6 +855,11 @@ function EntrenadorDetalleView({
 
   const handlePagoField = (field) => (event) => {
     const { value } = event.target;
+    if (field === 'mes_vista') {
+      setMesVistaPago(value);
+      return;
+    }
+
     setPagoForm((prev) => ({
       ...prev,
       [field]: ['monto_base', 'bono_ajuste', 'deduccion'].includes(field) ? Number(value || 0) : value
@@ -1007,6 +1081,43 @@ function EntrenadorDetalleView({
       setAccionPerfilFeedback('No se pudo eliminar el entrenador por un error de conexion');
     } finally {
       setAccionPerfilEnCurso(false);
+    }
+  };
+
+  const handleEliminarPago = (pago) => {
+    if (!pago?._id || eliminandoPago) return;
+    setPagoEliminar(pago);
+  };
+
+  const confirmarEliminarPago = async () => {
+    const pagoId = String(pagoEliminar?._id || '').trim();
+    if (!entrenadorId || !pagoId) return;
+
+    setPagoEliminar(null);
+    setAccionPerfilFeedback('');
+    setEliminandoPago(true);
+    try {
+      const token = localStorage.getItem('token');
+      const apiBase = process.env.REACT_APP_API_URL || '';
+      const res = await fetch(`${apiBase}/api/entrenadores/${entrenadorId}/pagos/${pagoId}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAccionPerfilFeedback(data?.error || 'No se pudo eliminar el pago');
+        return;
+      }
+
+      if (typeof onUpdated === 'function' && data?.entrenador) {
+        onUpdated(data.entrenador);
+      }
+      setAccionPerfilFeedback(data?.mensaje || 'Pago eliminado correctamente');
+    } catch (_) {
+      setAccionPerfilFeedback('No se pudo eliminar el pago por un error de conexion');
+    } finally {
+      setEliminandoPago(false);
     }
   };
 
@@ -1251,6 +1362,31 @@ function EntrenadorDetalleView({
               {accionPerfilEnCurso
                 ? 'Procesando...'
                 : (proximoEstado === 'inactivo' ? 'Pasar a inactivo' : 'Reactivar')}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(pagoEliminar)}
+          onClose={() => {
+            if (!eliminandoPago) setPagoEliminar(null);
+          }}
+        >
+          <DialogTitle>¿Eliminar este pago?</DialogTitle>
+          <DialogContent>
+            <Typography>
+              Se eliminará el pago de {pagoEliminar?.periodo || 'este periodo'} por {formatMoney(pagoEliminar?.monto_total_usd, 'USD')}. El saldo del mes se recalculará.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setPagoEliminar(null)} disabled={eliminandoPago}>Cancelar</Button>
+            <Button
+              onClick={confirmarEliminarPago}
+              color="error"
+              variant="contained"
+              disabled={eliminandoPago}
+            >
+              {eliminandoPago ? 'Eliminando...' : 'Eliminar pago'}
             </Button>
           </DialogActions>
         </Dialog>
@@ -1773,6 +1909,24 @@ function EntrenadorDetalleView({
                 </Box>
               </Paper>
 
+              <Box sx={{ mb: 1.8 }}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Mes a revisar"
+                  value={mesVistaPago}
+                  onChange={handlePagoField('mes_vista')}
+                  sx={{ bgcolor: '#fff', borderRadius: 2 }}
+                >
+                  {mesVistaOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Box>
+
               {frecuenciaPago === 'abonos' && (
                 <Paper
                   sx={{
@@ -1786,7 +1940,7 @@ function EntrenadorDetalleView({
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1, flexWrap: 'wrap' }}>
                     <Box>
                       <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#4338ca', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Control de abonos · {formatMonthYear(pagoForm.fecha_pago) || 'Mes en curso'}
+                        Control de abonos · {mesVistaOptions.find((option) => option.value === mesReferenciaPago)?.label || 'Mes en curso'}
                       </Typography>
                       <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.2 }}>
                         {pagosMesActual.length} abono{pagosMesActual.length === 1 ? '' : 's'} registrado{pagosMesActual.length === 1 ? '' : 's'} en este mes
@@ -1800,7 +1954,7 @@ function EntrenadorDetalleView({
                     />
                   </Box>
 
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 1, my: 1 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 1, my: 1 }}>
                     <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Salario base</Typography>
                       <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>{formatMoney(montoBaseConfigurado, 'USD')}</Typography>
@@ -1808,6 +1962,10 @@ function EntrenadorDetalleView({
                     <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Total abonado</Typography>
                       <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#059669' }}>{formatMoney(totalAbonadoMesUsd, 'USD')}</Typography>
+                    </Box>
+                    <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                      <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Bonos otorgados</Typography>
+                      <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#047857' }}>{formatMoney(totalBonosMesUsd, 'USD')}</Typography>
                     </Box>
                     <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Saldo restante</Typography>
@@ -2435,6 +2593,19 @@ function EntrenadorDetalleView({
                         Nota: {pago.observacion}
                       </Typography>
                     )}
+
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteForeverRoundedIcon />}
+                        onClick={() => handleEliminarPago(pago)}
+                        disabled={!pago?._id || eliminandoPago}
+                        sx={{ textTransform: 'none', fontWeight: 800 }}
+                      >
+                        Eliminar pago
+                      </Button>
+                    </Box>
                   </Paper>
                 ))}
               </Box>

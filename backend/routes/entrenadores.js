@@ -47,6 +47,7 @@ router.get('/', authMiddleware, rolMiddleware('admin'), entrenadorController.lis
 router.get('/actividades-pendientes-nomina', authMiddleware, rolMiddleware('admin'), entrenadorController.listarActividadesPendientesNomina);
 router.get('/staff-por-sede/:sedeId', authMiddleware, rolMiddleware('admin'), entrenadorController.listarStaffPorSede);
 router.post('/:id/pagos', authMiddleware, rolMiddleware('admin'), upload.single('comprobante'), entrenadorController.registrarPagoNominaEntrenador);
+router.delete('/:id/pagos/:pagoId', authMiddleware, rolMiddleware('admin'), entrenadorController.eliminarPagoNominaEntrenador);
 router.patch('/:id/vincular-sede', authMiddleware, rolMiddleware('admin'), entrenadorController.vincularEntrenadorASede);
 router.patch('/:id/desvincular-sede', authMiddleware, rolMiddleware('admin'), entrenadorController.desvincularEntrenadorDeSede);
 router.patch('/:id/estado', authMiddleware, rolMiddleware('admin'), entrenadorController.actualizarEstadoEntrenador);

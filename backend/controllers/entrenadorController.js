@@ -994,6 +994,43 @@ exports.registrarPagoNominaEntrenador = async (req, res) => {
   }
 };
 
+exports.eliminarPagoNominaEntrenador = async (req, res) => {
+  try {
+    const { Entrenador } = await getTenantEntrenadorModels(req);
+    const entrenadorId = String(req.params.id || '').trim();
+    const pagoId = String(req.params.pagoId || '').trim();
+
+    if (!mongoose.Types.ObjectId.isValid(entrenadorId) || !mongoose.Types.ObjectId.isValid(pagoId)) {
+      return res.status(400).json({ error: 'Entrenador o pago invalido' });
+    }
+
+    const entrenador = await Entrenador.findById(entrenadorId);
+    if (!entrenador) {
+      return res.status(404).json({ error: 'Entrenador no encontrado' });
+    }
+
+    const pagosNomina = Array.isArray(entrenador.pagos_nomina) ? entrenador.pagos_nomina : [];
+    const pagoExiste = pagosNomina.some((pago) => String(pago?._id || '') === pagoId);
+    if (!pagoExiste) {
+      return res.status(404).json({ error: 'Pago de nomina no encontrado' });
+    }
+
+    entrenador.pagos_nomina = pagosNomina.filter((pago) => String(pago?._id || '') !== pagoId);
+    await entrenador.save();
+
+    return res.json({
+      mensaje: 'Pago de nomina eliminado correctamente',
+      entrenador
+    });
+  } catch (err) {
+    if (err?.name === 'ValidationError' || err?.name === 'CastError') {
+      return res.status(400).json({ error: 'Datos invalidos para eliminar pago', detalle: err.message });
+    }
+    console.error('[eliminarPagoNominaEntrenador] Error:', err);
+    return res.status(500).json({ error: 'No se pudo eliminar el pago de nomina' });
+  }
+};
+
 exports.listarActividadesPendientesNomina = async (req, res) => {
   try {
     const { Entrenador } = await getTenantEntrenadorModels(req);
