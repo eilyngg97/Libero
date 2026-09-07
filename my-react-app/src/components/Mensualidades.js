@@ -136,6 +136,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [eliminandoMensualidadId, setEliminandoMensualidadId] = useState('');
 	const [confirmarPagoOpen, setConfirmarPagoOpen] = useState(false);
 	const [confirmandoMensualidad, setConfirmandoMensualidad] = useState(false);
+	const [confirmarRetiroRecargoOpen, setConfirmarRetiroRecargoOpen] = useState(false);
 	const [corrigiendoRecargo, setCorrigiendoRecargo] = useState(false);
 	const [ultimoPagoDraft, setUltimoPagoDraft] = useState({
 		metodo_pago: metodosPago[0],
@@ -896,6 +897,18 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		}
 	};
 
+	const solicitarRetiroRecargo = () => {
+		if (!mensualidadDetalle?._id || corrigiendoRecargo) return;
+
+		const montoBaseSinRecargo = Number(mensualidadDetalle?.monto_sin_recargo_usd);
+		if (!Number.isFinite(montoBaseSinRecargo) || montoBaseSinRecargo < 0) {
+			setErrorMessage('No hay un monto base valido para retirar el recargo.');
+			return;
+		}
+
+		setConfirmarRetiroRecargoOpen(true);
+	};
+
 	const corregirRecargoDesdeDetalle = async () => {
 		if (!mensualidadDetalle?._id || corrigiendoRecargo) return;
 
@@ -934,6 +947,11 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		} finally {
 			setCorrigiendoRecargo(false);
 		}
+	};
+
+	const confirmarRetiroRecargo = async () => {
+		setConfirmarRetiroRecargoOpen(false);
+		await corregirRecargoDesdeDetalle();
 	};
 
 	const handleVerComprobante = (url) => {
@@ -2619,7 +2637,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											<Box sx={{ mt: 1.4, display: 'flex', justifyContent: 'flex-end' }}>
 												<Button
 													variant="outlined"
-													onClick={corregirRecargoDesdeDetalle}
+													onClick={solicitarRetiroRecargo}
 													disabled={corrigiendoRecargo}
 													sx={{ borderRadius: 999, fontWeight: 800 }}
 												>
@@ -2913,6 +2931,36 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							Confirmar
 						</Button>
 					)}
+				</DialogActions>
+			</Dialog>
+			<Dialog
+				open={confirmarRetiroRecargoOpen}
+				onClose={() => !corrigiendoRecargo && setConfirmarRetiroRecargoOpen(false)}
+				maxWidth="sm"
+				fullWidth
+			>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Advertencia</DialogTitle>
+				<DialogContent>
+					<Alert severity="warning" sx={{ mb: 1.5 }}>
+						Esta acción quitará el recargo aplicado y recalculará la mensualidad al monto base.
+					</Alert>
+					<Typography sx={{ color: '#334155', lineHeight: 1.6 }}>
+						Se dejará el pago con el monto base sin recargo ({simboloMonedaCobro}
+						{formatMoney(Number(mensualidadDetalle?.monto_sin_recargo_usd || 0))} {monedaCobro}). ¿Deseas continuar?
+					</Typography>
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={() => setConfirmarRetiroRecargoOpen(false)} disabled={corrigiendoRecargo}>
+						Cancelar
+					</Button>
+					<Button
+						variant="contained"
+						onClick={confirmarRetiroRecargo}
+						disabled={corrigiendoRecargo}
+						sx={{ bgcolor: '#f59e0b', color: '#fff', '&:hover': { bgcolor: '#d97706' }, boxShadow: 'none' }}
+					>
+						{corrigiendoRecargo ? 'Retirando...' : 'Sí, retirar recargo'}
+					</Button>
 				</DialogActions>
 			</Dialog>
 			<Dialog
