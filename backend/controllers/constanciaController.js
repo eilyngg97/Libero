@@ -5,6 +5,7 @@ const { getTenantCoreConnection } = require('../config/tenantCoreConnection');
 const { getTenantCoreModel } = require('../models/TenantCore');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { getTenantModel } = require('../services/tenantModelService');
+const { registrarOperacion } = require('../services/operacionService');
 
 const DEFAULT_TEMPLATES = {
   simple: {
@@ -166,6 +167,17 @@ function normalizarTipoConstancia(tipo) {
   if (normalizado === 'horario') return 'horario_entrenamiento';
   if (['simple', 'retiro', 'horario_entrenamiento', 'listado_alumnos', 'asistencia'].includes(normalizado)) return normalizado;
   return 'simple';
+}
+
+function getNombreOperacionConstancia(tipo) {
+  const nombres = {
+    simple: 'Constancia simple',
+    retiro: 'Constancia de retiro',
+    horario_entrenamiento: 'Constancia con horario',
+    listado_alumnos: 'Constancia con listado',
+    asistencia: 'Constancia de asistencia'
+  };
+  return nombres[tipo] || 'Generacion de constancia';
 }
 
 function normalizeTemplate(template = {}, fallback = {}) {
@@ -957,6 +969,17 @@ exports.generarConstancia = async (req, res) => {
 
       renderFirmaYPie(doc, constanciasCfg, logosInstitucionales, { cierreTexto });
       renderCierreFinal(doc, cierreTexto);
+      await registrarOperacion(req, {
+        tipo: 'generacion_constancia',
+        nombre: getNombreOperacionConstancia(tipoConstancia),
+        detalle: `Constancia de listado para ${alumnosOrdenados.length} alumno(s).`,
+        entidad_tipo: 'Alumno',
+        metadata: {
+          tipo_constancia: tipoConstancia,
+          cantidad_alumnos: alumnosOrdenados.length,
+          alumno_ids: alumnosOrdenados.map((alumnoListado) => String(alumnoListado._id))
+        }
+      });
       doc.end();
       return;
     }
@@ -1063,6 +1086,19 @@ exports.generarConstancia = async (req, res) => {
       mostrarBloqueLiga: esRetiroAislado
     });
     renderCierreFinal(doc, cierreTexto);
+
+    await registrarOperacion(req, {
+      tipo: 'generacion_constancia',
+      nombre: getNombreOperacionConstancia(tipoConstancia),
+      detalle: `${template.titulo || 'Constancia'} de ${`${alumno?.nombres || ''} ${alumno?.apellidos || ''}`.trim()}.`,
+      entidad_tipo: 'Alumno',
+      entidad_id: alumno._id,
+      metadata: {
+        tipo_constancia: tipoConstancia,
+        alumno_id: String(alumno._id),
+        sede_id: alumno?.sede?._id ? String(alumno.sede._id) : null
+      }
+    });
 
     doc.end();
   } catch (err) {

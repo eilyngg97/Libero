@@ -67,6 +67,7 @@ const { getTenantCoreModel } = require('../models/TenantCore');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { generarMensualidadesPendientesAlumno } = require('./mensualidadController');
+const { registrarOperacion } = require('../services/operacionService');
 
 const MONTO_TOLERANCIA_BS = 100;
 
@@ -2336,6 +2337,15 @@ exports.createAlumno = async (req, res) => {
         throw new Error(`No se pudo generar mensualidades inmediatas para alumno becado: ${errGeneracionBeca.message}`);
       }
     }
+
+    await registrarOperacion(req, {
+      tipo: 'nueva_inscripcion',
+      nombre: 'Nueva inscripcion',
+      detalle: `${alumno.nombres || ''} ${alumno.apellidos || ''}`.trim(),
+      entidad_tipo: 'Alumno',
+      entidad_id: alumno._id,
+      metadata: { alumno_id: String(alumno._id), sede_id: alumno.sede ? String(alumno.sede) : null }
+    });
 
     res.status(201).json(alumno);
   } catch (err) {

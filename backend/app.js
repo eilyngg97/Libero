@@ -293,6 +293,7 @@ app.use('/api/sedes', require('./routes/sedes'));
 app.use('/api/mensualidades', require('./routes/mensualidades'));
 app.use('/api/pagos', require('./routes/pagos'));
 app.use('/api/conciliacion', require('./routes/conciliacion'));
+app.use('/api/operaciones', require('./routes/operaciones'));
 app.use('/api/constancias', require('./routes/constancias'));
 app.use('/api/cumpleaneros', require('./routes/cumpleaneros'));
 app.use('/api/configuracion', require('./routes/configuracion'));

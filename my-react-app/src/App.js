@@ -34,6 +34,7 @@ import PaymentConfig from './components/PaymentConfig';
 import GeneralConfig from './components/GeneralConfig';
 import CategoriasConfig from './components/CategoriasConfig';
 import ConciliacionBancaria from './components/ConciliacionBancaria';
+import Operaciones from './components/Operaciones';
 import Estadisticas from './components/Estadisticas';
 import EstadisticasFinanzas from './components/EstadisticasFinanzas';
 import MiPerfil from './components/MiPerfil';
@@ -404,6 +405,7 @@ function App() {
                           <Route path="estadisticas/financiero" element={<ProtectedRoute allowedRoles={adminOnly}><EstadisticasFinanzas /></ProtectedRoute>} />
                           <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><LandingConfig /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
+                          <Route path="operaciones" element={<ProtectedRoute allowedRoles={adminOnly}><Operaciones /></ProtectedRoute>} />
                           <Route path="mi-perfil" element={<ProtectedRoute allowedRoles={adminOnly}><MiPerfil /></ProtectedRoute>} />
                           <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />

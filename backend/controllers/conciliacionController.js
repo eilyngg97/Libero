@@ -5,6 +5,7 @@ const PagoDetalle = require('../models/PagoDetalle');
 const UniformePedido = require('../models/UniformePedido');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { registrarOperacion } = require('../services/operacionService');
 
 const MONTO_TOLERANCIA_BS = 100;
 const TIPO_CONCILIACION = {
@@ -1013,6 +1014,14 @@ exports.confirmarMatchTotal = async (req, res) => {
         actualizadas += 1;
       }
 
+      await registrarOperacion(req, {
+        tipo: 'conciliacion_bancaria',
+        nombre: 'Conciliacion bancaria',
+        detalle: `Se confirmaron ${actualizadas} pago(s) de uniformes.`,
+        entidad_tipo: 'UniformePedido',
+        metadata: { tipo_conciliacion: tipoConciliacion, registros_actualizados: actualizadas, pagos_recibidos: pagoIds.length }
+      });
+
       return res.json({
         message: 'Conciliacion aplicada correctamente',
         tipo_conciliacion: tipoConciliacion,
@@ -1049,6 +1058,14 @@ exports.confirmarMatchTotal = async (req, res) => {
       await mensualidad.save();
       actualizadas += 1;
     }
+
+    await registrarOperacion(req, {
+      tipo: 'conciliacion_bancaria',
+      nombre: 'Conciliacion bancaria',
+      detalle: `Se confirmaron ${actualizadas} mensualidad(es).`,
+      entidad_tipo: 'Mensualidad',
+      metadata: { tipo_conciliacion: tipoConciliacion, registros_actualizados: actualizadas, pagos_recibidos: pagoIds.length }
+    });
 
     return res.json({
       message: 'Conciliacion aplicada correctamente',
