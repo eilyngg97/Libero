@@ -288,6 +288,12 @@ function Egresos() {
   const simboloDivisa = form.tipo_tasa === 'EUR' ? '€' : '$';
   const etiquetaDivisa = form.tipo_tasa === 'EUR' ? 'EUR' : 'USD';
   const etiquetaTasa = `Bs por ${etiquetaDivisa}`;
+  const monedaContexto = String(dolar?.moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const tasaContextoDisponible = useMemo(() => {
+    const tasa = Number(dolar?.promedio);
+    if (!Number.isFinite(tasa) || tasa <= 0) return '';
+    return tasa.toFixed(2);
+  }, [dolar?.promedio]);
 
   const equivalenteBs = useMemo(() => {
     const monto = Number(form.monto);
@@ -482,13 +488,13 @@ function Egresos() {
     }));
   };
 
-  const resetFormulario = () => {
+  const resetFormulario = useCallback(() => {
     setForm({
       fecha_pago: toInputDate(new Date()),
       monto: '',
-      moneda: 'USD',
-      tipo_tasa: 'USD',
-      tasa_referencia: '',
+      moneda: monedaContexto,
+      tipo_tasa: monedaContexto,
+      tasa_referencia: tasaContextoDisponible,
       categoria_id: '',
       subcategoria_id: '',
       metodo_pago: 'Tarjeta',
@@ -498,7 +504,7 @@ function Egresos() {
     });
     setComprobante(null);
     setEgresoEditandoId('');
-  };
+  }, [monedaContexto, tasaContextoDisponible]);
 
   const abrirFormularioNuevo = () => {
     resetFormulario();
@@ -558,7 +564,7 @@ function Egresos() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [resetFormulario]);
 
   const crearCategoria = async () => {
     try {
