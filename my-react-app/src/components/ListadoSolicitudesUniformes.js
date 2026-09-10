@@ -77,6 +77,29 @@ const OPCIONES_NOMBRE_REPRESENTANTE = [
   'Volley Brother'
 ];
 
+const ALIAS_NOMBRE_REPRESENTANTE = {
+  'volley grandmon': 'Volley Grandmom'
+};
+
+function normalizarNombreRepresentante(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function resolverNombreRepresentante(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const normalized = normalizarNombreRepresentante(raw);
+  if (ALIAS_NOMBRE_REPRESENTANTE[normalized]) {
+    return ALIAS_NOMBRE_REPRESENTANTE[normalized];
+  }
+
+  const existente = OPCIONES_NOMBRE_REPRESENTANTE.find(
+    (item) => normalizarNombreRepresentante(item) === normalized
+  );
+  return existente || '';
+}
+
 const ESTADOS_SOLICITUD_ACTIVA = new Set([
   'pendiente',
   'esperando_pago',
@@ -564,9 +587,9 @@ function ListadoSolicitudesUniformes() {
 
   const uniformeSeleccionadoEdicion = uniformesCatalogo.find((item) => String(item?._id) === String(editSolicitudData.uniformeId));
   const requiereNumeroFranelaEdicion = uniformeSeleccionadoEdicion?.lleva_numero_franela !== false;
-  const muestraCampoNombreEdicion = Boolean(uniformeSeleccionadoEdicion?.lleva_nombre_atleta) || Boolean(uniformeSeleccionadoEdicion?.franela_representante);
+  const muestraCampoNombreEdicion = Boolean(uniformeSeleccionadoEdicion?.lleva_nombre_atleta);
   const permitePersonalizacionNombreEdicion = Boolean(uniformeSeleccionadoEdicion?.lleva_personalizacion_nombre);
-  const usaSelectorNombreRepresentanteEdicion = Boolean(uniformeSeleccionadoEdicion?.franela_representante) && !permitePersonalizacionNombreEdicion;
+  const usaSelectorNombreRepresentanteEdicion = Boolean(uniformeSeleccionadoEdicion?.franela_representante) && muestraCampoNombreEdicion && !permitePersonalizacionNombreEdicion;
 
   const copiarReferencia = async (texto) => {
     try {
@@ -702,11 +725,11 @@ function ListadoSolicitudesUniformes() {
     const uniformeId = getUniformeIdFromPedido(pedido);
     const uniformeCatalogo = uniformesCatalogo.find((item) => String(item?._id) === String(uniformeId));
     const requiereNumero = uniformeCatalogo?.lleva_numero_franela !== false;
-    const muestraNombre = Boolean(uniformeCatalogo?.lleva_nombre_atleta) || Boolean(uniformeCatalogo?.franela_representante);
-    const usaSelectorRepresentante = Boolean(uniformeCatalogo?.franela_representante) && !Boolean(uniformeCatalogo?.lleva_personalizacion_nombre);
+    const muestraNombre = Boolean(uniformeCatalogo?.lleva_nombre_atleta);
+    const usaSelectorRepresentante = Boolean(uniformeCatalogo?.franela_representante) && muestraNombre && !Boolean(uniformeCatalogo?.lleva_personalizacion_nombre);
     const nombreActual = String(pedido?.nombre_personalizado || '');
-    const nombreNormalizado = usaSelectorRepresentante && !OPCIONES_NOMBRE_REPRESENTANTE.includes(nombreActual)
-      ? ''
+    const nombreNormalizado = usaSelectorRepresentante
+      ? resolverNombreRepresentante(nombreActual)
       : nombreActual;
 
     setPedidoSeleccionado(pedido);
@@ -1150,23 +1173,27 @@ function ListadoSolicitudesUniformes() {
   };
 
   const renderAccion = (pedido, mobile = false) => {
+    const renderEditarSolicitudButton = () => (
+      <Tooltip title="Editar solicitud">
+        <IconButton
+          size="small"
+          onClick={() => openEditSolicitudDialog(pedido)}
+          aria-label="Editar solicitud"
+          sx={{
+            bgcolor: '#f1f5f9',
+            color: '#334155',
+            '&:hover': { bgcolor: '#e2e8f0' }
+          }}
+        >
+          <EditOutlinedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    );
+
     if (pedido.estado === 'pendiente') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
-          <Tooltip title="Editar solicitud">
-            <IconButton
-              size="small"
-              onClick={() => openEditSolicitudDialog(pedido)}
-              aria-label="Editar solicitud"
-              sx={{
-                bgcolor: '#f1f5f9',
-                color: '#334155',
-                '&:hover': { bgcolor: '#e2e8f0' }
-              }}
-            >
-              <EditOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          {renderEditarSolicitudButton()}
           <Tooltip title="Solicitar pago">
             <IconButton
               size="small"
@@ -1208,6 +1235,7 @@ function ListadoSolicitudesUniformes() {
     if (pedido.estado === 'esperando_pago') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          {renderEditarSolicitudButton()}
           <Tooltip title="Registrar pago">
             <IconButton
               size="small"
@@ -1272,6 +1300,7 @@ function ListadoSolicitudesUniformes() {
     if (pedido.estado === 'abono') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          {renderEditarSolicitudButton()}
           <Tooltip title="Registrar pago">
             <IconButton
               size="small"
@@ -1303,6 +1332,7 @@ function ListadoSolicitudesUniformes() {
     if (pedido.estado === 'pago_en_revision') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          {renderEditarSolicitudButton()}
           <Tooltip title="Ver detalle de pago">
             <IconButton
               size="small"
@@ -1324,6 +1354,7 @@ function ListadoSolicitudesUniformes() {
     if (pedido.estado === 'verificado' || pedido.estado === 'entregado') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+          {pedido.estado !== 'entregado' && renderEditarSolicitudButton()}
           <Tooltip title="Ver detalle de pago">
             <IconButton
               size="small"
@@ -1364,7 +1395,11 @@ function ListadoSolicitudesUniformes() {
       );
     }
 
-    return <Typography variant="body2" color="text.secondary">Sin acciones</Typography>;
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
+        {renderEditarSolicitudButton()}
+      </Box>
+    );
   };
 
   return (
@@ -2345,8 +2380,8 @@ function ListadoSolicitudesUniformes() {
                   const uniformeId = event.target.value;
                   const uniforme = uniformesCatalogo.find((item) => String(item?._id) === String(uniformeId));
                   const requiereNumero = uniforme?.lleva_numero_franela !== false;
-                  const muestraNombre = Boolean(uniforme?.lleva_nombre_atleta) || Boolean(uniforme?.franela_representante);
-                  const usaSelectorRepresentante = Boolean(uniforme?.franela_representante) && !Boolean(uniforme?.lleva_personalizacion_nombre);
+                  const muestraNombre = Boolean(uniforme?.lleva_nombre_atleta);
+                  const usaSelectorRepresentante = Boolean(uniforme?.franela_representante) && muestraNombre && !Boolean(uniforme?.lleva_personalizacion_nombre);
                   setEditSolicitudData((prev) => ({
                     ...prev,
                     uniformeId,
@@ -2355,7 +2390,7 @@ function ListadoSolicitudesUniformes() {
                     numeroFranela: requiereNumero ? prev.numeroFranela : '',
                     nombrePersonalizado: muestraNombre
                       ? (usaSelectorRepresentante
-                        ? (OPCIONES_NOMBRE_REPRESENTANTE.includes(prev.nombrePersonalizado) ? prev.nombrePersonalizado : '')
+                        ? resolverNombreRepresentante(prev.nombrePersonalizado)
                         : prev.nombrePersonalizado)
                       : ''
                   }));

@@ -122,6 +122,7 @@ exports.actualizarPedidoUniforme = async (req, res) => {
     }
 
     const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+    const esAdminOSuperAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
     const esUsuarioFinal = rolUsuario === 'usuario';
     const permisosUsuario = Array.isArray(req.user?.permisos)
       ? req.user.permisos
@@ -146,11 +147,11 @@ exports.actualizarPedidoUniforme = async (req, res) => {
       if (!esPropietario) {
         return res.status(403).json({ error: 'No tienes permiso para editar esta solicitud' });
       }
-    } else if (!tienePermisoGestion) {
+    } else if (!tienePermisoGestion && !esAdminOSuperAdmin) {
       return res.status(403).json({ msg: 'No tienes permisos suficientes para esta acción' });
     }
 
-    if (pedido.estado !== ESTADOS_PEDIDO.PENDIENTE) {
+    if (pedido.estado !== ESTADOS_PEDIDO.PENDIENTE && !esAdminOSuperAdmin) {
       return res.status(400).json({ error: 'Solo se puede editar una solicitud pendiente' });
     }
 
@@ -315,7 +316,7 @@ exports.createPedidoUniforme = async (req, res) => {
     const moneda = String(uniforme?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
     const llevaNombreAtleta = uniforme?.lleva_nombre_atleta === true;
     const esFranelaRepresentante = uniforme?.franela_representante === true;
-    const requiereNombrePersonalizado = llevaNombreAtleta || esFranelaRepresentante;
+    const requiereNombrePersonalizado = llevaNombreAtleta;
     const requiereNumeroFranela = uniforme?.lleva_numero_franela !== false;
     const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo sexo');
 
@@ -329,33 +330,41 @@ exports.createPedidoUniforme = async (req, res) => {
     let numeroFranelaPedido = null;
 
     if (requiereNumeroFranela) {
-      numeroFranelaPedido = Number(alumno.numero_franela);
-
-      if (!Number.isInteger(numeroFranelaPedido) || numeroFranelaPedido < 1 || numeroFranelaPedido > 100) {
+      if (esFranelaRepresentante) {
         const numeroSolicitado = Number(numeroFranela);
         if (!Number.isInteger(numeroSolicitado) || numeroSolicitado < 1 || numeroSolicitado > 100) {
           return res.status(400).json({ error: 'Debes seleccionar un numero de franela valido (1-100).' });
         }
-
-        const categoria = String(alumno.categoria || '').trim();
-        if (!categoria) {
-          return res.status(400).json({ error: 'El alumno no tiene categoria asignada para validar numero de franela.' });
-        }
-
-        const numeroOcupado = await TenantAlumno.findOne({
-          _id: { $ne: alumno._id },
-          activo: { $ne: false },
-          categoria: { $regex: new RegExp(`^${String(categoria).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-          numero_franela: numeroSolicitado
-        }).select('_id');
-
-        if (numeroOcupado) {
-          return res.status(409).json({ error: `El numero de franela ${numeroSolicitado} ya esta ocupado en la categoria ${categoria}.` });
-        }
-
-        alumno.numero_franela = numeroSolicitado;
-        await alumno.save();
         numeroFranelaPedido = numeroSolicitado;
+      } else {
+        numeroFranelaPedido = Number(alumno.numero_franela);
+
+        if (!Number.isInteger(numeroFranelaPedido) || numeroFranelaPedido < 1 || numeroFranelaPedido > 100) {
+          const numeroSolicitado = Number(numeroFranela);
+          if (!Number.isInteger(numeroSolicitado) || numeroSolicitado < 1 || numeroSolicitado > 100) {
+            return res.status(400).json({ error: 'Debes seleccionar un numero de franela valido (1-100).' });
+          }
+
+          const categoria = String(alumno.categoria || '').trim();
+          if (!categoria) {
+            return res.status(400).json({ error: 'El alumno no tiene categoria asignada para validar numero de franela.' });
+          }
+
+          const numeroOcupado = await TenantAlumno.findOne({
+            _id: { $ne: alumno._id },
+            activo: { $ne: false },
+            categoria: { $regex: new RegExp(`^${String(categoria).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+            numero_franela: numeroSolicitado
+          }).select('_id');
+
+          if (numeroOcupado) {
+            return res.status(409).json({ error: `El numero de franela ${numeroSolicitado} ya esta ocupado en la categoria ${categoria}.` });
+          }
+
+          alumno.numero_franela = numeroSolicitado;
+          await alumno.save();
+          numeroFranelaPedido = numeroSolicitado;
+        }
       }
     }
 

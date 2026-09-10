@@ -10,6 +10,8 @@ import {
   MenuItem,
   FormControlLabel,
   Checkbox,
+  Radio,
+  RadioGroup,
   Switch,
   Snackbar,
   Alert,
@@ -25,6 +27,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Paper
 } from '@mui/material';
@@ -59,6 +62,7 @@ const initialForm = {
   variantes_generos: [],
   variantes_tallas: [],
   precios_variantes: [],
+  tipo_franela: 'atleta',
   lleva_nombre_atleta: false,
   lleva_personalizacion_nombre: false,
   lleva_numero_franela: false,
@@ -234,10 +238,14 @@ export default function Uniformes() {
   const [dragActive, setDragActive] = useState(false);
   const [editId, setEditId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
   const [editingVariantKeys, setEditingVariantKeys] = useState([]);
   const fileInputRef = useRef(null);
   const token = localStorage.getItem('token');
+  const getTipoFranelaLabel = (uniforme) => (uniforme?.franela_representante ? 'Representante' : 'Atleta');
+  const uniformesPaginados = uniformes.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   // Obtener uniformes del backend
   const fetchUniformes = async () => {
@@ -266,12 +274,28 @@ export default function Uniformes() {
     // eslint-disable-next-line
   }, []);
 
+  useEffect(() => {
+    if (page > 0 && page * rowsPerPage >= uniformes.length) {
+      setPage(0);
+    }
+  }, [page, rowsPerPage, uniformes.length]);
+
+  const handleChangePage = (_event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
   const handleOpen = (id = null) => {
     if (!token) return;
     if (id !== null) {
       const u = uniformes.find((u) => u._id === id);
       const generosSeleccionados = Array.isArray(u.variantes_generos) ? u.variantes_generos : [];
       const tallasSeleccionadas = Array.isArray(u.variantes_tallas) ? u.variantes_tallas : [];
+      const esRepresentante = Boolean(u.franela_representante);
       setForm({
         prenda: u.prenda,
         precio: u.precio,
@@ -280,10 +304,11 @@ export default function Uniformes() {
         variantes_generos: generosSeleccionados,
         variantes_tallas: tallasSeleccionadas,
         precios_variantes: normalizeVariantPriceRows(u.precios_variantes || []),
+        tipo_franela: esRepresentante ? 'representante' : 'atleta',
         lleva_nombre_atleta: Boolean(u.lleva_nombre_atleta),
         lleva_personalizacion_nombre: Boolean(u.lleva_personalizacion_nombre),
         lleva_numero_franela: Boolean(u.lleva_numero_franela),
-        franela_representante: Boolean(u.franela_representante),
+        franela_representante: esRepresentante,
         fotos: Array.isArray(u.fotos) ? u.fotos.slice(0, 2) : []
       });
       setFotosNuevas([]);
@@ -308,6 +333,33 @@ export default function Uniformes() {
 
   const handleChange = (e) => {
     const { name, type, checked, value } = e.target;
+    if (name === 'tipo_franela') {
+      const esRepresentante = value === 'representante';
+      setForm((prev) => ({
+        ...prev,
+        tipo_franela: esRepresentante ? 'representante' : 'atleta',
+        franela_representante: esRepresentante
+      }));
+      return;
+    }
+
+    if (name === 'lleva_nombre_atleta') {
+      setForm((prev) => ({
+        ...prev,
+        lleva_nombre_atleta: Boolean(checked),
+        lleva_personalizacion_nombre: checked ? prev.lleva_personalizacion_nombre : false
+      }));
+      return;
+    }
+
+    if (name === 'lleva_personalizacion_nombre') {
+      setForm((prev) => ({
+        ...prev,
+        lleva_personalizacion_nombre: prev.lleva_nombre_atleta ? Boolean(checked) : false
+      }));
+      return;
+    }
+
     setForm({ ...form, [name]: type === 'checkbox' ? checked : value });
   };
 
@@ -577,6 +629,8 @@ export default function Uniformes() {
       const precioBasePayload = form.variantes_precio_activo
         ? (form.precio === '' || form.precio === null || form.precio === undefined ? '0' : String(form.precio))
         : String(form.precio);
+      const esFranelaRepresentante = form.tipo_franela === 'representante';
+      const personalizacionNombreActiva = Boolean(form.lleva_nombre_atleta) && Boolean(form.lleva_personalizacion_nombre);
 
       const formData = new FormData();
       formData.append('prenda', form.prenda);
@@ -587,9 +641,9 @@ export default function Uniformes() {
       formData.append('variantes_tallas', JSON.stringify(variantesTallas));
       formData.append('precios_variantes', JSON.stringify(preciosVariantes));
       formData.append('lleva_nombre_atleta', String(Boolean(form.lleva_nombre_atleta)));
-      formData.append('lleva_personalizacion_nombre', String(Boolean(form.lleva_personalizacion_nombre)));
+      formData.append('lleva_personalizacion_nombre', String(personalizacionNombreActiva));
       formData.append('lleva_numero_franela', String(Boolean(form.lleva_numero_franela)));
-      formData.append('franela_representante', String(Boolean(form.franela_representante)));
+      formData.append('franela_representante', String(esFranelaRepresentante));
       formData.append('fotos_existentes', JSON.stringify(Array.isArray(form.fotos) ? form.fotos : []));
       fotosNuevas.forEach((foto) => formData.append('fotos', foto));
 
@@ -696,7 +750,7 @@ export default function Uniformes() {
             </Paper>
           )}
 
-          {!loading && uniformes.map((uniforme) => (
+          {!loading && uniformesPaginados.map((uniforme) => (
             <Paper key={uniforme._id} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #eef0f3' }}>
               <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.75 }}>
                 {uniforme.prenda}
@@ -704,10 +758,10 @@ export default function Uniformes() {
               <Box sx={{ display: 'grid', gap: 0.35 }}>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Precio:</b> ${uniforme.precio}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Moneda:</b> {String(uniforme.moneda || 'USD').toUpperCase()}</Typography>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Tipo de franela:</b> {getTipoFranelaLabel(uniforme)}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Nombre del atleta:</b> {uniforme.lleva_nombre_atleta ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Personalización nombre:</b> {uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Número de franela:</b> {uniforme.lleva_numero_franela ? 'Si' : 'No'}</Typography>
-                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Franela representante:</b> {uniforme.franela_representante ? 'Si' : 'No'}</Typography>
               </Box>
               {Array.isArray(uniforme.fotos) && uniforme.fotos.length > 0 && (
                 <Box sx={{ display: 'flex', gap: 1, mt: 1.25, flexWrap: 'wrap' }}>
@@ -735,6 +789,27 @@ export default function Uniformes() {
               </Box>
             </Paper>
           ))}
+
+          {!loading && uniformes.length > 0 && (
+            <Paper
+              sx={{
+                borderRadius: 2,
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)'
+              }}
+            >
+              <TablePagination
+                component="div"
+                count={uniformes.length}
+                page={page}
+                onPageChange={handleChangePage}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                rowsPerPageOptions={[5, 10, 25, 50]}
+                labelRowsPerPage="Filas por página"
+              />
+            </Paper>
+          )}
         </Box>
       ) : (
         <TableContainer
@@ -754,11 +829,11 @@ export default function Uniformes() {
                 <TableCell sx={{ width: '19%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1.5 }}>PRENDA</TableCell>
                 <TableCell sx={{ width: '9%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PRECIO</TableCell>
                 <TableCell sx={{ width: '8%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>MONEDA</TableCell>
-                <TableCell sx={{ width: '16%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NOMBRE DEL ATLETA</TableCell>
-                <TableCell sx={{ width: '16%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PERSONALIZACION NOMBRE</TableCell>
+                <TableCell sx={{ width: '11%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>TIPO FRANELA</TableCell>
+                <TableCell sx={{ width: '13%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NOMBRE DEL ATLETA</TableCell>
+                <TableCell sx={{ width: '13%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PERSONALIZACION NOMBRE</TableCell>
                 <TableCell sx={{ width: '14%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NUMERO DE FRANELA</TableCell>
-                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>FRANELA REP.</TableCell>
-                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
+                <TableCell sx={{ width: '10%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -769,7 +844,7 @@ export default function Uniformes() {
                   </TableCell>
                 </TableRow>
               ) : (
-                uniformes.map((uniforme) => {
+                uniformesPaginados.map((uniforme) => {
                   const variantesCount = Boolean(uniforme.variantes_precio_activo)
                     ? buildVariantSummaryRows(uniforme.precios_variantes || []).length
                     : 0;
@@ -812,6 +887,9 @@ export default function Uniformes() {
                         {String(uniforme.moneda || 'USD').toUpperCase()}
                       </TableCell>
                       <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {getTipoFranelaLabel(uniforme)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
                         {uniforme.lleva_nombre_atleta ? 'Si' : 'No'}
                       </TableCell>
                       <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
@@ -819,9 +897,6 @@ export default function Uniformes() {
                       </TableCell>
                       <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
                         {uniforme.lleva_numero_franela ? 'Si' : 'No'}
-                      </TableCell>
-                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
-                        {uniforme.franela_representante ? 'Si' : 'No'}
                       </TableCell>
                       <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
                         <IconButton
@@ -854,6 +929,18 @@ export default function Uniformes() {
               )}
             </TableBody>
           </Table>
+          {!loading && uniformes.length > 0 && (
+            <TablePagination
+              component="div"
+              count={uniformes.length}
+              page={page}
+              onPageChange={handleChangePage}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+              rowsPerPageOptions={[5, 10, 25, 50]}
+              labelRowsPerPage="Filas por página"
+            />
+          )}
         </TableContainer>
       )}
       <Dialog
@@ -1303,63 +1390,86 @@ export default function Uniformes() {
               <MenuItem value="EUR">EUR</MenuItem>
             </Select>
           </FormControl>
-          <FormControlLabel
-            sx={{ mt: 0.5, mb: 0, color: '#475569' }}
-            control={(
-              <Checkbox
-                name="lleva_nombre_atleta"
-                checked={Boolean(form.lleva_nombre_atleta)}
+          <Box sx={{ mt: 1, display: 'grid', gap: 0.75 }}>
+            <FormControl component="fieldset">
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#475569', mb: 0.35 }}>
+                Tipo de franela
+              </Typography>
+              <RadioGroup
+                row
+                name="tipo_franela"
+                value={form.tipo_franela || 'atleta'}
                 onChange={handleChange}
-                disabled={!token}
-                size="small"
-                sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
-              />
-            )}
-            label="Prenda con nombre"
-          />
-          <FormControlLabel
-            sx={{ mt: 0.5, mb: 0, color: '#475569' }}
-            control={(
-              <Checkbox
-                name="lleva_personalizacion_nombre"
-                checked={Boolean(form.lleva_personalizacion_nombre)}
-                onChange={handleChange}
-                disabled={!token}
-                size="small"
-                sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
-              />
-            )}
-            label="Personalizar nombre"
-          />
-          <FormControlLabel
-            sx={{ my: 0, color: '#475569' }}
-            control={(
-              <Checkbox
-                name="lleva_numero_franela"
-                checked={Boolean(form.lleva_numero_franela)}
-                onChange={handleChange}
-                disabled={!token}
-                size="small"
-                sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
-              />
-            )}
-            label="Número de franela"
-          />
-          <FormControlLabel
-            sx={{ my: 0, color: '#475569' }}
-            control={(
-              <Checkbox
-                name="franela_representante"
-                checked={Boolean(form.franela_representante)}
-                onChange={handleChange}
-                disabled={!token}
-                size="small"
-                sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
-              />
-            )}
-            label="Franela de representante"
-          />
+              >
+                <FormControlLabel
+                  value="atleta"
+                  control={<Radio size="small" sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }} />}
+                  label="Franela de atleta"
+                  disabled={!token}
+                  sx={{ color: '#475569', mr: 2 }}
+                />
+                <FormControlLabel
+                  value="representante"
+                  control={<Radio size="small" sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }} />}
+                  label="Franela de representante"
+                  disabled={!token}
+                  sx={{ color: '#475569' }}
+                />
+              </RadioGroup>
+            </FormControl>
 
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                rowGap: 0,
+                columnGap: 1
+              }}
+            >
+              <FormControlLabel
+                sx={{ my: 0, color: '#475569' }}
+                control={(
+                  <Checkbox
+                    name="lleva_nombre_atleta"
+                    checked={Boolean(form.lleva_nombre_atleta)}
+                    onChange={handleChange}
+                    disabled={!token}
+                    size="small"
+                    sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
+                  />
+                )}
+                label="Prenda con nombre"
+              />
+              <FormControlLabel
+                sx={{ my: 0, color: '#475569' }}
+                control={(
+                  <Checkbox
+                    name="lleva_personalizacion_nombre"
+                    checked={Boolean(form.lleva_personalizacion_nombre)}
+                    onChange={handleChange}
+                    disabled={!token || !form.lleva_nombre_atleta}
+                    size="small"
+                    sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
+                  />
+                )}
+                label="Personalizar nombre"
+              />
+              <FormControlLabel
+                sx={{ my: 0, color: '#475569' }}
+                control={(
+                  <Checkbox
+                    name="lleva_numero_franela"
+                    checked={Boolean(form.lleva_numero_franela)}
+                    onChange={handleChange}
+                    disabled={!token}
+                    size="small"
+                    sx={{ color: '#cbd5e1', '&.Mui-checked': { color: '#f97316' } }}
+                  />
+                )}
+                label="Número de franela"
+              />
+            </Box>
+          </Box>
             </Box>
 
             <Box sx={{ mt: { xs: 0, md: 0.5 } }}>
@@ -1417,7 +1527,7 @@ export default function Uniformes() {
               />
             </Box>
             <Typography sx={{ mt: 0.75, fontSize: 12, color: '#64748b' }}>
-              Puedes guardar una o dos fotos. Se optimizan automáticamente para ahorrar espacio en servidor.
+              Puedes guardar una o dos fotos.
             </Typography>
 
             {((form.fotos?.length || 0) > 0 || fotosNuevas.length > 0) && (
