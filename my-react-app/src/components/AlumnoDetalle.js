@@ -64,6 +64,7 @@ function formatTipoMensualidad(tipo) {
   const normalizado = String(tipo || '').trim().toLowerCase();
   if (!normalizado) return '-';
   if (normalizado === 'monto_sede') return 'Monto por sede';
+  if (normalizado === 'media_beca') return 'Media beca (50%)';
   if (normalizado === 'monto_personalizado') return 'Monto personalizado';
   if (normalizado === 'beca_completa') return 'Beca completa';
   return tipo;

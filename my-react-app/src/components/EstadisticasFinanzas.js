@@ -82,6 +82,13 @@ function formatChangePercent(current, previous) {
   return ((curr - prev) / prev) * 100;
 }
 
+function getCumplimientoColor(value) {
+  const porcentaje = Number(value || 0);
+  if (porcentaje >= 90) return '#16a34a';
+  if (porcentaje >= 70) return '#ca8a04';
+  return '#dc2626';
+}
+
 function getMonthFromDate(value) {
   const date = new Date(value || 0);
   if (Number.isNaN(date.getTime())) return null;
@@ -164,6 +171,7 @@ function EstadisticasFinanzas() {
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth() + 1;
+  const apiBase = process.env.REACT_APP_API_URL || '';
 
   const [anio] = useState(currentYear);
   const [loading, setLoading] = useState(false);
@@ -173,6 +181,13 @@ function EstadisticasFinanzas() {
   const [ingresosMeses, setIngresosMeses] = useState([]);
   const [egresosItems, setEgresosItems] = useState([]);
   const [mesSeleccionado, setMesSeleccionado] = useState(toMonthKey(currentYear, currentMonth));
+  const [loadingCobranzaTipos, setLoadingCobranzaTipos] = useState(false);
+  const [cobranzaTipos, setCobranzaTipos] = useState({
+    mes: null,
+    anio: null,
+    tipos: [],
+    total: { alumnos: 0, esperado: 0, cobrado: 0, pendiente: 0, cumplimiento: 0 }
+  });
 
   useEffect(() => {
     async function fetchFinanceData() {
@@ -180,7 +195,6 @@ function EstadisticasFinanzas() {
       setError('');
 
       try {
-        const apiBase = process.env.REACT_APP_API_URL || '';
         const queryBase = new URLSearchParams({ anio: String(anio) });
         const sedeFiltro = String(sedeSeleccionada || 'all');
         if (sedeFiltro !== 'all') {
@@ -331,20 +345,58 @@ function EstadisticasFinanzas() {
     }
 
     fetchFinanceData();
-  }, [anio, sedeSeleccionada]);
+  }, [anio, sedeSeleccionada, apiBase]);
+
+  useEffect(() => {
+    async function fetchCobranzaPorTipo() {
+      setLoadingCobranzaTipos(true);
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const { month, year } = parseMonthKey(mesSeleccionado);
+
+        const query = new URLSearchParams({
+          mes: String(month || currentMonth),
+          anio: String(year || anio)
+        });
+
+        const sedeFiltro = String(sedeSeleccionada || 'all');
+        if (sedeFiltro !== 'all') {
+          query.set('id_sede', sedeFiltro);
+        }
+
+        const res = await fetch(`${apiBase}/api/mensualidades/resumen-cobranza-por-tipo?${query.toString()}`, { headers });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data?.error || 'No se pudo cargar la cobranza por tipo.');
+        }
+
+        setCobranzaTipos({
+          mes: Number(data?.mes || month || currentMonth),
+          anio: Number(data?.anio || year || anio),
+          tipos: Array.isArray(data?.tipos) ? data.tipos : [],
+          total: data?.total || { alumnos: 0, esperado: 0, cobrado: 0, pendiente: 0, cumplimiento: 0 }
+        });
+      } catch {
+        setCobranzaTipos({
+          mes: null,
+          anio: null,
+          tipos: [],
+          total: { alumnos: 0, esperado: 0, cobrado: 0, pendiente: 0, cumplimiento: 0 }
+        });
+      } finally {
+        setLoadingCobranzaTipos(false);
+      }
+    }
+
+    fetchCobranzaPorTipo();
+  }, [mesSeleccionado, sedeSeleccionada, anio, apiBase, currentMonth]);
 
   const monthOptions = useMemo(() => {
-    const keys = new Set();
-    ingresosMeses.forEach((item) => {
-      if (Number(item?.total || 0) > 0) keys.add(item.monthKey);
-    });
-    egresosItems.forEach((item) => {
-      if (item?.monthKey) keys.add(item.monthKey);
-    });
-    const fromSet = Array.from(keys).sort((a, b) => String(b).localeCompare(String(a)));
-    if (fromSet.length > 0) return fromSet;
-    return [toMonthKey(anio, currentMonth)];
-  }, [ingresosMeses, egresosItems, anio, currentMonth]);
+    return Array.from({ length: 12 }, (_, index) => toMonthKey(anio, index + 1))
+      .sort((a, b) => String(b).localeCompare(String(a)));
+  }, [anio]);
 
   useEffect(() => {
     if (!monthOptions.includes(mesSeleccionado)) {
@@ -434,6 +486,24 @@ function EstadisticasFinanzas() {
   const chartMonthTitle = useMemo(() => formatMonthLabel(mesSeleccionado), [mesSeleccionado]);
   const chartMonthShortUpper = useMemo(() => formatMonthShortUpper(mesSeleccionado), [mesSeleccionado]);
   const previousMonthLabel = useMemo(() => getPreviousMonthLabel(mesSeleccionado), [mesSeleccionado]);
+  const cobranzaTiposRows = useMemo(() => (Array.isArray(cobranzaTipos?.tipos) ? cobranzaTipos.tipos : []), [cobranzaTipos]);
+  const cobranzaTiposChartData = useMemo(() => (
+    cobranzaTiposRows.map((item) => ({
+      tipo: String(item?.label || '-').replace(' (50%)', ''),
+      tipoCorto: String(item?.tipo || '').toLowerCase() === 'monto_sede'
+        ? 'Sede'
+        : (String(item?.tipo || '').toLowerCase() === 'media_beca'
+          ? 'Media beca'
+          : (String(item?.tipo || '').toLowerCase() === 'monto_personalizado' ? 'Personalizado' : String(item?.label || '-'))),
+      esperado: redondear(item?.esperado),
+      cobrado: redondear(item?.cobrado),
+      pendiente: redondear(item?.pendiente)
+    }))
+  ), [cobranzaTiposRows]);
+
+  function redondear(value) {
+    return Math.round(Number(value || 0));
+  }
 
   const onExport = () => {
     const separator = ';';
@@ -456,6 +526,22 @@ function EstadisticasFinanzas() {
       ['Total Ingresos (Mensualidades + Inscripciones)', toCsvNumber(monthMetrics.income), ''],
       ['Flujo Neto', toCsvNumber(monthMetrics.net), '']
     ];
+
+    if (cobranzaTiposRows.length > 0) {
+      rows.push([]);
+      rows.push(['Cobranza por tipo de monto mensualidad', '', '']);
+      rows.push(['Tipo', 'Teorico base', 'Esperado', 'Cobrado', 'Pendiente', 'Desviacion']);
+      cobranzaTiposRows.forEach((item) => {
+        rows.push([
+          item?.label || '-',
+          toCsvNumber(item?.teorico_base || 0),
+          toCsvNumber(item?.esperado || 0),
+          toCsvNumber(item?.cobrado || 0),
+          toCsvNumber(item?.pendiente || 0),
+          toCsvNumber(item?.desviacion_operativa || 0)
+        ]);
+      });
+    }
 
     const csvBody = rows
       .map((row) => row.map((value) => escapeCsvValue(value)).join(separator))
@@ -692,6 +778,163 @@ function EstadisticasFinanzas() {
               </Box>
             </Paper>
           </Box>
+
+          <Paper sx={{ borderRadius: 2.5, border: '1px solid #e5e7eb', boxShadow: 'none', p: 2.2 }}>
+            <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={1.2} sx={{ mb: 1.2 }}>
+              <Box>
+                <Typography sx={{ color: '#0f172a', fontSize: { xs: 20, md: 24 }, fontWeight: 900, lineHeight: 1.1 }}>
+                  Cobranza por Tipo de Mensualidad
+                </Typography>
+                <Typography sx={{ color: '#94a3b8', fontSize: { xs: 13, md: 14 } }}>
+                  Esperado vs cobrado real de alumnos en monto sede, media beca y monto personalizado ({chartMonthTitle}).
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Chip size="small" label={`Teórico base ${toMoney(cobranzaTipos?.total?.teorico_base || 0)}`} sx={{ background: '#ede9fe', color: '#5b21b6', fontWeight: 700 }} />
+                <Chip size="small" label={`Esperado ${toMoney(cobranzaTipos?.total?.esperado || 0)}`} sx={{ background: '#e0f2fe', color: '#075985', fontWeight: 700 }} />
+                <Chip size="small" label={`Cobrado ${toMoney(cobranzaTipos?.total?.cobrado || 0)}`} sx={{ background: '#dcfce7', color: '#166534', fontWeight: 700 }} />
+                <Chip size="small" label={`Pendiente ${toMoney(cobranzaTipos?.total?.pendiente || 0)}`} sx={{ background: '#fef3c7', color: '#92400e', fontWeight: 700 }} />
+                <Chip size="small" label={`Desviación ${toMoney(cobranzaTipos?.total?.desviacion_operativa || 0)}`} sx={{ background: '#e2e8f0', color: '#334155', fontWeight: 700 }} />
+              </Stack>
+            </Stack>
+
+            {loadingCobranzaTipos ? (
+              <Typography sx={{ color: '#64748b', fontSize: 13 }}>Cargando cobranza por tipo...</Typography>
+            ) : cobranzaTiposRows.length === 0 ? (
+              <Typography sx={{ color: '#94a3b8', fontSize: 13 }}>No hay datos de cobranza por tipo para el periodo seleccionado.</Typography>
+            ) : (
+              <>
+                <Box sx={{ width: '100%', height: { xs: 220, md: 290 }, mb: 1.2 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={cobranzaTiposChartData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey={isMobile ? 'tipoCorto' : 'tipo'} interval={0} tick={{ fill: '#64748b', fontSize: isMobile ? 10 : 12 }} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: isMobile ? 11 : 12 }} />
+                      <Tooltip formatter={(value) => toMoney(value)} />
+                      <Bar dataKey="esperado" fill="#0ea5e9" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                      <Bar dataKey="cobrado" fill="#22c55e" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                      <Bar dataKey="pendiente" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={28} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+
+                {isMobile ? (
+                  <Box sx={{ display: 'grid', gap: 1 }}>
+                    {cobranzaTiposRows.map((item) => (
+                      <Box
+                        key={String(item?.tipo || item?.label)}
+                        sx={{
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 1.5,
+                          p: 1.1,
+                          background: '#fff'
+                        }}
+                      >
+                        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                          <Typography sx={{ color: '#0f172a', fontSize: 13, fontWeight: 800 }}>
+                            {item?.label || '-'}
+                          </Typography>
+                          <Typography sx={{ color: '#475569', fontSize: 12, fontWeight: 700 }}>
+                            {Number(item?.alumnos || 0)} alumnos
+                          </Typography>
+                        </Stack>
+                        <Box sx={{ mt: 0.8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.65 }}>
+                          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Teórico: <strong>{toMoney(item?.teorico_base || 0)}</strong></Typography>
+                          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Esperado: <strong>{toMoney(item?.esperado || 0)}</strong></Typography>
+                          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Cobrado: <strong>{toMoney(item?.cobrado || 0)}</strong></Typography>
+                          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Pendiente: <strong>{toMoney(item?.pendiente || 0)}</strong></Typography>
+                        </Box>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.7 }}>
+                          <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>
+                            Cumplimiento: <strong style={{ color: getCumplimientoColor(item?.cumplimiento) }}>{Number(item?.cumplimiento || 0).toFixed(1)}%</strong>
+                          </Typography>
+                          <Typography sx={{ color: '#334155', fontSize: 11.5 }}>
+                            Desv.: <strong>{toMoney(item?.desviacion_operativa || 0)}</strong>
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    ))}
+                    <Box sx={{ border: '1px solid #cbd5e1', borderRadius: 1.5, p: 1.1, background: '#f8fafc' }}>
+                      <Typography sx={{ color: '#0f172a', fontSize: 13, fontWeight: 900, mb: 0.45 }}>Total general</Typography>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.6 }}>
+                        <Typography sx={{ color: '#475569', fontSize: 11.5 }}>Alumnos: <strong>{Number(cobranzaTipos?.total?.alumnos || 0)}</strong></Typography>
+                        <Typography sx={{ color: '#475569', fontSize: 11.5 }}>Teórico: <strong>{toMoney(cobranzaTipos?.total?.teorico_base || 0)}</strong></Typography>
+                        <Typography sx={{ color: '#475569', fontSize: 11.5 }}>Esperado: <strong>{toMoney(cobranzaTipos?.total?.esperado || 0)}</strong></Typography>
+                        <Typography sx={{ color: '#475569', fontSize: 11.5 }}>Cobrado: <strong>{toMoney(cobranzaTipos?.total?.cobrado || 0)}</strong></Typography>
+                        <Typography sx={{ color: '#475569', fontSize: 11.5 }}>Pendiente: <strong>{toMoney(cobranzaTipos?.total?.pendiente || 0)}</strong></Typography>
+                        <Typography sx={{ color: '#475569', fontSize: 11.5 }}>Desv.: <strong>{toMoney(cobranzaTipos?.total?.desviacion_operativa || 0)}</strong></Typography>
+                      </Box>
+                      <Typography sx={{ color: '#64748b', fontSize: 11.5, mt: 0.65 }}>
+                        Cumplimiento total: <strong style={{ color: getCumplimientoColor(cobranzaTipos?.total?.cumplimiento || 0) }}>{Number(cobranzaTipos?.total?.cumplimiento || 0).toFixed(1)}%</strong>
+                      </Typography>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Box sx={{ border: '1px solid #e5e7eb', borderRadius: 2, overflow: 'hidden' }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 0.75fr 1fr 1fr 1fr 1fr 0.8fr 1fr', gap: 1, px: 1.2, py: 1, background: '#f8fafc' }}>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12 }}>Tipo</Typography>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12, textAlign: 'right' }}>Alumnos</Typography>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12, textAlign: 'right' }}>Teórico</Typography>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12, textAlign: 'right' }}>Esperado</Typography>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12, textAlign: 'right' }}>Cobrado</Typography>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12, textAlign: 'right' }}>Pendiente</Typography>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12, textAlign: 'right' }}>Cumpl.</Typography>
+                      <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: 12, textAlign: 'right' }}>Desv.</Typography>
+                    </Box>
+                    {cobranzaTiposRows.map((item) => (
+                      <Box key={String(item?.tipo || item?.label)} sx={{ display: 'grid', gridTemplateColumns: '2fr 0.75fr 1fr 1fr 1fr 1fr 0.8fr 1fr', gap: 1, px: 1.2, py: 1, borderTop: '1px solid #f1f5f9' }}>
+                        <Typography sx={{ color: '#0f172a', fontSize: 13, fontWeight: 700 }}>{item?.label || '-'}</Typography>
+                        <Typography sx={{ color: '#334155', fontSize: 13, textAlign: 'right' }}>{Number(item?.alumnos || 0)}</Typography>
+                        <Typography sx={{ color: '#334155', fontSize: 13, textAlign: 'right' }}>{toMoney(item?.teorico_base || 0)}</Typography>
+                        <Typography sx={{ color: '#334155', fontSize: 13, textAlign: 'right' }}>{toMoney(item?.esperado || 0)}</Typography>
+                        <Typography sx={{ color: '#334155', fontSize: 13, textAlign: 'right' }}>{toMoney(item?.cobrado || 0)}</Typography>
+                        <Typography sx={{ color: '#334155', fontSize: 13, textAlign: 'right' }}>{toMoney(item?.pendiente || 0)}</Typography>
+                        <Typography sx={{ color: getCumplimientoColor(item?.cumplimiento), fontSize: 13, textAlign: 'right', fontWeight: 800 }}>
+                          {Number(item?.cumplimiento || 0).toFixed(1)}%
+                        </Typography>
+                        <Typography
+                          sx={{
+                            color: '#334155',
+                            fontSize: 13,
+                            textAlign: 'right',
+                            fontWeight: 800
+                          }}
+                        >
+                          {toMoney(item?.desviacion_operativa || 0)}
+                        </Typography>
+                      </Box>
+                    ))}
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 0.75fr 1fr 1fr 1fr 1fr 0.8fr 1fr', gap: 1, px: 1.2, py: 1.1, borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      <Typography sx={{ color: '#0f172a', fontSize: 13, fontWeight: 900 }}>Total</Typography>
+                      <Typography sx={{ color: '#0f172a', fontSize: 13, textAlign: 'right', fontWeight: 900 }}>{Number(cobranzaTipos?.total?.alumnos || 0)}</Typography>
+                      <Typography sx={{ color: '#0f172a', fontSize: 13, textAlign: 'right', fontWeight: 900 }}>{toMoney(cobranzaTipos?.total?.teorico_base || 0)}</Typography>
+                      <Typography sx={{ color: '#0f172a', fontSize: 13, textAlign: 'right', fontWeight: 900 }}>{toMoney(cobranzaTipos?.total?.esperado || 0)}</Typography>
+                      <Typography sx={{ color: '#0f172a', fontSize: 13, textAlign: 'right', fontWeight: 900 }}>{toMoney(cobranzaTipos?.total?.cobrado || 0)}</Typography>
+                      <Typography sx={{ color: '#0f172a', fontSize: 13, textAlign: 'right', fontWeight: 900 }}>{toMoney(cobranzaTipos?.total?.pendiente || 0)}</Typography>
+                      <Typography sx={{ color: getCumplimientoColor(cobranzaTipos?.total?.cumplimiento || 0), fontSize: 13, textAlign: 'right', fontWeight: 900 }}>
+                        {Number(cobranzaTipos?.total?.cumplimiento || 0).toFixed(1)}%
+                      </Typography>
+                      <Typography
+                        sx={{
+                          color: '#0f172a',
+                          fontSize: 13,
+                          textAlign: 'right',
+                          fontWeight: 900
+                        }}
+                      >
+                        {toMoney(cobranzaTipos?.total?.desviacion_operativa || 0)}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ px: 1.2, py: 0.85, borderTop: '1px dashed #e2e8f0', background: '#fff' }}>
+                      <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>
+                        Desviación operativa total: <strong>{toMoney(cobranzaTipos?.total?.desviacion_operativa || 0)}</strong> (esperado real menos teórico base).
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+              </>
+            )}
+          </Paper>
         </>
       )}
     </Box>

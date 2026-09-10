@@ -46,6 +46,7 @@ function obtenerTipoMensualidad(alumno) {
 
   const etiquetas = {
     monto_sede: 'Monto sede',
+    media_beca: 'Media beca (50%)',
     monto_personalizado: 'Monto personalizado',
     beca_completa: 'Beca completa'
   };
@@ -1023,6 +1024,7 @@ function TablaAlumnos() {
           >
             <MenuItem value="">Todos</MenuItem>
             <MenuItem value="monto_sede">Monto sede</MenuItem>
+            <MenuItem value="media_beca">Media beca (50%)</MenuItem>
             <MenuItem value="monto_personalizado">Monto personalizado</MenuItem>
             <MenuItem value="beca_completa">Beca completa</MenuItem>
           </TextField>

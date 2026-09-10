@@ -193,6 +193,8 @@ const GestionReposos = () => {
         let montoBase = 0;
         if (tipoMensualidad === 'monto_personalizado') {
           montoBase = Number(data?.monto_personalizado_valor || 0);
+        } else if (tipoMensualidad === 'media_beca') {
+          montoBase = Number(data?.sede?.costo || 0) / 2;
         } else if (tipoMensualidad === 'beca_completa') {
           montoBase = 0;
         } else {

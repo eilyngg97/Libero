@@ -1122,13 +1122,18 @@ function formatPeriodoTexto(periodo) {
 
 async function resolverMontoBaseAlumno(alumno, models = {}) {
   const SedeModel = models.Sede || Sede;
-  if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
+  const tipoMensualidad = String(alumno?.tipo_mensualidad || '').toLowerCase();
+  if (tipoMensualidad === 'monto_sede' || tipoMensualidad === 'media_beca' || !tipoMensualidad) {
     const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
     const consultaSede = SedeModel.findById(sedeId);
     const sede = typeof consultaSede?.select === 'function'
       ? await consultaSede.select('costo')
       : await Promise.resolve(consultaSede);
-    return redondearMonto(sede && sede.costo ? sede.costo : 0);
+    const costoSede = redondearMonto(sede && sede.costo ? sede.costo : 0);
+    if (tipoMensualidad === 'media_beca') {
+      return redondearMonto(costoSede / 2);
+    }
+    return costoSede;
   }
 
   if (alumno.tipo_mensualidad === 'monto_personalizado') {

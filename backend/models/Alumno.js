@@ -40,7 +40,7 @@ const AlumnoSchema = new mongoose.Schema({
   representante: { type: mongoose.Schema.Types.ObjectId, ref: 'Representante', required: false },
   usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
   parentesco: { type: String },
-  tipo_mensualidad: { type: String, enum: ['monto_sede', 'monto_personalizado', 'beca_completa'], default: 'monto_sede' },
+  tipo_mensualidad: { type: String, enum: ['monto_sede', 'media_beca', 'monto_personalizado', 'beca_completa'], default: 'monto_sede' },
   monto_personalizado_valor: { type: Number },
   sinRepresentante: { type: Boolean, default: false },
   requisitos_recaudos_estado: {

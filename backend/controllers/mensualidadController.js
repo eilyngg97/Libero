@@ -456,6 +456,14 @@ function esTipoMensualidadBecaCompleta(tipoMensualidad) {
   return String(tipoMensualidad || '').toLowerCase() === 'beca_completa';
 }
 
+function normalizarTipoMensualidadParaResumen(tipoMensualidad) {
+  const key = String(tipoMensualidad || '').trim().toLowerCase();
+  if (!key || key === 'monto_sede') return 'monto_sede';
+  if (key === 'media_beca') return 'media_beca';
+  if (key === 'monto_personalizado') return 'monto_personalizado';
+  return null;
+}
+
 async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models = {}) {
   const { Alumno: AlumnoModel } = resolveMensualidadModels(models);
   const tipoDesdePopulate = mensualidad?.id_alumno?.tipo_mensualidad;
@@ -704,10 +712,15 @@ async function aplicarRecargoMensualidadSegunConfig(
 
 async function resolverMontoBaseAlumno(alumno, models = {}) {
   const { Sede: SedeModel } = resolveMensualidadModels(models);
-  if (alumno.tipo_mensualidad === 'monto_sede' || !alumno.tipo_mensualidad) {
+  const tipoMensualidad = String(alumno?.tipo_mensualidad || '').toLowerCase();
+  if (tipoMensualidad === 'monto_sede' || tipoMensualidad === 'media_beca' || !tipoMensualidad) {
     const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
     const sede = await SedeModel.findById(sedeId);
-    return redondearMonto(sede && sede.costo ? sede.costo : 0);
+    const costoSede = redondearMonto(sede && sede.costo ? sede.costo : 0);
+    if (tipoMensualidad === 'media_beca') {
+      return redondearMonto(costoSede / 2);
+    }
+    return costoSede;
   }
 
   if (alumno.tipo_mensualidad === 'monto_personalizado') {
@@ -1246,6 +1259,7 @@ async function obtenerObjetivoAjustePorSede({ id_sede, mesNumero, anioNumero, ti
   if (tipo !== 'inscripciones') {
     filtroAlumnos.$or = [
       { tipo_mensualidad: 'monto_sede' },
+      { tipo_mensualidad: 'media_beca' },
       { tipo_mensualidad: 'monto_personalizado' },
       { tipo_mensualidad: { $exists: false } }
     ];
@@ -1287,6 +1301,7 @@ async function obtenerObjetivoRecargoPorSede({ id_sede, mesNumero, anioNumero },
 
   filtroAlumnos.$or = [
     { tipo_mensualidad: 'monto_sede' },
+    { tipo_mensualidad: 'media_beca' },
     { tipo_mensualidad: 'monto_personalizado' },
     { tipo_mensualidad: { $exists: false } }
   ];
@@ -3083,6 +3098,261 @@ exports.getDolaresPagadosPorSede = async (req, res) => {
       .sort((a, b) => String(a.sedeNombre || '').localeCompare(String(b.sedeNombre || ''), 'es', { sensitivity: 'base' }));
 
     return res.json({ mes, anio, tipo, sedes });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getResumenCobranzaPorTipoMensualidad = async (req, res) => {
+  try {
+    const {
+      PagoDetalle: TenantPagoDetalle,
+      Mensualidad: TenantMensualidad,
+      Alumno: TenantAlumno,
+      Sede: TenantSede
+    } = await getTenantMensualidadModels(req);
+
+    const hoy = new Date();
+    const mes = req.query.mes ? Number(req.query.mes) : hoy.getMonth() + 1;
+    const anio = req.query.anio ? Number(req.query.anio) : hoy.getFullYear();
+    const idSede = String(req.query.id_sede || '').trim();
+
+    if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+      return res.status(400).json({ error: 'Mes inválido' });
+    }
+
+    if (!Number.isInteger(anio) || anio < 2000) {
+      return res.status(400).json({ error: 'Año inválido' });
+    }
+
+    if (idSede && idSede !== 'all' && !mongoose.Types.ObjectId.isValid(idSede)) {
+      return res.status(400).json({ error: 'Sede inválida' });
+    }
+
+    const tiposMeta = {
+      monto_sede: { tipo: 'monto_sede', label: 'Monto sede' },
+      media_beca: { tipo: 'media_beca', label: 'Media beca (50%)' },
+      monto_personalizado: { tipo: 'monto_personalizado', label: 'Monto personalizado' }
+    };
+
+    const acumulado = {
+      monto_sede: { ...tiposMeta.monto_sede, esperado: 0, cobrado: 0, teoricoBase: 0, alumnosSet: new Set() },
+      media_beca: { ...tiposMeta.media_beca, esperado: 0, cobrado: 0, teoricoBase: 0, alumnosSet: new Set() },
+      monto_personalizado: { ...tiposMeta.monto_personalizado, esperado: 0, cobrado: 0, teoricoBase: 0, alumnosSet: new Set() }
+    };
+
+    const mensualidades = await TenantMensualidad.find({
+      mes,
+      anio
+    })
+      .select('_id id_alumno estatus monto_esperado monto_inscripcion monto_reingreso monto_primera_mensualidad monto_mensualidad_reingreso fecha_pago')
+      .lean();
+
+    if (!Array.isArray(mensualidades) || mensualidades.length === 0) {
+      return res.json({
+        mes,
+        anio,
+        id_sede: idSede || 'all',
+        tipos: Object.values(tiposMeta).map((item) => ({
+          ...item,
+          alumnos: 0,
+          teorico_base: 0,
+          esperado: 0,
+          cobrado: 0,
+          pendiente: 0,
+          cumplimiento: 0,
+          desviacion_operativa: 0
+        })),
+        total: {
+          alumnos: 0,
+          teorico_base: 0,
+          esperado: 0,
+          cobrado: 0,
+          pendiente: 0,
+          cumplimiento: 0,
+          desviacion_operativa: 0
+        }
+      });
+    }
+
+    const alumnoIds = Array.from(new Set(mensualidades.map((item) => String(item.id_alumno || '')).filter(Boolean)));
+    const filtroAlumnos = { _id: { $in: alumnoIds } };
+    if (idSede && idSede !== 'all') {
+      filtroAlumnos.sede = idSede;
+    }
+
+    const alumnos = await TenantAlumno.find(filtroAlumnos)
+      .select('_id tipo_mensualidad sede monto_personalizado_valor')
+      .lean();
+
+    const sedeIds = Array.from(
+      new Set(alumnos.map((alumno) => String(alumno?.sede || '')).filter(Boolean))
+    );
+    const sedes = sedeIds.length > 0
+      ? await TenantSede.find({ _id: { $in: sedeIds } }).select('_id costo').lean()
+      : [];
+    const sedeCostoMap = new Map(
+      sedes.map((sede) => [String(sede._id), redondearMonto(sede?.costo || 0)])
+    );
+
+    const alumnoMap = new Map(
+      alumnos.map((alumno) => {
+        const tipo = normalizarTipoMensualidadParaResumen(alumno.tipo_mensualidad);
+        const costoSede = redondearMonto(sedeCostoMap.get(String(alumno?.sede || '')) || 0);
+        let tarifaBaseActual = 0;
+
+        if (tipo === 'monto_sede') {
+          tarifaBaseActual = costoSede;
+        } else if (tipo === 'media_beca') {
+          tarifaBaseActual = redondearMonto(costoSede / 2);
+        } else if (tipo === 'monto_personalizado') {
+          tarifaBaseActual = redondearMonto(alumno?.monto_personalizado_valor || 0);
+        }
+
+        return [
+          String(alumno._id),
+          {
+            tipo,
+            tarifaBaseActual
+          }
+        ];
+      })
+    );
+
+    const mensualidadMap = new Map();
+    for (const mensualidad of mensualidades) {
+      const alumnoId = String(mensualidad.id_alumno || '');
+      const alumnoInfo = alumnoMap.get(alumnoId);
+      const tipo = alumnoInfo?.tipo;
+      if (!tipo || !acumulado[tipo]) continue;
+
+      mensualidadMap.set(String(mensualidad._id), { ...mensualidad, __tipo: tipo });
+      acumulado[tipo].alumnosSet.add(alumnoId);
+      acumulado[tipo].teoricoBase = redondearMonto(
+        acumulado[tipo].teoricoBase + redondearMonto(alumnoInfo?.tarifaBaseActual || 0)
+      );
+
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      acumulado[tipo].esperado = redondearMonto(
+        acumulado[tipo].esperado + redondearMonto(componentes.componenteMensualidad || 0)
+      );
+    }
+
+    const mensualidadIds = Array.from(mensualidadMap.keys());
+    const inicioMes = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
+    const finMes = new Date(Date.UTC(anio, mes, 1, 0, 0, 0, 0));
+
+    const pagos = mensualidadIds.length > 0
+      ? await TenantPagoDetalle.find({
+        id_mensualidad: { $in: mensualidadIds },
+        $or: [
+          { fecha_pago: { $gte: inicioMes, $lt: finMes } },
+          {
+            fecha_pago: { $in: [null, undefined] },
+            createdAt: { $gte: inicioMes, $lt: finMes }
+          }
+        ]
+      })
+        .select('id_mensualidad monto_pagado fecha_pago createdAt')
+        .lean()
+      : [];
+
+    const pagosOrdenados = pagos
+      .map((pago) => {
+        const fechaReferencia = pago?.fecha_pago ? new Date(pago.fecha_pago) : new Date(pago.createdAt || 0);
+        return { ...pago, __fechaReferencia: fechaReferencia };
+      })
+      .filter((pago) => !Number.isNaN(pago.__fechaReferencia?.getTime?.()))
+      .sort((a, b) => a.__fechaReferencia.getTime() - b.__fechaReferencia.getTime());
+
+    const saldoInscripcionPorMensualidad = new Map();
+    const mensualidadesConPago = new Set();
+
+    for (const pago of pagosOrdenados) {
+      const mensualidadId = String(pago.id_mensualidad || '');
+      const mensualidad = mensualidadMap.get(mensualidadId);
+      if (!mensualidad) continue;
+      if (!esEstatusIngresoConfirmado(mensualidad.estatus)) continue;
+
+      const tipo = mensualidad.__tipo;
+      if (!acumulado[tipo]) continue;
+
+      const montoPagado = redondearMonto(Number(pago?.monto_pagado) || 0);
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      const saldoInscripcionActual = saldoInscripcionPorMensualidad.has(mensualidadId)
+        ? Number(saldoInscripcionPorMensualidad.get(mensualidadId) || 0)
+        : Number(componentes.componenteInscripcion || 0);
+      const montoInscripcionPago = redondearMonto(Math.min(montoPagado, Math.max(0, saldoInscripcionActual)));
+      const montoMensualidadPago = redondearMonto(Math.max(0, montoPagado - montoInscripcionPago));
+
+      saldoInscripcionPorMensualidad.set(
+        mensualidadId,
+        redondearMonto(Math.max(0, saldoInscripcionActual - montoInscripcionPago))
+      );
+
+      acumulado[tipo].cobrado = redondearMonto(acumulado[tipo].cobrado + montoMensualidadPago);
+      mensualidadesConPago.add(mensualidadId);
+    }
+
+    for (const mensualidad of mensualidadMap.values()) {
+      const mensualidadId = String(mensualidad._id || '');
+      if (mensualidadesConPago.has(mensualidadId)) continue;
+      if (!esEstatusIngresoConfirmado(mensualidad.estatus)) continue;
+
+      const fechaPagoLegacy = new Date(mensualidad.fecha_pago || 0);
+      if (Number.isNaN(fechaPagoLegacy.getTime())) continue;
+      if (fechaPagoLegacy < inicioMes || fechaPagoLegacy >= finMes) continue;
+
+      const tipo = mensualidad.__tipo;
+      if (!acumulado[tipo]) continue;
+
+      const componentes = obtenerComponentesMensualidad(mensualidad);
+      acumulado[tipo].cobrado = redondearMonto(
+        acumulado[tipo].cobrado + redondearMonto(componentes.componenteMensualidad || 0)
+      );
+    }
+
+    const tipos = Object.keys(tiposMeta).map((key) => {
+      const item = acumulado[key];
+      const teoricoBase = redondearMonto(item.teoricoBase || 0);
+      const esperado = redondearMonto(item.esperado || 0);
+      const cobrado = redondearMonto(item.cobrado || 0);
+      const pendiente = redondearMonto(Math.max(0, esperado - cobrado));
+      const cumplimiento = esperado > 0 ? redondearMonto((cobrado / esperado) * 100) : 0;
+      const desviacionOperativa = redondearMonto(esperado - teoricoBase);
+
+      return {
+        tipo: item.tipo,
+        label: item.label,
+        alumnos: item.alumnosSet.size,
+        teorico_base: teoricoBase,
+        esperado,
+        cobrado,
+        pendiente,
+        cumplimiento,
+        desviacion_operativa: desviacionOperativa
+      };
+    });
+
+    const total = tipos.reduce((acc, item) => {
+      acc.alumnos += Number(item.alumnos || 0);
+      acc.teorico_base = redondearMonto(acc.teorico_base + Number(item.teorico_base || 0));
+      acc.esperado = redondearMonto(acc.esperado + Number(item.esperado || 0));
+      acc.cobrado = redondearMonto(acc.cobrado + Number(item.cobrado || 0));
+      return acc;
+    }, { alumnos: 0, teorico_base: 0, esperado: 0, cobrado: 0 });
+
+    total.pendiente = redondearMonto(Math.max(0, total.esperado - total.cobrado));
+    total.cumplimiento = total.esperado > 0 ? redondearMonto((total.cobrado / total.esperado) * 100) : 0;
+    total.desviacion_operativa = redondearMonto(total.esperado - total.teorico_base);
+
+    return res.json({
+      mes,
+      anio,
+      id_sede: idSede || 'all',
+      tipos,
+      total
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

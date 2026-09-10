@@ -38,6 +38,7 @@ const DIVISIONES = ['Primera división', 'Segunda división', 'Tercera división
 // Opciones de tipo de mensualidad
 export const OPCIONES_MENSUALIDAD = [
   { id: 'monto_sede', label: 'Monto sede' },
+  { id: 'media_beca', label: 'Media beca (50%)' },
   { id: 'monto_personalizado', label: 'Monto personalizado' },
   { id: 'beca_completa', label: 'Beca completa' }
 ];
@@ -745,9 +746,13 @@ function Alumnos() {
         setLoading(false);
       }
     } else {
+      const tipoMensualidadSeleccionado = String(form.tipo_mensualidad || '').toLowerCase();
       const montoSede = Number(form.sede?.costo);
       const montoInscripcionSede = Number(form.sede?.monto_inscripcion);
-      const montoMensualidadSugerido = Number.isFinite(montoSede) && montoSede > 0 ? String(montoSede) : '';
+      const montoMensualidadBase = Number.isFinite(montoSede) && montoSede > 0
+        ? (tipoMensualidadSeleccionado === 'media_beca' ? (montoSede / 2) : montoSede)
+        : 0;
+      const montoMensualidadSugerido = montoMensualidadBase > 0 ? String(montoMensualidadBase) : '';
       const montoInscripcionSugerido = Number.isFinite(montoInscripcionSede) && montoInscripcionSede > 0
         ? String(montoInscripcionSede)
         : montoMensualidadSugerido;

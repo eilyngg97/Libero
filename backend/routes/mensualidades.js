@@ -48,6 +48,8 @@ router.get('/resumen-por-sede', authMiddleware, permisoMiddleware('mensualidades
 router.get('/dolares-pagados-por-sede', authMiddleware, permisoMiddleware('mensualidades.view'), mensualidadController.getDolaresPagadosPorSede);
 // Ingresos totales por mes para el anio seleccionado
 router.get('/ingresos-por-mes', authMiddleware, permisoMiddleware('mensualidades.view'), mensualidadController.getIngresosPorMes);
+// Resumen de cobranza por tipo de mensualidad (esperado, cobrado y pendiente)
+router.get('/resumen-cobranza-por-tipo', authMiddleware, permisoMiddleware('mensualidades.view'), mensualidadController.getResumenCobranzaPorTipoMensualidad);
 // Ingresos totales por sede para el anio seleccionado
 router.get('/ingresos-por-sede', authMiddleware, permisoMiddleware('mensualidades.view'), mensualidadController.getIngresosPorSede);
 // Vista previa del impacto de ajuste por sede y periodo
