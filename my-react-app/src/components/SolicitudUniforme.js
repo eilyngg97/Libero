@@ -42,6 +42,29 @@ const OPCIONES_NOMBRE_REPRESENTANTE = [
   'Volley Brother'
 ];
 
+const ALIAS_NOMBRE_REPRESENTANTE = {
+  'volley grandmon': 'Volley Grandmom'
+};
+
+function normalizarNombreRepresentante(valor) {
+  return String(valor || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function resolverNombreRepresentanteDesdeCatalogo(valor) {
+  const raw = String(valor || '').trim();
+  if (!raw) return '';
+
+  const normalizado = normalizarNombreRepresentante(raw);
+  if (ALIAS_NOMBRE_REPRESENTANTE[normalizado]) {
+    return ALIAS_NOMBRE_REPRESENTANTE[normalizado];
+  }
+
+  const opcion = OPCIONES_NOMBRE_REPRESENTANTE.find(
+    (item) => normalizarNombreRepresentante(item) === normalizado
+  );
+  return opcion || '';
+}
+
 const GENERO_PRECIO_OPTIONS = [
   { key: 'masculino', label: 'Masculino' },
   { key: 'femenino', label: 'Femenino' },
@@ -207,6 +230,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const [generoPrecioSeleccionado, setGeneroPrecioSeleccionado] = useState('');
 
   const token = localStorage.getItem('token');
+  const rolUsuario = String(localStorage.getItem('rolActivo') || localStorage.getItem('rol') || '').trim().toLowerCase();
+  const esAdminOSuperAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
   const numeroFranelaAlumno = String(numeroFranelaAsignado || '').trim();
   const categoriaAlumno = String(alumno?.categoria || '').trim();
   const sexoAlumno = String(alumno?.sexo || '').trim();
@@ -248,12 +273,14 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     ? resolverPrecioPorVariante(prendaSeleccionada, talla, generoPrecioParaCalculo)
     : null;
   const esFranelaRepresentante = Boolean(prendaSeleccionada?.franela_representante);
-  const llevaNombreAtleta = Boolean(prendaSeleccionada?.lleva_nombre_atleta);
+  const prendaLlevaNombre = Boolean(prendaSeleccionada?.lleva_nombre_atleta);
   const permitePersonalizacionNombre = Boolean(prendaSeleccionada?.lleva_personalizacion_nombre);
-  const usaSelectorNombreRepresentante = esFranelaRepresentante && !permitePersonalizacionNombre;
-  const mostrarCampoNombre = llevaNombreAtleta || esFranelaRepresentante;
+  const usaSelectorNombreRepresentante = esFranelaRepresentante && prendaLlevaNombre && !permitePersonalizacionNombre;
+  const mostrarCampoNombre = prendaLlevaNombre;
+  const etiquetaCampoNombre = esFranelaRepresentante ? 'Nombre de representante' : 'Nombre del atleta';
   const ocultarNumeroFranela = Boolean(prendaSeleccionada) && prendaSeleccionada.lleva_numero_franela === false;
   const requiereNumeroFranela = !ocultarNumeroFranela;
+  const requiereNumeroRepresentante = requiereNumeroFranela && esFranelaRepresentante;
 
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
@@ -417,7 +444,12 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     if (!alumno?._id) return;
     setPedidosLoading(true);
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/mis?alumnoId=${alumno._id}`, {
+      const params = new URLSearchParams({
+        alumnoId: String(alumno._id),
+        _t: String(Date.now())
+      });
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/mis?${params.toString()}`, {
+        cache: 'no-store',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       const data = await res.json();
@@ -465,6 +497,11 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   }, [alumno?._id, alumno?.numero_franela, alumno?.numeroFranela]);
 
   useEffect(() => {
+    // En modo edicion siempre se conserva el valor cargado desde el pedido.
+    if (editandoId) {
+      return;
+    }
+
     if (!mostrarCampoNombre) {
       setNombrePersonalizadoInput(nombrePersonalizadoDefault);
       return;
@@ -476,13 +513,20 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
 
     setNombrePersonalizadoInput(nombrePersonalizadoDefault);
-  }, [nombrePersonalizadoDefault, mostrarCampoNombre, usaSelectorNombreRepresentante]);
+  }, [editandoId, nombrePersonalizadoDefault, mostrarCampoNombre, usaSelectorNombreRepresentante]);
 
   useEffect(() => {
     if (!requiereNumeroFranela) {
       setNumeroFranelaError('');
       setNumeroFranelaLoading(false);
       setNumeroFranelaSeleccionado('');
+      return;
+    }
+
+    if (esFranelaRepresentante) {
+      setNumeroFranelaError('');
+      setNumeroFranelaLoading(false);
+      setNumerosFranelaDisponibles([]);
       return;
     }
 
@@ -546,7 +590,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     return () => {
       cancelled = true;
     };
-  }, [categoriaAlumno, numeroFranelaAlumno, requiereNumeroFranela, sexoAlumno, token]);
+  }, [categoriaAlumno, esFranelaRepresentante, numeroFranelaAlumno, requiereNumeroFranela, sexoAlumno, token]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -554,7 +598,17 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setErrorMessage('Completa todos los campos del pedido');
       return;
     }
-    const numeroFranelaFinal = numeroFranelaAlumno || String(numeroFranelaSeleccionado || '').trim();
+    const numeroFranelaFinal = esFranelaRepresentante
+      ? String(numeroFranelaSeleccionado || '').trim()
+      : (numeroFranelaAlumno || String(numeroFranelaSeleccionado || '').trim());
+
+    if (requiereNumeroRepresentante) {
+      const numeroRepresentante = Number(numeroFranelaFinal);
+      if (!Number.isInteger(numeroRepresentante) || numeroRepresentante < 1 || numeroRepresentante > 100) {
+        setErrorMessage('Debes indicar un numero de franela valido (1-100) para representante');
+        return;
+      }
+    }
 
     if (requiereNumeroFranela && !numeroFranelaFinal) {
       setErrorMessage('Debes seleccionar un numero de franela para continuar');
@@ -604,7 +658,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       setPrenda('');
       setTalla('');
       setEditandoId(null);
-      if (requiereNumeroFranela && !numeroFranelaAlumno) {
+      if (requiereNumeroFranela && !numeroFranelaAlumno && !esFranelaRepresentante) {
         setNumeroFranelaAsignado(numeroFranelaFinal);
       }
       if (editandoId) {
@@ -624,7 +678,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   };
 
   const handleEditarPedido = (pedido) => {
-    if (!pedido || pedido.estado !== 'pendiente') return;
+    if (!pedido) return;
+    if (!esAdminOSuperAdmin && pedido.estado !== 'pendiente') return;
 
     const prendaId = String(pedido.uniforme?._id || pedido.uniforme || '').trim();
     if (!prendaId) {
@@ -632,14 +687,22 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       return;
     }
 
+    const prendaPedido = prendas.find((item) => String(item?._id || '') === prendaId);
+    const usaSelectorRepresentantePedido = Boolean(prendaPedido?.franela_representante)
+      && Boolean(prendaPedido?.lleva_nombre_atleta)
+      && !Boolean(prendaPedido?.lleva_personalizacion_nombre);
+    const nombrePedido = String(pedido.nombre_personalizado || '').trim();
+    const nombrePrecargado = usaSelectorRepresentantePedido
+      ? resolverNombreRepresentanteDesdeCatalogo(nombrePedido)
+      : nombrePedido;
+
     setEditandoId(String(pedido._id));
     setPrenda(prendaId);
     setTalla(String(pedido.talla || '').trim().toUpperCase());
     setGeneroPrecioSeleccionado(String(pedido.genero_precio_variante || '').trim().toLowerCase());
-    setNombrePersonalizadoInput(String(pedido.nombre_personalizado || '').trim());
-    if (!numeroFranelaAlumno) {
-      setNumeroFranelaSeleccionado(String(pedido.numero_franela || '').trim());
-    }
+    setNombrePersonalizadoInput(nombrePrecargado);
+    // Siempre precargar numero del pedido: en representante no debe heredarse del alumno.
+    setNumeroFranelaSeleccionado(String(pedido.numero_franela || '').trim());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1024,11 +1087,11 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                   <Grid item size={{ xs: 12, md: 6 }}>
                     {usaSelectorNombreRepresentante ? (
                       <FormControl fullWidth required sx={uniformControlSx}>
-                        <InputLabel id="nombre-representante-label">Nombre para franela</InputLabel>
+                        <InputLabel id="nombre-representante-label">{etiquetaCampoNombre}</InputLabel>
                         <Select
                           labelId="nombre-representante-label"
                           value={nombrePersonalizadoInput}
-                          label="Nombre para franela"
+                          label={etiquetaCampoNombre}
                           onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
                           MenuProps={mobileMenuProps}
                         >
@@ -1044,7 +1107,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                     ) : (
                       <TextField
                         fullWidth
-                        label="Nombre del atleta"
+                        label={etiquetaCampoNombre}
                         placeholder={`Ej: ${ejemploNombreJugador}`}
                         value={nombrePersonalizadoInput}
                         onChange={(event) => setNombrePersonalizadoInput(event.target.value)}
@@ -1069,7 +1132,19 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                 )}
                 {requiereNumeroFranela && (
                   <Grid item size={{ xs: 12, md: 6 }}>
-                    {numeroFranelaAlumno ? (
+                    {requiereNumeroRepresentante ? (
+                      <TextField
+                        fullWidth
+                        required
+                        type="number"
+                        label="Numero de franela"
+                        value={numeroFranelaSeleccionado}
+                        onChange={(event) => setNumeroFranelaSeleccionado(String(event.target.value || '').replace(/[^0-9]/g, '').slice(0, 3))}
+                        inputProps={{ min: 1, max: 100, step: 1 }}
+                        helperText="Para franela de representante puedes elegir cualquier numero del 1 al 100."
+                        sx={uniformControlSx}
+                      />
+                    ) : numeroFranelaAlumno ? (
                       <TextField
                         fullWidth
                         label="Numero de franela"
@@ -1152,7 +1227,13 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                 color="primary"
                 fullWidth
                 size="large"
-                disabled={guardando || (mostrarCampoNombre && !String(nombrePersonalizadoInput || '').trim()) || (requiereNumeroFranela && (!numeroFranelaAlumno && !numeroFranelaSeleccionado)) || (requiereNumeroFranela && numeroFranelaLoading) || (requiereNumeroFranela && !!numeroFranelaError)}
+                disabled={
+                  guardando
+                  || (mostrarCampoNombre && !String(nombrePersonalizadoInput || '').trim())
+                  || (requiereNumeroFranela && !String(numeroFranelaSeleccionado || '').trim() && (esFranelaRepresentante || !numeroFranelaAlumno))
+                  || (!esFranelaRepresentante && requiereNumeroFranela && numeroFranelaLoading)
+                  || (!esFranelaRepresentante && requiereNumeroFranela && !!numeroFranelaError)
+                }
               >
                 {guardando ? 'Guardando...' : (editandoId ? 'Guardar cambios' : 'Guardar pedido')}
               </Button>
