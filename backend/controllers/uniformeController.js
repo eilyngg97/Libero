@@ -51,6 +51,11 @@ function normalizeMoneda(value) {
   return String(value || 'USD').trim().toUpperCase();
 }
 
+function normalizeMetodoCobranza(value) {
+  const normalized = String(value || 'pago_completo').trim().toLowerCase();
+  return normalized === 'dos_partes_50' ? 'dos_partes_50' : 'pago_completo';
+}
+
 function parseJsonArrayField(rawValue) {
   if (rawValue === undefined || rawValue === null || rawValue === '') return [];
   if (Array.isArray(rawValue)) return rawValue;
@@ -130,6 +135,7 @@ exports.createUniforme = async (req, res) => {
       prenda,
       precio,
       moneda,
+      metodo_cobranza,
       lleva_nombre_atleta,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
@@ -143,6 +149,7 @@ exports.createUniforme = async (req, res) => {
     if (!['USD', 'EUR'].includes(monedaNormalizada)) {
       return res.status(400).json({ error: 'Moneda invalida. Debe ser USD o EUR.' });
     }
+    const metodoCobranzaNormalizado = normalizeMetodoCobranza(metodo_cobranza);
     const fotosNuevas = Array.isArray(req.files) ? req.files.map((file) => buildUploadUrl(req, file)).filter(Boolean) : [];
     const variantesPrecio = parseVariantesPrecio(req.body || {});
 
@@ -154,6 +161,7 @@ exports.createUniforme = async (req, res) => {
       prenda,
       precio: precioNumerico,
       moneda: monedaNormalizada,
+      metodo_cobranza: metodoCobranzaNormalizado,
       lleva_nombre_atleta: parseBooleanField(lleva_nombre_atleta),
       lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
       lleva_numero_franela: parseBooleanField(lleva_numero_franela),
@@ -176,6 +184,7 @@ exports.updateUniforme = async (req, res) => {
       prenda,
       precio,
       moneda,
+      metodo_cobranza,
       lleva_nombre_atleta,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
@@ -189,6 +198,7 @@ exports.updateUniforme = async (req, res) => {
     if (!['USD', 'EUR'].includes(monedaNormalizada)) {
       return res.status(400).json({ error: 'Moneda invalida. Debe ser USD o EUR.' });
     }
+    const metodoCobranzaNormalizado = normalizeMetodoCobranza(metodo_cobranza);
     const fotosExistentes = parseFotosExistentes(req.body?.fotos_existentes);
     const fotosNuevas = Array.isArray(req.files) ? req.files.map((file) => buildUploadUrl(req, file)).filter(Boolean) : [];
     const fotos = [...fotosExistentes, ...fotosNuevas].slice(0, 2);
@@ -204,6 +214,7 @@ exports.updateUniforme = async (req, res) => {
         prenda,
         precio: precioNumerico,
         moneda: monedaNormalizada,
+        metodo_cobranza: metodoCobranzaNormalizado,
         lleva_nombre_atleta: parseBooleanField(lleva_nombre_atleta),
         lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
         lleva_numero_franela: parseBooleanField(lleva_numero_franela),

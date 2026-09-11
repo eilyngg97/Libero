@@ -144,6 +144,12 @@ function normalizarMoneda(moneda) {
   return String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
 }
 
+function normalizarMetodoCobranza(metodo) {
+  return String(metodo || '').trim().toLowerCase() === 'dos_partes_50'
+    ? 'dos_partes_50'
+    : 'pago_completo';
+}
+
 function normalizarGeneroAlumno(sexoRaw) {
   const sexo = String(sexoRaw || '').trim().toLowerCase();
   if (sexo.startsWith('masc')) return 'masculino';
@@ -907,6 +913,28 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     return null;
   };
 
+  const getMetodoCobranzaLabel = (pedido) => (
+    normalizarMetodoCobranza(pedido?.metodo_cobranza) === 'dos_partes_50'
+      ? 'Dos partes (50/50)'
+      : 'Pago completo'
+  );
+
+  const getMontoPrimeraParteObjetivo = (pedido) => {
+    const total = Number(pedido?.precio) || 0;
+    const objetivo = Number(pedido?.monto_primera_parte_objetivo);
+    const valor = Number.isFinite(objetivo) && objetivo > 0 ? objetivo : (total / 2);
+    return Number(Number(valor).toFixed(2));
+  };
+
+  const pagoBloqueadoPorSegundaParte = (pedido) => {
+    if (normalizarMetodoCobranza(pedido?.metodo_cobranza) !== 'dos_partes_50') return false;
+    if (pedido?.segunda_parte_habilitada === true) return false;
+    if (String(pedido?.estado || '').toLowerCase() !== 'abono') return false;
+    const pagado = Number(pedido?.monto_pagado) || 0;
+    const objetivo = getMontoPrimeraParteObjetivo(pedido);
+    return pagado + 0.01 >= objetivo;
+  };
+
   return (
     <Grid container justifyContent="center" alignItems="flex-start" sx={{ minHeight: '80vh', py: { xs: 2, md: 3 }, px: { xs: 0.75, sm: 0 }, width: '100%', maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <Snackbar
@@ -1307,6 +1335,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                       </Box>
 
                       <Box sx={{ mb: 1 }}>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          Cobranza: {getMetodoCobranzaLabel(pedido)}
+                        </Typography>
                         <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>Precio</Typography>
                         <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>{formatearMontoConMoneda(pedido.precio, pedido.moneda)}</Typography>
                         <Typography variant="body2" sx={{ color: '#64748b' }}>
@@ -1325,10 +1356,14 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                             size="small"
                             variant="outlined"
                             onClick={() => openPagoDialog(pedido)}
-                            disabled={!tieneTasaDisponibleParaPedido(pedido)}
+                            disabled={!tieneTasaDisponibleParaPedido(pedido) || pagoBloqueadoPorSegundaParte(pedido)}
                             sx={ACCION_BOTON_EDITAR_SX}
                           >
-                            {tieneTasaDisponibleParaPedido(pedido) ? 'Realizar pago' : 'Cargando tasa...'}
+                            {!tieneTasaDisponibleParaPedido(pedido)
+                              ? 'Cargando tasa...'
+                              : pagoBloqueadoPorSegundaParte(pedido)
+                                ? 'Segunda parte pendiente'
+                                : 'Realizar pago'}
                           </Button>
                           <Button
                             size="small"
@@ -1371,7 +1406,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           {pedido.estado === 'cancelado'
                             ? 'Solicitud cancelada'
                             : pedido.estado === 'abono'
-                              ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}`
+                              ? (pagoBloqueadoPorSegundaParte(pedido)
+                                ? 'Primera parte pagada. Esperando habilitacion administrativa para la segunda parte.'
+                                : `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}`)
                             : pedido.estado === 'pago_en_revision'
                               ? 'Pago enviado, en revision'
                               : pedido.estado === 'verificado'
@@ -1408,6 +1445,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                           <TableCell>{pedido.nombre_personalizado || '-'}</TableCell>
                           <TableCell>{pedido.numero_franela || '-'}</TableCell>
                           <TableCell>
+                            <Typography variant="body2" sx={{ color: '#64748b' }}>
+                              Cobranza: {getMetodoCobranzaLabel(pedido)}
+                            </Typography>
                             <Typography sx={{ fontWeight: 700 }}>{formatearMontoConMoneda(pedido.precio, pedido.moneda)}</Typography>
                             <Typography variant="body2" sx={{ color: '#64748b' }}>
                               Pendiente: {formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}
@@ -1443,10 +1483,14 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                   size="small"
                                   variant="outlined"
                                   onClick={() => openPagoDialog(pedido)}
-                                  disabled={!tieneTasaDisponibleParaPedido(pedido)}
+                                  disabled={!tieneTasaDisponibleParaPedido(pedido) || pagoBloqueadoPorSegundaParte(pedido)}
                                   sx={ACCION_BOTON_EDITAR_SX}
                                 >
-                                  {tieneTasaDisponibleParaPedido(pedido) ? 'Realizar pago' : 'Cargando tasa...'}
+                                  {!tieneTasaDisponibleParaPedido(pedido)
+                                    ? 'Cargando tasa...'
+                                    : pagoBloqueadoPorSegundaParte(pedido)
+                                      ? 'Segunda parte pendiente'
+                                      : 'Realizar pago'}
                                 </Button>
                                 <Button
                                   size="small"
@@ -1489,7 +1533,9 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                 {pedido.estado === 'cancelado'
                                   ? 'Solicitud cancelada'
                                   : pedido.estado === 'abono'
-                                    ? `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}`
+                                    ? (pagoBloqueadoPorSegundaParte(pedido)
+                                      ? 'Primera parte pagada. Esperando habilitacion administrativa para la segunda parte.'
+                                      : `Abono registrado. Saldo pendiente: ${formatearMontoConMoneda(getSaldoPendienteVisible(pedido), pedido.moneda)}`)
                                   : pedido.estado === 'pago_en_revision'
                                     ? 'Pago enviado, en revision'
                                     : pedido.estado === 'verificado'

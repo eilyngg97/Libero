@@ -44,6 +44,16 @@ function normalizeMoneda(moneda) {
   return String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
 }
 
+function normalizeMetodoCobranza(value) {
+  return String(value || '').trim().toLowerCase() === 'dos_partes_50'
+    ? 'dos_partes_50'
+    : 'pago_completo';
+}
+
+function calcularMontoPrimeraParteObjetivo(precio) {
+  return redondearMonto((Number(precio) || 0) / 2);
+}
+
 function normalizeGeneroAlumno(sexoRaw) {
   const sexo = String(sexoRaw || '').trim().toLowerCase();
   if (sexo.startsWith('masc')) return 'masculino';
@@ -105,7 +115,7 @@ async function findPedidoByIdWithRelations(TenantUniformePedido, id) {
     .populate('alumno')
     .populate('sede')
     .populate('solicitado_por')
-    .populate('uniforme', 'prenda precio moneda lleva_nombre_atleta lleva_personalizacion_nombre lleva_numero_franela franela_representante');
+    .populate('uniforme', 'prenda precio moneda metodo_cobranza lleva_nombre_atleta lleva_personalizacion_nombre lleva_numero_franela franela_representante');
 }
 
 exports.actualizarPedidoUniforme = async (req, res) => {
@@ -156,7 +166,7 @@ exports.actualizarPedidoUniforme = async (req, res) => {
     }
 
     const body = req.body || {};
-    const { uniformeId, talla, nombrePersonalizado, numeroFranela, precio, moneda, generoPrecioVariante } = body;
+    const { uniformeId, talla, nombrePersonalizado, numeroFranela, precio, moneda, generoPrecioVariante, metodo_cobranza } = body;
   let uniformeActualizado = null;
   let cambioTalla = false;
   let cambioGeneroPrecio = false;
@@ -182,6 +192,9 @@ exports.actualizarPedidoUniforme = async (req, res) => {
       }
       if (moneda === undefined || moneda === null || String(moneda).trim() === '') {
         pedido.moneda = normalizeMoneda(uniforme.moneda);
+      }
+      if (!pedido.metodo_cobranza) {
+        pedido.metodo_cobranza = normalizeMetodoCobranza(uniforme.metodo_cobranza);
       }
     }
 
@@ -221,10 +234,40 @@ exports.actualizarPedidoUniforme = async (req, res) => {
       if (pedido.estado === ESTADOS_PEDIDO.ESPERANDO_PAGO && (Number(pedido.monto_pagado) || 0) <= 0) {
         pedido.saldo_pendiente = precioNumerico;
       }
+
+      if (normalizeMetodoCobranza(pedido.metodo_cobranza) === 'dos_partes_50' && (Number(pedido.monto_pagado) || 0) <= 0) {
+        pedido.monto_primera_parte_objetivo = calcularMontoPrimeraParteObjetivo(precioNumerico);
+        if (pedido.estado === ESTADOS_PEDIDO.ESPERANDO_PAGO && pedido.segunda_parte_habilitada !== true) {
+          pedido.saldo_pendiente = pedido.monto_primera_parte_objetivo;
+        }
+      }
     }
 
     if (moneda !== undefined) {
       pedido.moneda = normalizeMoneda(moneda);
+    }
+
+    if (metodo_cobranza !== undefined) {
+      const metodoCobranzaNormalizado = normalizeMetodoCobranza(metodo_cobranza);
+      pedido.metodo_cobranza = metodoCobranzaNormalizado;
+
+      if (metodoCobranzaNormalizado === 'dos_partes_50') {
+        pedido.monto_primera_parte_objetivo = calcularMontoPrimeraParteObjetivo(pedido.precio);
+
+        if ((Number(pedido.monto_pagado) || 0) <= 0) {
+          pedido.segunda_parte_habilitada = false;
+          if (pedido.estado === ESTADOS_PEDIDO.ESPERANDO_PAGO) {
+            pedido.saldo_pendiente = pedido.monto_primera_parte_objetivo;
+          }
+        }
+      } else {
+        pedido.monto_primera_parte_objetivo = 0;
+        pedido.segunda_parte_habilitada = false;
+
+        if ((Number(pedido.monto_pagado) || 0) <= 0 && pedido.estado === ESTADOS_PEDIDO.ESPERANDO_PAGO) {
+          pedido.saldo_pendiente = Number(pedido.precio) || 0;
+        }
+      }
     }
 
     if (generoPrecioVariante !== undefined) {
@@ -314,6 +357,7 @@ exports.createPedidoUniforme = async (req, res) => {
     }
     const prendaActual = String(uniforme.prenda || '').trim();
     const moneda = String(uniforme?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+    const metodoCobranza = normalizeMetodoCobranza(uniforme?.metodo_cobranza);
     const llevaNombreAtleta = uniforme?.lleva_nombre_atleta === true;
     const esFranelaRepresentante = uniforme?.franela_representante === true;
     const requiereNombrePersonalizado = llevaNombreAtleta;
@@ -375,6 +419,9 @@ exports.createPedidoUniforme = async (req, res) => {
       prenda: prendaActual,
       moneda,
       genero_precio_variante: generoPrecio,
+      metodo_cobranza: metodoCobranza,
+      segunda_parte_habilitada: false,
+      monto_primera_parte_objetivo: metodoCobranza === 'dos_partes_50' ? calcularMontoPrimeraParteObjetivo(precio) : 0,
       nombre_personalizado: requiereNombrePersonalizado ? (String(nombrePersonalizado || '').trim().toUpperCase() || undefined) : undefined,
       numero_franela: requiereNumeroFranela ? String(numeroFranelaPedido) : null,
       precio,
@@ -418,7 +465,7 @@ exports.getMisPedidosUniforme = async (req, res) => {
     const pedidos = await TenantUniformePedido.find(filtro)
       .populate('alumno')
       .populate('sede')
-      .populate('uniforme', 'prenda precio moneda')
+      .populate('uniforme', 'prenda precio moneda metodo_cobranza')
       .sort({ createdAt: -1 });
 
     res.json(pedidos.map(resolvePedidoPrenda));
@@ -443,7 +490,7 @@ exports.getPedidosUniforme = async (req, res) => {
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por')
-      .populate('uniforme', 'prenda precio moneda')
+      .populate('uniforme', 'prenda precio moneda metodo_cobranza')
       .sort({ createdAt: -1 });
     res.json(pedidos.map(resolvePedidoPrenda));
   } catch (err) {
@@ -468,12 +515,21 @@ exports.solicitarPagoPedido = async (req, res) => {
       return res.status(400).json({ error: 'Solo se puede solicitar pago para pedidos pendientes' });
     }
 
+    const metodoCobranza = normalizeMetodoCobranza(pedido.metodo_cobranza);
+    const montoPrimeraParteObjetivo = metodoCobranza === 'dos_partes_50'
+      ? calcularMontoPrimeraParteObjetivo(precio)
+      : 0;
+    const saldoInicial = metodoCobranza === 'dos_partes_50' ? montoPrimeraParteObjetivo : precio;
+
     pedido.precio = precio;
     pedido.monto_pagado = 0;
     pedido.monto_pagado_bs = 0;
     pedido.monto_ultimo_pago = 0;
     pedido.monto_ultimo_pago_bs = 0;
-    pedido.saldo_pendiente = precio;
+    pedido.saldo_pendiente = saldoInicial;
+    pedido.metodo_cobranza = metodoCobranza;
+    pedido.segunda_parte_habilitada = false;
+    pedido.monto_primera_parte_objetivo = montoPrimeraParteObjetivo;
     pedido.estado = ESTADOS_PEDIDO.ESPERANDO_PAGO;
     await pedido.save();
 
@@ -552,10 +608,29 @@ exports.registrarPagoPedido = async (req, res) => {
     }
 
     const totalPedido = Number(pedido.precio) || 0;
+    const metodoCobranza = normalizeMetodoCobranza(pedido.metodo_cobranza);
+    const segundaParteHabilitada = pedido.segunda_parte_habilitada === true;
+    const montoPrimeraParteObjetivo = metodoCobranza === 'dos_partes_50'
+      ? (Number(pedido.monto_primera_parte_objetivo) > 0
+        ? redondearMonto(pedido.monto_primera_parte_objetivo)
+        : calcularMontoPrimeraParteObjetivo(totalPedido))
+      : 0;
+    const montoPagadoPrevio = redondearMonto(Number(pedido.monto_pagado) || 0);
     const saldoActual = Number(pedido.saldo_pendiente);
-    const saldoPendiente = Number.isFinite(saldoActual) && saldoActual > 0
+    const saldoPendienteTotal = Number.isFinite(saldoActual) && saldoActual > 0
       ? saldoActual
-      : Math.max(totalPedido - (Number(pedido.monto_pagado) || 0), 0);
+      : Math.max(totalPedido - montoPagadoPrevio, 0);
+
+    if (metodoCobranza === 'dos_partes_50' && !segundaParteHabilitada) {
+      const pendientePrimeraParte = redondearMonto(Math.max(0, montoPrimeraParteObjetivo - montoPagadoPrevio));
+      if (pendientePrimeraParte <= 0) {
+        return res.status(400).json({ error: 'La primera parte ya fue pagada. Espera que administracion habilite la segunda parte.' });
+      }
+    }
+
+    const saldoPendiente = (metodoCobranza === 'dos_partes_50' && !segundaParteHabilitada)
+      ? redondearMonto(Math.max(0, montoPrimeraParteObjetivo - montoPagadoPrevio))
+      : saldoPendienteTotal;
 
     if (saldoPendiente <= 0) {
       return res.status(400).json({ error: 'El pedido no tiene saldo pendiente por pagar' });
@@ -570,7 +645,7 @@ exports.registrarPagoPedido = async (req, res) => {
     const factorAjuste = montoPagado > saldoPendiente ? (saldoPendiente / montoPagado) : 1;
     const montoPagadoAplicado = redondearMonto(montoPagado * factorAjuste);
     const montoPagadoBsAplicado = redondearMonto(montoPagadoBs * factorAjuste);
-    const esPagoCompleto = montoPagadoAplicado >= (saldoPendiente - 0.0001);
+    const esPagoCompletoTramo = montoPagadoAplicado >= (saldoPendiente - 0.0001);
 
     pedido.metodo_pago = metodo_pago;
     pedido.referencia = referencia || undefined;
@@ -582,11 +657,12 @@ exports.registrarPagoPedido = async (req, res) => {
     pedido.monto_ultimo_pago = montoPagadoAplicado;
     pedido.monto_ultimo_pago_bs = montoPagadoBsAplicado;
 
-    const totalPagado = (Number(pedido.monto_pagado) || 0) + montoPagadoAplicado;
+    const totalPagado = montoPagadoPrevio + montoPagadoAplicado;
     const totalPagadoBs = (Number(pedido.monto_pagado_bs) || 0) + montoPagadoBsAplicado;
     const saldoPendienteNuevo = Math.max(totalPedido - totalPagado, 0);
+    const esPagoCompletoPedido = totalPagado >= (totalPedido - 0.0001);
 
-    if (esPagoCompleto && !puedeGestionar) {
+    if (esPagoCompletoTramo && !puedeGestionar) {
       // Si lo registra el usuario final y completa el saldo, queda en revisión administrativa.
       pedido.estado = ESTADOS_PEDIDO.PAGO_EN_REVISION;
     } else {
@@ -607,7 +683,7 @@ exports.registrarPagoPedido = async (req, res) => {
       pedido.monto_pagado = totalPagado;
       pedido.monto_pagado_bs = totalPagadoBs;
       pedido.saldo_pendiente = saldoPendienteNuevo;
-      pedido.estado = esPagoCompleto ? ESTADOS_PEDIDO.VERIFICADO : ESTADOS_PEDIDO.ABONO;
+      pedido.estado = esPagoCompletoPedido ? ESTADOS_PEDIDO.VERIFICADO : ESTADOS_PEDIDO.ABONO;
       pedido.monto_ultimo_pago = 0;
       pedido.monto_ultimo_pago_bs = 0;
     }
@@ -682,6 +758,49 @@ exports.verificarPagoPedido = async (req, res) => {
     res.json(resolvePedidoPrenda(pedidoActualizado));
   } catch (err) {
     res.status(400).json({ error: 'Error al verificar el pago del pedido', detalle: err.message });
+  }
+};
+
+exports.habilitarSegundaPartePedido = async (req, res) => {
+  try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findById(req.params.id);
+
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const metodoCobranza = normalizeMetodoCobranza(pedido.metodo_cobranza);
+    if (metodoCobranza !== 'dos_partes_50') {
+      return res.status(400).json({ error: 'Este pedido no usa esquema de cobranza en dos partes.' });
+    }
+
+    const totalPedido = redondearMonto(Number(pedido.precio) || 0);
+    const montoPagado = redondearMonto(Number(pedido.monto_pagado) || 0);
+    const montoPrimeraParteObjetivo = Number(pedido.monto_primera_parte_objetivo) > 0
+      ? redondearMonto(pedido.monto_primera_parte_objetivo)
+      : calcularMontoPrimeraParteObjetivo(totalPedido);
+
+    if (montoPagado + 0.01 < montoPrimeraParteObjetivo) {
+      return res.status(400).json({ error: 'Aun no se ha completado el pago de la primera parte.' });
+    }
+
+    if (pedido.segunda_parte_habilitada === true) {
+      return res.status(400).json({ error: 'La segunda parte ya esta habilitada para este pedido.' });
+    }
+
+    const saldoPendiente = redondearMonto(Math.max(0, totalPedido - montoPagado));
+    pedido.segunda_parte_habilitada = true;
+    pedido.saldo_pendiente = saldoPendiente;
+    if (saldoPendiente > 0) {
+      pedido.estado = ESTADOS_PEDIDO.ESPERANDO_PAGO;
+    }
+
+    await pedido.save();
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    return res.json(resolvePedidoPrenda(pedidoActualizado));
+  } catch (err) {
+    return res.status(400).json({ error: 'Error al habilitar segunda parte del pedido', detalle: err.message });
   }
 };
 

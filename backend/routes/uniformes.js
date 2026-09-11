@@ -60,6 +60,7 @@ router.get('/pedidos/mis', authMiddleware, uniformePedidoController.getMisPedido
 router.get('/pedidos', authMiddleware, permisoMiddleware('solicitudes_uniformes.view'), uniformePedidoController.getPedidosUniforme);
 router.patch('/pedidos/:id', authMiddleware, parseMultipartFields, uniformePedidoController.actualizarPedidoUniforme);
 router.patch('/pedidos/:id/solicitar-pago', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.solicitarPagoPedido);
+router.patch('/pedidos/:id/habilitar-segunda-parte', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.habilitarSegundaPartePedido);
 router.patch('/pedidos/:id/cancelar', authMiddleware, uniformePedidoController.cancelarPedido);
 router.patch('/pedidos/:id/pagar', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.registrarPagoPedido);
 router.patch('/pedidos/:id/verificar-pago', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.verificarPagoPedido);

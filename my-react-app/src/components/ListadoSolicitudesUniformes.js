@@ -32,6 +32,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
@@ -137,7 +138,8 @@ function ListadoSolicitudesUniformes() {
     nombrePersonalizado: '',
     numeroFranela: '',
     precio: '',
-    moneda: 'USD'
+    moneda: 'USD',
+    metodoCobranza: 'pago_completo'
   });
   const [detallePagoOpen, setDetallePagoOpen] = useState(false);
   const [submittingVerificacion, setSubmittingVerificacion] = useState(false);
@@ -158,6 +160,8 @@ function ListadoSolicitudesUniformes() {
   const [entregandoId, setEntregandoId] = useState(null);
   const [confirmEliminarId, setConfirmEliminarId] = useState(null);
   const [eliminandoId, setEliminandoId] = useState(null);
+  const [habilitandoSegundaParteId, setHabilitandoSegundaParteId] = useState(null);
+  const [confirmHabilitarSegundaPartePedido, setConfirmHabilitarSegundaPartePedido] = useState(null);
   const [comprobanteDialogOpen, setComprobanteDialogOpen] = useState(false);
   const [comprobanteUrl, setComprobanteUrl] = useState('');
   const [comprobanteTipo, setComprobanteTipo] = useState('imagen');
@@ -172,6 +176,8 @@ function ListadoSolicitudesUniformes() {
   const [selectedPedidoIds, setSelectedPedidoIds] = useState([]);
   const [submittingSolicitudPagoLote, setSubmittingSolicitudPagoLote] = useState(false);
   const [confirmSolicitudPagoLoteOpen, setConfirmSolicitudPagoLoteOpen] = useState(false);
+  const [submittingHabilitarSegundoPagoLote, setSubmittingHabilitarSegundoPagoLote] = useState(false);
+  const [confirmHabilitarSegundoPagoLoteOpen, setConfirmHabilitarSegundoPagoLoteOpen] = useState(false);
   const [submittingEliminarLote, setSubmittingEliminarLote] = useState(false);
   const [confirmEliminarLoteOpen, setConfirmEliminarLoteOpen] = useState(false);
 
@@ -260,6 +266,9 @@ function ListadoSolicitudesUniformes() {
   };
 
   const normalizarMoneda = (moneda) => String(moneda || 'USD').trim().toUpperCase() === 'EUR' ? 'EUR' : 'USD';
+  const normalizarMetodoCobranza = (metodo) => String(metodo || '').trim().toLowerCase() === 'dos_partes_50'
+    ? 'dos_partes_50'
+    : 'pago_completo';
   const formatMoneyWithCurrency = (value, moneda) => `${normalizarMoneda(moneda)} ${formatMoney(value)}`;
 
   const parseFechaSinDesfase = (fecha) => {
@@ -310,6 +319,26 @@ function ListadoSolicitudesUniformes() {
 
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
+  const getMetodoCobranzaLabel = (pedido) => (
+    String(pedido?.metodo_cobranza || '').trim().toLowerCase() === 'dos_partes_50'
+      ? 'Dos partes (50/50)'
+      : 'Pago completo'
+  );
+  const isDosPartes50 = (pedido) => String(pedido?.metodo_cobranza || '').trim().toLowerCase() === 'dos_partes_50';
+  const getMontoPrimeraParteObjetivo = (pedido) => {
+    const total = Number(pedido?.precio) || 0;
+    const base = Number(pedido?.monto_primera_parte_objetivo);
+    const monto = Number.isFinite(base) && base > 0 ? base : (total / 2);
+    return Number(Number(monto || 0).toFixed(2));
+  };
+  const puedeHabilitarSegundaParte = (pedido) => {
+    if (!isDosPartes50(pedido)) return false;
+    if (pedido?.segunda_parte_habilitada === true) return false;
+    if (String(pedido?.estado || '').toLowerCase() !== 'abono') return false;
+    const pagado = Number(pedido?.monto_pagado) || 0;
+    const objetivo = getMontoPrimeraParteObjetivo(pedido);
+    return pagado + 0.01 >= objetivo;
+  };
   const esPedidoPendiente = (pedido) => String(pedido?.estado || '').toLowerCase() === 'pendiente';
   const esAlumnoActivo = (alumno) => !(
     alumno?.dado_de_baja
@@ -483,6 +512,7 @@ function ListadoSolicitudesUniformes() {
     selectedPedidoIds.includes(String(pedido._id))
   );
   const pedidosPendientesSeleccionados = pedidosFiltradosSeleccionados.filter((pedido) => esPedidoPendiente(pedido));
+  const pedidosSegundaParteElegiblesSeleccionados = pedidosFiltradosSeleccionados.filter((pedido) => puedeHabilitarSegundaParte(pedido));
   const todosFiltradosSeleccionadosGlobal =
     pedidosFiltradosIds.length > 0 &&
     pedidosFiltradosIds.every((id) => selectedPedidoIds.includes(id));
@@ -739,7 +769,8 @@ function ListadoSolicitudesUniformes() {
       nombrePersonalizado: muestraNombre ? nombreNormalizado : '',
       numeroFranela: requiereNumero ? String(pedido?.numero_franela || '') : '',
       precio: String(pedido?.precio ?? uniformeCatalogo?.precio ?? ''),
-      moneda: normalizarMoneda(pedido?.moneda || uniformeCatalogo?.moneda || 'USD')
+      moneda: normalizarMoneda(pedido?.moneda || uniformeCatalogo?.moneda || 'USD'),
+      metodoCobranza: normalizarMetodoCobranza(pedido?.metodo_cobranza || uniformeCatalogo?.metodo_cobranza || 'pago_completo')
     });
     setEditSolicitudOpen(true);
   };
@@ -754,7 +785,8 @@ function ListadoSolicitudesUniformes() {
       nombrePersonalizado: '',
       numeroFranela: '',
       precio: '',
-      moneda: 'USD'
+      moneda: 'USD',
+      metodoCobranza: 'pago_completo'
     });
   };
 
@@ -819,7 +851,8 @@ function ListadoSolicitudesUniformes() {
           nombrePersonalizado: muestraCampoNombreEdicion ? editSolicitudData.nombrePersonalizado : '',
           numeroFranela: requiereNumeroFranelaEdicion ? editSolicitudData.numeroFranela : '',
           precio,
-          moneda: normalizarMoneda(editSolicitudData.moneda)
+          moneda: normalizarMoneda(editSolicitudData.moneda),
+          metodo_cobranza: normalizarMetodoCobranza(editSolicitudData.metodoCobranza)
         })
       });
       const data = await res.json();
@@ -993,6 +1026,68 @@ function ListadoSolicitudesUniformes() {
     }
   };
 
+  const handleHabilitarSegundoPagoPorLote = async () => {
+    if (pedidosFiltradosSeleccionados.length === 0) {
+      setError('Selecciona al menos una solicitud para habilitar segundo pago.');
+      return;
+    }
+
+    const pedidosElegibles = pedidosSegundaParteElegiblesSeleccionados;
+    const pedidosNoElegibles = pedidosFiltradosSeleccionados.filter((pedido) => !pedidosElegibles.includes(pedido));
+
+    if (pedidosElegibles.length === 0) {
+      setError('Las solicitudes seleccionadas no cumplen condiciones para habilitar segundo pago.');
+      return;
+    }
+
+    try {
+      setSubmittingHabilitarSegundoPagoLote(true);
+      setConfirmHabilitarSegundoPagoLoteOpen(false);
+
+      const resultados = await Promise.allSettled(
+        pedidosElegibles.map(async (pedido) => {
+          const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedido._id}/habilitar-segunda-parte`, {
+            method: 'PATCH',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.error || 'Error al habilitar segundo pago');
+          }
+          return data;
+        })
+      );
+
+      const actualizados = resultados
+        .filter((resultado) => resultado.status === 'fulfilled')
+        .map((resultado) => resultado.value);
+
+      if (actualizados.length > 0) {
+        const byId = new Map(actualizados.map((pedido) => [String(pedido._id), pedido]));
+        setPedidos((prev) => prev.map((pedido) => byId.get(String(pedido._id)) || pedido));
+      }
+
+      const exitos = actualizados.length;
+      const fallidos = resultados.length - exitos;
+      const noElegibles = pedidosNoElegibles.length;
+
+      setSelectedPedidoIds((prev) => prev.filter((id) => {
+        const fueExitoso = actualizados.some((pedido) => String(pedido._id) === String(id));
+        return !fueExitoso;
+      }));
+
+      if (fallidos > 0 || noElegibles > 0) {
+        setError(`Habilitación parcial: ${exitos} exitosas, ${fallidos} fallidas, ${noElegibles} no elegibles.`);
+      } else {
+        setSuccessMessage(`Segundo pago habilitado para ${exitos} solicitud(es).`);
+      }
+    } catch (err) {
+      setError(err.message || 'Error al habilitar segundo pago por lote');
+    } finally {
+      setSubmittingHabilitarSegundoPagoLote(false);
+    }
+  };
+
   const openDetallePagoDialog = (pedido) => {
     setPedidoSeleccionado(pedido);
     setDetallePagoOpen(true);
@@ -1150,6 +1245,44 @@ function ListadoSolicitudesUniformes() {
     }
   };
 
+  const handleHabilitarSegundaParte = async (pedido) => {
+    const pedidoId = String(pedido?._id || '');
+    if (!pedidoId) return;
+
+    try {
+      setHabilitandoSegundaParteId(pedidoId);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoId}/habilitar-segunda-parte`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al habilitar segunda parte');
+
+      setPedidos((prev) => prev.map((item) => (String(item._id) === pedidoId ? data : item)));
+      setSuccessMessage('Segunda parte habilitada. Ya se puede registrar el pago restante.');
+    } catch (err) {
+      setError(err.message || 'Error al habilitar segunda parte');
+    } finally {
+      setHabilitandoSegundaParteId(null);
+    }
+  };
+
+  const openConfirmHabilitarSegundaParte = (pedido) => {
+    if (!pedido?._id) return;
+    setConfirmHabilitarSegundaPartePedido(pedido);
+  };
+
+  const closeConfirmHabilitarSegundaParte = () => {
+    if (habilitandoSegundaParteId) return;
+    setConfirmHabilitarSegundaPartePedido(null);
+  };
+
+  const confirmHabilitarSegundaParte = async () => {
+    if (!confirmHabilitarSegundaPartePedido?._id) return;
+    await handleHabilitarSegundaParte(confirmHabilitarSegundaPartePedido);
+    setConfirmHabilitarSegundaPartePedido(null);
+  };
+
   const handleEliminarSolicitud = async (id) => {
     if (!id) return;
     setEliminandoId(id);
@@ -1301,6 +1434,28 @@ function ListadoSolicitudesUniformes() {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: mobile ? 'flex-start' : 'center' }}>
           {renderEditarSolicitudButton()}
+          {puedeHabilitarSegundaParte(pedido) && (
+            <Tooltip title={habilitandoSegundaParteId === pedido._id ? 'Habilitando...' : 'Habilitar segundo pago'}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={() => openConfirmHabilitarSegundaParte(pedido)}
+                  aria-label="Habilitar segunda parte"
+                  disabled={habilitandoSegundaParteId === pedido._id}
+                  sx={{
+                    bgcolor: '#fff7ed',
+                    color: '#c2410c',
+                    '&:hover': { bgcolor: '#ffedd5' },
+                    '&:disabled': { bgcolor: '#e5e7eb', color: '#94a3b8' }
+                  }}
+                >
+                  {habilitandoSegundaParteId === pedido._id
+                    ? <CircularProgress size={16} sx={{ color: '#c2410c' }} />
+                    : <LockOpenIcon fontSize="small" />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
           <Tooltip title="Registrar pago">
             <IconButton
               size="small"
@@ -1425,33 +1580,61 @@ function ListadoSolicitudesUniformes() {
         </Alert>
       </Snackbar>
 
-      <Box sx={{ mb: 1.5 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800, fontSize: { xs: 24, md: 30 }, color: '#0f172a' }}>
-          Pedidos de Uniformes
-        </Typography>
-        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.4 }}>
-          Lista de solicitudes realizadas por los alumnos. Solicita pagos, verifica comprobantes y marca prendas como entregadas.
-        </Typography>
+      <Box
+        sx={{
+          mb: 1.5,
+          display: 'flex',
+          alignItems: { xs: 'stretch', md: 'flex-start' },
+          justifyContent: 'space-between',
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: 1.2
+        }}
+      >
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 900, fontSize: { xs: 29, md: 34 }, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1.06 }}>
+            Pedidos de Uniformes
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#64748b', mt: 0.35, maxWidth: 760, lineHeight: 1.25 }}>
+            Lista de solicitudes realizadas por los alumnos. Solicita pagos, verifica comprobantes y marca prendas como entregadas.
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          onClick={exportPedidosExcel}
+          sx={{
+            textTransform: 'none',
+            fontWeight: 700,
+            borderRadius: 2,
+            minHeight: 40,
+            px: 1.8,
+            whiteSpace: 'nowrap',
+            alignSelf: { xs: 'flex-end', md: 'flex-start' },
+            borderColor: '#d9e2f0',
+            color: '#0f172a',
+            backgroundColor: '#ffffff',
+            '&:hover': { borderColor: '#c2cfe3', backgroundColor: '#f8fafc' }
+          }}
+        >
+          Exportar Excel
+        </Button>
       </Box>
 
       <Paper
         elevation={0}
         sx={{
-          border: '1px solid #e2e8f0',
-          borderRadius: 2.5,
-          p: 1.75,
-          mb: 1.5,
+          border: '1px solid #e7edf6',
+          borderRadius: 2.75,
+          p: 1.25,
+          mb: 1.2,
           backgroundColor: '#ffffff',
-          boxShadow: '0 8px 18px rgba(15, 23, 42, 0.04)'
+          boxShadow: '0 10px 22px rgba(15, 23, 42, 0.04)'
         }}
       >
         <Box
           sx={{
-            display: 'flex',
+            display: 'grid',
             gap: 1,
-            flexWrap: { xs: 'wrap', xl: 'nowrap' },
-            alignItems: { xs: 'stretch', xl: 'center' },
-            justifyContent: 'space-between',
             width: '100%'
           }}
         >
@@ -1477,7 +1660,8 @@ function ListadoSolicitudesUniformes() {
               }}
               sx={{
                 minWidth: { xs: 0, md: 170 },
-                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc', border: '1px solid #ebf0f6' },
+                '& .MuiInputLabel-root': { fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#94a3b8' }
               }}
             >
               <MenuItem value="todos">Todos</MenuItem>
@@ -1497,7 +1681,8 @@ function ListadoSolicitudesUniformes() {
               }}
               sx={{
                 minWidth: { xs: 0, md: 175 },
-                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc', border: '1px solid #ebf0f6' },
+                '& .MuiInputLabel-root': { fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#94a3b8' }
               }}
             >
               <MenuItem value="todos">Todos los estados</MenuItem>
@@ -1522,7 +1707,8 @@ function ListadoSolicitudesUniformes() {
               sx={{
                 minWidth: { xs: 0, md: 200 },
                 gridColumn: { xs: '1 / -1', sm: 'auto' },
-                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc', border: '1px solid #ebf0f6' },
+                '& .MuiInputLabel-root': { fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#94a3b8' }
               }}
             />
 
@@ -1561,7 +1747,8 @@ function ListadoSolicitudesUniformes() {
               sx={{
                 minWidth: { xs: 0, md: 175 },
                 gridColumn: { xs: '1 / -1', sm: 'auto' },
-                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc', border: '1px solid #ebf0f6' },
+                '& .MuiInputLabel-root': { fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#94a3b8' }
               }}
             >
               <MenuItem value={ALL_PRENDAS_VALUE}>
@@ -1637,7 +1824,8 @@ function ListadoSolicitudesUniformes() {
               sx={{
                 minWidth: { xs: 0, md: 175 },
                 gridColumn: { xs: '1 / -1', sm: 'auto' },
-                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc', border: '1px solid #ebf0f6' },
+                '& .MuiInputLabel-root': { fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#94a3b8' }
               }}
             >
               <MenuItem value={ALL_CATEGORIAS_VALUE}>
@@ -1663,7 +1851,8 @@ function ListadoSolicitudesUniformes() {
               }}
               sx={{
                 minWidth: { xs: 0, md: 175 },
-                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc' }
+                '& .MuiOutlinedInput-root': { height: 40, borderRadius: 2, backgroundColor: '#f8fafc', border: '1px solid #ebf0f6' },
+                '& .MuiInputLabel-root': { fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#94a3b8' }
               }}
             >
               <MenuItem value="todos">Todos</MenuItem>
@@ -1672,20 +1861,94 @@ function ListadoSolicitudesUniformes() {
               ))}
             </TextField>
           </Box>
+        </Box>
+      </Paper>
 
-          <Box
-            sx={{
-              display: { xs: 'grid', sm: 'flex' },
-              gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))' },
-              gap: 1,
-              flexWrap: 'wrap',
-              justifyContent: { xs: 'flex-start', xl: 'flex-end' },
-              ml: { xl: 'auto' },
-              width: { xs: '100%', xl: 'auto' }
-            }}
-          >
+      <Paper
+        elevation={0}
+        sx={{
+          mb: 1.1,
+          borderRadius: 2.2,
+          border: '1px solid #1e293b',
+          bgcolor: '#0f172a',
+          color: '#e2e8f0',
+          px: 1.25,
+          py: 0.9
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: { xs: 'stretch', md: 'center' },
+            justifyContent: 'space-between',
+            flexDirection: { xs: 'column', md: 'row' },
+            gap: 1
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box
+              sx={{
+                minWidth: 28,
+                height: 22,
+                px: 0.7,
+                borderRadius: '999px',
+                bgcolor: '#2563eb',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              {pedidosFiltradosSeleccionados.length}
+            </Box>
+            <Typography sx={{ color: '#e2e8f0', fontWeight: 700, fontSize: 13.5 }}>
+              pedidos seleccionados
+            </Typography>
+            <Button
+              variant="text"
+              onClick={handleToggleSeleccionGlobalFiltrados}
+              disabled={pedidosFiltradosIds.length === 0 || submittingSolicitudPagoLote || submittingHabilitarSegundoPagoLote || submittingEliminarLote}
+              sx={{
+                textTransform: 'none',
+                minHeight: 28,
+                px: 0.7,
+                fontWeight: 700,
+                fontSize: 12.5,
+                color: '#93c5fd',
+                '&:hover': { backgroundColor: 'rgba(147, 197, 253, 0.08)' }
+              }}
+            >
+              {todosFiltradosSeleccionadosGlobal ? 'Limpiar selección' : `Seleccionar todos (${pedidosFiltradosIds.length})`}
+            </Button>
+          </Box>
+
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
             <Button
               variant="outlined"
+              startIcon={<LockOpenIcon />}
+              disabled={pedidosSegundaParteElegiblesSeleccionados.length === 0 || submittingHabilitarSegundoPagoLote}
+              onClick={() => setConfirmHabilitarSegundoPagoLoteOpen(true)}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                borderRadius: 2,
+                minHeight: 34,
+                px: 1.2,
+                whiteSpace: 'nowrap',
+                borderColor: '#334155',
+                color: '#e2e8f0',
+                '&:hover': { borderColor: '#475569', backgroundColor: 'rgba(255,255,255,0.04)' },
+                '&:disabled': { borderColor: '#334155', color: '#64748b' }
+              }}
+            >
+              {submittingHabilitarSegundoPagoLote
+                ? 'Procesando...'
+                : `Habilitar 2do pago (${pedidosSegundaParteElegiblesSeleccionados.length})`}
+            </Button>
+            <Button
+              variant="contained"
               startIcon={<RequestQuoteIcon />}
               disabled={pedidosPendientesSeleccionados.length === 0 || submittingSolicitudPagoLote}
               onClick={() => setConfirmSolicitudPagoLoteOpen(true)}
@@ -1693,10 +1956,13 @@ function ListadoSolicitudesUniformes() {
                 textTransform: 'none',
                 fontWeight: 700,
                 borderRadius: 2,
-                minHeight: 40,
-                px: 1.5,
+                minHeight: 34,
+                px: 1.2,
                 whiteSpace: 'nowrap',
-                width: { xs: '100%', sm: 'auto' }
+                bgcolor: '#2563eb',
+                boxShadow: 'none',
+                '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+                '&:disabled': { bgcolor: '#334155', color: '#94a3b8' }
               }}
             >
               {submittingSolicitudPagoLote
@@ -1713,57 +1979,22 @@ function ListadoSolicitudesUniformes() {
                 textTransform: 'none',
                 fontWeight: 700,
                 borderRadius: 2,
-                minHeight: 40,
-                px: 1.5,
+                minHeight: 34,
+                px: 1.2,
                 whiteSpace: 'nowrap',
-                width: { xs: '100%', sm: 'auto' }
+                borderColor: '#7f1d1d',
+                color: '#fca5a5',
+                '&:hover': { borderColor: '#b91c1c', backgroundColor: 'rgba(185, 28, 28, 0.14)' },
+                '&:disabled': { borderColor: '#334155', color: '#64748b' }
               }}
             >
               {submittingEliminarLote
                 ? 'Eliminando...'
                 : `Eliminar (${pedidosFiltradosSeleccionados.length})`}
             </Button>
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              onClick={exportPedidosExcel}
-              sx={{
-                textTransform: 'none',
-                fontWeight: 700,
-                borderRadius: 2,
-                minHeight: 40,
-                px: 1.5,
-                whiteSpace: 'nowrap',
-                width: { xs: '100%', sm: 'auto' },
-                gridColumn: { xs: '1 / -1', sm: 'auto' }
-              }}
-            >
-              Exportar Excel
-            </Button>
           </Box>
         </Box>
       </Paper>
-
-      <Box sx={{ mb: 1.1 }}>
-        <Button
-          variant="text"
-          onClick={handleToggleSeleccionGlobalFiltrados}
-          disabled={pedidosFiltradosIds.length === 0 || submittingSolicitudPagoLote || submittingEliminarLote}
-          sx={{
-            textTransform: 'none',
-            fontWeight: 600,
-            color: '#475569',
-            minHeight: 34,
-            px: 0.5,
-            justifyContent: 'flex-start',
-            '&:hover': { backgroundColor: '#f1f5f9' }
-          }}
-        >
-          {todosFiltradosSeleccionadosGlobal
-            ? 'Limpiar selección global'
-            : `Seleccionar todos los resultados (${pedidosFiltradosIds.length})`}
-        </Button>
-      </Box>
 
       {loading ? (
         <Typography>Cargando...</Typography>
@@ -1819,6 +2050,7 @@ function ListadoSolicitudesUniformes() {
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Talla:</b> {pedido.talla || '-'}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Nombre:</b> {pedido.nombre_personalizado || '-'}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Numero:</b> {pedido.numero_franela || '-'}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Cobranza:</b> {getMetodoCobranzaLabel(pedido)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> {formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha:</b> {formatFecha(pedido.createdAt)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pagado:</b> {formatMoneyWithCurrency(pedido.monto_pagado, pedido.moneda)}</Typography>
@@ -1899,6 +2131,7 @@ function ListadoSolicitudesUniformes() {
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>TALLA</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>NOMBRE</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>NUMERO</TableCell>
+                <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>COBRANZA</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>PRECIO</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>FECHA</TableCell>
                 <TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>ESTADO</TableCell>
@@ -1949,6 +2182,7 @@ function ListadoSolicitudesUniformes() {
                   <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{pedido.talla}</TableCell>
                   <TableCell sx={{ color: '#475569' }}>{pedido.nombre_personalizado || '-'}</TableCell>
                   <TableCell sx={{ color: '#475569' }}>{pedido.numero_franela || '-'}</TableCell>
+                  <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{getMetodoCobranzaLabel(pedido)}</TableCell>
                   <TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</TableCell>
                   <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{formatFecha(pedido.createdAt)}</TableCell>
                   <TableCell>
@@ -2026,7 +2260,18 @@ function ListadoSolicitudesUniformes() {
                   Monto
                 </Typography>
                 <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>
-                  {formatMoneyWithCurrency(pedidoSeleccionado?.precio, pedidoSeleccionado?.moneda)}
+                  {isDosPartes50(pedidoSeleccionado)
+                    ? `${formatMoneyWithCurrency(getMontoPrimeraParteObjetivo(pedidoSeleccionado), pedidoSeleccionado?.moneda)} (primera parte)`
+                    : formatMoneyWithCurrency(pedidoSeleccionado?.precio, pedidoSeleccionado?.moneda)}
+                </Typography>
+              </Box>
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 1 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.04em', color: '#94a3b8', textTransform: 'uppercase' }}>
+                  Cobranza
+                </Typography>
+                <Typography sx={{ fontWeight: 700, color: '#334155' }}>
+                  {getMetodoCobranzaLabel(pedidoSeleccionado)}
                 </Typography>
               </Box>
 
@@ -2387,6 +2632,7 @@ function ListadoSolicitudesUniformes() {
                     uniformeId,
                     precio: uniforme ? String(uniforme.precio ?? '') : prev.precio,
                     moneda: uniforme ? normalizarMoneda(uniforme.moneda) : prev.moneda,
+                    metodoCobranza: uniforme ? normalizarMetodoCobranza(uniforme.metodo_cobranza) : prev.metodoCobranza,
                     numeroFranela: requiereNumero ? prev.numeroFranela : '',
                     nombrePersonalizado: muestraNombre
                       ? (usaSelectorRepresentante
@@ -2473,6 +2719,18 @@ function ListadoSolicitudesUniformes() {
                   <MenuItem value="EUR">EUR</MenuItem>
                 </TextField>
               </Box>
+
+              <TextField
+                select
+                label="Metodo de cobranza"
+                value={editSolicitudData.metodoCobranza}
+                onChange={(event) => setEditSolicitudData((prev) => ({ ...prev, metodoCobranza: event.target.value }))}
+                disabled={submittingEditSolicitud}
+                helperText="Este cambio solo afecta esta solicitud."
+              >
+                <MenuItem value="pago_completo">Pago completo</MenuItem>
+                <MenuItem value="dos_partes_50">Dos partes (50/50)</MenuItem>
+              </TextField>
             </Box>
           </Paper>
         </DialogContent>
@@ -2761,6 +3019,137 @@ function ListadoSolicitudesUniformes() {
         </DialogActions>
       </Dialog>
 
+      <Dialog
+        open={!!confirmHabilitarSegundaPartePedido}
+        onClose={closeConfirmHabilitarSegundaParte}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 20, pb: 1.2 }}>
+          Habilitar segunda parte
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#f3f5fb', pt: 1.5, pb: 2.2 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              width: '100%',
+              boxSizing: 'border-box',
+              borderRadius: 2.5,
+              border: '1px solid #e7eaf2',
+              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+              p: 1.8,
+              backgroundColor: '#ffffff'
+            }}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '28px 1fr',
+                alignItems: 'start',
+                gap: 1,
+                mb: 1.1
+              }}
+            >
+              <Box
+                sx={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  bgcolor: '#fff2e7',
+                  color: '#f97316',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mt: 0.15
+                }}
+              >
+                <LockOpenIcon sx={{ fontSize: 16 }} />
+              </Box>
+              <Typography sx={{ color: '#0f172a', fontWeight: 700, lineHeight: 1.3 }}>
+                Se habilitara el cobro del monto restante para esta solicitud.
+              </Typography>
+            </Box>
+
+            <Typography sx={{ color: '#64748b', fontSize: 14, mb: 1.35 }}>
+              Desde este momento, el representante podra registrar el segundo pago del esquema 50/50.
+            </Typography>
+
+            <Box
+              sx={{
+                p: 1.15,
+                borderRadius: 1.8,
+                border: '1px solid #dbe4f0',
+                bgcolor: '#f8fafc'
+              }}
+            >
+              <Typography sx={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, mb: 0.35 }}>
+                Solicitud
+              </Typography>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a', lineHeight: 1.24 }}>
+                {confirmHabilitarSegundaPartePedido?.alumno
+                  ? `${confirmHabilitarSegundaPartePedido.alumno.nombres || ''} ${confirmHabilitarSegundaPartePedido.alumno.apellidos || ''}`.trim()
+                  : '-'}
+                {' - '}
+                {confirmHabilitarSegundaPartePedido?.prenda || '-'}
+              </Typography>
+            </Box>
+          </Paper>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            bgcolor: '#f3f5fb',
+            px: 3,
+            pb: 2.5,
+            pt: 0.35,
+            display: 'flex',
+            gap: 1,
+            alignItems: 'center'
+          }}
+        >
+          <Button
+            onClick={closeConfirmHabilitarSegundaParte}
+            disabled={Boolean(habilitandoSegundaParteId)}
+            sx={{
+              flex: 1,
+              color: '#475569',
+              textTransform: 'none',
+              fontWeight: 700,
+              minHeight: 40,
+              width: '100%',
+              justifyContent: 'center'
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={confirmHabilitarSegundaParte}
+            variant="contained"
+            disabled={Boolean(habilitandoSegundaParteId)}
+            sx={{
+              flex: 1,
+              bgcolor: '#2563eb',
+              textTransform: 'none',
+              fontWeight: 700,
+              boxShadow: 'none',
+              minHeight: 40,
+              width: '100%',
+              '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+              '&:disabled': { bgcolor: '#93c5fd', color: '#eff6ff' },
+              '& .MuiButton-startIcon': { mr: 0.75 }
+            }}
+          >
+            {Boolean(habilitandoSegundaParteId) ? 'Procesando...' : 'Confirmar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={!!confirmEliminarId} onClose={() => setConfirmEliminarId(null)}>
         <DialogTitle>Confirmar eliminación</DialogTitle>
         <DialogContent>
@@ -2793,24 +3182,101 @@ function ListadoSolicitudesUniformes() {
         }}
         maxWidth="xs"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)'
+          }
+        }}
       >
-        <DialogTitle>Confirmar solicitud por lote</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ mb: 1 }}>
-            Se enviará solicitud de pago para <b>{pedidosPendientesSeleccionados.length}</b> pedido(s) pendiente(s) seleccionados.
-          </Typography>
+        <DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 20, pb: 1.2 }}>
+          Solicitar pago por lote
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#f3f5fb', pt: 1.5, pb: 2.2 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              width: '100%',
+              boxSizing: 'border-box',
+              borderRadius: 2.5,
+              border: '1px solid #e7eaf2',
+              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+              p: 1.8,
+              backgroundColor: '#ffffff'
+            }}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '28px 1fr',
+                alignItems: 'start',
+                gap: 1,
+                mb: 1.1
+              }}
+            >
+              <Box
+                sx={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  bgcolor: '#e0ecff',
+                  color: '#2563eb',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mt: 0.15
+                }}
+              >
+                <RequestQuoteIcon sx={{ fontSize: 16 }} />
+              </Box>
+              <Typography sx={{ color: '#0f172a', fontWeight: 700, lineHeight: 1.3 }}>
+                Se enviara la solicitud de pago para los pedidos pendientes seleccionados.
+              </Typography>
+            </Box>
+
+            <Typography sx={{ color: '#64748b', fontSize: 14, mb: 1.35 }}>
+              Los representantes veran el pedido en estado listo para registrar pago.
+            </Typography>
+
+            <Box
+              sx={{
+                p: 1.15,
+                borderRadius: 1.8,
+                border: '1px solid #dbe4f0',
+                bgcolor: '#f8fafc'
+              }}
+            >
+              <Typography sx={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, mb: 0.35 }}>
+                Resumen
+              </Typography>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a', lineHeight: 1.24 }}>
+                Pendientes seleccionadas: {pedidosPendientesSeleccionados.length}
+              </Typography>
+            </Box>
+          </Paper>
         </DialogContent>
-        <DialogActions>
+        <DialogActions
+          sx={{
+            bgcolor: '#f3f5fb',
+            px: 3,
+            pb: 2.5,
+            pt: 0.35,
+            display: 'flex',
+            gap: 1,
+            alignItems: 'center'
+          }}
+        >
           <Button
             onClick={() => setConfirmSolicitudPagoLoteOpen(false)}
             disabled={submittingSolicitudPagoLote}
             sx={{
+              flex: 1,
               textTransform: 'none',
-              fontWeight: 600,
-              color: '#64748b',
-              '&:hover': {
-                backgroundColor: '#f1f5f9'
-              }
+              fontWeight: 700,
+              minHeight: 40,
+              width: '100%',
+              color: '#475569'
             }}
           >
             Cancelar
@@ -2819,23 +3285,151 @@ function ListadoSolicitudesUniformes() {
             onClick={handleSolicitarPagoPorLote}
             variant="contained"
             disabled={submittingSolicitudPagoLote || pedidosPendientesSeleccionados.length === 0}
-            startIcon={submittingSolicitudPagoLote ? <CircularProgress size={14} sx={{ color: '#ffffff' }} /> : <RequestQuoteIcon fontSize="small" />}
             sx={{
+              flex: 1,
               textTransform: 'none',
+              fontWeight: 700,
               boxShadow: 'none',
-              bgcolor: '#0B0F2A',
-              color: '#ffffff',
-              '&:hover': {
-                bgcolor: '#141A3A',
-                boxShadow: 'none'
-              },
-              '&:disabled': {
-                bgcolor: '#94a3b8',
-                color: '#ffffff'
-              }
+              bgcolor: '#2563eb',
+              minHeight: 40,
+              width: '100%',
+              '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+              '&:disabled': { bgcolor: '#93c5fd', color: '#eff6ff' }
             }}
           >
-            {submittingSolicitudPagoLote ? 'Procesando...' : 'Confirmar solicitud'}
+            {submittingSolicitudPagoLote ? 'Procesando...' : 'Confirmar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={confirmHabilitarSegundoPagoLoteOpen}
+        onClose={() => {
+          if (!submittingHabilitarSegundoPagoLote) setConfirmHabilitarSegundoPagoLoteOpen(false);
+        }}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 20, pb: 1.2 }}>
+          Habilitar 2do pago por lote
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#f3f5fb', pt: 1.5, pb: 2.2 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              width: '100%',
+              boxSizing: 'border-box',
+              borderRadius: 2.5,
+              border: '1px solid #e7eaf2',
+              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+              p: 1.8,
+              backgroundColor: '#ffffff'
+            }}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '28px 1fr',
+                alignItems: 'start',
+                gap: 1,
+                mb: 1.1
+              }}
+            >
+              <Box
+                sx={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  bgcolor: '#fff2e7',
+                  color: '#f97316',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mt: 0.15
+                }}
+              >
+                <LockOpenIcon sx={{ fontSize: 16 }} />
+              </Box>
+              <Typography sx={{ color: '#0f172a', fontWeight: 700, lineHeight: 1.3 }}>
+                Se habilitara el segundo pago para las solicitudes elegibles seleccionadas.
+              </Typography>
+            </Box>
+
+            <Typography sx={{ color: '#64748b', fontSize: 14, mb: 1.35 }}>
+              Esta accion desbloquea el pago restante en los pedidos 50/50 que ya cumplieron primera parte.
+            </Typography>
+
+            <Box
+              sx={{
+                p: 1.15,
+                borderRadius: 1.8,
+                border: '1px solid #dbe4f0',
+                bgcolor: '#f8fafc'
+              }}
+            >
+              <Typography sx={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800, mb: 0.35 }}>
+                Resumen
+              </Typography>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a', lineHeight: 1.24 }}>
+                Elegibles: {pedidosSegundaParteElegiblesSeleccionados.length} de {pedidosFiltradosSeleccionados.length} seleccionadas
+              </Typography>
+              {pedidosFiltradosSeleccionados.length > pedidosSegundaParteElegiblesSeleccionados.length && (
+                <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: 12.5 }}>
+                  {pedidosFiltradosSeleccionados.length - pedidosSegundaParteElegiblesSeleccionados.length} solicitud(es) no elegibles se omitiran automaticamente.
+                </Typography>
+              )}
+            </Box>
+          </Paper>
+        </DialogContent>
+        <DialogActions
+          sx={{
+            bgcolor: '#f3f5fb',
+            px: 3,
+            pb: 2.5,
+            pt: 0.35,
+            display: 'flex',
+            gap: 1,
+            alignItems: 'center'
+          }}
+        >
+          <Button
+            onClick={() => setConfirmHabilitarSegundoPagoLoteOpen(false)}
+            disabled={submittingHabilitarSegundoPagoLote}
+            sx={{
+              flex: 1,
+              textTransform: 'none',
+              fontWeight: 700,
+              minHeight: 40,
+              width: '100%',
+              color: '#475569'
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleHabilitarSegundoPagoPorLote}
+            variant="contained"
+            disabled={submittingHabilitarSegundoPagoLote || pedidosSegundaParteElegiblesSeleccionados.length === 0}
+            sx={{
+              flex: 1,
+              textTransform: 'none',
+              fontWeight: 700,
+              boxShadow: 'none',
+              bgcolor: '#2563eb',
+              minHeight: 40,
+              width: '100%',
+              '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+              '&:disabled': { bgcolor: '#93c5fd', color: '#eff6ff' }
+            }}
+          >
+            {submittingHabilitarSegundoPagoLote ? 'Procesando...' : 'Confirmar'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2845,32 +3439,124 @@ function ListadoSolicitudesUniformes() {
         onClose={() => {
           if (!submittingEliminarLote) setConfirmEliminarLoteOpen(false);
         }}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.18)'
+          }
+        }}
       >
-        <DialogTitle>Confirmar eliminación por lote</DialogTitle>
-        <DialogContent>
-          Se intentará eliminar <b>{pedidosFiltradosSeleccionados.length}</b> solicitud(es) seleccionada(s) del filtro actual.
+        <DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 20, pb: 1.2 }}>
+          Eliminar por lote
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#f3f5fb', pt: 1.5, pb: 2.2 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              width: '100%',
+              boxSizing: 'border-box',
+              borderRadius: 2.5,
+              border: '1px solid #fee2e2',
+              boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+              p: 1.8,
+              backgroundColor: '#ffffff'
+            }}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '28px 1fr',
+                alignItems: 'start',
+                gap: 1,
+                mb: 1.1
+              }}
+            >
+              <Box
+                sx={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  bgcolor: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mt: 0.15
+                }}
+              >
+                <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+              </Box>
+              <Typography sx={{ color: '#0f172a', fontWeight: 700, lineHeight: 1.3 }}>
+                Se eliminaran las solicitudes seleccionadas del listado actual.
+              </Typography>
+            </Box>
+
+            <Typography sx={{ color: '#64748b', fontSize: 14, mb: 1.35 }}>
+              Esta accion no se puede deshacer.
+            </Typography>
+
+            <Box
+              sx={{
+                p: 1.15,
+                borderRadius: 1.8,
+                border: '1px solid #fecaca',
+                bgcolor: '#fef2f2'
+              }}
+            >
+              <Typography sx={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#b91c1c', fontWeight: 800, mb: 0.35 }}>
+                Resumen
+              </Typography>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#7f1d1d', lineHeight: 1.24 }}>
+                Solicitudes a eliminar: {pedidosFiltradosSeleccionados.length}
+              </Typography>
+            </Box>
+          </Paper>
         </DialogContent>
-        <DialogActions>
+        <DialogActions
+          sx={{
+            bgcolor: '#f3f5fb',
+            px: 3,
+            pb: 2.5,
+            pt: 0.35,
+            display: 'flex',
+            gap: 1,
+            alignItems: 'center'
+          }}
+        >
           <Button
             onClick={() => setConfirmEliminarLoteOpen(false)}
             disabled={submittingEliminarLote}
+            sx={{
+              flex: 1,
+              textTransform: 'none',
+              fontWeight: 700,
+              minHeight: 40,
+              width: '100%',
+              color: '#475569'
+            }}
           >
             Cancelar
           </Button>
           <Button
             onClick={handleEliminarSolicitudesLote}
             variant="contained"
-            color="error"
             disabled={submittingEliminarLote || pedidosFiltradosSeleccionados.length === 0}
-            startIcon={submittingEliminarLote ? <CircularProgress size={14} sx={{ color: '#ffffff' }} /> : <DeleteOutlineIcon fontSize="small" />}
             sx={{
+              flex: 1,
               textTransform: 'none',
               fontWeight: 700,
-              minWidth: 180,
-              '& .MuiButton-startIcon': { mr: 0.75 }
+              boxShadow: 'none',
+              bgcolor: '#dc2626',
+              minHeight: 40,
+              width: '100%',
+              '&:hover': { bgcolor: '#b91c1c', boxShadow: 'none' },
+              '&:disabled': { bgcolor: '#fca5a5', color: '#fff1f2' }
             }}
           >
-            {submittingEliminarLote ? 'Eliminando...' : 'Eliminar seleccionadas'}
+            {submittingEliminarLote ? 'Eliminando...' : 'Confirmar'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -58,6 +58,7 @@ const initialForm = {
   precio: '',
   precio_aplicar_variantes: '',
   moneda: 'USD',
+  metodo_cobranza: 'pago_completo',
   variantes_precio_activo: false,
   variantes_generos: [],
   variantes_tallas: [],
@@ -245,6 +246,11 @@ export default function Uniformes() {
   const fileInputRef = useRef(null);
   const token = localStorage.getItem('token');
   const getTipoFranelaLabel = (uniforme) => (uniforme?.franela_representante ? 'Representante' : 'Atleta');
+  const getMetodoCobranzaLabel = (uniforme) => (
+    String(uniforme?.metodo_cobranza || 'pago_completo') === 'dos_partes_50'
+      ? 'Dos partes (50/50)'
+      : 'Pago completo'
+  );
   const uniformesPaginados = uniformes.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   // Obtener uniformes del backend
@@ -300,6 +306,7 @@ export default function Uniformes() {
         prenda: u.prenda,
         precio: u.precio,
         moneda: String(u.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD',
+        metodo_cobranza: String(u.metodo_cobranza || 'pago_completo') === 'dos_partes_50' ? 'dos_partes_50' : 'pago_completo',
         variantes_precio_activo: Boolean(u.variantes_precio_activo),
         variantes_generos: generosSeleccionados,
         variantes_tallas: tallasSeleccionadas,
@@ -636,6 +643,7 @@ export default function Uniformes() {
       formData.append('prenda', form.prenda);
       formData.append('precio', precioBasePayload);
       formData.append('moneda', String(form.moneda || 'USD').toUpperCase());
+      formData.append('metodo_cobranza', String(form.metodo_cobranza || 'pago_completo'));
       formData.append('variantes_precio_activo', String(Boolean(form.variantes_precio_activo)));
       formData.append('variantes_generos', JSON.stringify(variantesGeneros));
       formData.append('variantes_tallas', JSON.stringify(variantesTallas));
@@ -758,6 +766,7 @@ export default function Uniformes() {
               <Box sx={{ display: 'grid', gap: 0.35 }}>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Precio:</b> ${uniforme.precio}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Moneda:</b> {String(uniforme.moneda || 'USD').toUpperCase()}</Typography>
+                <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Cobranza:</b> {getMetodoCobranzaLabel(uniforme)}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Tipo de franela:</b> {getTipoFranelaLabel(uniforme)}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Nombre del atleta:</b> {uniforme.lleva_nombre_atleta ? 'Si' : 'No'}</Typography>
                 <Typography sx={{ fontSize: 13, color: '#475569' }}><b>Personalización nombre:</b> {uniforme.lleva_personalizacion_nombre ? 'Si' : 'No'}</Typography>
@@ -823,17 +832,18 @@ export default function Uniformes() {
             boxShadow: 'none'
           }}
         >
-          <Table sx={{ minWidth: 860, width: '100%', tableLayout: 'fixed' }}>
+          <Table sx={{ minWidth: 920, width: '100%', tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
                 <TableCell sx={{ width: '19%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1.5 }}>PRENDA</TableCell>
                 <TableCell sx={{ width: '9%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PRECIO</TableCell>
                 <TableCell sx={{ width: '8%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>MONEDA</TableCell>
-                <TableCell sx={{ width: '11%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>TIPO FRANELA</TableCell>
-                <TableCell sx={{ width: '13%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NOMBRE DEL ATLETA</TableCell>
-                <TableCell sx={{ width: '13%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PERSONALIZACION NOMBRE</TableCell>
-                <TableCell sx={{ width: '14%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NUMERO DE FRANELA</TableCell>
-                <TableCell sx={{ width: '10%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
+                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>COBRANZA</TableCell>
+                <TableCell sx={{ width: '10%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>TIPO FRANELA</TableCell>
+                <TableCell sx={{ width: '11%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NOMBRE DEL ATLETA</TableCell>
+                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>PERSONALIZACION NOMBRE</TableCell>
+                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>NUMERO DE FRANELA</TableCell>
+                <TableCell sx={{ width: '9%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -887,6 +897,9 @@ export default function Uniformes() {
                         {String(uniforme.moneda || 'USD').toUpperCase()}
                       </TableCell>
                       <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
+                        {getMetodoCobranzaLabel(uniforme)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
                         {getTipoFranelaLabel(uniforme)}
                       </TableCell>
                       <TableCell sx={{ color: '#64748b', fontWeight: 600 }}>
@@ -922,7 +935,7 @@ export default function Uniformes() {
               )}
               {!loading && uniformes.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 2.5, color: '#94a3b8', fontWeight: 600 }}>
+                  <TableCell colSpan={9} align="center" sx={{ py: 2.5, color: '#94a3b8', fontWeight: 600 }}>
                     No hay uniformes registrados.
                   </TableCell>
                 </TableRow>
@@ -1388,6 +1401,20 @@ export default function Uniformes() {
             >
               <MenuItem value="USD">USD</MenuItem>
               <MenuItem value="EUR">EUR</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense" sx={modalInputSx}>
+            <InputLabel id="metodo-cobranza-prenda-label">Metodo de cobranza</InputLabel>
+            <Select
+              labelId="metodo-cobranza-prenda-label"
+              name="metodo_cobranza"
+              value={form.metodo_cobranza || 'pago_completo'}
+              label="Metodo de cobranza"
+              onChange={handleChange}
+              disabled={!token}
+            >
+              <MenuItem value="pago_completo">Pago completo</MenuItem>
+              <MenuItem value="dos_partes_50">Dos partes (50/50)</MenuItem>
             </Select>
           </FormControl>
           <Box sx={{ mt: 1, display: 'grid', gap: 0.75 }}>

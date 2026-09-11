@@ -4,6 +4,7 @@ const UniformeSchema = new mongoose.Schema({
   prenda: { type: String, required: true },
   precio: { type: Number, required: true },
   moneda: { type: String, enum: ['USD', 'EUR'], default: 'USD' },
+  metodo_cobranza: { type: String, enum: ['pago_completo', 'dos_partes_50'], default: 'pago_completo' },
   variantes_precio_activo: { type: Boolean, default: false },
   variantes_generos: {
     type: [{ type: String, enum: ['masculino', 'femenino', 'mixto'] }],
