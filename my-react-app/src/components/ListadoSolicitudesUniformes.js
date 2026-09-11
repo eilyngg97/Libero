@@ -120,6 +120,20 @@ function getLocalInputDate() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function getInputDateFromValue(fecha) {
+  if (!fecha) return getLocalInputDate();
+  const raw = String(fecha).trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return getLocalInputDate();
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function ListadoSolicitudesUniformes() {
   const [pedidos, setPedidos] = useState([]);
   const [uniformesCatalogo, setUniformesCatalogo] = useState([]);
@@ -143,6 +157,21 @@ function ListadoSolicitudesUniformes() {
   });
   const [detallePagoOpen, setDetallePagoOpen] = useState(false);
   const [submittingVerificacion, setSubmittingVerificacion] = useState(false);
+  const [editandoUltimoPagoOpen, setEditandoUltimoPagoOpen] = useState(false);
+  const [submittingEdicionUltimoPago, setSubmittingEdicionUltimoPago] = useState(false);
+  const [submittingEliminarUltimoPago, setSubmittingEliminarUltimoPago] = useState(false);
+  const [tasaUltimoPagoHistorica, setTasaUltimoPagoHistorica] = useState(null);
+  const [ultimoPagoEditData, setUltimoPagoEditData] = useState({
+    metodoPago: 'Pago movil',
+    referencia: '',
+    telefonoPago: '',
+    cedulaTitular: '',
+    nota: '',
+    fechaPago: getLocalInputDate(),
+    montoPagado: '',
+    montoPagadoBs: '',
+    comprobante: null
+  });
   const [registrarPagoOpen, setRegistrarPagoOpen] = useState(false);
   const [submittingRegistroPago, setSubmittingRegistroPago] = useState(false);
   const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
@@ -206,9 +235,66 @@ function ListadoSolicitudesUniformes() {
     '&:hover': { bgcolor: '#e2e8f0' }
   };
 
+  const inlineEditableFieldSx = {
+    mt: 0.65,
+    minWidth: 180,
+    '& .MuiOutlinedInput-root': {
+      bgcolor: 'transparent',
+      borderRadius: 0,
+      fontSize: 15,
+      fontWeight: 700,
+      color: '#0f172a',
+      borderBottom: '1px solid #cbd5e1',
+      transition: 'border-color 0.16s ease, border-bottom-width 0.16s ease',
+      '& fieldset': {
+        border: 'none'
+      },
+      '&:hover': {
+        borderBottomColor: '#94a3b8'
+      },
+      '&.Mui-focused': {
+        borderBottom: '2px solid #64748b'
+      },
+      '&.Mui-focused fieldset': {
+        border: 'none'
+      }
+    },
+    '& .MuiInputBase-input': {
+      px: 0,
+      py: 0.85
+    }
+  };
+
+  const inlineEditableMultilineSx = {
+    ...inlineEditableFieldSx,
+    minWidth: 220,
+    '& .MuiInputBase-inputMultiline': {
+      px: 0,
+      py: 0.7
+    }
+  };
+
   const formatMoney = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
+  };
+
+  const formatMoneyBsDisplay = (value) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '-';
+    return new Intl.NumberFormat('es-VE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amount);
+  };
+
+  const parseDecimalInput = (value) => {
+    const normalized = String(value ?? '')
+      .trim()
+      .replace(/\s+/g, '')
+      .replace(',', '.');
+    const amount = Number(normalized);
+    return Number.isFinite(amount) ? amount : NaN;
   };
 
   const formatTelefonoPago = (value) => {
@@ -570,13 +656,12 @@ function ListadoSolicitudesUniformes() {
   };
 
   const montoTotalDivisa = Number(pedidoSeleccionado?.precio);
-  const saldoPendienteDivisa = Number(pedidoSeleccionado?.saldo_pendiente);
-  const usarSaldoRestanteComoEsperado = ['abono', 'pago_en_revision'].includes(pedidoSeleccionado?.estado)
-    && Number.isFinite(saldoPendienteDivisa)
-    && saldoPendienteDivisa > 0;
-  const montoEsperadoDivisa = usarSaldoRestanteComoEsperado
-    ? saldoPendienteDivisa
-    : (Number.isFinite(montoTotalDivisa) ? montoTotalDivisa : 0);
+  const montoEsperadoDivisa = Number.isFinite(montoTotalDivisa) ? montoTotalDivisa : 0;
+  const saldoRestanteDivisa = (() => {
+    const saldo = Number(pedidoSeleccionado?.saldo_pendiente);
+    if (!Number.isFinite(saldo) || saldo < 0) return 0;
+    return saldo;
+  })();
 
   const tasaAplicadaNumero = (() => {
     const bs = Number(ultimoPagoDetalle?.monto_pagado_bs);
@@ -585,15 +670,64 @@ function ListadoSolicitudesUniformes() {
     return bs / divisa;
   })();
 
-  const montoEsperadoBs = (() => {
-    if (!Number.isFinite(montoEsperadoDivisa) || montoEsperadoDivisa <= 0 || !Number.isFinite(tasaAplicadaNumero)) return null;
-    return montoEsperadoDivisa * tasaAplicadaNumero;
-  })();
+  const tasaFallbackUltimoPago = Number(dolar?.promedio) || 0;
+  const tasaUltimoPagoActiva = Number(tasaUltimoPagoHistorica) > 0 ? Number(tasaUltimoPagoHistorica) : tasaFallbackUltimoPago;
+  const montoUltimoPagoBsEditNumero = parseDecimalInput(ultimoPagoEditData.montoPagadoBs);
+  const montoUltimoPagoBsCalculado = Number.isFinite(montoUltimoPagoBsEditNumero) ? montoUltimoPagoBsEditNumero : 0;
+  const montoUltimoPagoDivisaCalculado = (
+    Number.isFinite(montoUltimoPagoBsEditNumero)
+    && montoUltimoPagoBsEditNumero > 0
+    && Number.isFinite(tasaUltimoPagoActiva)
+    && tasaUltimoPagoActiva > 0
+  )
+    ? (montoUltimoPagoBsEditNumero / tasaUltimoPagoActiva)
+    : 0;
+
+  const tasaDetallePago = editandoUltimoPagoOpen
+    ? (Number.isFinite(Number(tasaUltimoPagoActiva)) && Number(tasaUltimoPagoActiva) > 0 ? Number(tasaUltimoPagoActiva) : null)
+    : tasaAplicadaNumero;
+
+  const montoUltimoPagoDivisaVista = editandoUltimoPagoOpen
+    ? Number(montoUltimoPagoDivisaCalculado)
+    : Number(ultimoPagoDetalle?.monto_pagado);
+
+  const montoUltimoPagoBsVista = editandoUltimoPagoOpen
+    ? Number(montoUltimoPagoBsCalculado)
+    : Number(ultimoPagoDetalle?.monto_pagado_bs);
+
+  const montoEsperadoBsVista = (Number.isFinite(montoEsperadoDivisa) && montoEsperadoDivisa > 0 && Number.isFinite(tasaDetallePago))
+    ? montoEsperadoDivisa * tasaDetallePago
+    : null;
+  const saldoRestanteBsVista = (Number.isFinite(saldoRestanteDivisa) && saldoRestanteDivisa > 0 && Number.isFinite(tasaDetallePago))
+    ? saldoRestanteDivisa * tasaDetallePago
+    : null;
+
+  const metodoPagoDetalleActivo = editandoUltimoPagoOpen
+    ? String(ultimoPagoEditData.metodoPago || '')
+    : String(ultimoPagoDetalle?.metodo_pago || '');
 
   const metodoPagoRequiereReferencia = registroPagoData.metodoPago === 'Transferencia' || registroPagoData.metodoPago === 'Pago movil';
   const referenciaDigitsRegistro = String(registroPagoData.referencia || '').replace(/\D/g, '');
   const referenciaRegistroValida = !metodoPagoRequiereReferencia || referenciaDigitsRegistro.length >= 6;
   const monedaPagoRegistro = normalizarMoneda(pedidoSeleccionado?.moneda || dolar?.moneda || 'USD');
+  const metodoPagoRequiereReferenciaEdicion = ultimoPagoEditData.metodoPago === 'Transferencia' || ultimoPagoEditData.metodoPago === 'Pago movil';
+  const referenciaDigitsEdicion = String(ultimoPagoEditData.referencia || '').replace(/\D/g, '');
+  const referenciaEdicionValida = !metodoPagoRequiereReferenciaEdicion || referenciaDigitsEdicion.length >= 6;
+  const edicionUltimoPagoValida = Boolean(
+    String(ultimoPagoEditData.metodoPago || '').trim()
+    && String(ultimoPagoEditData.fechaPago || '').trim()
+    && Number.isFinite(Number(montoUltimoPagoBsEditNumero))
+    && Number(montoUltimoPagoBsEditNumero) > 0
+    && Number.isFinite(Number(montoUltimoPagoDivisaCalculado))
+    && Number(montoUltimoPagoDivisaCalculado) > 0
+    && referenciaEdicionValida
+  );
+  const estadoPedidoSeleccionado = String(pedidoSeleccionado?.estado || '').trim().toLowerCase();
+  const puedeGestionarUltimoPago = Boolean(
+    pedidoSeleccionado?._id
+    && ultimoPagoDetalle
+    && !['pendiente', 'cancelado', 'entregado'].includes(estadoPedidoSeleccionado)
+  );
 
   const obtenerTasaHistoricaSegunMoneda = useCallback(async (fechaIso, tasaFallback, moneda) => {
     if (String(moneda || 'USD').toUpperCase() === 'EUR') {
@@ -730,6 +864,32 @@ function ListadoSolicitudesUniformes() {
       cancelado = true;
     };
   }, [registrarPagoOpen, registroPagoData.fechaPago, tasaFallbackRegistro, monedaPagoRegistro, obtenerTasaHistoricaSegunMoneda]);
+
+  useEffect(() => {
+    if (!editandoUltimoPagoOpen || !ultimoPagoEditData.fechaPago) return;
+    let cancelado = false;
+
+    (async () => {
+      try {
+        const tasaHistorica = await obtenerTasaHistoricaSegunMoneda(
+          ultimoPagoEditData.fechaPago,
+          tasaFallbackUltimoPago,
+          monedaPagoRegistro
+        );
+        if (!cancelado) {
+          setTasaUltimoPagoHistorica(Number(tasaHistorica) || tasaFallbackUltimoPago);
+        }
+      } catch {
+        if (!cancelado) {
+          setTasaUltimoPagoHistorica(tasaFallbackUltimoPago);
+        }
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [editandoUltimoPagoOpen, ultimoPagoEditData.fechaPago, tasaFallbackUltimoPago, monedaPagoRegistro, obtenerTasaHistoricaSegunMoneda]);
 
   const handleChangePagina = (_event, nuevaPagina) => {
     setPagina(nuevaPagina);
@@ -1200,8 +1360,132 @@ function ListadoSolicitudesUniformes() {
 
   const closeDetallePagoDialog = () => {
     if (submittingVerificacion) return;
+    if (submittingEdicionUltimoPago || submittingEliminarUltimoPago) return;
     setDetallePagoOpen(false);
+    setEditandoUltimoPagoOpen(false);
     setPedidoSeleccionado(null);
+  };
+
+  const openEditarUltimoPagoDialog = () => {
+    if (!puedeGestionarUltimoPago) return;
+
+    if (editandoUltimoPagoOpen) {
+      setEditandoUltimoPagoOpen(false);
+      setUltimoPagoEditData({
+        metodoPago: 'Pago movil',
+        referencia: '',
+        telefonoPago: '',
+        cedulaTitular: '',
+        nota: '',
+        fechaPago: getLocalInputDate(),
+        montoPagado: '',
+        montoPagadoBs: '',
+        comprobante: null
+      });
+      setTasaUltimoPagoHistorica(null);
+      return;
+    }
+
+    setUltimoPagoEditData({
+      metodoPago: String(ultimoPagoDetalle?.metodo_pago || 'Pago movil'),
+      referencia: String(ultimoPagoDetalle?.referencia || ''),
+      telefonoPago: getTelefonoPagoDesdeRegistro(ultimoPagoDetalle) || '',
+      cedulaTitular: getCedulaPagoDesdeRegistro(ultimoPagoDetalle) || '',
+      nota: getNotaPagoDesdeRegistro(ultimoPagoDetalle) || '',
+      fechaPago: getInputDateFromValue(ultimoPagoDetalle?.fecha_pago),
+      montoPagado: Number.isFinite(Number(ultimoPagoDetalle?.monto_pagado))
+        ? String(Number(Number(ultimoPagoDetalle?.monto_pagado).toFixed(2)))
+        : '',
+      montoPagadoBs: Number.isFinite(Number(ultimoPagoDetalle?.monto_pagado_bs))
+        ? String(Number(Number(ultimoPagoDetalle?.monto_pagado_bs).toFixed(2)))
+        : '',
+      comprobante: null
+    });
+    setTasaUltimoPagoHistorica(null);
+    setEditandoUltimoPagoOpen(true);
+  };
+
+  const handleGuardarEdicionUltimoPago = async () => {
+    if (!pedidoSeleccionado?._id) return;
+
+    const montoPagado = Number(montoUltimoPagoDivisaCalculado);
+    const montoPagadoBs = Number(montoUltimoPagoBsEditNumero);
+
+    if (!edicionUltimoPagoValida) {
+      setError('Completa los campos requeridos del pago y verifica referencia/montos.');
+      return;
+    }
+
+    try {
+      setSubmittingEdicionUltimoPago(true);
+      const payload = new FormData();
+      payload.append('metodo_pago', String(ultimoPagoEditData.metodoPago || ''));
+      payload.append('monto_pagado', String(Number(montoPagado.toFixed(2))));
+      payload.append('monto_pagado_bs', String(Number(montoPagadoBs.toFixed(2))));
+      payload.append('fecha_pago', String(ultimoPagoEditData.fechaPago || getLocalInputDate()));
+      payload.append('referencia', metodoPagoRequiereReferenciaEdicion ? referenciaDigitsEdicion : '');
+      payload.append('telefono_pago', String(formatTelefonoPago(ultimoPagoEditData.telefonoPago) || ''));
+      payload.append('cedula_titular', String(formatCedulaPago(ultimoPagoEditData.cedulaTitular) || ''));
+      payload.append('nota', String(ultimoPagoEditData.nota || '').trim());
+      if (ultimoPagoEditData.comprobante) {
+        payload.append('comprobante', ultimoPagoEditData.comprobante);
+      }
+
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoSeleccionado._id}/pagos/ultimo`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: payload
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al editar el último pago');
+
+      setPedidos((prev) => prev.map((pedido) => (String(pedido._id) === String(data._id) ? data : pedido)));
+      setPedidoSeleccionado(data);
+      setEditandoUltimoPagoOpen(false);
+      setUltimoPagoEditData({
+        metodoPago: 'Pago movil',
+        referencia: '',
+        telefonoPago: '',
+        cedulaTitular: '',
+        nota: '',
+        fechaPago: getLocalInputDate(),
+        montoPagado: '',
+        montoPagadoBs: '',
+        comprobante: null
+      });
+      setTasaUltimoPagoHistorica(null);
+      setSuccessMessage('Último pago actualizado y recalculado correctamente');
+    } catch (err) {
+      setError(err.message || 'Error al editar el último pago');
+    } finally {
+      setSubmittingEdicionUltimoPago(false);
+    }
+  };
+
+  const handleEliminarUltimoPago = async () => {
+    if (!pedidoSeleccionado?._id) return;
+
+    try {
+      setSubmittingEliminarUltimoPago(true);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos/${pedidoSeleccionado._id}/pagos/ultimo`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al eliminar el último pago');
+
+      setPedidos((prev) => prev.map((pedido) => (String(pedido._id) === String(data._id) ? data : pedido)));
+      setDetallePagoOpen(false);
+      setPedidoSeleccionado(null);
+      setEditandoUltimoPagoOpen(false);
+      await fetchPedidos();
+      setSuccessMessage('Último pago eliminado y solicitud recalculada');
+    } catch (err) {
+      setError(err.message || 'Error al eliminar el último pago');
+    } finally {
+      setSubmittingEliminarUltimoPago(false);
+    }
   };
 
   const handleVerificarPago = async () => {
@@ -2776,6 +3060,34 @@ function ListadoSolicitudesUniformes() {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                 <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
                 <Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Ultimo Pago Registrado</Typography>
+                {puedeGestionarUltimoPago && (
+                  <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                    <Button
+                      size="small"
+                      variant={editandoUltimoPagoOpen ? 'outlined' : 'contained'}
+                      onClick={openEditarUltimoPagoDialog}
+                      disabled={submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                      sx={{
+                        minHeight: 32,
+                        borderRadius: 999,
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        px: 2,
+                        bgcolor: editandoUltimoPagoOpen ? 'transparent' : '#0b2a57',
+                        color: editandoUltimoPagoOpen ? '#0b2a57' : '#ffffff',
+                        borderColor: '#d1d9e6',
+                        boxShadow: 'none',
+                        '&:hover': {
+                          borderColor: '#b9c6dc',
+                          backgroundColor: editandoUltimoPagoOpen ? '#eff6ff' : '#103469',
+                          boxShadow: 'none'
+                        }
+                      }}
+                    >
+                      {editandoUltimoPagoOpen ? 'Cancelar' : 'Editar'}
+                    </Button>
+                  </Box>
+                )}
               </Box>
 
               <Box
@@ -2801,68 +3113,165 @@ function ListadoSolicitudesUniformes() {
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, columnGap: 4.5, rowGap: 2.25, pt: 1.75 }}>
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Metodo de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{ultimoPagoDetalle?.metodo_pago || '-'}</Typography>
+                    <TextField
+                      select
+                      size="small"
+                      sx={inlineEditableFieldSx}
+                      disabled={!editandoUltimoPagoOpen || submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                      value={metodoPagoDetalleActivo}
+                      onChange={(event) => setUltimoPagoEditData((prev) => ({
+                        ...prev,
+                        metodoPago: event.target.value,
+                        referencia: (event.target.value === 'Transferencia' || event.target.value === 'Pago movil') ? prev.referencia : ''
+                      }))}
+                    >
+                      {METODOS_PAGO.map((metodo) => (
+                        <MenuItem key={metodo} value={metodo}>{metodo}</MenuItem>
+                      ))}
+                    </TextField>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>
-                      {`Bs ${formatMoney(ultimoPagoDetalle?.monto_pagado_bs)} / ${formatMoneyWithCurrency(ultimoPagoDetalle?.monto_pagado, pedidoSeleccionado?.moneda)}`}
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado (BS)</Typography>
+                    {editandoUltimoPagoOpen ? (
+                      <TextField
+                        type="text"
+                        size="small"
+                        sx={inlineEditableFieldSx}
+                        disabled={submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                        inputProps={{ inputMode: 'decimal' }}
+                        value={ultimoPagoEditData.montoPagadoBs}
+                        onChange={(event) => {
+                          const raw = String(event.target.value || '');
+                          const saneado = raw.replace(/[^0-9.,]/g, '');
+                          const bsIngresado = parseDecimalInput(saneado);
+                          const divisaCalculada = Number.isFinite(bsIngresado)
+                            && bsIngresado > 0
+                            && Number.isFinite(tasaUltimoPagoActiva)
+                            && tasaUltimoPagoActiva > 0
+                            ? (bsIngresado / tasaUltimoPagoActiva)
+                            : NaN;
+
+                          setUltimoPagoEditData((prev) => ({
+                            ...prev,
+                            montoPagadoBs: saneado,
+                            montoPagado: Number.isFinite(divisaCalculada) && divisaCalculada > 0
+                              ? String(Number(divisaCalculada.toFixed(2)))
+                              : ''
+                          }));
+                        }}
+                      />
+                    ) : (
+                      <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
+                        {formatMoneyBsDisplay(ultimoPagoDetalle?.monto_pagado_bs)}
+                      </Typography>
+                    )}
+                    <Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+                      {`Equivalente ${normalizarMoneda(pedidoSeleccionado?.moneda)}: ${Number.isFinite(montoUltimoPagoDivisaVista) && montoUltimoPagoDivisaVista > 0 ? formatMoneyWithCurrency(montoUltimoPagoDivisaVista, pedidoSeleccionado?.moneda) : '-'}`}
                     </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>
-                      {usarSaldoRestanteComoEsperado ? 'Monto esperado (restante)' : 'Monto esperado'}
+                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado (BS)</Typography>
+                    <TextField
+                      type="number"
+                      size="small"
+                      sx={inlineEditableFieldSx}
+                      disabled
+                      value={Number.isFinite(montoEsperadoBsVista) && montoEsperadoBsVista > 0
+                        ? Number(montoEsperadoBsVista).toFixed(2)
+                        : ''}
+                    />
+                    <Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+                      {`Equivalente ${normalizarMoneda(pedidoSeleccionado?.moneda)}: ${formatMoneyWithCurrency(montoEsperadoDivisa, pedidoSeleccionado?.moneda)}`}
                     </Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
-                      {`Bs ${formatMoney(montoEsperadoBs)} / ${formatMoneyWithCurrency(montoEsperadoDivisa, pedidoSeleccionado?.moneda)}`}
+                    <Typography sx={{ mt: 0.55, fontSize: 12, color: '#334155', fontWeight: 800 }}>
+                      {`Saldo restante: ${formatMoneyWithCurrency(saldoRestanteDivisa, pedidoSeleccionado?.moneda)}${Number.isFinite(saldoRestanteBsVista) && saldoRestanteBsVista > 0 ? ` (Bs ${formatMoneyBsDisplay(saldoRestanteBsVista)})` : ''}`}
                     </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFecha(ultimoPagoDetalle?.fecha_pago)}</Typography>
+                    <TextField
+                      type="date"
+                      size="small"
+                      sx={inlineEditableFieldSx}
+                      disabled={!editandoUltimoPagoOpen || submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                      value={editandoUltimoPagoOpen
+                        ? ultimoPagoEditData.fechaPago
+                        : getInputDateFromValue(ultimoPagoDetalle?.fecha_pago)}
+                      onChange={(event) => setUltimoPagoEditData((prev) => ({ ...prev, fechaPago: event.target.value }))}
+                    />
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
                     <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
-                      {formatTasaAplicada(ultimoPagoDetalle?.monto_pagado_bs, ultimoPagoDetalle?.monto_pagado, pedidoSeleccionado?.moneda)}
+                      {Number.isFinite(tasaDetallePago) && tasaDetallePago > 0 ? `Bs ${formatMoney(tasaDetallePago)}/${normalizarMoneda(pedidoSeleccionado?.moneda)}` : '-'}
                     </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Referencia</Typography>
-                    <Box sx={{ mt: 0.7, display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                      <Typography sx={{ fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#4c6690', lineHeight: 1.12 }}>{ultimoPagoDetalle?.referencia || '-'}</Typography>
-                      {ultimoPagoDetalle?.referencia && (
-                        <IconButton size="small" onClick={() => copiarReferencia(ultimoPagoDetalle.referencia)} sx={{ color: '#95a2b6' }}>
-                          <ContentCopyIcon fontSize="inherit" />
-                        </IconButton>
-                      )}
-                    </Box>
+                    {(metodoPagoDetalleActivo === 'Transferencia' || metodoPagoDetalleActivo === 'Pago movil') ? (
+                      <TextField
+                        size="small"
+                        sx={inlineEditableFieldSx}
+                        disabled={!editandoUltimoPagoOpen || submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                        value={editandoUltimoPagoOpen ? ultimoPagoEditData.referencia : String(ultimoPagoDetalle?.referencia || '')}
+                        onChange={(event) => setUltimoPagoEditData((prev) => ({ ...prev, referencia: event.target.value.replace(/\D/g, '').slice(0, 20) }))}
+                        inputProps={{ minLength: 6 }}
+                      />
+                    ) : (
+                      <Typography sx={{ mt: 0.7, color: '#64748b', fontWeight: 700 }}>No aplica para este metodo</Typography>
+                    )}
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Telefono de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
-                      {getTelefonoPagoDesdeRegistro(ultimoPagoDetalle) || '-'}
+                    <TextField
+                      size="small"
+                      sx={inlineEditableFieldSx}
+                      disabled={!editandoUltimoPagoOpen || submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                      value={editandoUltimoPagoOpen ? (ultimoPagoEditData.telefonoPago || '') : (getTelefonoPagoDesdeRegistro(ultimoPagoDetalle) || '')}
+                      onChange={(event) => setUltimoPagoEditData((prev) => ({ ...prev, telefonoPago: event.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                      inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+                    />
+                    <Typography sx={{ mt: 0.45, color: '#64748b', fontSize: 12, fontWeight: 700 }}>
+                      Sin el 0 adelante.
                     </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Cedula de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.2 }}>
-                      {getCedulaPagoDesdeRegistro(ultimoPagoDetalle) || '-'}
+                    <TextField
+                      size="small"
+                      sx={inlineEditableFieldSx}
+                      disabled={!editandoUltimoPagoOpen || submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                      value={editandoUltimoPagoOpen ? (ultimoPagoEditData.cedulaTitular || '') : (getCedulaPagoDesdeRegistro(ultimoPagoDetalle) || '')}
+                      onChange={(event) => {
+                        const raw = String(event.target.value || '').toUpperCase();
+                        const limpio = raw.replace(/[^VEJG0-9-]/g, '');
+                        setUltimoPagoEditData((prev) => ({ ...prev, cedulaTitular: limpio.slice(0, 14) }));
+                      }}
+                      inputProps={{ maxLength: 14 }}
+                    />
+                    <Typography sx={{ mt: 0.45, color: '#64748b', fontSize: 12, fontWeight: 700 }}>
+                      Formato sugerido: V-12345678.
                     </Typography>
                   </Box>
 
                   <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
                     <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Nota</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 700, color: '#0b2a57', lineHeight: 1.25, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {getNotaPagoDesdeRegistro(ultimoPagoDetalle) || '-'}
-                    </Typography>
+                    <TextField
+                      multiline
+                      minRows={2}
+                      size="small"
+                      sx={inlineEditableMultilineSx}
+                      disabled={!editandoUltimoPagoOpen || submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                      value={editandoUltimoPagoOpen ? ultimoPagoEditData.nota : (getNotaPagoDesdeRegistro(ultimoPagoDetalle) || '')}
+                      onChange={(event) => setUltimoPagoEditData((prev) => ({ ...prev, nota: event.target.value.slice(0, 500) }))}
+                    />
                   </Box>
 
                   <Box>
@@ -2878,6 +3287,58 @@ function ListadoSolicitudesUniformes() {
                     ) : (
                       <Typography sx={{ mt: 0.7, color: '#9ca3af', fontWeight: 700 }}>Sin comprobante</Typography>
                     )}
+                    {editandoUltimoPagoOpen && (
+                      <>
+                        <Box
+                          component="label"
+                          sx={{
+                            mt: 0.9,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 0.8,
+                            cursor: (submittingEdicionUltimoPago || submittingEliminarUltimoPago) ? 'not-allowed' : 'pointer',
+                            color: '#0b2a57',
+                            fontWeight: 800,
+                            fontSize: 13
+                          }}
+                        >
+                          <InsertDriveFileIcon fontSize="small" />
+                          Subir nuevo comprobante
+                          <input
+                            type="file"
+                            hidden
+                            accept="image/*,.pdf"
+                            disabled={submittingEdicionUltimoPago || submittingEliminarUltimoPago}
+                            onChange={(event) => setUltimoPagoEditData((prev) => ({ ...prev, comprobante: event.target.files?.[0] || null }))}
+                          />
+                        </Box>
+                        {ultimoPagoEditData.comprobante && (
+                          <Typography sx={{ mt: 0.55, color: '#475569', fontSize: 12, fontWeight: 700 }}>
+                            {ultimoPagoEditData.comprobante.name}
+                          </Typography>
+                        )}
+                      </>
+                    )}
+                  </Box>
+
+                  <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { md: '2 / 3' }, justifySelf: { md: 'end' } }}>
+                    <Button
+                      variant="contained"
+                      onClick={handleGuardarEdicionUltimoPago}
+                      disabled={submittingEdicionUltimoPago || submittingEliminarUltimoPago || !editandoUltimoPagoOpen || !edicionUltimoPagoValida}
+                      sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#dcfce7', color: '#166534', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#bbf7d0', boxShadow: 'none' } }}
+                    >
+                      {submittingEdicionUltimoPago ? 'Guardando...' : 'Guardar cambios'}
+                    </Button>
+                    <Button
+                      variant="contained"
+                      startIcon={<DeleteOutlineIcon fontSize="small" />}
+                      onClick={handleEliminarUltimoPago}
+                      disabled={submittingEliminarUltimoPago || submittingEdicionUltimoPago || !editandoUltimoPagoOpen}
+                      sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
+                    >
+                      {submittingEliminarUltimoPago ? 'Eliminando...' : 'Eliminar'}
+                    </Button>
                   </Box>
                 </Box>
               </Box>

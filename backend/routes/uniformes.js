@@ -63,6 +63,8 @@ router.patch('/pedidos/:id/solicitar-pago', authMiddleware, permisoMiddleware('s
 router.patch('/pedidos/:id/habilitar-segunda-parte', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.habilitarSegundaPartePedido);
 router.patch('/pedidos/:id/cancelar', authMiddleware, uniformePedidoController.cancelarPedido);
 router.patch('/pedidos/:id/pagar', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.registrarPagoPedido);
+router.patch('/pedidos/:id/pagos/ultimo', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uploadComprobante.single('comprobante'), uniformePedidoController.editarUltimoPagoPedido);
+router.delete('/pedidos/:id/pagos/ultimo', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.eliminarUltimoPagoPedido);
 router.patch('/pedidos/:id/verificar-pago', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.verificarPagoPedido);
 router.patch('/pedidos/:id/entregado', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.marcarEntregado);
 router.delete('/pedidos/:id', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.eliminarPedidoUniforme);

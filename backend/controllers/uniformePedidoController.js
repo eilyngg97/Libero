@@ -54,6 +54,84 @@ function calcularMontoPrimeraParteObjetivo(precio) {
   return redondearMonto((Number(precio) || 0) / 2);
 }
 
+function toValidDate(fechaInput) {
+  if (!fechaInput) return new Date();
+  const fecha = new Date(fechaInput);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
+}
+
+function getPagosHistorialSeguro(pedido) {
+  return Array.isArray(pedido?.pagos_historial) ? pedido.pagos_historial : [];
+}
+
+function resumirPagosHistorial(pedido) {
+  return getPagosHistorialSeguro(pedido).reduce((acc, pago) => {
+    acc.totalDivisa += redondearMonto(Number(pago?.monto_pagado) || 0);
+    acc.totalBs += redondearMonto(Number(pago?.monto_pagado_bs) || 0);
+    return acc;
+  }, { totalDivisa: 0, totalBs: 0 });
+}
+
+function calcularEstadoPorPagoConfirmado(totalPedido, totalPagado) {
+  if (totalPagado <= 0.0001) return ESTADOS_PEDIDO.ESPERANDO_PAGO;
+  if (totalPagado >= (totalPedido - 0.0001)) return ESTADOS_PEDIDO.VERIFICADO;
+  return ESTADOS_PEDIDO.ABONO;
+}
+
+function limpiarCamposUltimoPagoTemporal(pedido) {
+  pedido.metodo_pago = undefined;
+  pedido.referencia = undefined;
+  pedido.telefono_pago = undefined;
+  pedido.cedula_titular = undefined;
+  pedido.nota = '';
+  pedido.fecha_pago = undefined;
+  pedido.comprobante_url = undefined;
+  pedido.monto_ultimo_pago = 0;
+  pedido.monto_ultimo_pago_bs = 0;
+}
+
+function reflejarUltimoPagoEnCamposPrincipales(pedido) {
+  const pagos = getPagosHistorialSeguro(pedido);
+  const ultimo = pagos.length > 0 ? pagos[pagos.length - 1] : null;
+
+  if (!ultimo) {
+    limpiarCamposUltimoPagoTemporal(pedido);
+    return;
+  }
+
+  pedido.metodo_pago = ultimo.metodo_pago;
+  pedido.referencia = ultimo.referencia;
+  pedido.telefono_pago = ultimo.telefono_pago;
+  pedido.cedula_titular = ultimo.cedula_titular;
+  pedido.nota = String(ultimo.nota || '').trim();
+  pedido.fecha_pago = ultimo.fecha_pago;
+  pedido.comprobante_url = ultimo.comprobante_url;
+  pedido.monto_ultimo_pago = 0;
+  pedido.monto_ultimo_pago_bs = 0;
+}
+
+function recalcularResumenPedidoDesdeHistorial(pedido) {
+  const totalPedido = redondearMonto(Number(pedido?.precio) || 0);
+  const { totalDivisa, totalBs } = resumirPagosHistorial(pedido);
+  const totalPagado = redondearMonto(Math.min(totalPedido, totalDivisa));
+  const metodoCobranza = normalizeMetodoCobranza(pedido?.metodo_cobranza);
+  const montoPrimeraParteObjetivo = metodoCobranza === 'dos_partes_50'
+    ? (Number(pedido?.monto_primera_parte_objetivo) > 0
+      ? redondearMonto(pedido.monto_primera_parte_objetivo)
+      : calcularMontoPrimeraParteObjetivo(totalPedido))
+    : 0;
+
+  const saldoPendienteTotal = redondearMonto(Math.max(totalPedido - totalPagado, 0));
+  const saldoPendiente = (metodoCobranza === 'dos_partes_50' && pedido?.segunda_parte_habilitada !== true && totalPagado <= 0.0001)
+    ? montoPrimeraParteObjetivo
+    : saldoPendienteTotal;
+
+  pedido.monto_pagado = totalPagado;
+  pedido.monto_pagado_bs = redondearMonto(totalBs);
+  pedido.saldo_pendiente = saldoPendiente;
+  pedido.estado = calcularEstadoPorPagoConfirmado(totalPedido, totalPagado);
+}
+
 function normalizeGeneroAlumno(sexoRaw) {
   const sexo = String(sexoRaw || '').trim().toLowerCase();
   if (sexo.startsWith('masc')) return 'masculino';
@@ -801,6 +879,201 @@ exports.habilitarSegundaPartePedido = async (req, res) => {
     return res.json(resolvePedidoPrenda(pedidoActualizado));
   } catch (err) {
     return res.status(400).json({ error: 'Error al habilitar segunda parte del pedido', detalle: err.message });
+  }
+};
+
+exports.editarUltimoPagoPedido = async (req, res) => {
+  try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findById(req.params.id);
+
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    if ([ESTADOS_PEDIDO.PENDIENTE, ESTADOS_PEDIDO.CANCELADO, ESTADOS_PEDIDO.ENTREGADO].includes(pedido.estado)) {
+      return res.status(400).json({ error: 'No se puede editar pagos para este pedido en su estado actual' });
+    }
+
+    const pagoEnRevision = pedido.estado === ESTADOS_PEDIDO.PAGO_EN_REVISION && (Number(pedido.monto_ultimo_pago) || 0) > 0;
+    const pagos = getPagosHistorialSeguro(pedido);
+    const tienePagoHistorial = pagos.length > 0;
+
+    if (!pagoEnRevision && !tienePagoHistorial) {
+      return res.status(400).json({ error: 'No existe un pago registrado para editar' });
+    }
+
+    const targetPago = pagoEnRevision ? {
+      monto_pagado: Number(pedido.monto_ultimo_pago) || 0,
+      monto_pagado_bs: Number(pedido.monto_ultimo_pago_bs) || 0,
+      metodo_pago: pedido.metodo_pago,
+      referencia: pedido.referencia,
+      telefono_pago: pedido.telefono_pago,
+      cedula_titular: pedido.cedula_titular,
+      nota: pedido.nota,
+      comprobante_url: pedido.comprobante_url,
+      fecha_pago: pedido.fecha_pago
+    } : pagos[pagos.length - 1];
+
+    const montoOriginalDivisa = Number(targetPago?.monto_pagado) || 0;
+    const montoOriginalBs = Number(targetPago?.monto_pagado_bs) || 0;
+
+    const montoInput = req.body?.monto_pagado;
+    const montoBsInput = req.body?.monto_pagado_bs;
+
+    const montoDivisaSolicitado = montoInput !== undefined
+      ? Number(montoInput)
+      : montoOriginalDivisa;
+
+    if (!Number.isFinite(montoDivisaSolicitado) || montoDivisaSolicitado <= 0) {
+      return res.status(400).json({ error: 'Debes indicar un monto_pagado valido' });
+    }
+
+    let montoBsSolicitado = montoBsInput !== undefined
+      ? Number(montoBsInput)
+      : montoOriginalBs;
+
+    if (!Number.isFinite(montoBsSolicitado) || montoBsSolicitado <= 0) {
+      const tasaOriginal = (montoOriginalDivisa > 0 && montoOriginalBs > 0)
+        ? (montoOriginalBs / montoOriginalDivisa)
+        : 0;
+      montoBsSolicitado = tasaOriginal > 0
+        ? redondearMonto(montoDivisaSolicitado * tasaOriginal)
+        : 0;
+    }
+
+    if (!Number.isFinite(montoBsSolicitado) || montoBsSolicitado <= 0) {
+      return res.status(400).json({ error: 'Debes indicar un monto_pagado_bs valido' });
+    }
+
+    const totalPedido = redondearMonto(Number(pedido.precio) || 0);
+
+    if (pagoEnRevision) {
+      const confirmadoDivisa = redondearMonto(Number(pedido.monto_pagado) || 0);
+      const saldoPendienteConfirmado = redondearMonto(Math.max(totalPedido - confirmadoDivisa, 0));
+      const toleranciaDivisa = calcularToleranciaDivisaDesdeBs(montoDivisaSolicitado, montoBsSolicitado);
+
+      if (montoDivisaSolicitado > (saldoPendienteConfirmado + toleranciaDivisa)) {
+        return res.status(400).json({
+          error: `El monto pagado no puede superar el saldo pendiente (${saldoPendienteConfirmado.toFixed(2)}).`
+        });
+      }
+
+      const factorAjuste = montoDivisaSolicitado > saldoPendienteConfirmado && saldoPendienteConfirmado > 0
+        ? (saldoPendienteConfirmado / montoDivisaSolicitado)
+        : 1;
+
+      pedido.monto_ultimo_pago = redondearMonto(montoDivisaSolicitado * factorAjuste);
+      pedido.monto_ultimo_pago_bs = redondearMonto(montoBsSolicitado * factorAjuste);
+      pedido.metodo_pago = req.body?.metodo_pago !== undefined ? req.body.metodo_pago : targetPago.metodo_pago;
+      pedido.referencia = req.body?.referencia !== undefined ? (req.body.referencia || undefined) : targetPago.referencia;
+      pedido.telefono_pago = req.body?.telefono_pago !== undefined ? (req.body.telefono_pago || undefined) : targetPago.telefono_pago;
+      pedido.cedula_titular = req.body?.cedula_titular !== undefined ? (req.body.cedula_titular || undefined) : targetPago.cedula_titular;
+      pedido.nota = req.body?.nota !== undefined ? String(req.body.nota || '').trim() : String(targetPago.nota || '').trim();
+      if (req.file) {
+        pedido.comprobante_url = buildComprobanteUrl(req.file, req.tenantId);
+      }
+
+      const fechaEditada = req.body?.fecha_pago !== undefined
+        ? toValidDate(req.body.fecha_pago)
+        : toValidDate(targetPago.fecha_pago);
+      if (!fechaEditada) {
+        return res.status(400).json({ error: 'fecha_pago invalida' });
+      }
+      pedido.fecha_pago = fechaEditada;
+    } else {
+      const pagosPrevios = pagos.slice(0, -1);
+      const resumenPrevio = pagosPrevios.reduce((acc, pago) => {
+        acc.totalDivisa += redondearMonto(Number(pago?.monto_pagado) || 0);
+        acc.totalBs += redondearMonto(Number(pago?.monto_pagado_bs) || 0);
+        return acc;
+      }, { totalDivisa: 0, totalBs: 0 });
+
+      const saldoParaUltimo = redondearMonto(Math.max(totalPedido - resumenPrevio.totalDivisa, 0));
+      if (saldoParaUltimo <= 0) {
+        return res.status(400).json({ error: 'El pedido no tiene saldo pendiente para ajustar este pago' });
+      }
+
+      const toleranciaDivisa = calcularToleranciaDivisaDesdeBs(montoDivisaSolicitado, montoBsSolicitado);
+      if (montoDivisaSolicitado > (saldoParaUltimo + toleranciaDivisa)) {
+        return res.status(400).json({
+          error: `El monto pagado no puede superar el saldo pendiente (${saldoParaUltimo.toFixed(2)}).`
+        });
+      }
+
+      const factorAjuste = montoDivisaSolicitado > saldoParaUltimo
+        ? (saldoParaUltimo / montoDivisaSolicitado)
+        : 1;
+      const montoDivisaAplicado = redondearMonto(montoDivisaSolicitado * factorAjuste);
+      const montoBsAplicado = redondearMonto(montoBsSolicitado * factorAjuste);
+      const fechaEditada = req.body?.fecha_pago !== undefined
+        ? toValidDate(req.body.fecha_pago)
+        : toValidDate(targetPago.fecha_pago);
+
+      if (!fechaEditada) {
+        return res.status(400).json({ error: 'fecha_pago invalida' });
+      }
+
+      const ultimoIndex = pagos.length - 1;
+      pagos[ultimoIndex].monto_pagado = montoDivisaAplicado;
+      pagos[ultimoIndex].monto_pagado_bs = montoBsAplicado;
+      pagos[ultimoIndex].metodo_pago = req.body?.metodo_pago !== undefined ? req.body.metodo_pago : targetPago.metodo_pago;
+      pagos[ultimoIndex].referencia = req.body?.referencia !== undefined ? (req.body.referencia || undefined) : targetPago.referencia;
+      pagos[ultimoIndex].telefono_pago = req.body?.telefono_pago !== undefined ? (req.body.telefono_pago || undefined) : targetPago.telefono_pago;
+      pagos[ultimoIndex].cedula_titular = req.body?.cedula_titular !== undefined ? (req.body.cedula_titular || undefined) : targetPago.cedula_titular;
+      pagos[ultimoIndex].nota = req.body?.nota !== undefined ? String(req.body.nota || '').trim() : String(targetPago.nota || '').trim();
+      pagos[ultimoIndex].fecha_pago = fechaEditada;
+      if (req.file) {
+        pagos[ultimoIndex].comprobante_url = buildComprobanteUrl(req.file, req.tenantId);
+      }
+
+      pedido.pagos_historial = pagos;
+      recalcularResumenPedidoDesdeHistorial(pedido);
+      reflejarUltimoPagoEnCamposPrincipales(pedido);
+    }
+
+    await pedido.save();
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    return res.json(resolvePedidoPrenda(pedidoActualizado));
+  } catch (err) {
+    return res.status(400).json({ error: 'Error al editar el ultimo pago del pedido', detalle: err.message });
+  }
+};
+
+exports.eliminarUltimoPagoPedido = async (req, res) => {
+  try {
+    const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findById(req.params.id);
+
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    if ([ESTADOS_PEDIDO.PENDIENTE, ESTADOS_PEDIDO.CANCELADO, ESTADOS_PEDIDO.ENTREGADO].includes(pedido.estado)) {
+      return res.status(400).json({ error: 'No se puede eliminar pagos para este pedido en su estado actual' });
+    }
+
+    const pagoEnRevision = pedido.estado === ESTADOS_PEDIDO.PAGO_EN_REVISION && (Number(pedido.monto_ultimo_pago) || 0) > 0;
+    const pagos = getPagosHistorialSeguro(pedido);
+
+    if (pagoEnRevision) {
+      limpiarCamposUltimoPagoTemporal(pedido);
+      recalcularResumenPedidoDesdeHistorial(pedido);
+      reflejarUltimoPagoEnCamposPrincipales(pedido);
+    } else if (pagos.length > 0) {
+      pagos.pop();
+      pedido.pagos_historial = pagos;
+      recalcularResumenPedidoDesdeHistorial(pedido);
+      reflejarUltimoPagoEnCamposPrincipales(pedido);
+    } else {
+      return res.status(400).json({ error: 'No existe un pago registrado para eliminar' });
+    }
+
+    await pedido.save();
+    const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);
+    return res.json(resolvePedidoPrenda(pedidoActualizado));
+  } catch (err) {
+    return res.status(400).json({ error: 'Error al eliminar el ultimo pago del pedido', detalle: err.message });
   }
 };
 
