@@ -85,6 +85,26 @@ function formatMonthYear(value) {
   return date.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
 }
 
+function formatMonthYearFromPeriodoClave(periodoClave) {
+  const raw = String(periodoClave || '').trim().toLowerCase();
+  const match = raw.match(/^(\d{4})-(\d{2})/);
+  if (!match) return '';
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return '';
+  }
+
+  return new Date(year, month - 1, 1).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+}
+
+function getPagoMesContableKey(pago) {
+  const porPeriodo = formatMonthYearFromPeriodoClave(pago?.periodo_clave);
+  if (porPeriodo) return porPeriodo.toLowerCase();
+  return formatMonthYear(pago?.fecha_pago).toLowerCase();
+}
+
 function toIsoDateLocal(value) {
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) return '';
   const year = value.getFullYear();
@@ -322,9 +342,13 @@ function EntrenadorDetalleView({
     return mesVistaOptions[0]?.value || formatMonthYear(new Date()).toLowerCase();
   }, [mesVistaPago, mesVistaOptions]);
 
+  const mesVistaSeleccionado = useMemo(() => {
+    return mesVistaOptions.find((option) => option.value === mesReferenciaPago) || null;
+  }, [mesVistaOptions, mesReferenciaPago]);
+
   const pagosMesActual = useMemo(() => {
     return pagosNominaOrdenados.filter(
-      (pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferenciaPago
+      (pago) => getPagoMesContableKey(pago) === mesReferenciaPago
     );
   }, [pagosNominaOrdenados, mesReferenciaPago]);
 
@@ -486,7 +510,7 @@ function EntrenadorDetalleView({
     const meses = new Map();
 
     pagosNominaOrdenados.forEach((pago) => {
-      const etiqueta = formatMonthYear(pago?.fecha_pago);
+      const etiqueta = formatMonthYearFromPeriodoClave(pago?.periodo_clave) || formatMonthYear(pago?.fecha_pago);
       const valor = etiqueta.toLowerCase();
       if (etiqueta && !meses.has(valor)) {
         meses.set(valor, etiqueta);
@@ -512,7 +536,7 @@ function EntrenadorDetalleView({
 
   const pagosNominaFiltrados = useMemo(() => {
     return pagosNominaOrdenados.filter((pago) => {
-      const mesPago = formatMonthYear(pago?.fecha_pago).toLowerCase();
+      const mesPago = getPagoMesContableKey(pago);
       const periodoPago = String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase();
 
       const coincideMes = historialMesFiltro === 'todos' || mesPago === historialMesFiltro;
@@ -526,7 +550,7 @@ function EntrenadorDetalleView({
     const status = new Map(periodOptions.map((option) => [String(option.value), 'pendiente']));
 
     pagosNominaOrdenados
-      .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferenciaPago)
+      .filter((pago) => getPagoMesContableKey(pago) === mesReferenciaPago)
       .forEach((pago) => {
         const periodoPago = String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase();
         const optionMatch = periodOptions.find((option) => {
@@ -552,7 +576,7 @@ function EntrenadorDetalleView({
 
     return pagosNominaOrdenados.some((pago) => {
       const periodoPago = String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase();
-      const mesPago = formatMonthYear(pago?.fecha_pago).toLowerCase();
+      const mesPago = getPagoMesContableKey(pago);
       return periodoPago === periodoActual && mesPago === mesReferenciaPago;
     });
   }, [pagoForm.periodo, pagosNominaOrdenados, frecuenciaPago, mesReferenciaPago]);
@@ -562,7 +586,7 @@ function EntrenadorDetalleView({
 
     const periodosCubiertos = new Set(
       pagosNominaOrdenados
-        .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferenciaPago)
+        .filter((pago) => getPagoMesContableKey(pago) === mesReferenciaPago)
         .map((pago) => String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase())
         .filter(Boolean)
     );
@@ -600,7 +624,7 @@ function EntrenadorDetalleView({
 
     if (frecuenciaPago === 'abonos') {
       const pagosDelMes = pagosNominaOrdenados.filter(
-        (p) => formatMonthYear(p?.fecha_pago).toLowerCase() === mesActualKey
+        (p) => getPagoMesContableKey(p) === mesActualKey
       );
       const totalAbonado = round2(
         pagosDelMes.reduce((acc, p) => {
@@ -641,7 +665,7 @@ function EntrenadorDetalleView({
 
     const periodosCubiertosMes = new Set(
       pagosNominaOrdenados
-        .filter((p) => formatMonthYear(p?.fecha_pago).toLowerCase() === mesActualKey)
+        .filter((p) => getPagoMesContableKey(p) === mesActualKey)
         .map((p) => String(p?.periodo || p?.periodo_clave || '').trim().toLowerCase())
         .filter(Boolean)
     );
@@ -777,7 +801,7 @@ function EntrenadorDetalleView({
 
     const pagoExistente = pagosNominaOrdenados.find((pago) => {
       const periodoPago = String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase();
-      const mesPago = formatMonthYear(pago?.fecha_pago).toLowerCase();
+      const mesPago = getPagoMesContableKey(pago);
       return periodoPago === periodoActual && mesPago === mesActual;
     });
 
@@ -851,7 +875,7 @@ function EntrenadorDetalleView({
         ...nextValues
       };
     });
-  }, [pagoForm.periodo, pagoForm.fecha_pago, pagosNominaOrdenados, montoBasePorPago]);
+  }, [pagoForm.periodo, pagoForm.fecha_pago, pagosNominaOrdenados, montoBasePorPago, mesReferenciaPago]);
 
   const handlePagoField = (field) => (event) => {
     const { value } = event.target;
@@ -877,8 +901,12 @@ function EntrenadorDetalleView({
       const periodoSeleccionado = String(pagoForm.periodo || '').trim().toLowerCase();
       const periodoPrefill = String(periodoPrefillFromNavigation || '').trim().toLowerCase();
       const fechaPagoBase = parseDateLocalSafe(pagoForm.fecha_pago) || new Date();
-      const year = fechaPagoBase.getFullYear();
-      const month = String(fechaPagoBase.getMonth() + 1).padStart(2, '0');
+      const year = Number.isInteger(mesVistaSeleccionado?.year) ? mesVistaSeleccionado.year : fechaPagoBase.getFullYear();
+      const monthNumber = Number.isInteger(mesVistaSeleccionado?.monthIndex)
+        ? (mesVistaSeleccionado.monthIndex + 1)
+        : (fechaPagoBase.getMonth() + 1);
+      const month = String(monthNumber).padStart(2, '0');
+      const periodoMesClavePayload = `${year}-${month}`;
 
       let periodoClavePayload = '';
       if (periodoClavePrefillFromNavigation && periodoSeleccionado && periodoSeleccionado === periodoPrefill) {
@@ -889,7 +917,15 @@ function EntrenadorDetalleView({
         } else if (periodoSeleccionado.includes('2da')) {
           periodoClavePayload = `${year}-${month}-q2`;
         }
-      } else if (frecuenciaPago === 'mensual') {
+      } else if (frecuenciaPago === 'semanal') {
+        const semanaMatch = periodoSeleccionado.match(/semana\s*(\d+)/i);
+        if (semanaMatch) {
+          const semana = Number(semanaMatch[1]);
+          if (Number.isInteger(semana) && semana >= 1 && semana <= 5) {
+            periodoClavePayload = `${year}-${month}-s${semana}`;
+          }
+        }
+      } else {
         periodoClavePayload = `${year}-${month}`;
       }
 
@@ -897,6 +933,7 @@ function EntrenadorDetalleView({
       if (periodoClavePayload) {
         payload.append('periodo_clave', periodoClavePayload);
       }
+      payload.append('periodo_mes_clave', periodoMesClavePayload);
       payload.append('fecha_pago', pagoForm.fecha_pago || '');
       payload.append('monto_base', String(Number(pagoForm.monto_base) || 0));
       payload.append('monto_base_usd', String(Number(pagoForm.monto_base) || 0));
@@ -974,10 +1011,10 @@ function EntrenadorDetalleView({
     setPagoSuccessData(null);
 
     // Calcular el próximo periodo sugerido y el nuevo monto base según los pagos actualizados
-    const mesReferencia = formatMonthYear(pagoForm.fecha_pago).toLowerCase();
+    const mesReferencia = mesReferenciaPago;
     const periodosCubiertos = new Set(
       pagosNominaOrdenados
-        .filter((pago) => formatMonthYear(pago?.fecha_pago).toLowerCase() === mesReferencia)
+        .filter((pago) => getPagoMesContableKey(pago) === mesReferencia)
         .map((pago) => String(pago?.periodo || pago?.periodo_clave || '').trim().toLowerCase())
         .filter(Boolean)
     );

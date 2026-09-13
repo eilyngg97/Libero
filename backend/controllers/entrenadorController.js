@@ -243,6 +243,35 @@ function resolvePeriodoClaveFromPeriodoTexto({ frecuenciaPago, periodo, fechaPag
   return '';
 }
 
+function resolvePeriodoClaveFromPeriodoMesClave({ frecuenciaPago, periodo, periodoMesClave }) {
+  const rawPeriodoMesClave = trimValue(periodoMesClave);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/i.test(rawPeriodoMesClave)) {
+    return '';
+  }
+
+  const rawPeriodo = normalizeLowerTrim(periodo);
+  if (frecuenciaPago === 'quincenal') {
+    if (rawPeriodo.includes('1ra') || rawPeriodo.includes('primera') || rawPeriodo.includes('q1')) {
+      return `${rawPeriodoMesClave}-q1`;
+    }
+    if (rawPeriodo.includes('2da') || rawPeriodo.includes('segunda') || rawPeriodo.includes('q2')) {
+      return `${rawPeriodoMesClave}-q2`;
+    }
+  }
+
+  if (frecuenciaPago === 'semanal') {
+    const weekMatch = rawPeriodo.match(/semana\s*(\d+)/i);
+    if (weekMatch) {
+      const week = Number(weekMatch[1]);
+      if (Number.isInteger(week) && week >= 1 && week <= 5) {
+        return `${rawPeriodoMesClave}-s${week}`;
+      }
+    }
+  }
+
+  return rawPeriodoMesClave;
+}
+
 function resolvePagoPeriodoClaveForMatch({ pago, frecuenciaPagoFallback }) {
   const explicitKey = trimValue(pago?.periodo_clave);
   if (explicitKey) return explicitKey;
@@ -945,12 +974,21 @@ exports.registrarPagoNominaEntrenador = async (req, res) => {
 
     const periodoTexto = trimValue(req.body?.periodo);
     const periodoClaveRequest = trimValue(req.body?.periodo_clave);
+    const periodoMesClaveRequest = trimValue(req.body?.periodo_mes_clave);
+    const periodoClaveInferidaPorMesRevisar = resolvePeriodoClaveFromPeriodoMesClave({
+      frecuenciaPago,
+      periodo: periodoTexto,
+      periodoMesClave: periodoMesClaveRequest
+    });
     const periodoClaveInferidaPorTexto = resolvePeriodoClaveFromPeriodoTexto({
       frecuenciaPago,
       periodo: periodoTexto,
       fechaPago
     });
-    const periodoClave = periodoClaveRequest || periodoClaveInferidaPorTexto || resolvePeriodoClave({ frecuenciaPago, fechaPago });
+    const periodoClave = periodoClaveRequest
+      || periodoClaveInferidaPorMesRevisar
+      || periodoClaveInferidaPorTexto
+      || resolvePeriodoClave({ frecuenciaPago, fechaPago });
     const pagoPayload = {
       fecha_pago: fechaPago,
       periodo: periodoTexto,
