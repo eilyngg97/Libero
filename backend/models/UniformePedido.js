@@ -12,6 +12,8 @@ const UniformePedidoSchema = new mongoose.Schema({
   talla: { type: String, required: true },
   genero_precio_variante: { type: String, enum: ['masculino', 'femenino', 'mixto'], required: false },
   metodo_cobranza: { type: String, enum: ['pago_completo', 'dos_partes_50'], default: 'pago_completo' },
+  regla_cobranza: { type: String, enum: ['obligatoria', 'flexible'], default: 'obligatoria' },
+  apertura_segunda_cuota: { type: String, enum: ['libre', 'bajo_solicitud'], default: 'bajo_solicitud' },
   segunda_parte_habilitada: { type: Boolean, default: false },
   monto_primera_parte_objetivo: { type: Number, default: 0 },
   estado: {

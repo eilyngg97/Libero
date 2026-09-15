@@ -56,6 +56,14 @@ function normalizeMetodoCobranza(value) {
   return normalized === 'dos_partes_50' ? 'dos_partes_50' : 'pago_completo';
 }
 
+function normalizeReglaCobranza(value) {
+  return String(value || '').trim().toLowerCase() === 'flexible' ? 'flexible' : 'obligatoria';
+}
+
+function normalizeAperturaSegundaCuota(value) {
+  return String(value || '').trim().toLowerCase() === 'libre' ? 'libre' : 'bajo_solicitud';
+}
+
 function parseJsonArrayField(rawValue) {
   if (rawValue === undefined || rawValue === null || rawValue === '') return [];
   if (Array.isArray(rawValue)) return rawValue;
@@ -136,6 +144,8 @@ exports.createUniforme = async (req, res) => {
       precio,
       moneda,
       metodo_cobranza,
+      regla_cobranza,
+      apertura_segunda_cuota,
       lleva_nombre_atleta,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
@@ -162,6 +172,8 @@ exports.createUniforme = async (req, res) => {
       precio: precioNumerico,
       moneda: monedaNormalizada,
       metodo_cobranza: metodoCobranzaNormalizado,
+      regla_cobranza: normalizeReglaCobranza(regla_cobranza),
+      apertura_segunda_cuota: normalizeAperturaSegundaCuota(apertura_segunda_cuota),
       lleva_nombre_atleta: parseBooleanField(lleva_nombre_atleta),
       lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
       lleva_numero_franela: parseBooleanField(lleva_numero_franela),
@@ -185,6 +197,8 @@ exports.updateUniforme = async (req, res) => {
       precio,
       moneda,
       metodo_cobranza,
+      regla_cobranza,
+      apertura_segunda_cuota,
       lleva_nombre_atleta,
       lleva_personalizacion_nombre,
       lleva_numero_franela,
@@ -215,6 +229,8 @@ exports.updateUniforme = async (req, res) => {
         precio: precioNumerico,
         moneda: monedaNormalizada,
         metodo_cobranza: metodoCobranzaNormalizado,
+        regla_cobranza: normalizeReglaCobranza(regla_cobranza),
+        apertura_segunda_cuota: normalizeAperturaSegundaCuota(apertura_segunda_cuota),
         lleva_nombre_atleta: parseBooleanField(lleva_nombre_atleta),
         lleva_personalizacion_nombre: parseBooleanField(lleva_personalizacion_nombre),
         lleva_numero_franela: parseBooleanField(lleva_numero_franela),

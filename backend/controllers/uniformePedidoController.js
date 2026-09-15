@@ -50,6 +50,14 @@ function normalizeMetodoCobranza(value) {
     : 'pago_completo';
 }
 
+function normalizeReglaCobranza(value) {
+  return String(value || '').trim().toLowerCase() === 'flexible' ? 'flexible' : 'obligatoria';
+}
+
+function normalizeAperturaSegundaCuota(value) {
+  return String(value || '').trim().toLowerCase() === 'libre' ? 'libre' : 'bajo_solicitud';
+}
+
 function calcularMontoPrimeraParteObjetivo(precio) {
   return redondearMonto((Number(precio) || 0) / 2);
 }
@@ -193,7 +201,7 @@ async function findPedidoByIdWithRelations(TenantUniformePedido, id) {
     .populate('alumno')
     .populate('sede')
     .populate('solicitado_por')
-    .populate('uniforme', 'prenda precio moneda metodo_cobranza lleva_nombre_atleta lleva_personalizacion_nombre lleva_numero_franela franela_representante');
+    .populate('uniforme', 'prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota lleva_nombre_atleta lleva_personalizacion_nombre lleva_numero_franela franela_representante');
 }
 
 exports.actualizarPedidoUniforme = async (req, res) => {
@@ -218,6 +226,7 @@ exports.actualizarPedidoUniforme = async (req, res) => {
     const tienePermisoGestion = permisosUsuario
       .map((permiso) => String(permiso || '').trim().toLowerCase())
       .includes('solicitudes_uniformes.manage');
+    const puedeGestionarSolicitud = tienePermisoGestion || esAdminOSuperAdmin;
 
     if (esUsuarioFinal) {
       const alumnoPedido = await TenantAlumno.findById(pedido.alumno).select('usuario representante');
@@ -256,7 +265,7 @@ exports.actualizarPedidoUniforme = async (req, res) => {
       }
 
       const uniforme = await TenantUniforme.findById(uniformeIdNormalizado)
-        .select('_id prenda precio moneda variantes_precio_activo precios_variantes');
+        .select('_id prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota variantes_precio_activo precios_variantes');
       if (!uniforme) {
         return res.status(404).json({ error: 'Prenda no encontrada en el catalogo' });
       }
@@ -271,9 +280,11 @@ exports.actualizarPedidoUniforme = async (req, res) => {
       if (moneda === undefined || moneda === null || String(moneda).trim() === '') {
         pedido.moneda = normalizeMoneda(uniforme.moneda);
       }
-      if (!pedido.metodo_cobranza) {
-        pedido.metodo_cobranza = normalizeMetodoCobranza(uniforme.metodo_cobranza);
-      }
+      pedido.regla_cobranza = normalizeReglaCobranza(uniforme.regla_cobranza);
+      pedido.apertura_segunda_cuota = normalizeAperturaSegundaCuota(uniforme.apertura_segunda_cuota);
+      pedido.metodo_cobranza = puedeGestionarSolicitud && metodo_cobranza !== undefined
+        ? normalizeMetodoCobranza(metodo_cobranza)
+        : normalizeMetodoCobranza(uniforme.metodo_cobranza);
     }
 
     if (talla !== undefined) {
@@ -326,14 +337,25 @@ exports.actualizarPedidoUniforme = async (req, res) => {
     }
 
     if (metodo_cobranza !== undefined) {
-      const metodoCobranzaNormalizado = normalizeMetodoCobranza(metodo_cobranza);
+      let uniformeReglas = uniformeActualizado;
+      if (!uniformeReglas && pedido.uniforme && mongoose.Types.ObjectId.isValid(String(pedido.uniforme))) {
+        uniformeReglas = await TenantUniforme.findById(pedido.uniforme)
+          .select('metodo_cobranza regla_cobranza apertura_segunda_cuota');
+      }
+      const metodoCobranzaNormalizado = puedeGestionarSolicitud
+        ? normalizeMetodoCobranza(metodo_cobranza)
+        : normalizeMetodoCobranza(pedido.metodo_cobranza);
       pedido.metodo_cobranza = metodoCobranzaNormalizado;
+      if (uniformeReglas) {
+        pedido.regla_cobranza = normalizeReglaCobranza(uniformeReglas.regla_cobranza);
+        pedido.apertura_segunda_cuota = normalizeAperturaSegundaCuota(uniformeReglas.apertura_segunda_cuota);
+      }
 
       if (metodoCobranzaNormalizado === 'dos_partes_50') {
         pedido.monto_primera_parte_objetivo = calcularMontoPrimeraParteObjetivo(pedido.precio);
 
         if ((Number(pedido.monto_pagado) || 0) <= 0) {
-          pedido.segunda_parte_habilitada = false;
+          pedido.segunda_parte_habilitada = normalizeAperturaSegundaCuota(pedido.apertura_segunda_cuota) === 'libre';
           if (pedido.estado === ESTADOS_PEDIDO.ESPERANDO_PAGO) {
             pedido.saldo_pendiente = pedido.monto_primera_parte_objetivo;
           }
@@ -436,6 +458,9 @@ exports.createPedidoUniforme = async (req, res) => {
     const prendaActual = String(uniforme.prenda || '').trim();
     const moneda = String(uniforme?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
     const metodoCobranza = normalizeMetodoCobranza(uniforme?.metodo_cobranza);
+    const reglaCobranza = normalizeReglaCobranza(uniforme?.regla_cobranza);
+    const aperturaSegundaCuota = normalizeAperturaSegundaCuota(uniforme?.apertura_segunda_cuota);
+    const segundaParteHabilitada = metodoCobranza === 'dos_partes_50' && aperturaSegundaCuota === 'libre';
     const llevaNombreAtleta = uniforme?.lleva_nombre_atleta === true;
     const esFranelaRepresentante = uniforme?.franela_representante === true;
     const requiereNombrePersonalizado = llevaNombreAtleta;
@@ -498,7 +523,9 @@ exports.createPedidoUniforme = async (req, res) => {
       moneda,
       genero_precio_variante: generoPrecio,
       metodo_cobranza: metodoCobranza,
-      segunda_parte_habilitada: false,
+      regla_cobranza: reglaCobranza,
+      apertura_segunda_cuota: aperturaSegundaCuota,
+      segunda_parte_habilitada: segundaParteHabilitada,
       monto_primera_parte_objetivo: metodoCobranza === 'dos_partes_50' ? calcularMontoPrimeraParteObjetivo(precio) : 0,
       nombre_personalizado: requiereNombrePersonalizado ? (String(nombrePersonalizado || '').trim().toUpperCase() || undefined) : undefined,
       numero_franela: requiereNumeroFranela ? String(numeroFranelaPedido) : null,
@@ -543,7 +570,7 @@ exports.getMisPedidosUniforme = async (req, res) => {
     const pedidos = await TenantUniformePedido.find(filtro)
       .populate('alumno')
       .populate('sede')
-      .populate('uniforme', 'prenda precio moneda metodo_cobranza')
+      .populate('uniforme', 'prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota')
       .sort({ createdAt: -1 });
 
     res.json(pedidos.map(resolvePedidoPrenda));
@@ -568,7 +595,7 @@ exports.getPedidosUniforme = async (req, res) => {
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por')
-      .populate('uniforme', 'prenda precio moneda metodo_cobranza')
+      .populate('uniforme', 'prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota')
       .sort({ createdAt: -1 });
     res.json(pedidos.map(resolvePedidoPrenda));
   } catch (err) {
@@ -606,7 +633,8 @@ exports.solicitarPagoPedido = async (req, res) => {
     pedido.monto_ultimo_pago_bs = 0;
     pedido.saldo_pendiente = saldoInicial;
     pedido.metodo_cobranza = metodoCobranza;
-    pedido.segunda_parte_habilitada = false;
+    pedido.segunda_parte_habilitada = metodoCobranza === 'dos_partes_50'
+      && normalizeAperturaSegundaCuota(pedido.apertura_segunda_cuota) === 'libre';
     pedido.monto_primera_parte_objetivo = montoPrimeraParteObjetivo;
     pedido.estado = ESTADOS_PEDIDO.ESPERANDO_PAGO;
     await pedido.save();
@@ -644,7 +672,7 @@ exports.cancelarPedido = async (req, res) => {
 exports.registrarPagoPedido = async (req, res) => {
   try {
     const { UniformePedido: TenantUniformePedido } = await getTenantUniformePedidoModels(req);
-    const { metodo_pago, referencia, fecha_pago, monto_pagado, monto_pagado_bs, telefono_pago, cedula_titular, nota } = req.body;
+    const { metodo_pago, metodo_cobranza, referencia, fecha_pago, monto_pagado, monto_pagado_bs, telefono_pago, cedula_titular, nota } = req.body;
     const pedido = await TenantUniformePedido.findById(req.params.id);
 
     if (!pedido) {
@@ -686,16 +714,29 @@ exports.registrarPagoPedido = async (req, res) => {
     }
 
     const totalPedido = Number(pedido.precio) || 0;
+    const montoPagadoPrevio = redondearMonto(Number(pedido.monto_pagado) || 0);
+    if (metodo_cobranza !== undefined && montoPagadoPrevio <= 0) {
+      if (normalizeReglaCobranza(pedido.regla_cobranza) !== 'flexible') {
+        return res.status(400).json({ error: 'La modalidad de pago de este pedido es obligatoria y no puede cambiarse.' });
+      }
+      pedido.metodo_cobranza = normalizeMetodoCobranza(metodo_cobranza);
+      pedido.monto_primera_parte_objetivo = pedido.metodo_cobranza === 'dos_partes_50'
+        ? calcularMontoPrimeraParteObjetivo(totalPedido)
+        : 0;
+      pedido.segunda_parte_habilitada = pedido.metodo_cobranza === 'dos_partes_50'
+        && normalizeAperturaSegundaCuota(pedido.apertura_segunda_cuota) === 'libre';
+    }
     const metodoCobranza = normalizeMetodoCobranza(pedido.metodo_cobranza);
-    const segundaParteHabilitada = pedido.segunda_parte_habilitada === true;
+    const segundaParteHabilitada = pedido.segunda_parte_habilitada === true
+      || normalizeAperturaSegundaCuota(pedido.apertura_segunda_cuota) === 'libre';
     const montoPrimeraParteObjetivo = metodoCobranza === 'dos_partes_50'
       ? (Number(pedido.monto_primera_parte_objetivo) > 0
         ? redondearMonto(pedido.monto_primera_parte_objetivo)
         : calcularMontoPrimeraParteObjetivo(totalPedido))
       : 0;
-    const montoPagadoPrevio = redondearMonto(Number(pedido.monto_pagado) || 0);
     const saldoActual = Number(pedido.saldo_pendiente);
-    const saldoPendienteTotal = Number.isFinite(saldoActual) && saldoActual > 0
+    const modalidadCambiadaEnPrimerPago = metodo_cobranza !== undefined && montoPagadoPrevio <= 0;
+    const saldoPendienteTotal = !modalidadCambiadaEnPrimerPago && Number.isFinite(saldoActual) && saldoActual > 0
       ? saldoActual
       : Math.max(totalPedido - montoPagadoPrevio, 0);
 
@@ -715,6 +756,17 @@ exports.registrarPagoPedido = async (req, res) => {
     }
 
     const toleranciaDivisa = calcularToleranciaDivisaDesdeBs(montoPagado, montoPagadoBs);
+    const montoTramoUsuario = metodoCobranza === 'dos_partes_50'
+      ? (montoPagadoPrevio + 0.01 < montoPrimeraParteObjetivo
+        ? redondearMonto(montoPrimeraParteObjetivo - montoPagadoPrevio)
+        : redondearMonto(totalPedido - montoPagadoPrevio))
+      : redondearMonto(totalPedido - montoPagadoPrevio);
+
+    if (!puedeGestionar && Math.abs(montoPagado - montoTramoUsuario) > 0.01) {
+      return res.status(400).json({
+        error: `Debes pagar el monto exacto de esta cuota (${montoTramoUsuario.toFixed(2)}).`
+      });
+    }
 
     if (montoPagado > (saldoPendiente + toleranciaDivisa)) {
       return res.status(400).json({ error: `El monto pagado no puede superar el saldo pendiente (${saldoPendiente.toFixed(2)}).` });
@@ -723,8 +775,6 @@ exports.registrarPagoPedido = async (req, res) => {
     const factorAjuste = montoPagado > saldoPendiente ? (saldoPendiente / montoPagado) : 1;
     const montoPagadoAplicado = redondearMonto(montoPagado * factorAjuste);
     const montoPagadoBsAplicado = redondearMonto(montoPagadoBs * factorAjuste);
-    const esPagoCompletoTramo = montoPagadoAplicado >= (saldoPendiente - 0.0001);
-
     pedido.metodo_pago = metodo_pago;
     pedido.referencia = referencia || undefined;
     pedido.telefono_pago = telefono_pago || undefined;
@@ -740,8 +790,8 @@ exports.registrarPagoPedido = async (req, res) => {
     const saldoPendienteNuevo = Math.max(totalPedido - totalPagado, 0);
     const esPagoCompletoPedido = totalPagado >= (totalPedido - 0.0001);
 
-    if (esPagoCompletoTramo && !puedeGestionar) {
-      // Si lo registra el usuario final y completa el saldo, queda en revisión administrativa.
+    if (!puedeGestionar) {
+      // Todo pago registrado por el usuario final requiere revisión administrativa.
       pedido.estado = ESTADOS_PEDIDO.PAGO_EN_REVISION;
     } else {
       // Cuando lo registra admin/gestion, o cuando es abono parcial, se acumula de inmediato.
@@ -795,10 +845,7 @@ exports.verificarPagoPedido = async (req, res) => {
     const montoPrevioPagadoBs = Number(pedido.monto_pagado_bs) || 0;
     const montoUltimoPagoRaw = Number(pedido.monto_ultimo_pago);
     const montoUltimoPagoBsRaw = Number(pedido.monto_ultimo_pago_bs);
-    const saldoActual = Number(pedido.saldo_pendiente);
-    const saldoPendienteActual = Number.isFinite(saldoActual) && saldoActual > 0
-      ? saldoActual
-      : Math.max(totalPedido - montoPrevioPagado, 0);
+    const saldoPendienteActual = Math.max(totalPedido - montoPrevioPagado, 0);
     const montoUltimoPago = Number.isFinite(montoUltimoPagoRaw) && montoUltimoPagoRaw > 0
       ? Math.min(montoUltimoPagoRaw, saldoPendienteActual)
       : saldoPendienteActual;
@@ -830,6 +877,7 @@ exports.verificarPagoPedido = async (req, res) => {
     pedido.monto_pagado_bs = totalPagadoBs;
     pedido.saldo_pendiente = saldoPendiente;
     pedido.estado = saldoPendiente > 0 ? ESTADOS_PEDIDO.ABONO : ESTADOS_PEDIDO.VERIFICADO;
+    limpiarCamposUltimoPagoTemporal(pedido);
     await pedido.save();
 
     const pedidoActualizado = await findPedidoByIdWithRelations(TenantUniformePedido, pedido._id);

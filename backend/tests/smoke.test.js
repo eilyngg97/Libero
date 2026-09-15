@@ -60,6 +60,12 @@ jest.mock('../models/UniformePedido', () => ({
   deleteMany: jest.fn()
 }));
 
+jest.mock('../models/Uniforme', () => ({
+  find: jest.fn(),
+  findById: jest.fn(),
+  findOne: jest.fn()
+}));
+
 jest.mock('../models/Reposo', () => ({
   find: jest.fn(),
   findOne: jest.fn(),
@@ -108,6 +114,7 @@ jest.mock('../services/tenantModelService', () => ({
     const Mensualidad = require('../models/Mensualidad');
     const PagoDetalle = require('../models/PagoDetalle');
     const UniformePedido = require('../models/UniformePedido');
+    const Uniforme = require('../models/Uniforme');
     const Reposo = require('../models/Reposo');
     const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
     const TenantConfig = require('../models/TenantConfig');
@@ -129,7 +136,7 @@ jest.mock('../services/tenantModelService', () => ({
       Torneo,
       Sede: { findById: jest.fn().mockResolvedValue({ _id: 's1', costo: 100, nombre: 'TRINITARIAS' }) },
       Aspirante: { find: jest.fn(), findOne: jest.fn(), create: jest.fn() },
-      Uniforme: { find: jest.fn(), findById: jest.fn() },
+      Uniforme,
       UniformePedido,
       LandingAtletaFoto: { find: jest.fn() },
       Entrenador: { find: jest.fn(), findById: jest.fn() },
@@ -173,6 +180,7 @@ const Alumno = require('../models/Alumno');
 const Representante = require('../models/Representante');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const Uniforme = require('../models/Uniforme');
 const UniformePedido = require('../models/UniformePedido');
 const Reposo = require('../models/Reposo');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
@@ -645,6 +653,297 @@ describe('Backend smoke tests', () => {
     expect(response.body.match_parcial).toHaveLength(0);
   });
 
+  test.each([
+    ['obligatoria completa', 'obligatoria', 'pago_completo', 'bajo_solicitud', undefined, 20, false],
+    ['obligatoria 50/50 solicitada', 'obligatoria', 'dos_partes_50', 'bajo_solicitud', undefined, 10, false],
+    ['obligatoria 50/50 libre', 'obligatoria', 'dos_partes_50', 'libre', undefined, 10, true],
+    ['flexible elige completa', 'flexible', 'dos_partes_50', 'bajo_solicitud', 'pago_completo', 20, false],
+    ['flexible elige 50/50 solicitada', 'flexible', 'pago_completo', 'bajo_solicitud', 'dos_partes_50', 10, false],
+    ['flexible elige 50/50 libre', 'flexible', 'pago_completo', 'libre', 'dos_partes_50', 10, true]
+  ])('PATCH /api/uniformes/pedidos/:id/pagar procesa %s', async (
+    _caso,
+    reglaCobranza,
+    metodoInicial,
+    aperturaSegundaCuota,
+    metodoSolicitado,
+    montoEsperado,
+    segundaParteHabilitada
+  ) => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1',
+      estado: 'esperando_pago',
+      solicitado_por: 'usuario1',
+      precio: 20,
+      monto_pagado: 0,
+      monto_pagado_bs: 0,
+      monto_ultimo_pago: 0,
+      monto_ultimo_pago_bs: 0,
+      saldo_pendiente: metodoInicial === 'dos_partes_50' ? 10 : 20,
+      metodo_cobranza: metodoInicial,
+      regla_cobranza: reglaCobranza,
+      apertura_segunda_cuota: aperturaSegundaCuota,
+      segunda_parte_habilitada: metodoInicial === 'dos_partes_50' && aperturaSegundaCuota === 'libre',
+      monto_primera_parte_objetivo: metodoInicial === 'dos_partes_50' ? 10 : 0,
+      pagos_historial: [],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const populatedQuery = {
+      populate: jest.fn().mockReturnThis(),
+      then: (resolve) => resolve(pedidoDoc)
+    };
+    UniformePedido.findById
+      .mockResolvedValueOnce(pedidoDoc)
+      .mockReturnValueOnce(populatedQuery);
+
+    let pagoRequest = request(app)
+      .patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`)
+      .field('metodo_pago', 'Pago movil')
+      .field('monto_pagado', String(montoEsperado))
+      .field('monto_pagado_bs', String(montoEsperado * 800))
+      .field('fecha_pago', '2026-09-15');
+    if (metodoSolicitado) {
+      pagoRequest = pagoRequest.field('metodo_cobranza', metodoSolicitado);
+    }
+
+    const response = await pagoRequest;
+
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.estado).toBe('pago_en_revision');
+    expect(pedidoDoc.metodo_cobranza).toBe(metodoSolicitado || metodoInicial);
+    expect(pedidoDoc.monto_ultimo_pago).toBe(montoEsperado);
+    expect(pedidoDoc.segunda_parte_habilitada).toBe(segundaParteHabilitada);
+    expect(pedidoDoc.pagos_historial).toHaveLength(0);
+  });
+
+  test('PATCH /api/uniformes/pedidos/:id/pagar rechaza un monto menor al tramo 50/50', async () => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1',
+      estado: 'esperando_pago',
+      solicitado_por: 'usuario1',
+      precio: 20,
+      monto_pagado: 0,
+      monto_pagado_bs: 0,
+      saldo_pendiente: 10,
+      metodo_cobranza: 'dos_partes_50',
+      regla_cobranza: 'obligatoria',
+      apertura_segunda_cuota: 'bajo_solicitud',
+      segunda_parte_habilitada: false,
+      monto_primera_parte_objetivo: 10,
+      pagos_historial: [],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc);
+
+    const response = await request(app)
+      .patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`)
+      .field('metodo_pago', 'Pago movil')
+      .field('monto_pagado', '9.98')
+      .field('monto_pagado_bs', '7984')
+      .field('fecha_pago', '2026-09-15');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('monto exacto');
+    expect(pedidoDoc.save).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /api/uniformes/pedidos/:id/pagar impide cambiar una modalidad obligatoria', async () => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1',
+      estado: 'esperando_pago',
+      solicitado_por: 'usuario1',
+      precio: 20,
+      monto_pagado: 0,
+      monto_pagado_bs: 0,
+      saldo_pendiente: 20,
+      metodo_cobranza: 'pago_completo',
+      regla_cobranza: 'obligatoria',
+      apertura_segunda_cuota: 'bajo_solicitud',
+      segunda_parte_habilitada: false,
+      pagos_historial: [],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc);
+
+    const response = await request(app)
+      .patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`)
+      .field('metodo_pago', 'Pago movil')
+      .field('metodo_cobranza', 'dos_partes_50')
+      .field('monto_pagado', '10')
+      .field('monto_pagado_bs', '8000')
+      .field('fecha_pago', '2026-09-15');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('obligatoria');
+    expect(pedidoDoc.metodo_cobranza).toBe('pago_completo');
+    expect(pedidoDoc.save).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /api/uniformes/pedidos/:id permite a administracion cambiar la modalidad de una solicitud', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const pedidoDoc = {
+      _id: 'pedido1',
+      alumno: 'alumno1',
+      uniforme: '507f1f77bcf86cd799439011',
+      estado: 'pendiente',
+      precio: 20,
+      monto_pagado: 0,
+      metodo_cobranza: 'pago_completo',
+      regla_cobranza: 'obligatoria',
+      apertura_segunda_cuota: 'bajo_solicitud',
+      segunda_parte_habilitada: false,
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const uniformeDoc = {
+      metodo_cobranza: 'pago_completo',
+      regla_cobranza: 'obligatoria',
+      apertura_segunda_cuota: 'bajo_solicitud'
+    };
+    UniformePedido.findById
+      .mockResolvedValueOnce(pedidoDoc)
+      .mockReturnValueOnce({
+        populate: jest.fn().mockReturnThis(),
+        then: (resolve) => resolve(pedidoDoc)
+      });
+    Uniforme.findById.mockReturnValue({
+      select: jest.fn().mockResolvedValue(uniformeDoc)
+    });
+
+    const response = await request(app)
+      .patch('/api/uniformes/pedidos/pedido1')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ metodo_cobranza: 'dos_partes_50' });
+
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.metodo_cobranza).toBe('dos_partes_50');
+    expect(pedidoDoc.monto_primera_parte_objetivo).toBe(10);
+    expect(pedidoDoc.segunda_parte_habilitada).toBe(false);
+    expect(pedidoDoc.save).toHaveBeenCalled();
+  });
+
+  test('PATCH /api/uniformes/pedidos/:id/pagar bloquea segunda cuota bajo solicitud', async () => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1',
+      estado: 'abono',
+      solicitado_por: 'usuario1',
+      precio: 20,
+      monto_pagado: 10,
+      monto_pagado_bs: 8000,
+      saldo_pendiente: 10,
+      metodo_cobranza: 'dos_partes_50',
+      regla_cobranza: 'obligatoria',
+      apertura_segunda_cuota: 'bajo_solicitud',
+      segunda_parte_habilitada: false,
+      monto_primera_parte_objetivo: 10,
+      pagos_historial: [{ monto_pagado: 10, monto_pagado_bs: 8000 }],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc);
+
+    const response = await request(app)
+      .patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`)
+      .field('metodo_pago', 'Transferencia')
+      .field('monto_pagado', '10')
+      .field('monto_pagado_bs', '8000')
+      .field('fecha_pago', '2026-09-15');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('habilite la segunda parte');
+    expect(pedidoDoc.save).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /api/uniformes/pedidos/:id/pagar permite segunda cuota libre y la envia a revision', async () => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1',
+      estado: 'abono',
+      solicitado_por: 'usuario1',
+      precio: 20,
+      monto_pagado: 10,
+      monto_pagado_bs: 8000,
+      monto_ultimo_pago: 0,
+      monto_ultimo_pago_bs: 0,
+      saldo_pendiente: 10,
+      metodo_cobranza: 'dos_partes_50',
+      regla_cobranza: 'obligatoria',
+      apertura_segunda_cuota: 'libre',
+      segunda_parte_habilitada: true,
+      monto_primera_parte_objetivo: 10,
+      pagos_historial: [{ monto_pagado: 10, monto_pagado_bs: 8000 }],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const populatedQuery = {
+      populate: jest.fn().mockReturnThis(),
+      then: (resolve) => resolve(pedidoDoc)
+    };
+    UniformePedido.findById
+      .mockResolvedValueOnce(pedidoDoc)
+      .mockReturnValueOnce(populatedQuery);
+
+    const response = await request(app)
+      .patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`)
+      .field('metodo_pago', 'Transferencia')
+      .field('monto_pagado', '10')
+      .field('monto_pagado_bs', '8000')
+      .field('fecha_pago', '2026-09-15');
+
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.estado).toBe('pago_en_revision');
+    expect(pedidoDoc.monto_ultimo_pago).toBe(10);
+    expect(pedidoDoc.pagos_historial).toHaveLength(1);
+  });
+
+  test('PATCH /api/uniformes/pedidos/:id/verificar-pago confirma el total aunque el saldo previo fuera media cuota', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const pedidoDoc = {
+      _id: 'pedido1',
+      estado: 'pago_en_revision',
+      precio: 20,
+      monto_pagado: 0,
+      monto_pagado_bs: 0,
+      monto_ultimo_pago: 20,
+      monto_ultimo_pago_bs: 16000,
+      saldo_pendiente: 10,
+      metodo_cobranza: 'pago_completo',
+      pagos_historial: [],
+      metodo_pago: 'Pago movil',
+      referencia: '123456',
+      fecha_pago: new Date('2026-09-15'),
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const queryInicial = {
+      populate: jest.fn().mockReturnThis(),
+      then: (resolve) => resolve(pedidoDoc)
+    };
+    const queryResultado = {
+      populate: jest.fn().mockReturnThis(),
+      then: (resolve) => resolve(pedidoDoc)
+    };
+    UniformePedido.findById
+      .mockReturnValueOnce(queryInicial)
+      .mockReturnValueOnce(queryResultado);
+
+    const response = await request(app)
+      .patch('/api/uniformes/pedidos/pedido1/verificar-pago')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.estado).toBe('verificado');
+    expect(pedidoDoc.monto_pagado).toBe(20);
+    expect(pedidoDoc.saldo_pendiente).toBe(0);
+    expect(pedidoDoc.pagos_historial).toHaveLength(1);
+    expect(pedidoDoc.pagos_historial[0].monto_pagado).toBe(20);
+    expect(pedidoDoc.monto_ultimo_pago).toBe(0);
+  });
+
   test('POST /api/conciliacion/previsualizar?tipo_conciliacion=uniformes retorna match total en pedidos pago_en_revision', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 
@@ -695,12 +994,12 @@ describe('Backend smoke tests', () => {
     const pedidoDoc = {
       _id: 'u1',
       estado: 'pago_en_revision',
-      precio: 100,
+      precio: 20,
       monto_pagado: 0,
       monto_pagado_bs: 0,
-      monto_ultimo_pago: 100,
-      monto_ultimo_pago_bs: 7075,
-      saldo_pendiente: 100,
+      monto_ultimo_pago: 20,
+      monto_ultimo_pago_bs: 16000,
+      saldo_pendiente: 10,
       metodo_pago: 'Pago movil',
       referencia: '123456',
       telefono_pago: '04121234567',
@@ -725,8 +1024,12 @@ describe('Backend smoke tests', () => {
     expect(response.body.tipo_conciliacion).toBe('uniformes');
     expect(response.body.pedidos_actualizados).toBe(1);
     expect(pedidoDoc.estado).toBe('verificado');
+    expect(pedidoDoc.monto_pagado).toBe(20);
+    expect(pedidoDoc.saldo_pendiente).toBe(0);
     expect(Array.isArray(pedidoDoc.pagos_historial)).toBe(true);
     expect(pedidoDoc.pagos_historial).toHaveLength(1);
+    expect(pedidoDoc.pagos_historial[0].monto_pagado).toBe(20);
+    expect(pedidoDoc.monto_ultimo_pago).toBe(0);
     expect(pedidoDoc.save).toHaveBeenCalled();
   });
 

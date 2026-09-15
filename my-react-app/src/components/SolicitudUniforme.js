@@ -761,14 +761,23 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     setPedidoPago(null);
   };
 
-  const handlePagarPedido = async ({ pago, metodoPago, fechaPago, referencia, comprobante, montoPagadoMoneda, montoPagadoBs, moneda, telefonoPago, cedulaTitular, notaPago }) => {
+  const handlePagarPedido = async ({ pago, metodoPago, metodoCobranza, fechaPago, referencia, comprobante, montoPagadoMoneda, montoPagadoBs, moneda, telefonoPago, cedulaTitular, notaPago }) => {
     if (!pago?._id) return;
 
     const montoPagadoNum = Number(montoPagadoMoneda);
     const montoPagadoBsNum = Number(montoPagadoBs);
     const saldoPendiente = Number(pago?.saldo_pendiente);
     const totalPedido = Number(pago?.precio) || 0;
-    const saldoValidoRaw = Number.isFinite(saldoPendiente) && saldoPendiente > 0 ? saldoPendiente : totalPedido;
+    const saldoSegunModalidad = metodoCobranza === 'dos_partes_50'
+      ? totalPedido / 2
+      : metodoCobranza === 'pago_completo'
+        ? totalPedido
+        : null;
+    const saldoValidoRaw = Number.isFinite(saldoSegunModalidad) && saldoSegunModalidad > 0
+      ? saldoSegunModalidad
+      : Number.isFinite(saldoPendiente) && saldoPendiente > 0
+        ? saldoPendiente
+        : totalPedido;
     const saldoValido = Number(Number(saldoValidoRaw).toFixed(2));
     const tasaAplicada = montoPagadoNum > 0 ? (montoPagadoBsNum / montoPagadoNum) : 0;
     const saldoValidoBs = Number.isFinite(tasaAplicada) && tasaAplicada > 0
@@ -792,6 +801,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     const montoPagadoFinal = montoPagadoNum > saldoValido ? saldoValido : montoPagadoNum;
     const formData = new FormData();
     formData.append('metodo_pago', metodoPago);
+    if (metodoCobranza) formData.append('metodo_cobranza', metodoCobranza);
     formData.append('monto_pagado', montoPagadoFinal.toFixed(2));
     formData.append('monto_pagado_bs', Number(montoPagadoBsNum.toFixed(2)).toFixed(2));
     if (referencia) formData.append('referencia', referencia);
@@ -872,8 +882,13 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const getSaldoPendienteVisible = (pedido) => {
     const saldo = Number(pedido?.saldo_pendiente);
     const precio = Number(pedido?.precio) || 0;
+    if (String(pedido?.estado || '').trim().toLowerCase() === 'pago_en_revision') {
+      const pagadoConfirmado = Number(pedido?.monto_pagado) || 0;
+      const pagoEnRevision = Number(pedido?.monto_ultimo_pago) || 0;
+      return Number(Math.max(precio - pagadoConfirmado - pagoEnRevision, 0).toFixed(2));
+    }
     if (Number.isFinite(saldo) && saldo > 0) return saldo;
-    if (pedido?.estado === 'esperando_pago' || pedido?.estado === 'abono' || pedido?.estado === 'pago_en_revision') {
+    if (pedido?.estado === 'esperando_pago' || pedido?.estado === 'abono') {
       return precio;
     }
     return 0;
@@ -928,6 +943,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
 
   const pagoBloqueadoPorSegundaParte = (pedido) => {
     if (normalizarMetodoCobranza(pedido?.metodo_cobranza) !== 'dos_partes_50') return false;
+    if (String(pedido?.apertura_segunda_cuota || '').trim().toLowerCase() === 'libre') return false;
     if (pedido?.segunda_parte_habilitada === true) return false;
     if (String(pedido?.estado || '').toLowerCase() !== 'abono') return false;
     const pagado = Number(pedido?.monto_pagado) || 0;
@@ -1744,7 +1760,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         pago={pedidoPago ? {
           _id: pedidoPago._id,
           id: pedidoPago._id,
-          monto: getSaldoPendienteVisible(pedidoPago),
+          monto: String(pedidoPago?.regla_cobranza || '').trim().toLowerCase() === 'flexible'
+            && (Number(pedidoPago?.monto_pagado) || 0) <= 0
+            ? Number(pedidoPago.precio) || 0
+            : getSaldoPendienteVisible(pedidoPago),
           id_alumno: { habilitar_pago_cuotas: false },
           recargo_aplicado_usd: 0,
           precio: pedidoPago.precio,
@@ -1754,6 +1773,8 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         currencyCode={normalizarMoneda(pedidoPago?.moneda)}
         fallbackRate={pedidoPago ? obtenerTasaPorMoneda(pedidoPago?.moneda) : null}
         disableCuotas
+        uniformInstallmentChoice={String(pedidoPago?.regla_cobranza || '').trim().toLowerCase() === 'flexible'
+          && (Number(pedidoPago?.monto_pagado) || 0) <= 0}
         allowedMethodIds={['pago-movil', 'transferencia']}
         onSubmitPayment={handlePagarPedido}
         onSuccess={() => {

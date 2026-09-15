@@ -396,15 +396,17 @@ function ListadoSolicitudesUniformes() {
     return date.toLocaleDateString('es-VE');
   };
 
-  const formatTasaAplicada = (montoBs, montoDivisa, moneda) => {
-    const bs = Number(montoBs);
-    const divisa = Number(montoDivisa);
-    if (!Number.isFinite(bs) || !Number.isFinite(divisa) || divisa <= 0) return '-';
-    return `Bs ${formatMoney(bs / divisa)}/${normalizarMoneda(moneda)}`;
-  };
-
   const getEstadoLabel = (estado) => ESTADO_LABELS[estado] || estado || '-';
   const getEstadoStyle = (estado) => ESTADO_STYLES[estado] || ESTADO_STYLES.pendiente;
+  const getSaldoVisible = (pedido) => {
+    const saldoConfirmado = Number(pedido?.saldo_pendiente);
+    const precio = Number(pedido?.precio) || 0;
+    const saldoBase = Number.isFinite(saldoConfirmado) && saldoConfirmado >= 0 ? saldoConfirmado : precio;
+    if (String(pedido?.estado || '').trim().toLowerCase() !== 'pago_en_revision') return saldoBase;
+    const totalPagadoConfirmado = Number(pedido?.monto_pagado) || 0;
+    const pagoEnRevision = Number(pedido?.monto_ultimo_pago);
+    return Number(Math.max(precio - totalPagadoConfirmado - (Number.isFinite(pagoEnRevision) ? pagoEnRevision : 0), 0).toFixed(2));
+  };
   const getMetodoCobranzaLabel = (pedido) => (
     String(pedido?.metodo_cobranza || '').trim().toLowerCase() === 'dos_partes_50'
       ? 'Dos partes (50/50)'
@@ -419,6 +421,7 @@ function ListadoSolicitudesUniformes() {
   };
   const puedeHabilitarSegundaParte = (pedido) => {
     if (!isDosPartes50(pedido)) return false;
+    if (String(pedido?.apertura_segunda_cuota || '').trim().toLowerCase() === 'libre') return false;
     if (pedido?.segunda_parte_habilitada === true) return false;
     if (String(pedido?.estado || '').toLowerCase() !== 'abono') return false;
     const pagado = Number(pedido?.monto_pagado) || 0;
@@ -657,11 +660,6 @@ function ListadoSolicitudesUniformes() {
 
   const montoTotalDivisa = Number(pedidoSeleccionado?.precio);
   const montoEsperadoDivisa = Number.isFinite(montoTotalDivisa) ? montoTotalDivisa : 0;
-  const saldoRestanteDivisa = (() => {
-    const saldo = Number(pedidoSeleccionado?.saldo_pendiente);
-    if (!Number.isFinite(saldo) || saldo < 0) return 0;
-    return saldo;
-  })();
 
   const tasaAplicadaNumero = (() => {
     const bs = Number(ultimoPagoDetalle?.monto_pagado_bs);
@@ -673,7 +671,6 @@ function ListadoSolicitudesUniformes() {
   const tasaFallbackUltimoPago = Number(dolar?.promedio) || 0;
   const tasaUltimoPagoActiva = Number(tasaUltimoPagoHistorica) > 0 ? Number(tasaUltimoPagoHistorica) : tasaFallbackUltimoPago;
   const montoUltimoPagoBsEditNumero = parseDecimalInput(ultimoPagoEditData.montoPagadoBs);
-  const montoUltimoPagoBsCalculado = Number.isFinite(montoUltimoPagoBsEditNumero) ? montoUltimoPagoBsEditNumero : 0;
   const montoUltimoPagoDivisaCalculado = (
     Number.isFinite(montoUltimoPagoBsEditNumero)
     && montoUltimoPagoBsEditNumero > 0
@@ -691,9 +688,16 @@ function ListadoSolicitudesUniformes() {
     ? Number(montoUltimoPagoDivisaCalculado)
     : Number(ultimoPagoDetalle?.monto_pagado);
 
-  const montoUltimoPagoBsVista = editandoUltimoPagoOpen
-    ? Number(montoUltimoPagoBsCalculado)
-    : Number(ultimoPagoDetalle?.monto_pagado_bs);
+  const saldoRestanteDivisa = (() => {
+    const saldoConfirmado = Number(pedidoSeleccionado?.saldo_pendiente);
+    if (!Number.isFinite(saldoConfirmado) || saldoConfirmado < 0) return 0;
+    if (String(pedidoSeleccionado?.estado || '').trim().toLowerCase() !== 'pago_en_revision') {
+      return saldoConfirmado;
+    }
+    const totalPagadoConfirmado = Number(pedidoSeleccionado?.monto_pagado) || 0;
+    const pagoEnRevision = Number(montoUltimoPagoDivisaVista);
+    return Number(Math.max(montoEsperadoDivisa - totalPagadoConfirmado - (Number.isFinite(pagoEnRevision) ? pagoEnRevision : 0), 0).toFixed(2));
+  })();
 
   const montoEsperadoBsVista = (Number.isFinite(montoEsperadoDivisa) && montoEsperadoDivisa > 0 && Number.isFinite(tasaDetallePago))
     ? montoEsperadoDivisa * tasaDetallePago
@@ -2338,7 +2342,7 @@ function ListadoSolicitudesUniformes() {
                   <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> {formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha:</b> {formatFecha(pedido.createdAt)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pagado:</b> {formatMoneyWithCurrency(pedido.monto_pagado, pedido.moneda)}</Typography>
-                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pendiente:</b> {formatMoneyWithCurrency(pedido.saldo_pendiente ?? pedido.precio, pedido.moneda)}</Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Pendiente:</b> {formatMoneyWithCurrency(getSaldoVisible(pedido), pedido.moneda)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Método:</b> {pedido.metodo_pago || '-'}</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
                     <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Referencia:</b> {pedido.referencia || '-'}</Typography>
