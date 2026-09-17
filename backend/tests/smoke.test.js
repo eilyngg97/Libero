@@ -23,6 +23,7 @@ jest.mock('../models/Alumno', () => {
   AlumnoMock.find = jest.fn();
   AlumnoMock.findById = jest.fn();
   AlumnoMock.findOne = jest.fn();
+  AlumnoMock.findOneAndUpdate = jest.fn();
   AlumnoMock.findByIdAndUpdate = jest.fn();
   AlumnoMock.findByIdAndDelete = jest.fn();
 
@@ -75,6 +76,7 @@ jest.mock('../models/Reposo', () => ({
 jest.mock('../models/HistorialEstadoAlumno', () => ({
   create: jest.fn(),
   find: jest.fn(),
+  findOne: jest.fn(),
   deleteMany: jest.fn()
 }));
 
@@ -211,10 +213,22 @@ describe('Backend smoke tests', () => {
       })
     });
     Mensualidad.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([])
+      })
+    });
     PagoDetalle.deleteMany.mockResolvedValue({ deletedCount: 0 });
     UniformePedido.deleteMany.mockResolvedValue({ deletedCount: 0 });
     Reposo.deleteMany.mockResolvedValue({ deletedCount: 0 });
     HistorialEstadoAlumno.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    HistorialEstadoAlumno.findOne.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(null)
+        })
+      })
+    });
     ConstanciaSolicitud.deleteMany.mockResolvedValue({ deletedCount: 0 });
     Partido.updateMany.mockResolvedValue({ modifiedCount: 0 });
     Torneo.updateMany.mockResolvedValue({ modifiedCount: 0 });
@@ -1251,7 +1265,7 @@ describe('Backend smoke tests', () => {
   test('PATCH /api/alumnos/:id/baja mantiene representante y usuario', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 
-    Alumno.findByIdAndUpdate.mockResolvedValue({
+    Alumno.findOneAndUpdate.mockResolvedValue({
       _id: 'a1',
       activo: false,
       dado_de_baja: true,
@@ -1262,11 +1276,149 @@ describe('Backend smoke tests', () => {
     const response = await request(app)
       .patch('/api/alumnos/a1/baja')
       .set('Authorization', `Bearer ${token}`)
-      .send({ motivo_baja: 'Prueba' });
+      .send({ motivo_baja: 'Prueba', fecha_retiro: '2026-03-03' });
 
     expect(response.status).toBe(200);
     expect(Representante.findByIdAndDelete).not.toHaveBeenCalled();
     expect(User.findByIdAndDelete).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /api/alumnos/:id/baja exige una fecha de retiro valida', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const response = await request(app)
+      .patch('/api/alumnos/a1/baja')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ decision_mes_retiro: 'cobrar' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('fecha_retiro es requerida y debe ser valida.');
+    expect(Alumno.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /api/alumnos/:id/baja rechaza fechas calendario imposibles', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const response = await request(app)
+      .patch('/api/alumnos/a1/baja')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fecha_retiro: '2026-02-31', decision_mes_retiro: 'cobrar' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('fecha_retiro es requerida y debe ser valida.');
+    expect(Alumno.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['cobrar', 'Insolvente'],
+    ['no_cobrar', 'Exonerado']
+  ])('PATCH /api/alumnos/:id/baja con decision %s trata el mes de retiro como %s', async (decision, estatusEsperado) => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const mensualidadRetiro = { _id: 'm-marzo', mes: 3, anio: 2026, estatus: 'Pendiente' };
+    const mensualidadPosterior = { _id: 'm-abril', mes: 4, anio: 2026, estatus: 'Pendiente' };
+
+    Alumno.findOneAndUpdate.mockResolvedValue({
+      _id: 'a1',
+      activo: false,
+      dado_de_baja: true
+    });
+    Mensualidad.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([mensualidadRetiro, mensualidadPosterior])
+      })
+    });
+    Mensualidad.findOneAndUpdate.mockResolvedValue({ ...mensualidadRetiro, estatus: estatusEsperado });
+
+    const response = await request(app)
+      .patch('/api/alumnos/a1/baja')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        fecha_retiro: '2026-03-03',
+        decision_mes_retiro: decision
+      });
+
+    expect(response.status).toBe(200);
+    expect(Mensualidad.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'm-marzo' },
+      { estatus: estatusEsperado }
+    );
+    expect(PagoDetalle.deleteMany).toHaveBeenCalledWith({ id_mensualidad: { $in: ['m-abril'] } });
+    expect(Mensualidad.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['m-abril'] } });
+  });
+
+  test('PATCH /api/alumnos/:id/baja no elimina mensualidades posteriores con pagos', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    Mensualidad.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { _id: 'm-marzo', mes: 3, anio: 2026, estatus: 'Pendiente' },
+          { _id: 'm-abril', mes: 4, anio: 2026, estatus: 'Pagado' }
+        ])
+      })
+    });
+    PagoDetalle.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ _id: 'p1', id_mensualidad: 'm-abril' }])
+      })
+    });
+
+    const response = await request(app)
+      .patch('/api/alumnos/a1/baja')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fecha_retiro: '2026-03-03', decision_mes_retiro: 'cobrar' });
+
+    expect(response.status).toBe(409);
+    expect(Alumno.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(PagoDetalle.deleteMany).not.toHaveBeenCalled();
+    expect(Mensualidad.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /api/alumnos/:id/anular-baja restaura el estatus previo del mes', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const periodoActual = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Caracas',
+      year: 'numeric',
+      month: '2-digit'
+    }).formatToParts(new Date());
+    const anio = Number(periodoActual.find((part) => part.type === 'year').value);
+    const mes = Number(periodoActual.find((part) => part.type === 'month').value);
+    const alumnoBaja = {
+      _id: 'a1',
+      activo: false,
+      dado_de_baja: true,
+      fecha_baja: new Date(Date.UTC(anio, mes - 1, 3, 12, 0, 0))
+    };
+
+    Alumno.findById.mockReturnValue({
+      select: jest.fn().mockResolvedValue(alumnoBaja)
+    });
+    Alumno.findOneAndUpdate.mockResolvedValue({ _id: 'a1', activo: true, dado_de_baja: false });
+    Mensualidad.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue({ _id: 'm-actual', mes, anio, estatus: 'Exonerado' })
+    });
+    Mensualidad.findOneAndUpdate.mockResolvedValue({ _id: 'm-actual', estatus: 'Pendiente' });
+    HistorialEstadoAlumno.findOne.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            metadata: {
+              estatus_mes_retiro_anterior: 'Pendiente',
+              estatus_mes_retiro_resultante: 'Exonerado'
+            }
+          })
+        })
+      })
+    });
+
+    const response = await request(app)
+      .patch('/api/alumnos/a1/anular-baja')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(Mensualidad.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'm-actual', estatus: 'Exonerado' },
+      { estatus: 'Pendiente' }
+    );
   });
 
   test('POST /api/constancias generates pdf', async () => {

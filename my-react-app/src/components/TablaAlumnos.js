@@ -9,7 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Box, MenuItem, Select, FormControl, InputLabel, Checkbox } from '@mui/material';
+import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Box, MenuItem, Select, FormControl, InputLabel, Checkbox, Radio, RadioGroup, FormControlLabel } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -21,6 +21,9 @@ import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import EventAvailableIcon from '@mui/icons-material/EventAvailable';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import CloseIcon from '@mui/icons-material/Close';
 import { exportToExcel } from '../utils/exportExcel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -107,6 +110,19 @@ function parseFechaLocal(fecha) {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function getFechaHoyCaracas() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  return `${year}-${month}-${day}`;
 }
 
 function normalizarCategoriaFiltro(valor) {
@@ -205,6 +221,13 @@ function TablaAlumnos() {
   const [deleteSuccess, setDeleteSuccess] = useState({ open: false, message: '' });
   const [bajaId, setBajaId] = useState(null);
   const [motivoBaja, setMotivoBaja] = useState('');
+  const [fechaRetiro, setFechaRetiro] = useState(getFechaHoyCaracas);
+  const [decisionMesRetiro, setDecisionMesRetiro] = useState('cobrar');
+  const [bajaPreview, setBajaPreview] = useState([]);
+  const [bajaMensualidadConservada, setBajaMensualidadConservada] = useState([]);
+  const [bajaMensualidadesBloqueadas, setBajaMensualidadesBloqueadas] = useState([]);
+  const [bajaPreviewLoading, setBajaPreviewLoading] = useState(false);
+  const [bajaPreviewError, setBajaPreviewError] = useState('');
   const [bajaLoading, setBajaLoading] = useState(false);
   const [bajaSuccess, setBajaSuccess] = useState({ open: false, message: '' });
   const [anularBajaId, setAnularBajaId] = useState(null);
@@ -251,6 +274,7 @@ function TablaAlumnos() {
       color: '#64748b'
     }
   };
+  const alumnoBaja = alumnos.find((item) => item._id === bajaId) || null;
   const alumnoReactivar = alumnos.find((item) => item._id === reactivarId) || null;
   const totalReingresoUsd = Number((
     (Number(reactivarForm.montoReingreso) || 0) +
@@ -263,6 +287,51 @@ function TablaAlumnos() {
     .filter((periodo) => !periodosExistentesSet.has(buildPeriodoKey(periodo.mes, periodo.anio)));
   const primerPeriodoReingreso = periodosReingresoPreview[0] || null;
   const minFechaReingreso = obtenerMinFechaReingreso(reactivarUltimaMensualidad);
+  const mensualidadMesRetiro = bajaMensualidadConservada[0] || null;
+  const estatusMesRetiro = String(mensualidadMesRetiro?.estatus || '').toLowerCase();
+  const mesRetiroTieneMovimiento = ['pagado', 'en revision', 'abono', 'exonerado', 'exento por reposo', 'becado'].includes(estatusMesRetiro);
+
+  useEffect(() => {
+    if (!bajaId || !fechaRetiro) {
+      setBajaPreview([]);
+      setBajaMensualidadConservada([]);
+      setBajaMensualidadesBloqueadas([]);
+      setBajaPreviewError('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    setBajaPreviewLoading(true);
+    setBajaPreviewError('');
+    fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${bajaId}/baja-preview?fecha_retiro=${encodeURIComponent(fechaRetiro)}&decision_mes_retiro=${encodeURIComponent(decisionMesRetiro)}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo consultar las mensualidades');
+        if (!cancelled) {
+          const mensualidadesConservadas = Array.isArray(data.mensualidades_conservadas) ? data.mensualidades_conservadas : [];
+          const estadoMesRetiro = String(mensualidadesConservadas[0]?.estatus || '').toLowerCase();
+          setBajaPreview(Array.isArray(data.mensualidades) ? data.mensualidades : []);
+          setBajaMensualidadConservada(mensualidadesConservadas);
+          setBajaMensualidadesBloqueadas(Array.isArray(data.mensualidades_bloqueadas) ? data.mensualidades_bloqueadas : []);
+          if (decisionMesRetiro === 'no_cobrar' && ['pagado', 'en revision', 'abono', 'exonerado', 'exento por reposo', 'becado'].includes(estadoMesRetiro)) {
+            setDecisionMesRetiro('cobrar');
+          }
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setBajaPreview([]);
+          setBajaMensualidadConservada([]);
+          setBajaMensualidadesBloqueadas([]);
+          setBajaPreviewError(err.message || 'No se pudo consultar las mensualidades.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBajaPreviewLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [bajaId, fechaRetiro, decisionMesRetiro]);
   // Función para descargar CSV
   const handleDownloadExcel = () => {
     const alumnosActivos = alumnosFiltrados.filter(a => !(a.dado_de_baja || a.activo === false || a.estado === 'Baja'));
@@ -503,13 +572,27 @@ function TablaAlumnos() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ motivo_baja: motivoBaja.trim() || undefined })
+        body: JSON.stringify({
+          motivo_baja: motivoBaja.trim() || undefined,
+          fecha_retiro: fechaRetiro,
+          decision_mes_retiro: decisionMesRetiro
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al dar de baja al alumno');
-      setAlumnos(prev => prev.map(a => a._id === bajaId ? { ...a, estado: 'Baja', dado_de_baja: true, activo: false, motivo_baja: motivoBaja.trim() || null } : a));
+      setAlumnos(prev => prev.map(a => a._id === bajaId ? {
+        ...a,
+        estado: 'Baja',
+        dado_de_baja: true,
+        activo: false,
+        fecha_baja: fechaRetiro,
+        motivo_baja: motivoBaja.trim() || null
+      } : a));
       setBajaId(null);
       setMotivoBaja('');
+      setBajaPreview([]);
+      setBajaMensualidadConservada([]);
+      setDecisionMesRetiro('cobrar');
       setBajaSuccess({ open: true, message: data.message || 'Alumno dado de baja' });
     } catch (err) {
       setError(err.message);
@@ -521,6 +604,9 @@ function TablaAlumnos() {
     if (bajaLoading) return;
     setBajaId(null);
     setMotivoBaja('');
+    setBajaPreview([]);
+    setBajaMensualidadConservada([]);
+    setDecisionMesRetiro('cobrar');
   };
 
   const handleAnularBajaAlumno = async () => {
@@ -1199,6 +1285,8 @@ function TablaAlumnos() {
                       e.stopPropagation();
                       setBajaId(alumno._id);
                       setMotivoBaja('');
+                      setFechaRetiro(getFechaHoyCaracas());
+                      setDecisionMesRetiro('cobrar');
                     }}>
                       <PersonOffIcon fontSize="small" />
                     </IconButton>
@@ -1396,6 +1484,8 @@ function TablaAlumnos() {
                             e.stopPropagation();
                             setBajaId(alumno._id);
                             setMotivoBaja('');
+                            setFechaRetiro(getFechaHoyCaracas());
+                            setDecisionMesRetiro('cobrar');
                           }}>
                             <PersonOffIcon />
                           </IconButton>
@@ -1487,13 +1577,171 @@ function TablaAlumnos() {
       <Dialog
         open={!!bajaId}
         onClose={handleCloseBajaDialog}
+        fullWidth
+        maxWidth="sm"
+        scroll="paper"
         BackdropProps={{ sx: { backgroundColor: 'rgba(255, 255, 255, 0.08)', backdropFilter: 'blur(4px)' } }}
+        PaperProps={{
+          sx: {
+            m: { xs: 1, sm: 3 },
+            width: { xs: 'calc(100% - 16px)', sm: '100%' },
+            maxHeight: { xs: 'calc(100% - 16px)', sm: 'calc(100% - 48px)' },
+            borderRadius: { xs: 2, sm: 2.5 }
+          }
+        }}
       >
-        <DialogTitle>¿Dar de baja al alumno?</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ mb: 2 }}>
-            Confirma si deseas dar de baja al alumno. Esta acción se puede revertir.
+        <DialogTitle sx={{ position: 'relative', pl: { xs: 2, sm: 3 }, pr: { xs: 6, sm: 7 }, pt: { xs: 4, sm: 4.5 }, pb: 1 }}>
+          <Typography component="div" sx={{ fontSize: { xs: 18, sm: 20 }, fontWeight: 800, color: '#0f172a', lineHeight: 1.25 }}>
+            ¿Dar de baja al alumno?
           </Typography>
+          {alumnoBaja && (
+            <Typography component="div" sx={{ mt: 0.4, color: '#64748b', fontSize: { xs: 12, sm: 13 }, fontWeight: 600, lineHeight: 1.35 }}>
+              Alumno: {obtenerNombreCompletoAlumno(alumnoBaja)}
+            </Typography>
+          )}
+          <IconButton
+            aria-label="Cerrar"
+            onClick={handleCloseBajaDialog}
+            disabled={bajaLoading}
+            size="small"
+            sx={{
+              position: 'absolute',
+              right: { xs: 10, sm: 14 },
+              top: { xs: 10, sm: 14 },
+              width: 36,
+              height: 36,
+              color: '#64748b',
+              '&:hover': { color: '#0f172a', bgcolor: '#f1f5f9' }
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 }, pb: 2 }}>
+          <Typography sx={{ mb: 2, color: '#475569', fontSize: { xs: 13, sm: 14 }, lineHeight: 1.5 }}>
+            Registra la fecha real del retiro y decide qué hacer con la mensualidad de ese mes.
+          </Typography>
+          <TextField
+            fullWidth
+            type="date"
+            label="Fecha del retiro"
+            value={fechaRetiro}
+            onChange={(e) => setFechaRetiro(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ mb: 2 }}
+            inputProps={{ max: getFechaHoyCaracas() }}
+          />
+          <FormControl component="fieldset" fullWidth sx={{ mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f172a', mb: 0.75 }}>
+              ¿Qué deseas hacer con {mensualidadMesRetiro ? formatPeriodoMensualidad(mensualidadMesRetiro) : 'el mes del retiro'}?
+            </Typography>
+            <RadioGroup
+              value={decisionMesRetiro}
+              onChange={(e) => setDecisionMesRetiro(e.target.value)}
+              sx={{ gap: 1 }}
+            >
+              <FormControlLabel
+                value="cobrar"
+                control={<Radio />}
+                sx={{ m: 0, px: { xs: 0.75, sm: 1.25 }, py: 0.75, alignItems: 'flex-start', border: '1px solid', borderColor: decisionMesRetiro === 'cobrar' ? '#1d4ed8' : '#e2e8f0', borderRadius: 1.5, bgcolor: decisionMesRetiro === 'cobrar' ? '#eff6ff' : '#fff', '& .MuiFormControlLabel-label': { minWidth: 0 } }}
+                label={
+                  <Box sx={{ pt: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>Cobrar este mes</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>La mensualidad se conserva y, si está pendiente, quedará Insolvente.</Typography>
+                  </Box>
+                }
+              />
+              <FormControlLabel
+                value="no_cobrar"
+                disabled={mesRetiroTieneMovimiento}
+                control={<Radio />}
+                sx={{ m: 0, px: { xs: 0.75, sm: 1.25 }, py: 0.75, alignItems: 'flex-start', border: '1px solid', borderColor: decisionMesRetiro === 'no_cobrar' ? '#15803d' : '#e2e8f0', borderRadius: 1.5, bgcolor: decisionMesRetiro === 'no_cobrar' ? '#f0fdf4' : '#fff', '& .MuiFormControlLabel-label': { minWidth: 0 } }}
+                label={
+                  <Box sx={{ pt: 0.5 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>No cobrar este mes</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>La mensualidad se conserva como Exonerada y no quedará deuda.</Typography>
+                  </Box>
+                }
+              />
+            </RadioGroup>
+            {mesRetiroTieneMovimiento && (
+              <Typography variant="caption" sx={{ mt: 0.75, color: '#9a3412', fontWeight: 700 }}>
+                Esta mensualidad está {mensualidadMesRetiro?.estatus}. Se conservará sin cambios porque ya tiene un movimiento registrado.
+              </Typography>
+            )}
+          </FormControl>
+          <Box sx={{ mb: 2, overflow: 'hidden', borderRadius: 1.5, bgcolor: '#fff', border: '1px solid #dbe3ee' }}>
+            <Box sx={{ px: 1.5, py: 1, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+              {bajaPreviewLoading ? 'Consultando mensualidades...' : 'Resumen de mensualidades'}
+              </Typography>
+            </Box>
+            {bajaPreviewError && (
+              <Box sx={{ px: 1.5, py: 1.25, bgcolor: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
+                <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 700 }}>
+                  {bajaPreviewError}
+                </Typography>
+              </Box>
+            )}
+            {!bajaPreviewError && bajaMensualidadesBloqueadas.length > 0 && (
+              <Box sx={{ px: 1.5, py: 1.25, bgcolor: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
+                <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 800 }}>
+                  No se puede completar la baja todavía.
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.25, color: '#9a3412' }}>
+                  Hay pagos o movimientos registrados en: {bajaMensualidadesBloqueadas.map((mensualidad) => formatPeriodoMensualidad(mensualidad)).join(' · ')}. Revisa esas mensualidades antes de continuar.
+                </Typography>
+              </Box>
+            )}
+            {!bajaPreviewError && (
+              <>
+            <Box sx={{ px: 1.5, py: 1.25, display: 'flex', gap: 1.25, alignItems: 'flex-start' }}>
+              <Box sx={{ width: 30, height: 30, flex: '0 0 30px', borderRadius: 1, display: 'grid', placeItems: 'center', bgcolor: decisionMesRetiro === 'cobrar' ? '#fff7ed' : '#ecfdf5', color: decisionMesRetiro === 'cobrar' ? '#c2410c' : '#047857' }}>
+                <EventAvailableIcon sx={{ fontSize: 18 }} />
+              </Box>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Mes del retiro</Typography>
+                  {mensualidadMesRetiro && (
+                    <Box component="span" sx={{ px: 1, py: 0.25, borderRadius: 1, bgcolor: decisionMesRetiro === 'cobrar' ? '#ffedd5' : '#d1fae5', color: decisionMesRetiro === 'cobrar' ? '#9a3412' : '#065f46', fontSize: 11, fontWeight: 800 }}>
+                      {mesRetiroTieneMovimiento ? mensualidadMesRetiro.estatus : decisionMesRetiro === 'cobrar' ? 'Quedará Insolvente' : 'Quedará Exonerado'}
+                    </Box>
+                  )}
+                </Box>
+                <Typography variant="body2" sx={{ mt: 0.25, color: '#0f172a', fontWeight: 700 }}>
+                  {mensualidadMesRetiro ? formatPeriodoMensualidad(mensualidadMesRetiro) : 'Sin mensualidad generada'}
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.2, color: '#64748b' }}>
+                  {mesRetiroTieneMovimiento
+                    ? `Se conservará sin cambios porque su estado actual es ${mensualidadMesRetiro?.estatus}.`
+                    : decisionMesRetiro === 'cobrar'
+                      ? 'Se conserva como deuda pendiente del alumno.'
+                      : 'Se conserva como registro, pero no genera deuda.'}
+                </Typography>
+              </Box>
+            </Box>
+            <Box sx={{ mx: 1.5, borderTop: '1px solid #eef2f7' }} />
+            <Box sx={{ px: 1.5, py: 1.25, display: 'flex', gap: 1.25, alignItems: 'flex-start' }}>
+              <Box sx={{ width: 30, height: 30, flex: '0 0 30px', borderRadius: 1, display: 'grid', placeItems: 'center', bgcolor: bajaPreview.length ? '#fef2f2' : '#f1f5f9', color: bajaPreview.length ? '#dc2626' : '#64748b' }}>
+                <DeleteSweepIcon sx={{ fontSize: 18 }} />
+              </Box>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Meses posteriores</Typography>
+                  <Box component="span" sx={{ px: 1, py: 0.25, borderRadius: 1, bgcolor: bajaPreview.length ? '#fee2e2' : '#e2e8f0', color: bajaPreview.length ? '#991b1b' : '#475569', fontSize: 11, fontWeight: 800 }}>
+                    {bajaPreview.length} por eliminar
+                  </Box>
+                </Box>
+                <Typography variant="body2" sx={{ mt: 0.35, color: bajaPreview.length ? '#991b1b' : '#64748b', fontWeight: bajaPreview.length ? 700 : 500 }}>
+                  {bajaPreview.length > 0
+                    ? bajaPreview.map((mensualidad) => formatPeriodoMensualidad(mensualidad)).join(' · ')
+                    : 'No hay mensualidades posteriores generadas.'}
+                </Typography>
+              </Box>
+            </Box>
+              </>
+            )}
+          </Box>
           <TextField
             fullWidth
             multiline
@@ -1504,9 +1752,38 @@ function TablaAlumnos() {
             onChange={(e) => setMotivoBaja(e.target.value)}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseBajaDialog} disabled={bajaLoading}>Cancelar</Button>
-          <Button onClick={handleBajaAlumno} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}} variant="contained" disabled={bajaLoading}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: { xs: 1.5, sm: 2 }, gap: 1, borderTop: '1px solid #eef2f7', bgcolor: '#fafbfc', flexDirection: { xs: 'column-reverse', sm: 'row' }, '& > :not(style) ~ :not(style)': { ml: { xs: 0, sm: 1 } }, '& .MuiButton-root': { width: { xs: '100%', sm: 'auto' } } }}>
+          <Button
+            onClick={handleCloseBajaDialog}
+            disabled={bajaLoading}
+            variant="outlined"
+            sx={{
+              minWidth: 104,
+              minHeight: { xs: 44, sm: 40 },
+              borderColor: '#cbd5e1',
+              color: '#334155',
+              fontWeight: 800,
+              borderRadius: 1.5,
+              '&:hover': { borderColor: '#94a3b8', bgcolor: '#f1f5f9' }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleBajaAlumno}
+            startIcon={<PersonOffIcon />}
+            variant="contained"
+            color="primary"
+            disabled={bajaLoading || bajaPreviewLoading || Boolean(bajaPreviewError) || bajaMensualidadesBloqueadas.length > 0 || !fechaRetiro}
+            sx={{
+              minWidth: 142,
+              minHeight: { xs: 44, sm: 40 },
+              px: 2.25,
+              borderRadius: 1.5,
+              fontWeight: 800,
+              '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' }
+            }}
+          >
             {bajaLoading ? 'Procesando...' : 'Dar de baja'}
           </Button>
         </DialogActions>
