@@ -497,6 +497,8 @@ function Alumnos() {
       setForm((prev) => ({ ...prev, aplicar_recargo_mensualidad: checked }));
     } else if (name === 'dia_limite_personalizado') {
       setForm((prev) => ({ ...prev, dia_limite_personalizado: value }));
+    } else if (name === 'cedula') {
+      setForm((prev) => ({ ...prev, cedula: value.replace(/\D/g, '').slice(0, 8) }));
     } else {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
@@ -692,6 +694,14 @@ function Alumnos() {
     });
     if (faltantes.length > 0) {
       setError('Completa los campos obligatorios: ' + faltantes.map(f => f.label).join(', '));
+      return;
+    }
+
+    if (form.cedula && !/^\d{7,8}$/.test(form.cedula)) {
+      return;
+    }
+
+    if (!sinRepresentante && !/^\d{7,8}$/.test(form.rep_cedula)) {
       return;
     }
 
@@ -1088,9 +1098,17 @@ function Alumnos() {
               onChange={handleChange}
               fullWidth
               size="small"
-              error={cedulaDuplicada}
-              helperText={cedulaDuplicada ? cedulaCheckMsg : (cedulaCheckLoading ? 'Verificando cédula...' : '')}
+              error={cedulaDuplicada || Boolean(form.cedula && form.cedula.length < 7)}
+              helperText={
+                cedulaDuplicada
+                  ? cedulaCheckMsg
+                  : (form.cedula && form.cedula.length < 7)
+                    ? 'La cédula debe tener entre 7 y 8 dígitos.'
+                    : (cedulaCheckLoading ? 'Verificando cédula...' : '')
+              }
               sx={{ my: 1 }}
+              FormHelperTextProps={{ sx: { mt: 1, mb: 0.5 } }}
+              inputProps={{ inputMode: 'numeric', maxLength: 8 }}
             />
           </div>
           <div className="form-row">
@@ -1241,8 +1259,9 @@ function Alumnos() {
               inputValue={form.rep_cedula || ''}
               onInputChange={(event, newInputValue, reason) => {
                 if (reason === 'input') {
-                  setForm(prev => ({ ...prev, rep_cedula: newInputValue }));
-                  buscarOpcionesRepresentantes(newInputValue);
+                  const cedulaNumerica = newInputValue.replace(/\D/g, '').slice(0, 8);
+                  setForm(prev => ({ ...prev, rep_cedula: cedulaNumerica }));
+                  buscarOpcionesRepresentantes(cedulaNumerica);
                 }
                 if (reason === 'reset' && newInputValue) {
                   const cedulaSolo = newInputValue.split(' - ')[0];
@@ -1272,7 +1291,19 @@ function Alumnos() {
                   variant="outlined"
                   fullWidth
                   size="small"
+                  error={Boolean(form.rep_cedula && form.rep_cedula.length < 7)}
+                  helperText={
+                    form.rep_cedula && form.rep_cedula.length < 7
+                      ? 'La cédula debe tener entre 7 y 8 dígitos.'
+                      : ''
+                  }
                   sx={{ my: 1 }}
+                  FormHelperTextProps={{ sx: { mt: 1, mb: 0.5 } }}
+                  inputProps={{
+                    ...params.inputProps,
+                    inputMode: 'numeric',
+                    maxLength: 8
+                  }}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (

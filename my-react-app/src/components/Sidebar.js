@@ -246,6 +246,23 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
           borderRight: '1px solid rgba(0, 194, 199, 0.24)',
           transition: 'width 0.3s',
           overflowX: 'hidden',
+          overflowY: 'auto',
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'rgba(255, 122, 24, 0.78) transparent',
+          '&::-webkit-scrollbar': {
+            width: '6px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: 'linear-gradient(180deg, #D7267A 0%, #FF7A18 100%)',
+            borderRadius: '999px',
+            border: '1px solid rgba(11, 15, 42, 0.7)',
+          },
+          '&::-webkit-scrollbar-thumb:hover': {
+            background: 'linear-gradient(180deg, #EC3B8B 0%, #FF963D 100%)',
+          },
         },
         zIndex: (theme) => (variant === 'temporary' ? theme.zIndex.appBar + 1 : undefined),
       }}
