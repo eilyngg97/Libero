@@ -27,7 +27,6 @@ router.delete('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) =
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const torneos = await Torneo.find()
-      .populate('partidos')
       .populate({
         path: 'convocados.alumno',
         select: 'nombres apellidos foto categoria', // Selecciona solo los campos necesarios
@@ -67,23 +66,11 @@ router.get('/por-alumno/:alumnoId', authMiddleware, async (req, res) => {
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const torneo = await Torneo.findById(req.params.id)
-      .populate('partidos')
       .populate('convocados.alumno');
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
     res.json(torneo);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener torneo', detalle: err.message });
-  }
-});
-
-// GET /api/torneos/:id/partidos
-router.get('/:id/partidos', authMiddleware, async (req, res) => {
-  try {
-    const torneo = await Torneo.findById(req.params.id).populate('partidos');
-    if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
-    res.json(Array.isArray(torneo.partidos) ? torneo.partidos : []);
-  } catch (err) {
-    res.status(500).json({ error: 'Error al obtener partidos', detalle: err.message });
   }
 });
 
@@ -164,7 +151,6 @@ router.put('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
     }
 
     const torneo = await Torneo.findByIdAndUpdate(req.params.id, update, { new: true })
-      .populate('partidos')
       .populate('convocados.alumno');
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
     res.json(torneo);
@@ -194,78 +180,6 @@ router.patch('/:id/convocados/:alumnoId', authMiddleware, async (req, res) => {
     res.json({ message: 'Respuesta registrada', estado, respondido_en: convocado.respondido_en });
   } catch (err) {
     res.status(400).json({ error: 'Error al responder convocatoria', detalle: err.message });
-  }
-});
-
-// POST /api/torneos/:id/partidos
-router.post('/:id/partidos', authMiddleware, rolMiddleware('admin'), async (req, res) => {
-  try {
-    const torneoId = req.params.id;
-    const {
-      nombre,
-      descripcion,
-      direccion,
-      fecha,
-      hora,
-      monto,
-      monto_inscripcion,
-      monto_acompanante,
-      entrenador,
-      equipo_contrario,
-      jugadores
-    } = req.body;
-    if (!nombre) {
-      return res.status(400).json({ error: 'Faltan campos obligatorios del partido' });
-    }
-    const torneo = await Torneo.findById(torneoId);
-    if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
-    const toNumber = (value) => (value === null || value === undefined || value === '' ? undefined : Number(value));
-    // Copiar los convocados del torneo al partido (estado pendiente)
-    const convocadosPartido = (torneo.convocados || []).map(c => ({
-      alumno: c.alumno,
-      categoria_snapshot: c.categoria_snapshot || '',
-      estado: 'pendiente',
-      respondido_en: null
-    }));
-    const partido = await Partido.create({
-      nombre,
-      descripcion,
-      direccion,
-      fecha,
-      hora,
-      monto: toNumber(monto),
-      monto_inscripcion: toNumber(monto_inscripcion),
-      monto_acompanante: toNumber(monto_acompanante),
-      entrenador,
-      equipo_contrario,
-      torneo: torneoId,
-      convocados: convocadosPartido
-    });
-    await Torneo.findByIdAndUpdate(torneoId, { $push: { partidos: partido._id } });
-    res.status(201).json(partido);
-  } catch (err) {
-    res.status(400).json({ error: 'Error al crear partido', detalle: err.message });
-  }
-});
-
-// PATCH /api/torneos/:torneoId/partidos/:partidoId/convocados/:alumnoId
-router.patch('/:torneoId/partidos/:partidoId/convocados/:alumnoId', authMiddleware, async (req, res) => {
-  try {
-    const { partidoId, alumnoId } = req.params;
-    const { estado } = req.body;
-    if (!['aceptado', 'rechazado'].includes(estado)) {
-      return res.status(400).json({ error: 'Estado inválido' });
-    }
-    const partido = await Partido.findById(partidoId);
-    if (!partido) return res.status(404).json({ error: 'Partido no encontrado' });
-    const convocado = (partido.convocados || []).find(c => String(c.alumno) === String(alumnoId));
-    if (!convocado) return res.status(404).json({ error: 'Alumno no convocado en este partido' });
-    convocado.estado = estado;
-    convocado.respondido_en = new Date();
-    await partido.save();
-    res.json({ message: 'Respuesta registrada', estado, respondido_en: convocado.respondido_en });
-  } catch (err) {
-    res.status(400).json({ error: 'Error al responder convocatoria de partido', detalle: err.message });
   }
 });
 

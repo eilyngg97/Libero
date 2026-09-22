@@ -16,6 +16,7 @@ const UniformePedido = require('../models/UniformePedido');
 const LandingAtletaFoto = require('../models/LandingAtletaFoto');
 const Torneo = require('../models/Torneo');
 const Partido = require('../models/Partido');
+const Roster = require('../models/Roster');
 const Entrenador = require('../models/Entrenador');
 
 const args = process.argv.slice(2);
@@ -46,6 +47,7 @@ const tenantModelDefinitions = [
   { modelName: 'LandingAtletaFoto', schema: LandingAtletaFoto.schema },
   { modelName: 'Torneo', schema: Torneo.schema },
   { modelName: 'Partido', schema: Partido.schema },
+  { modelName: 'Roster', schema: Roster.schema },
   { modelName: 'Entrenador', schema: Entrenador.schema }
 ];
 

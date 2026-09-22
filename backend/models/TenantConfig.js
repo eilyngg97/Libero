@@ -135,6 +135,31 @@ const PublicacionesSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const RosterTemplateSchema = new mongoose.Schema({
+  header_title: { type: String, default: '' },
+  federacion_linea_1: { type: String, default: '' },
+  federacion_linea_2: { type: String, default: '' },
+  federacion_linea_3: { type: String, default: '' },
+  temporada_texto: { type: String, default: '' },
+  equipo_label: { type: String, default: '' },
+  club_label: { type: String, default: '' },
+  categoria_label: { type: String, default: '' },
+  entrenador_principal_label: { type: String, default: '' },
+  asistente_label: { type: String, default: '' },
+  logos: {
+    type: [{ type: String }],
+    default: [],
+    validate: {
+      validator: (arr) => Array.isArray(arr) && arr.length <= 3,
+      message: 'Solo se permiten hasta 3 logos en membrete de roster.'
+    }
+  }
+}, { _id: false });
+
+const RostersSchema = new mongoose.Schema({
+  template: { type: RosterTemplateSchema, default: () => ({}) }
+}, { _id: false });
+
 const TenantConfigSchema = new mongoose.Schema({
   key: { type: String, default: 'default', unique: true },
   pagos: { type: PagosSchema, default: () => ({}) },
@@ -142,6 +167,7 @@ const TenantConfigSchema = new mongoose.Schema({
   categorias: { type: CategoriasSchema, default: () => ({}) },
   constancias: { type: ConstanciasSchema, default: () => ({}) },
   publicaciones: { type: PublicacionesSchema, default: () => ({}) },
+  rosters: { type: RostersSchema, default: () => ({}) },
   requisitos_recaudos: {
     type: [{ type: String, trim: true }],
     default: []
