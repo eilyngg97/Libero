@@ -1638,8 +1638,9 @@ function esMensualidadOmitidaAjusteSede(mensualidad) {
 function generarVistaPreviaAjusteSede(mensualidades, nuevoMonto) {
   let actualizables = 0;
   let omitidas = 0;
-  let noCompatibles = 0;
-  let montoBaseMinimo = null;
+  let aumentos = 0;
+  let reducciones = 0;
+  let sinCambio = 0;
 
   for (const mensualidad of mensualidades) {
     if (esMensualidadOmitidaAjusteSede(mensualidad)) {
@@ -1648,13 +1649,12 @@ function generarVistaPreviaAjusteSede(mensualidades, nuevoMonto) {
     }
 
     const montoBase = obtenerMontoBaseMensualidad(mensualidad);
-    if (nuevoMonto > montoBase) {
-      noCompatibles += 1;
-      if (montoBaseMinimo === null || montoBase < montoBaseMinimo) {
-        montoBaseMinimo = montoBase;
-      }
-      continue;
-    }
+    const montoActual = redondearMonto(
+      Math.max(0, montoBase - (Number(mensualidad.ajuste_extraordinario) || 0))
+    );
+    if (nuevoMonto > montoActual) aumentos += 1;
+    else if (nuevoMonto < montoActual) reducciones += 1;
+    else sinCambio += 1;
 
     actualizables += 1;
   }
@@ -1662,8 +1662,11 @@ function generarVistaPreviaAjusteSede(mensualidades, nuevoMonto) {
   return {
     mensualidades_actualizables: actualizables,
     mensualidades_omitidas: omitidas,
-    mensualidades_no_compatibles: noCompatibles,
-    monto_base_minimo_compatible: montoBaseMinimo
+    mensualidades_con_aumento: aumentos,
+    mensualidades_con_reduccion: reducciones,
+    mensualidades_sin_cambio: sinCambio,
+    mensualidades_no_compatibles: 0,
+    monto_base_minimo_compatible: null
   };
 }
 
@@ -2291,6 +2294,10 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       return res.status(400).json({ error: 'El nuevo monto no puede ser negativo' });
     }
 
+    if (!String(descripcion || '').trim()) {
+      return res.status(400).json({ error: 'El motivo del ajuste es requerido' });
+    }
+
     if (!['mensualidades', 'inscripciones'].includes(tipoAjuste)) {
       return res.status(400).json({ error: 'Tipo de ajuste inválido. Usa mensualidades o inscripciones.' });
     }
@@ -2316,13 +2323,6 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
     }
 
     const preview = generarVistaPreviaAjusteSede(mensualidades, nuevoMonto);
-    if (preview.mensualidades_no_compatibles > 0) {
-      return res.status(400).json({
-        error: 'El nuevo monto excede el monto base de una o más mensualidades del periodo',
-        mensualidades_no_compatibles: preview.mensualidades_no_compatibles,
-        monto_base_minimo_compatible: preview.monto_base_minimo_compatible
-      });
-    }
 
     let actualizadas = 0;
     let omitidasNoAplicables = 0;
@@ -2347,9 +2347,13 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       mensualidad.ajuste_extraordinario = redondearMonto(montoBase - nuevoMonto);
       mensualidad.ajuste_descripcion = descripcion ? String(descripcion).trim() : 'Ajuste extraordinario por sede';
       mensualidad.ajuste_fecha = new Date();
-      mensualidad.monto_esperado = redondearMonto(
+      const montoAjustadoSinRecargo = redondearMonto(
         Math.max(0, montoBase - (Number(mensualidad.credito_aplicado) || 0) - mensualidad.ajuste_extraordinario)
       );
+      const recargoAplicadoActual = redondearMonto(mensualidad.recargo_aplicado_usd || 0);
+      mensualidad.monto_sin_recargo_usd = montoAjustadoSinRecargo;
+      mensualidad.monto_con_recargo_usd = redondearMonto(montoAjustadoSinRecargo + recargoAplicadoActual);
+      mensualidad.monto_esperado = mensualidad.monto_con_recargo_usd;
 
       let resultado;
       try {
@@ -2407,6 +2411,9 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
       resumen_ajuste: {
         procesadas_total: mensualidades.length,
         correctas: actualizadas,
+        con_aumento: preview.mensualidades_con_aumento,
+        con_reduccion: preview.mensualidades_con_reduccion,
+        sin_cambio: preview.mensualidades_sin_cambio,
         omitidas_total: omitidasTotales,
         omitidas_no_aplicables: omitidasNoAplicables,
         omitidas_conflicto_saldo: omitidasConflictoSaldo,

@@ -1663,9 +1663,74 @@ describe('Backend smoke tests', () => {
     expect(response.body.mensualidades_actualizadas).toBe(1);
     expect(response.body.alumnos_con_saldo_a_favor).toBe(1);
     expect(mensualidadDoc.monto_esperado).toBe(75);
+    expect(mensualidadDoc.monto_sin_recargo_usd).toBe(75);
+    expect(mensualidadDoc.monto_con_recargo_usd).toBe(75);
     expect(mensualidadDoc.ajuste_extraordinario).toBe(25);
     expect(mensualidadDoc.saldo_a_favor_generado).toBe(25);
     expect(alumnoDoc.saldo_a_favor_mensualidades).toBe(25);
+  });
+
+  test('POST /api/mensualidades/ajuste-sede permite incrementar el monto', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const alumnoDoc = {
+      _id: 'a1',
+      saldo_a_favor_mensualidades: 0,
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const mensualidadDoc = {
+      _id: 'm1',
+      id_alumno: 'a1',
+      monto_base: 100,
+      credito_aplicado: 0,
+      ajuste_extraordinario: 0,
+      monto_esperado: 100,
+      saldo_a_favor_generado: 0,
+      estatus: 'Pagado',
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    Alumno.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([alumnoDoc])
+    });
+    Mensualidad.find.mockResolvedValue([mensualidadDoc]);
+    PagoDetalle.find.mockResolvedValue([{ monto_pagado: 100 }]);
+
+    const response = await request(app)
+      .post('/api/mensualidades/ajuste-sede')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        id_sede: 's1',
+        mes: 3,
+        anio: 2026,
+        nuevo_monto: 120,
+        descripcion: 'Incremento extraordinario'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.mensualidades_actualizadas).toBe(1);
+    expect(response.body.resumen_ajuste.con_aumento).toBe(1);
+    expect(mensualidadDoc.monto_esperado).toBe(120);
+    expect(mensualidadDoc.monto_sin_recargo_usd).toBe(120);
+    expect(mensualidadDoc.monto_con_recargo_usd).toBe(120);
+    expect(mensualidadDoc.ajuste_extraordinario).toBe(-20);
+    expect(mensualidadDoc.estatus).toBe('Abono');
+  });
+
+  test('POST /api/mensualidades/ajuste-sede requiere motivo', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+
+    const response = await request(app)
+      .post('/api/mensualidades/ajuste-sede')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        id_sede: 's1',
+        mes: 3,
+        anio: 2026,
+        nuevo_monto: 120
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('El motivo del ajuste es requerido');
   });
 
   test('POST /api/mensualidades/ajuste-sede omite conflicto de saldo y continua', async () => {
@@ -1716,6 +1781,7 @@ describe('Backend smoke tests', () => {
       expect.objectContaining({
         procesadas_total: 1,
         correctas: 0,
+        con_aumento: 1,
         omitidas_total: 1,
         omitidas_conflicto_saldo: 1
       })

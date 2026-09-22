@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip, Checkbox, FormGroup, FormControlLabel } from '@mui/material';
+import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip, Checkbox, FormGroup, FormControlLabel, InputAdornment } from '@mui/material';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import TablePagination from '@mui/material/TablePagination';
@@ -122,7 +123,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [modalAjusteSede, setModalAjusteSede] = useState(false);
 	const [ajusteNuevoMonto, setAjusteNuevoMonto] = useState('');
 	const [ajusteDescripcion, setAjusteDescripcion] = useState('');
-	const [ajusteAnio, setAjusteAnio] = useState(() => String(new Date().getFullYear()));
+	const ajusteAnio = new Date().getFullYear();
 	const [aplicandoAjuste, setAplicandoAjuste] = useState(false);
 	const [previewAjuste, setPreviewAjuste] = useState(null);
 	const [previewAjusteLoading, setPreviewAjusteLoading] = useState(false);
@@ -286,7 +287,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		setModalAjusteSede(false);
 		setAjusteNuevoMonto('');
 		setAjusteDescripcion('');
-		setAjusteAnio(String(new Date().getFullYear()));
 		setPreviewAjuste(null);
 		setPreviewAjusteError('');
 		setResumenAjusteSede(null);
@@ -1168,13 +1168,19 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				formData.append('monto_esperado_bs', montoEsperadoBs.toFixed(2));
 			}
 			formData.append('fecha_pago', fechaPago);
-			formData.append('metodo_pago', normalizeMetodoPago(metodoPago));
+			const metodoPagoNormalizado = normalizeMetodoPago(metodoPago);
+			formData.append('metodo_pago', metodoPagoNormalizado);
 			if (metodoRequiereReferencia(metodoPago)) {
 				formData.append('referencia', referencia);
 			} else {
 				formData.append('referencia', '');
 			}
-			formData.append('telefono_pago', String(telefonoPago || '').replace(/[^0-9]/g, '').slice(-10));
+			formData.append(
+				'telefono_pago',
+				metodoPagoNormalizado === 'Efectivo'
+					? ''
+					: String(telefonoPago || '').replace(/[^0-9]/g, '').slice(-10)
+			);
 			formData.append('nota', String(notaPago || '').trim());
 			formData.append('solicita_revision_recargo', solicitaRevisionRecargo ? 'true' : 'false');
 			if (comprobante) {
@@ -1273,6 +1279,18 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			day: '2-digit',
 			month: 'short',
 			year: 'numeric'
+		});
+	};
+
+	const formatFechaBonitaCaracas = (value) => {
+		if (!value) return '-';
+		const fecha = new Date(value);
+		if (Number.isNaN(fecha.getTime())) return '-';
+		return fecha.toLocaleDateString('es-VE', {
+			day: '2-digit',
+			month: 'short',
+			year: 'numeric',
+			timeZone: 'America/Caracas'
 		});
 	};
 
@@ -1414,13 +1432,13 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 		const recargoAplicado = Number.isFinite(recargoRaw) ? Math.max(0, recargoRaw) : 0;
 		const montoEsperado = Number.isFinite(montoEsperadoRaw) ? montoEsperadoRaw : null;
-		const totalConRecargo = (Number.isFinite(montoConRecargoRaw) && montoConRecargoRaw > 0)
-			? montoConRecargoRaw
-			: montoEsperado;
+		const totalConRecargo = Number.isFinite(montoEsperado)
+			? montoEsperado
+			: ((Number.isFinite(montoConRecargoRaw) && montoConRecargoRaw >= 0) ? montoConRecargoRaw : null);
 
-		const montoSinRecargo = (Number.isFinite(montoSinRecargoRaw) && montoSinRecargoRaw > 0)
-			? montoSinRecargoRaw
-			: (Number.isFinite(totalConRecargo) ? Math.max(0, totalConRecargo - recargoAplicado) : null);
+		const montoSinRecargo = Number.isFinite(totalConRecargo)
+			? Math.max(0, totalConRecargo - recargoAplicado)
+			: ((Number.isFinite(montoSinRecargoRaw) && montoSinRecargoRaw >= 0) ? montoSinRecargoRaw : null);
 
 		if (!Number.isFinite(totalConRecargo) && !Number.isFinite(montoSinRecargo)) {
 			return null;
@@ -1753,6 +1771,11 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			return;
 		}
 
+		if (!ajusteDescripcion.trim()) {
+			alert('Ingresa el motivo del ajuste.');
+			return;
+		}
+
 		if ((previewAjuste?.mensualidades_actualizables || 0) <= 0) {
 			alert('No hay mensualidades aplicables para este ajuste con los datos indicados.');
 			return;
@@ -1803,6 +1826,21 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const mensualidadesPaginadas = mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina);
 	const tituloVerDetalle = esVistaInscripciones ? 'Ver detalle mixto' : 'Ver detalle';
 	const desgloseRecargoDetalle = obtenerDesgloseRecargo(mensualidadDetalle);
+	const ajusteExtraordinarioDetalle = Number(mensualidadDetalle?.ajuste_extraordinario) || 0;
+	const ajusteDescripcionDetalle = String(mensualidadDetalle?.ajuste_descripcion || '').trim();
+	const tieneAjusteMontoDetalle = Math.abs(ajusteExtraordinarioDetalle) >= 0.005 || !!ajusteDescripcionDetalle;
+	const montoEsperadoAjusteDetalle = Number(mensualidadDetalle?.monto_esperado) || 0;
+	const creditoAjusteDetalle = Number(mensualidadDetalle?.credito_aplicado) || 0;
+	const montoBaseGuardadoDetalle = Number(mensualidadDetalle?.monto_base);
+	const montoBaseAjusteDetalle = Number.isFinite(montoBaseGuardadoDetalle)
+		? montoBaseGuardadoDetalle
+		: montoEsperadoAjusteDetalle + creditoAjusteDetalle + ajusteExtraordinarioDetalle;
+	const esAumentoMontoDetalle = ajusteExtraordinarioDetalle < 0;
+	const tipoAjusteMontoDetalle = esAumentoMontoDetalle ? 'Aumento' : ajusteExtraordinarioDetalle > 0 ? 'Reducción' : 'Ajuste';
+	const variacionAjusteMontoDetalle = Math.abs(ajusteExtraordinarioDetalle);
+	const fechaAjusteMontoDetalle = mensualidadDetalle?.ajuste_fecha
+		? formatFechaBonitaCaracas(mensualidadDetalle.ajuste_fecha)
+		: '';
 	const detalleEsMixto = esPagoMixtoMensualidad(mensualidadDetalle);
 	const historialNotasDetalle = (Array.isArray(mensualidadDetalle?.historial_ediciones)
 		? mensualidadDetalle.historial_ediciones
@@ -2582,8 +2620,67 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							)}
 						</Box>
 
-						{(desgloseRecargoDetalle || historialNotasDetalle.length > 0) && (
+						{(tieneAjusteMontoDetalle || desgloseRecargoDetalle || historialNotasDetalle.length > 0) && (
 							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: { xs: 0, md: '56px' } }}>
+								{tieneAjusteMontoDetalle && (
+									<Box
+										sx={{
+											bgcolor: '#ffffff',
+											border: '1px solid #fed7aa',
+											borderLeft: `4px solid ${esAumentoMontoDetalle ? '#f97316' : '#2563eb'}`,
+											borderRadius: 2,
+											p: { xs: 1.5, sm: 2 }
+										}}
+									>
+										<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1.4, flexWrap: 'wrap' }}>
+											<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>
+												Ajuste del monto
+											</Typography>
+											<Chip
+												size="small"
+												label={tipoAjusteMontoDetalle}
+												sx={{
+													bgcolor: esAumentoMontoDetalle ? '#ffedd5' : '#dbeafe',
+													color: esAumentoMontoDetalle ? '#9a3412' : '#1d4ed8',
+													fontWeight: 800
+												}}
+											/>
+										</Box>
+										<Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
+											<Box>
+												<Typography sx={{ fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>MONTO BASE</Typography>
+												<Typography sx={{ mt: 0.25, color: '#0b2a57', fontWeight: 900 }}>
+													{`${simboloMonedaCobro}${formatMoney(montoBaseAjusteDetalle)}`}
+												</Typography>
+											</Box>
+											<Box>
+												<Typography sx={{ fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>{tipoAjusteMontoDetalle.toUpperCase()}</Typography>
+												<Typography sx={{ mt: 0.25, color: esAumentoMontoDetalle ? '#c2410c' : '#1d4ed8', fontWeight: 900 }}>
+													{`${esAumentoMontoDetalle ? '+' : '-'}${simboloMonedaCobro}${formatMoney(variacionAjusteMontoDetalle)}`}
+												</Typography>
+											</Box>
+											<Box>
+												<Typography sx={{ fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>MONTO ESPERADO</Typography>
+												<Typography sx={{ mt: 0.25, color: '#0b2a57', fontWeight: 900 }}>
+													{`${simboloMonedaCobro}${formatMoney(montoEsperadoAjusteDetalle)}`}
+												</Typography>
+											</Box>
+										</Box>
+										{creditoAjusteDetalle > 0 && (
+											<Typography sx={{ mt: 1, fontSize: 12, color: '#64748b' }}>
+												Crédito aplicado: {simboloMonedaCobro}{formatMoney(creditoAjusteDetalle)}
+											</Typography>
+										)}
+										<Box sx={{ mt: 1.4, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>
+											<Typography sx={{ fontSize: 10.5, letterSpacing: '0.1em', color: '#64748b', fontWeight: 800 }}>
+												MOTIVO{fechaAjusteMontoDetalle ? ` · ${fechaAjusteMontoDetalle}` : ''}
+											</Typography>
+											<Typography sx={{ mt: 0.45, fontSize: 13, color: '#334155', lineHeight: 1.45 }}>
+												{ajusteDescripcionDetalle || 'Sin motivo registrado'}
+											</Typography>
+										</Box>
+									</Box>
+								)}
 								{desgloseRecargoDetalle && (
 									<Box
 										sx={{
@@ -3272,9 +3369,20 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					{errorMessage}
 				</Alert>
 			</Snackbar>
-			<Dialog open={modalAjusteSede} onClose={() => !aplicandoAjuste && resetAjusteSedeForm()} maxWidth="sm" fullWidth>
-				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a', pr: 6 }}>
-					Ajuste extraordinario por sede
+			<Dialog
+				open={modalAjusteSede}
+				onClose={() => !aplicandoAjuste && resetAjusteSedeForm()}
+				maxWidth="sm"
+				fullWidth
+				PaperProps={{ sx: { borderRadius: 2.5, overflow: 'hidden' } }}
+			>
+				<DialogTitle sx={{ color: '#0f172a', pr: 6, pb: 1 }}>
+					<Typography sx={{ fontSize: 18, fontWeight: 800 }}>
+						Ajustar monto del período
+					</Typography>
+					<Typography sx={{ mt: 0.25, fontSize: 12.5, color: '#64748b' }}>
+						Cambio extraordinario para los alumnos elegibles de la sede.
+					</Typography>
 					<IconButton
 						aria-label="Cerrar"
 						onClick={resetAjusteSedeForm}
@@ -3284,70 +3392,82 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						<CloseIcon fontSize="small" />
 					</IconButton>
 				</DialogTitle>
-				<DialogContent sx={{ pt: 1.5 }}>
-					<Alert severity="warning" sx={{ mb: 2 }}>
-						Se rebajará el monto del mes seleccionado para los alumnos de esta sede con mensualidad basada en sede. Si alguno ya pagó el monto completo, la diferencia quedará como saldo a favor para el próximo mes.
+				<DialogContent sx={{ pt: 1.5, pb: 2.5 }}>
+					<Alert severity="info" variant="outlined" sx={{ mb: 2, bgcolor: '#f8fbff', borderColor: '#bfdbfe' }}>
+						El nuevo monto puede ser mayor o menor al actual. Los pagos registrados se recalcularán: un excedente quedará como saldo a favor y cualquier diferencia pendiente conservará el estado de cobro correspondiente.
 					</Alert>
+					<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1.4fr 1fr 0.8fr' }, gap: 1.25, mb: 2 }}>
+						<Box sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, px: 1.5, py: 1, bgcolor: '#f8fafc' }}>
+							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+								<Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>SEDE</Typography>
+								<Tooltip title="No editable" arrow><LockOutlinedIcon sx={{ fontSize: 13, color: '#94a3b8' }} /></Tooltip>
+							</Box>
+							<Typography noWrap sx={{ mt: 0.25, fontSize: 13, fontWeight: 700, color: '#334155' }}>
+								{sedeSeleccionada?.nombre || '-'}
+							</Typography>
+						</Box>
+						<Box sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, px: 1.5, py: 1, bgcolor: '#f8fafc' }}>
+							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+								<Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>MES</Typography>
+								<Tooltip title="No editable" arrow><LockOutlinedIcon sx={{ fontSize: 13, color: '#94a3b8' }} /></Tooltip>
+							</Box>
+							<Typography sx={{ mt: 0.25, fontSize: 13, fontWeight: 700, color: '#334155' }}>
+								{filtroMes ? meses[Number(filtroMes) - 1] : '-'}
+							</Typography>
+						</Box>
+						<Box sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, px: 1.5, py: 1, bgcolor: '#f8fafc' }}>
+							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+								<Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>AÑO</Typography>
+								<Tooltip title="Año actual" arrow><LockOutlinedIcon sx={{ fontSize: 13, color: '#94a3b8' }} /></Tooltip>
+							</Box>
+							<Typography sx={{ mt: 0.25, fontSize: 13, fontWeight: 700, color: '#334155' }}>
+								{ajusteAnio}
+							</Typography>
+						</Box>
+					</Box>
 					<TextField
-						label="Sede"
-						fullWidth
-						margin="normal"
-						value={sedeSeleccionada?.nombre || ''}
-						disabled
-					/>
-					<TextField
-						label="Mes"
-						fullWidth
-						margin="normal"
-						value={filtroMes ? meses[Number(filtroMes) - 1] : ''}
-						disabled
-					/>
-					<TextField
-						label="Año"
+						label="Nuevo monto final"
 						type="number"
 						fullWidth
-						margin="normal"
-						value={ajusteAnio}
-						onChange={e => {
-							setAjusteAnio(e.target.value);
-							setResumenAjusteSede(null);
-						}}
-						inputProps={{ min: 2000, step: 1 }}
-					/>
-					<TextField
-						label="Nuevo monto de mensualidad"
-						type="number"
-						fullWidth
-						margin="normal"
 						value={ajusteNuevoMonto}
 						onChange={e => {
 							setAjusteNuevoMonto(e.target.value);
 							setResumenAjusteSede(null);
 						}}
 						inputProps={{ min: 0, step: '0.01' }}
-						helperText="Ejemplo: si la sede cobra 35 y este mes se reconocerá una semana, coloca aquí el nuevo monto final del mes."
+						InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+						helperText="Introduce el monto total que debe cobrarse en este período, ya sea para aumentarlo o reducirlo."
 					/>
 					<TextField
-						label="Descripción"
+						label="Motivo del ajuste"
+							required
 						fullWidth
 						margin="normal"
+						multiline
+						minRows={2}
 						value={ajusteDescripcion}
 						onChange={e => {
 							setAjusteDescripcion(e.target.value);
 							setResumenAjusteSede(null);
 						}}
-						placeholder="Semana reconocida por suspensión de clases"
+						placeholder="Ej. actividad especial, semana no impartida o cambio extraordinario de tarifa"
 					/>
 					{previewAjusteLoading && <Alert severity="info" sx={{ mt: 1.5 }}>Calculando vista previa...</Alert>}
 					{!!previewAjusteError && <Alert severity="error" sx={{ mt: 1.5 }}>{previewAjusteError}</Alert>}
 					{previewAjuste && !previewAjusteLoading && (
-						<Alert
-							severity={previewAjuste.mensualidades_no_compatibles > 0 ? 'error' : 'success'}
-							sx={{ mt: 1.5 }}
-						>
-							Impacto estimado: {previewAjuste.mensualidades_actualizables || 0} actualizables, {previewAjuste.mensualidades_omitidas || 0} omitidas.
-							{previewAjuste.mensualidades_no_compatibles > 0 && ` ${previewAjuste.mensualidades_no_compatibles} no compatibles con este monto.`}
-						</Alert>
+						<Box sx={{ mt: 1.5, p: 1.5, border: '1px solid #bbf7d0', borderRadius: 1.5, bgcolor: '#f0fdf4' }}>
+							<Typography sx={{ mb: 1, fontSize: 12, fontWeight: 800, color: '#166534' }}>
+								Impacto estimado · {previewAjuste.mensualidades_actualizables || 0} mensualidades
+							</Typography>
+							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+								<Chip size="small" label={`${previewAjuste.mensualidades_con_aumento || 0} aumentan`} sx={{ bgcolor: '#ffedd5', color: '#9a3412', fontWeight: 700 }} />
+								<Chip size="small" label={`${previewAjuste.mensualidades_con_reduccion || 0} disminuyen`} sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 700 }} />
+								<Chip size="small" label={`${previewAjuste.mensualidades_sin_cambio || 0} sin cambio`} sx={{ bgcolor: '#e2e8f0', color: '#475569', fontWeight: 700 }} />
+								{(previewAjuste.mensualidades_omitidas || 0) > 0 && (
+									<Chip size="small" label={`${previewAjuste.mensualidades_omitidas} omitidas`} sx={{ bgcolor: '#fee2e2', color: '#b91c1c', fontWeight: 700 }} />
+								)}
+							</Box>
+						</Box>
 					)}
 					{resumenAjusteSede && (
 						<Box sx={{ mt: 2 }}>
@@ -3416,20 +3536,20 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						</Box>
 					)}
 				</DialogContent>
-				<DialogActions>
+				<DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #e2e8f0', gap: 1 }}>
 					<Button
 						variant="outlined"
 						onClick={obtenerPreviewAjusteSede}
 						disabled={aplicandoAjuste || previewAjusteLoading || !!resumenAjusteSede}
 					>
-						Recalcular impacto
+						Calcular impacto
 					</Button>
 					<Button
 						variant="contained"
 						onClick={aplicarAjusteSede}
-						disabled={aplicandoAjuste || previewAjusteLoading || !!resumenAjusteSede || (previewAjuste?.mensualidades_actualizables || 0) <= 0 || (previewAjuste?.mensualidades_no_compatibles || 0) > 0}
+						disabled={aplicandoAjuste || previewAjusteLoading || !!resumenAjusteSede || (previewAjuste?.mensualidades_actualizables || 0) <= 0}
 					>
-						{aplicandoAjuste ? 'Aplicando...' : 'Aplicar ajuste'}
+						{aplicandoAjuste ? 'Aplicando...' : 'Aplicar nuevo monto'}
 					</Button>
 				</DialogActions>
 			</Dialog>
@@ -3521,6 +3641,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							const nuevoMetodo = normalizeMetodoPago(e.target.value);
 							setMetodoPago(nuevoMetodo);
 							if (!metodoRequiereReferencia(nuevoMetodo)) setReferencia('');
+							if (nuevoMetodo === 'Efectivo') setTelefonoPago('');
 							setErrorRef('');
 						}}
 					>
@@ -3596,17 +3717,19 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							helperText={errorRef}
 						/>
 					)}
-					<TextField
-						label="Telefono de pago"
-						fullWidth
-						margin="normal"
-						size="small"
-						sx={inputSx}
-						value={telefonoPago}
-						onChange={e => setTelefonoPago(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-						inputProps={{ inputMode: 'numeric', maxLength: 10 }}
-						helperText="Opcional. Solo numeros, hasta 10 digitos."
-					/>
+					{normalizeMetodoPago(metodoPago) !== 'Efectivo' && (
+						<TextField
+							label="Telefono de pago"
+							fullWidth
+							margin="normal"
+							size="small"
+							sx={inputSx}
+							value={telefonoPago}
+							onChange={e => setTelefonoPago(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+							inputProps={{ inputMode: 'numeric', maxLength: 10 }}
+							helperText="Opcional. Solo numeros, hasta 10 digitos."
+						/>
+					)}
 					<TextField
 						label="Nota para administración (opcional)"
 						fullWidth
