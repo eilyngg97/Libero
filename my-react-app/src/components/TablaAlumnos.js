@@ -83,22 +83,54 @@ function obtenerNombreCompletoAlumno(alumno) {
   return `${nombres} ${apellidos}`.trim();
 }
 
+function obtenerSolvenciaAlumno(alumno) {
+  const estado = String(alumno?.solvencia_mensualidades || '').trim().toLowerCase();
+  if (estado === 'solvente' || estado === 'insolvente') return estado;
+  return '';
+}
+
+function completarSolvenciaDesdeMensualidades(alumnos = [], mensualidades = []) {
+  const insolvenciasPorAlumno = new Map();
+
+  mensualidades.forEach((mensualidad) => {
+    const estatus = String(mensualidad?.estatus || '').trim().toLowerCase();
+    if (estatus !== 'insolvente' && estatus !== 'retrasado') return;
+
+    const alumnoId = String(mensualidad?.id_alumno?._id || mensualidad?.id_alumno || '').trim();
+    if (!alumnoId) return;
+    insolvenciasPorAlumno.set(alumnoId, (insolvenciasPorAlumno.get(alumnoId) || 0) + 1);
+  });
+
+  return alumnos.map((alumno) => {
+    if (obtenerSolvenciaAlumno(alumno)) return alumno;
+    const cantidad = insolvenciasPorAlumno.get(String(alumno?._id)) || 0;
+    return {
+      ...alumno,
+      solvencia_mensualidades: cantidad > 0 ? 'insolvente' : 'solvente',
+      mensualidades_insolventes: cantidad
+    };
+  });
+}
+
 function SolvenciaChip({ alumno }) {
-  const esInsolvente = alumno?.solvencia_mensualidades === 'insolvente';
+  const solvencia = obtenerSolvenciaAlumno(alumno);
+  const esInsolvente = solvencia === 'insolvente';
   const cantidad = Number(alumno?.mensualidades_insolventes) || 0;
-  const tooltip = esInsolvente
+  const tooltip = !solvencia
+    ? 'El servidor no proporcionó el estado de solvencia'
+    : esInsolvente
     ? `${cantidad} mensualidad${cantidad === 1 ? '' : 'es'} insolvente${cantidad === 1 ? '' : 's'}`
     : 'Sin mensualidades insolventes';
 
   return (
     <Tooltip title={tooltip} arrow>
       <Chip
-        label={esInsolvente ? 'Insolvente' : 'Solvente'}
+        label={!solvencia ? 'Sin datos' : esInsolvente ? 'Insolvente' : 'Solvente'}
         size="small"
         sx={{
           height: 20,
-          bgcolor: esInsolvente ? '#fee2e2' : '#dcfce7',
-          color: esInsolvente ? '#b91c1c' : '#166534',
+          bgcolor: !solvencia ? '#e2e8f0' : esInsolvente ? '#fee2e2' : '#dcfce7',
+          color: !solvencia ? '#475569' : esInsolvente ? '#b91c1c' : '#166534',
           fontSize: 10.5,
           fontWeight: 700,
           '& .MuiChip-label': { px: 0.9 }
@@ -375,12 +407,20 @@ function TablaAlumnos() {
       Edad: calcularEdad(a.fecha_nacimiento),
       Representante: a.representante ? `${a.representante.nombres} ${a.representante.apellidos}` : ('-'),
       Telefono: a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-'),
+      Solvencia: obtenerSolvenciaAlumno(a) === 'insolvente' ? 'Insolvente' : obtenerSolvenciaAlumno(a) === 'solvente' ? 'Solvente' : 'Sin datos',
     }));
-    const headers = ['Nombre', 'Apellido', 'Cedula', 'Categoria', 'Division', 'Nro_Franela', 'Sexo', 'Fecha_Nacimiento', 'Edad', 'Representante', 'Telefono'];
+    const headers = ['Nombre', 'Apellido', 'Cedula', 'Categoria', 'Division', 'Nro_Franela', 'Sexo', 'Fecha_Nacimiento', 'Edad', 'Representante', 'Telefono', 'Solvencia'];
     exportToExcel(
       data,
       `alumnos${sedeSeleccionada && sedeSeleccionada.nombre ? '_' + sedeSeleccionada.nombre.replace(/\s+/g, '_') : ''}.xlsx`,
-      headers
+      headers,
+      {
+        statusColumnName: 'Solvencia',
+        statusStyleMap: {
+          solvente: { bg: '#dcfce7', color: '#166534' },
+          insolvente: { bg: '#fee2e2', color: '#b91c1c' }
+        }
+      }
     );
   };
 
@@ -838,7 +878,20 @@ function TablaAlumnos() {
         const text = await res.text();
         throw new Error('Respuesta inesperada del servidor: ' + text.substring(0, 200));
       }
-      setAlumnos(data);
+
+      let alumnosConSolvencia = Array.isArray(data) ? data : [];
+      const requiereCompatibilidad = alumnosConSolvencia.some((alumno) => !obtenerSolvenciaAlumno(alumno));
+      if (requiereCompatibilidad) {
+        const mensualidadesRes = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades`);
+        if (!mensualidadesRes.ok) throw new Error('No se pudo obtener la solvencia de los alumnos');
+        const mensualidades = await mensualidadesRes.json();
+        alumnosConSolvencia = completarSolvenciaDesdeMensualidades(
+          alumnosConSolvencia,
+          Array.isArray(mensualidades) ? mensualidades : []
+        );
+      }
+
+      setAlumnos(alumnosConSolvencia);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -916,7 +969,7 @@ function TablaAlumnos() {
         : filtroRecargoMensual === 'si'
           ? a.aplicar_recargo_mensualidad !== false
           : a.aplicar_recargo_mensualidad === false;
-    const solvenciaMatch = filtroSolvencia === '' || a.solvencia_mensualidades === filtroSolvencia;
+    const solvenciaMatch = filtroSolvencia === '' || obtenerSolvenciaAlumno(a) === filtroSolvencia;
     return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch && recargoMensualMatch && solvenciaMatch;
   });
   alumnosFiltrados = [...alumnosFiltrados].sort((a, b) => {

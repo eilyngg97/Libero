@@ -616,6 +616,7 @@ function ListadoSolicitudesUniformes() {
       Alumno: pedido.alumno ? `${pedido.alumno.nombres || ''} ${pedido.alumno.apellidos || ''}`.trim() : '-',
       'Fecha de nacimiento': formatFecha(pedido.alumno?.fecha_nacimiento),
       Categoria: pedido.alumno?.categoria || '-',
+      Sexo: pedido.alumno?.sexo || '-',
       'Fecha solicitud': formatFecha(pedido.createdAt || pedido.fecha_solicitud || pedido.fechaSolicitud),
       Estado: ESTADO_LABELS[estadoKey] || (pedido.estado || '-'),
       Prenda: pedido.prenda || '-',
@@ -642,7 +643,7 @@ function ListadoSolicitudesUniformes() {
     await exportToExcel(
       rows,
       fileName,
-      ['Sede', 'Alumno', 'Fecha de nacimiento', 'Categoria', 'Fecha solicitud', 'Estado', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela'],
+      ['Sede', 'Alumno', 'Fecha de nacimiento', 'Categoria', 'Sexo', 'Fecha solicitud', 'Estado', 'Prenda', 'Talla', 'Nombre deportivo', 'Numero franela'],
       {
         statusColumnName: 'Estado',
         statusStyleMap: {
