@@ -89,6 +89,7 @@ async function getTenantAlumnoReadModels(req) {
   const TenantSede = getTenantModel(connection, 'Sede');
   const TenantAlumno = getTenantModel(connection, 'Alumno');
   const TenantReposo = getTenantModel(connection, 'Reposo');
+  const TenantMensualidad = getTenantModel(connection, 'Mensualidad');
   const TenantHistorialEstadoAlumno = getTenantModel(connection, 'HistorialEstadoAlumno');
   const TenantConfig = getTenantModel(connection, 'TenantConfig');
 
@@ -97,6 +98,7 @@ async function getTenantAlumnoReadModels(req) {
     Representante: TenantRepresentante,
     Sede: TenantSede,
     Reposo: TenantReposo,
+    Mensualidad: TenantMensualidad,
     HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
     TenantConfig
   };
@@ -1628,7 +1630,8 @@ exports.getAlumnos = async (req, res) => {
     const {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
-      Reposo: TenantReposo
+      Reposo: TenantReposo,
+      Mensualidad: TenantMensualidad
     } = await getTenantAlumnoReadModels(req);
 
     const incluirBajas = req.query.incluirBajas === '1';
@@ -1667,9 +1670,26 @@ exports.getAlumnos = async (req, res) => {
       repososActivos.map((reposo) => String(reposo.id_alumno))
     );
 
+    const mensualidadesInsolventes = alumnoIds.length > 0
+      ? await TenantMensualidad.aggregate([
+          {
+            $match: {
+              id_alumno: { $in: alumnoIds },
+              estatus: { $in: ['Insolvente', 'Retrasado'] }
+            }
+          },
+          { $group: { _id: '$id_alumno', cantidad: { $sum: 1 } } }
+        ])
+      : [];
+    const insolvenciasPorAlumno = new Map(
+      mensualidadesInsolventes.map((item) => [String(item._id), item.cantidad])
+    );
+
     const resultado = alumnos.map((alumno) => ({
       ...alumno,
-      tiene_reposo_activo: alumnosConReposoActivo.has(String(alumno._id))
+      tiene_reposo_activo: alumnosConReposoActivo.has(String(alumno._id)),
+      solvencia_mensualidades: insolvenciasPorAlumno.has(String(alumno._id)) ? 'insolvente' : 'solvente',
+      mensualidades_insolventes: insolvenciasPorAlumno.get(String(alumno._id)) || 0
     }));
 
     console.log('Alumnos obtenidos:', resultado);

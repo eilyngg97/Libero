@@ -42,6 +42,7 @@ jest.mock('../models/Mensualidad', () => ({
   find: jest.fn(),
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  aggregate: jest.fn(),
   create: jest.fn(),
   deleteMany: jest.fn()
 }));
@@ -212,6 +213,7 @@ describe('Backend smoke tests', () => {
         lean: jest.fn().mockResolvedValue([])
       })
     });
+    Mensualidad.aggregate.mockResolvedValue([]);
     Mensualidad.deleteMany.mockResolvedValue({ deletedCount: 0 });
     PagoDetalle.find.mockReturnValue({
       select: jest.fn().mockReturnValue({
@@ -270,6 +272,7 @@ describe('Backend smoke tests', () => {
     const populateSede = jest.fn(() => ({ lean }));
     const populateRepresentante = jest.fn(() => ({ populate: populateSede }));
     Alumno.find.mockReturnValue({ populate: populateRepresentante });
+    Mensualidad.aggregate.mockResolvedValue([{ _id: 'a1', cantidad: 2 }]);
 
     const response = await request(app)
       .get('/api/alumnos')
@@ -278,6 +281,10 @@ describe('Backend smoke tests', () => {
     expect(response.status).toBe(200);
     expect(Array.isArray(response.body)).toBe(true);
     expect(response.body).toHaveLength(1);
+    expect(response.body[0]).toMatchObject({
+      solvencia_mensualidades: 'insolvente',
+      mensualidades_insolventes: 2
+    });
   });
 
   test('GET /api/representantes/por-usuario/:userId returns 200 null cuando usuario no tiene representante', async () => {

@@ -9,7 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Box, MenuItem, Select, FormControl, InputLabel, Checkbox, Radio, RadioGroup, FormControlLabel } from '@mui/material';
+import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Box, MenuItem, Select, FormControl, InputLabel, Checkbox, Radio, RadioGroup, FormControlLabel, Chip } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -81,6 +81,31 @@ function obtenerNombreCompletoAlumno(alumno) {
   const nombres = String(alumno?.nombres || '').trim();
   const apellidos = String(alumno?.apellidos || '').trim();
   return `${nombres} ${apellidos}`.trim();
+}
+
+function SolvenciaChip({ alumno }) {
+  const esInsolvente = alumno?.solvencia_mensualidades === 'insolvente';
+  const cantidad = Number(alumno?.mensualidades_insolventes) || 0;
+  const tooltip = esInsolvente
+    ? `${cantidad} mensualidad${cantidad === 1 ? '' : 'es'} insolvente${cantidad === 1 ? '' : 's'}`
+    : 'Sin mensualidades insolventes';
+
+  return (
+    <Tooltip title={tooltip} arrow>
+      <Chip
+        label={esInsolvente ? 'Insolvente' : 'Solvente'}
+        size="small"
+        sx={{
+          height: 20,
+          bgcolor: esInsolvente ? '#fee2e2' : '#dcfce7',
+          color: esInsolvente ? '#b91c1c' : '#166534',
+          fontSize: 10.5,
+          fontWeight: 700,
+          '& .MuiChip-label': { px: 0.9 }
+        }}
+      />
+    </Tooltip>
+  );
 }
 
 const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
@@ -193,6 +218,7 @@ function TablaAlumnos() {
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroPagoCuotas, setFiltroPagoCuotas] = useState('');
   const [filtroRecargoMensual, setFiltroRecargoMensual] = useState('');
+  const [filtroSolvencia, setFiltroSolvencia] = useState('');
   const [mostrarFiltrosMobile, setMostrarFiltrosMobile] = useState(false);
     // Formatear fecha a DD/MM/YYYY (corrige desfase por zona horaria)
     const formatFecha = (fecha) => {
@@ -845,6 +871,7 @@ function TablaAlumnos() {
     setFiltroEstado('');
     setFiltroPagoCuotas('');
     setFiltroRecargoMensual('');
+    setFiltroSolvencia('');
     setPage(0);
   };
 
@@ -889,7 +916,8 @@ function TablaAlumnos() {
         : filtroRecargoMensual === 'si'
           ? a.aplicar_recargo_mensualidad !== false
           : a.aplicar_recargo_mensualidad === false;
-    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch && recargoMensualMatch;
+    const solvenciaMatch = filtroSolvencia === '' || a.solvencia_mensualidades === filtroSolvencia;
+    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch && recargoMensualMatch && solvenciaMatch;
   });
   alumnosFiltrados = [...alumnosFiltrados].sort((a, b) => {
     const nombreA = String(a?.nombres || '').trim();
@@ -1172,6 +1200,20 @@ function TablaAlumnos() {
             <MenuItem value="no">No aplica</MenuItem>
           </TextField>
         </Box>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>SOLVENCIA</Typography>
+          <TextField
+            select
+            size="small"
+            value={filtroSolvencia}
+            onChange={e => setFiltroSolvencia(e.target.value)}
+            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
+          >
+            <MenuItem value="">Todos</MenuItem>
+            <MenuItem value="solvente">Solvente</MenuItem>
+            <MenuItem value="insolvente">Insolvente</MenuItem>
+          </TextField>
+        </Box>
         <Box
           sx={{
             display: 'flex',
@@ -1259,6 +1301,9 @@ function TablaAlumnos() {
                     <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
                       Edad: {calcularEdad(alumno.fecha_nacimiento) || '-'}
                     </Typography>
+                    <Box sx={{ mt: 0.5 }}>
+                      <SolvenciaChip alumno={alumno} />
+                    </Box>
                   </Box>
                 </Box>
               </Box>
@@ -1473,6 +1518,9 @@ function TablaAlumnos() {
                         <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>
                           Fecha Nac: {formatFecha(alumno.fecha_nacimiento) || '-'}
                         </Typography>
+                        <Box sx={{ mt: 0.5 }}>
+                          <SolvenciaChip alumno={alumno} />
+                        </Box>
                         {/* Eliminado chip de pago extendido en mobile */}
                       </Box>
                     </Box>
