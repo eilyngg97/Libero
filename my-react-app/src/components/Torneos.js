@@ -1,94 +1,143 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, List, ListItem, ListItemText, IconButton, Typography, Accordion, AccordionSummary, AccordionDetails, Box, Grid, Chip, InputAdornment, Snackbar, Alert, AlertTitle, Paper, Avatar } from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  AlertTitle,
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
+  InputAdornment,
+  ListItemText,
+  MenuItem,
+  Snackbar,
+  TextField,
+  Typography
+} from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
-import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import EventIcon from '@mui/icons-material/Event';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
-import PersonIcon from '@mui/icons-material/Person';
-import DescriptionIcon from '@mui/icons-material/Description';
-import SportsVolleyballIcon from '@mui/icons-material/SportsVolleyball';
-import GroupsIcon from '@mui/icons-material/Groups';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import CloseIcon from '@mui/icons-material/Close';
-import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import SearchIcon from '@mui/icons-material/Search';
 import { useNavigate } from 'react-router-dom';
-import { mediaUrl } from '../utils/mediaUrl';
-
+import RosterCreateDialog from './RosterCreateDialog';
+import RosterTemplateDialog from './RosterTemplateDialog';
 
 function Torneos() {
   const token = localStorage.getItem('token');
+  const navigate = useNavigate();
+
   const buildAuthHeaders = useCallback((baseHeaders = {}) => ({
     ...baseHeaders,
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   }), [token]);
-  const fetchTorneosFrescos = useCallback(async () => {
-    const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos?_t=${Date.now()}`, {
-      cache: 'no-store',
-      headers: buildAuthHeaders()
-    });
-    const data = await res.json();
-    if (!res.ok || !Array.isArray(data)) throw new Error('Respuesta inválida');
-    setTorneos(data);
-    return data;
-  }, [buildAuthHeaders]);
+
+  const [open, setOpen] = useState(false);
+  const [openCrear, setOpenCrear] = useState(false);
   const [dialogEliminarOpen, setDialogEliminarOpen] = useState(false);
   const [torneoAEliminar, setTorneoAEliminar] = useState(null);
-    // Estado para saber si se está editando un partido
-    const [editandoPartido, setEditandoPartido] = useState(false);
-    const [partidoEditId, setPartidoEditId] = useState(null);
-  const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const [dialogEliminarRosterOpen, setDialogEliminarRosterOpen] = useState(false);
+  const [rosterAEliminar, setRosterAEliminar] = useState(null);
+  const [rosterDialogOpen, setRosterDialogOpen] = useState(false);
+  const [rosterTemplateOpen, setRosterTemplateOpen] = useState(false);
+  const [rosterPrefillTorneoId, setRosterPrefillTorneoId] = useState('');
+  const [expandedTorneoId, setExpandedTorneoId] = useState('');
+
+  const [torneos, setTorneos] = useState([]);
+  const [torneosError, setTorneosError] = useState('');
+  const [rosters, setRosters] = useState([]);
+  const [rostersLoading, setRostersLoading] = useState(false);
+  const [rostersError, setRostersError] = useState('');
+  const [downloadingRosterId, setDownloadingRosterId] = useState('');
+  const [savingRosterId, setSavingRosterId] = useState('');
+
+  const [editId, setEditId] = useState(null);
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [fechaLimite, setFechaLimite] = useState('');
-  const [torneos, setTorneos] = useState([]);
-  const [editId, setEditId] = useState(null);
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [modalPartidos, setModalPartidos] = useState(false);
-  const [torneoActual, setTorneoActual] = useState(null);
+  const [convocados, setConvocados] = useState([]);
+
   const [alumnos, setAlumnos] = useState([]);
   const [alumnosLoading, setAlumnosLoading] = useState(false);
   const [alumnosError, setAlumnosError] = useState('');
   const [solvencias, setSolvencias] = useState({});
   const [solvenciasLoading, setSolvenciasLoading] = useState(false);
   const [solvenciasError, setSolvenciasError] = useState('');
-  const [convocados, setConvocados] = useState([]);
+
   const [filtroNombre, setFiltroNombre] = useState('');
   const [filtroDesde, setFiltroDesde] = useState('');
   const [filtroHasta, setFiltroHasta] = useState('');
+  const [filtroSexo, setFiltroSexo] = useState('todos');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
+  const [filtroDivision, setFiltroDivision] = useState('todos');
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 10 });
-  const [convocadosModalOpen, setConvocadosModalOpen] = useState(false);
-  const [convocadosModalTitle, setConvocadosModalTitle] = useState('');
-  const [convocadosModalList, setConvocadosModalList] = useState([]);
 
-  // --- PARTIDOS ---
-  const [, setPartidos] = useState([]);
-  const [partidoLoading, setPartidoLoading] = useState(false);
-  const [partidoError, setPartidoError] = useState('');
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [crearNombre, setCrearNombre] = useState('');
+  const [crearDescripcion, setCrearDescripcion] = useState('');
+  const [crearFechaLimite, setCrearFechaLimite] = useState('');
+  const [crearLoading, setCrearLoading] = useState(false);
+  const [crearError, setCrearError] = useState('');
   const [uiAlert, setUiAlert] = useState({ open: false, severity: 'success', title: '', message: '' });
-  const [partidoForm, setPartidoForm] = useState({
-    nombre: '',
-    direccion: '',
-    fecha: '',
-    hora: '',
-    monto: '',
-    monto_inscripcion: '',
-    monto_acompanante: '',
-    entrenador: '',
-    equipo_contrario: '',
-    jugadores: []
-  });
+
   const showUiAlert = (severity, title, message) => {
     setUiAlert({ open: true, severity, title, message });
   };
+
+  const fetchTorneosFrescos = useCallback(async () => {
+    setTorneosError('');
+    const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos?_t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: buildAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data)) throw new Error('Respuesta invalida');
+    setTorneos(data);
+    return data;
+  }, [buildAuthHeaders]);
+
+  const fetchRostersFrescos = useCallback(async () => {
+    setRostersLoading(true);
+    setRostersError('');
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/rosters?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: buildAuthHeaders()
+      });
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data)) throw new Error('No se pudieron cargar los rosters');
+      setRosters(data);
+      return data;
+    } catch (err) {
+      setRosters([]);
+      setRostersError(err.message || 'No se pudieron cargar los rosters');
+      throw err;
+    } finally {
+      setRostersLoading(false);
+    }
+  }, [buildAuthHeaders]);
+
+  useEffect(() => {
+    const cargar = async () => {
+      try {
+        await fetchTorneosFrescos();
+      } catch (err) {
+        setTorneos([]);
+        setTorneosError(err.message || 'No se pudieron cargar los torneos');
+        return;
+      }
+
+      try {
+        await fetchRostersFrescos();
+      } catch (err) {
+        console.warn('No se pudieron cargar los rosters, pero la lista de torneos sigue disponible:', err);
+      }
+    };
+    cargar();
+  }, [fetchTorneosFrescos, fetchRostersFrescos]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,9 +178,7 @@ function Torneos() {
         const map = {};
         data.forEach((m) => {
           const idAlumno = m.id_alumno?._id || m.id_alumno;
-          if (idAlumno) {
-            map[idAlumno] = m.estatus || 'Pendiente';
-          }
+          if (idAlumno) map[idAlumno] = m.estatus || 'Pendiente';
         });
         setSolvencias(map);
       } catch {
@@ -145,21 +192,9 @@ function Torneos() {
   }, [open, buildAuthHeaders]);
 
   useEffect(() => {
-    setPaginationModel(prev => ({ ...prev, page: 0 }));
-  }, [filtroNombre, filtroDesde, filtroHasta]);
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+  }, [filtroNombre, filtroDesde, filtroHasta, filtroSexo, filtroCategoria, filtroDivision]);
 
-  useEffect(() => {
-    const cargar = async () => {
-      try {
-        await fetchTorneosFrescos();
-      } catch {
-        setTorneos([]);
-      }
-    };
-    cargar();
-  }, [fetchTorneosFrescos]);
-
-  // Torneo CRUD
   const handleClose = () => {
     setOpen(false);
     setEditId(null);
@@ -170,17 +205,68 @@ function Torneos() {
     setFiltroNombre('');
     setFiltroDesde('');
     setFiltroHasta('');
+    setFiltroSexo('todos');
+    setFiltroCategoria([]);
+    setFiltroDivision('todos');
     setPaginationModel({ page: 0, pageSize: 10 });
     setSolvencias({});
     setSolvenciasError('');
     setSaveError('');
   };
+
+  const categoriaOptions = useMemo(() => {
+    const values = Array.from(new Set(
+      alumnos
+        .map((al) => String(al?.categoria || '').trim())
+        .filter(Boolean)
+    ));
+    return values.sort((a, b) => a.localeCompare(b));
+  }, [alumnos]);
+
+  const divisionOptions = useMemo(() => {
+    const values = Array.from(new Set(
+      alumnos
+        .map((al) => String(al?.division || '').trim())
+        .filter(Boolean)
+    ));
+    return values.sort((a, b) => a.localeCompare(b));
+  }, [alumnos]);
+
+  const handleEditar = async (torneo) => {
+    const torneoId = torneo._id || torneo.id;
+    if (!torneoId) return;
+
+    setSaveError('');
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: buildAuthHeaders()
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al obtener torneo');
+
+      setEditId(data._id);
+      setNombre(data.nombre || '');
+      setDescripcion(data.descripcion || '');
+      setFechaLimite(data.fecha_limite ? data.fecha_limite.substring(0, 10) : '');
+      const convocadosIds = Array.isArray(data.convocados)
+        ? data.convocados.map((c) => c.alumno?._id || c.alumno || c._id || c)
+        : [];
+      setConvocados(convocadosIds);
+      setOpen(true);
+    } catch (err) {
+      setSaveError(err.message);
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo cargar el torneo.');
+    }
+  };
+
   const handleGuardar = async () => {
     if (!editId) return;
+
     setSaveError('');
     setSaveLoading(true);
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${editId}` , {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${editId}`, {
         method: 'PUT',
         headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
@@ -192,6 +278,7 @@ function Torneos() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al actualizar torneo');
+
       await fetchTorneosFrescos();
       handleClose();
       showUiAlert('success', 'Operacion completada', 'Torneo actualizado con exito.');
@@ -202,39 +289,10 @@ function Torneos() {
       setSaveLoading(false);
     }
   };
-  const handleEditar = async (t) => {
-    const torneoId = t._id || t.id;
-    if (!torneoId) return;
-    setSaveError('');
-    try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}?_t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: buildAuthHeaders()
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error al obtener torneo');
-      setEditId(data._id);
-      setNombre(data.nombre || '');
-      setDescripcion(data.descripcion || '');
-      setFechaLimite(data.fecha_limite ? data.fecha_limite.substring(0, 10) : '');
-      const convocadosIds = Array.isArray(data.convocados)
-        ? data.convocados.map((c) => c.alumno?._id || c.alumno || c._id || c)
-        : [];
-      setConvocados(convocadosIds);
-      setFiltroNombre('');
-      setFiltroDesde('');
-      setFiltroHasta('');
-      setPaginationModel({ page: 0, pageSize: 10 });
-      setSolvencias({});
-      setSolvenciasError('');
-      setOpen(true);
-    } catch (err) {
-      setSaveError(err.message);
-      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo cargar el torneo.');
-    }
-  };
+
   const handleEliminar = async () => {
     if (!torneoAEliminar) return;
+
     try {
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoAEliminar}`, {
         method: 'DELETE',
@@ -244,101 +302,56 @@ function Torneos() {
         const data = await res.json();
         throw new Error(data.error || 'No se pudo eliminar el torneo');
       }
+
       await fetchTorneosFrescos();
       setDialogEliminarOpen(false);
       setTorneoAEliminar(null);
       showUiAlert('success', 'Operacion completada', 'Torneo eliminado con exito.');
     } catch (err) {
-      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo eliminar el torneo.');
       setDialogEliminarOpen(false);
       setTorneoAEliminar(null);
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo eliminar el torneo.');
     }
   };
 
-  // Partidos Modal
-  const abrirModalPartidos = (torneo) => {
-    console.log('Abriendo modal de partidos para torneo:', torneo);
-    setTorneoActual(torneo);
-    setModalPartidos(true);
-    setPartidos([]); // Aquí podrías cargar los partidos del torneo
-    setEditandoPartido(false);
-    setPartidoEditId(null);
+  const handleAbrirCrear = () => {
+    setCrearNombre('');
+    setCrearDescripcion('');
+    setCrearFechaLimite('');
+    setCrearError('');
+    setOpenCrear(true);
   };
-  const cerrarModalPartidos = () => {
-    setModalPartidos(false);
-    setPartidoError('');
-    setEditandoPartido(false);
-    setPartidoEditId(null);
-    setPartidoForm({
-      nombre: '',
-      direccion: '',
-      fecha: '',
-      hora: '',
-      monto: '',
-      monto_inscripcion: '',
-      monto_acompanante: '',
-      entrenador: '',
-      equipo_contrario: '',
-      jugadores: []
-    });
-  };
-  const handleCrearPartido = async () => {
-    const torneoId = torneoActual?._id || torneoActual?.id;
-    if (!torneoId) return;
-    setPartidoError('');
-    setPartidoLoading(true);
+
+  const handleCrearTorneo = async () => {
+    if (!crearNombre.trim()) return;
+
+    setCrearLoading(true);
+    setCrearError('');
     try {
-      let res, data;
-      if (editandoPartido && partidoEditId) {
-        // Editar partido existente
-        res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos/${partidoEditId}`, {
-          method: 'PUT',
-          headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            ...partidoForm,
-            jugadores: Array.isArray(partidoForm.jugadores) ? partidoForm.jugadores : []
-          })
-        });
-        data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al editar partido');
-        setPartidos(prev => prev.map(p => (p._id === data._id ? data : p)));
-      } else {
-        // Crear partido nuevo
-        res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}/partidos`, {
-          method: 'POST',
-          headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            ...partidoForm,
-          })
-        });
-        data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al crear partido');
-        setPartidos(prev => [...prev, data]);
-      }
-      await fetchTorneosFrescos();
-      setPartidoForm({
-        nombre: '',
-        direccion: '',
-        fecha: '',
-        hora: '',
-        monto: '',
-        monto_inscripcion: '',
-        monto_acompanante: '',
-        entrenador: '',
-        equipo_contrario: '',
-        jugadores: []
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos`, {
+        method: 'POST',
+        headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          nombre: crearNombre.trim(),
+          descripcion: crearDescripcion.trim(),
+          fecha_limite: crearFechaLimite || null,
+          convocados: []
+        })
       });
-      setModalPartidos(false);
-      setEditandoPartido(false);
-      setPartidoEditId(null);
-      showUiAlert('success', 'Operacion completada', editandoPartido ? 'Juego actualizado con exito.' : 'Juego creado con exito.');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo crear el torneo');
+
+      await fetchTorneosFrescos();
+      setOpenCrear(false);
+      showUiAlert('success', 'Operacion completada', 'Torneo creado con exito.');
     } catch (err) {
-      setPartidoError(err.message);
-      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo guardar el juego.');
+      setCrearError(err.message || 'No se pudo crear el torneo');
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo crear el torneo.');
     } finally {
-      setPartidoLoading(false);
+      setCrearLoading(false);
     }
   };
+
   const getBaseDate = (fecha) => {
     if (!fecha) return '';
     return fecha.substring(0, 10);
@@ -353,22 +366,22 @@ function Torneos() {
     return `${dia}/${mes}/${anio}`;
   };
 
-  const formatFechaPartido = (fecha) => {
-    const base = getBaseDate(fecha);
-    if (!base) return '';
-    const parts = base.split('-');
-    if (parts.length !== 3) return '';
-    const [anio, mes, dia] = parts;
-    return `${dia}/${mes}/${anio}`;
-  };
+  const getAlumnoId = (alumno) => alumno._id || alumno.id;
 
-  const getAlumnoId = (al) => al._id || al.id;
-
-  // Filtrar alumnos y ordenar: los seleccionados (convocados) primero
   const alumnosFiltrados = alumnos
     .filter((al) => {
       const nombreCompleto = `${al.nombres || ''} ${al.apellidos || ''}`.toLowerCase();
       if (filtroNombre && !nombreCompleto.includes(filtroNombre.toLowerCase())) return false;
+
+      const sexo = String(al?.sexo || '').trim().toLowerCase();
+      if (filtroSexo !== 'todos' && sexo !== filtroSexo) return false;
+
+      const categoria = String(al?.categoria || '').trim();
+      if (filtroCategoria.length > 0 && !filtroCategoria.includes(categoria)) return false;
+
+      const division = String(al?.division || '').trim();
+      if (filtroDivision !== 'todos' && division !== filtroDivision) return false;
+
       const base = getBaseDate(al.fecha_nacimiento);
       if (filtroDesde && (!base || base < filtroDesde)) return false;
       if (filtroHasta && (!base || base > filtroHasta)) return false;
@@ -385,6 +398,9 @@ function Torneos() {
   const alumnosRows = alumnosFiltrados.map((al) => ({
     id: getAlumnoId(al),
     nombre_completo: `${al.nombres || ''} ${al.apellidos || ''}`.trim() || '-',
+    sexo: al.sexo || '-',
+    categoria: al.categoria || '-',
+    division: al.division || '-',
     fecha_nacimiento: formatFechaNacimiento(al.fecha_nacimiento) || '-',
     sede: al.sede?.nombre || '-',
     solvencia: solvencias[getAlumnoId(al)] || (solvenciasLoading ? 'Cargando...' : 'Sin mensualidad')
@@ -392,6 +408,9 @@ function Torneos() {
 
   const alumnosColumns = [
     { field: 'nombre_completo', headerName: 'Nombre completo', flex: 1.3, minWidth: 220 },
+    { field: 'sexo', headerName: 'Sexo', flex: 0.75, minWidth: 120 },
+    { field: 'categoria', headerName: 'Categoria', flex: 0.9, minWidth: 140 },
+    { field: 'division', headerName: 'Division', flex: 0.9, minWidth: 150 },
     { field: 'fecha_nacimiento', headerName: 'Fecha de nacimiento', flex: 1, minWidth: 170 },
     { field: 'sede', headerName: 'Sede', flex: 1, minWidth: 160 },
     {
@@ -402,34 +421,23 @@ function Torneos() {
       renderCell: (params) => {
         const raw = String(params.value || '').toLowerCase();
         const map = {
-          pagado: { label: 'Pagado', color: 'success' },
-          pendiente: { label: 'Pendiente', color: 'warning' },
-          retrasado: { label: 'Retrasado', color: 'error' },
-          'en revision': { label: 'En revisión', color: 'info' },
-          exonerado: { label: 'Exonerado', color: 'default' },
-          abono: { label: 'Abono', color: 'warning' },
-          'sin mensualidad': { label: 'Sin mensualidad', color: 'default' },
-          'cargando...': { label: 'Cargando...', color: 'default' }
+          pagado: { label: 'Pagado', color: '#166534', bg: '#dcfce7' },
+          pendiente: { label: 'Pendiente', color: '#c2410c', bg: '#ffedd5' },
+          retrasado: { label: 'Retrasado', color: '#b91c1c', bg: '#fee2e2' },
+          'en revision': { label: 'En revision', color: '#1d4ed8', bg: '#e0f2fe' },
+          exonerado: { label: 'Exonerado', color: '#475569', bg: '#e2e8f0' },
+          abono: { label: 'Abono', color: '#c2410c', bg: '#ffedd5' },
+          'sin mensualidad': { label: 'Sin mensualidad', color: '#475569', bg: '#e2e8f0' },
+          'cargando...': { label: 'Cargando...', color: '#475569', bg: '#e2e8f0' }
         };
-        const meta = map[raw] || { label: params.value || '-', color: 'default' };
-        const chipStyles = {
-          pagado: { bg: '#dcfce7', text: '#166534' },
-          pendiente: { bg: '#ffedd5', text: '#c2410c' },
-          retrasado: { bg: '#fee2e2', text: '#b91c1c' },
-          'en revision': { bg: '#e0f2fe', text: '#1d4ed8' },
-          exonerado: { bg: '#e2e8f0', text: '#475569' },
-          abono: { bg: '#ffedd5', text: '#c2410c' },
-          'sin mensualidad': { bg: '#e2e8f0', text: '#475569' },
-          'cargando...': { bg: '#e2e8f0', text: '#475569' }
-        };
-        const style = chipStyles[raw] || { bg: '#e2e8f0', text: '#475569' };
+        const meta = map[raw] || { label: params.value || '-', color: '#475569', bg: '#e2e8f0' };
         return (
           <Chip
             size="small"
             label={meta.label}
             sx={{
-              bgcolor: style.bg,
-              color: style.text,
+              bgcolor: meta.bg,
+              color: meta.color,
               fontWeight: 700,
               borderRadius: 999,
               px: 0.5
@@ -440,108 +448,167 @@ function Torneos() {
     }
   ];
 
-  const hasFiltros = Boolean(filtroNombre || filtroDesde || filtroHasta);
-
   const handleClearFiltros = () => {
     setFiltroNombre('');
     setFiltroDesde('');
     setFiltroHasta('');
-    setPaginationModel(prev => ({ ...prev, page: 0 }));
+    setFiltroSexo('todos');
+    setFiltroCategoria([]);
+    setFiltroDivision('todos');
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
   };
 
-  const totalCostosPartido =
-    (Number(partidoForm.monto_inscripcion) || 0) +
-    (Number(partidoForm.monto_acompanante) || 0) +
-    (Number(partidoForm.monto) || 0);
+  const rostersPorTorneo = useMemo(() => {
+    const map = {};
+    rosters.forEach((roster) => {
+      const torneoId = roster?.torneo?._id || roster?.torneo || '';
+      if (!torneoId) return;
+      if (!map[torneoId]) map[torneoId] = [];
+      map[torneoId].push(roster);
+    });
+    return map;
+  }, [rosters]);
 
-  const juegosColumns = [
-    {
-      key: 'fechaHora',
-      label: 'FECHA / HORA',
-      width: '1.2fr',
-      render: (j) => `${formatFechaPartido(j.fecha)} ${j.hora || ''}`.trim()
-    },
-    {
-      key: 'enfrentamiento',
-      label: 'ENFRENTAMIENTO',
-      width: '1.6fr',
-      render: (j) => `${j.nombre || ''} vs ${j.equipo_contrario || ''}`.trim()
-    },
-    {
-      key: 'ubicacion',
-      label: 'UBICACION',
-      width: '1.2fr',
-      render: (j) => j.direccion || '-'
-    },
-    {
-      key: 'inscripcion',
-      label: 'INSCRIPCION',
-      width: '0.9fr',
-      render: (j) => j.monto_inscripcion || '-'
-    },
-    {
-      key: 'acompanante',
-      label: 'ACOMPANANTE',
-      width: '0.9fr',
-      render: (j) => j.monto_acompanante || '-'
-    },
-    {
-      key: 'arbitraje',
-      label: 'ARBITRAJE',
-      width: '0.9fr',
-      render: (j) => j.monto || '-'
-    },
-    {
-      key: 'acciones',
-      label: 'ACCIONES',
-      width: '1.2fr',
-      align: 'right',
-      render: (j) => (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-          <IconButton
-            edge="end"
-            aria-label="editar-juego"
-            onClick={() => {
-              setPartidoForm({
-                nombre: j.nombre || '',
-                direccion: j.direccion || '',
-                fecha: j.fecha ? j.fecha.substring(0, 10) : '',
-                hora: j.hora || '',
-                monto: j.monto || '',
-                monto_inscripcion: j.monto_inscripcion || '',
-                monto_acompanante: j.monto_acompanante || '',
-                entrenador: j.entrenador || '',
-                equipo_contrario: j.equipo_contrario || '',
-                jugadores: Array.isArray(j.jugadores) ? j.jugadores : []
-              });
-              setEditandoPartido(true);
-              setPartidoEditId(j._id || j.id);
-              setModalPartidos(true);
-            }}
-            size="small"
-          >
-            <DriveFileRenameOutlineIcon fontSize="small" />
-          </IconButton>
-          <IconButton edge="end" aria-label="eliminar-juego" onClick={() => alert(`Eliminar juego: ${j.nombre}`)} size="small">
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
-          <IconButton edge="end" aria-label="ver-convocados-juego" onClick={() => {
-            setConvocadosModalTitle(j.nombre || 'Convocados del partido');
-            setConvocadosModalList(Array.isArray(j.convocados) ? j.convocados : []);
-            setConvocadosModalOpen(true);
-          }} size="small">
-            <VisibilityIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      )
+  const descargarRosterPdf = async (roster) => {
+    const rosterId = roster?._id || roster?.id;
+    if (!rosterId) return;
+
+    setDownloadingRosterId(rosterId);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/rosters/${rosterId}/pdf`, {
+        headers: buildAuthHeaders()
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || 'No se pudo descargar el PDF del roster');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `roster-${rosterId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo descargar el PDF del roster.');
+    } finally {
+      setDownloadingRosterId('');
     }
-  ];
+  };
+
+  const actualizarEstatusRoster = async (roster, nuevoStatus) => {
+    const rosterId = roster?._id || roster?.id;
+    if (!rosterId) return;
+
+    setSavingRosterId(rosterId);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/rosters/${rosterId}/status`, {
+        method: 'PATCH',
+        headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ status: nuevoStatus })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo actualizar el estatus del roster');
+
+      await fetchRostersFrescos();
+      showUiAlert('success', 'Operacion completada', 'Estatus de roster actualizado.');
+    } catch (err) {
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo actualizar el estatus del roster.');
+    } finally {
+      setSavingRosterId('');
+    }
+  };
+
+  const eliminarRoster = async () => {
+    const rosterId = rosterAEliminar?._id || rosterAEliminar?.id;
+    if (!rosterId) return;
+
+    setSavingRosterId(rosterId);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/rosters/${rosterId}`, {
+        method: 'DELETE',
+        headers: buildAuthHeaders()
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'No se pudo eliminar el roster');
+
+      await fetchRostersFrescos();
+      setDialogEliminarRosterOpen(false);
+      setRosterAEliminar(null);
+      showUiAlert('success', 'Operacion completada', 'Roster eliminado con exito.');
+    } catch (err) {
+      setDialogEliminarRosterOpen(false);
+      setRosterAEliminar(null);
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo eliminar el roster.');
+    } finally {
+      setSavingRosterId('');
+    }
+  };
+
+  const isPlazoCerrado = (fechaLimiteRaw) => {
+    if (!fechaLimiteRaw) return false;
+    const fechaLimite = new Date(fechaLimiteRaw);
+    if (Number.isNaN(fechaLimite.getTime())) return false;
+    return fechaLimite.getTime() < Date.now();
+  };
+
+  const getTorneoInitials = (nombreTorneo) => {
+    const words = String(nombreTorneo || '').trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return 'TO';
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  };
 
   return (
-    <div>
-      <Button variant="contained" sx={{ mb: 2, backgroundColor: '#f97316' }} onClick={() => navigate('/torneos/crear')}>
-        Crear Torneo
-      </Button>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#ffffff', p: { xs: 1.5, md: 2 } }}>
+      <Box sx={{ mb: 1.1 }}>
+        <Typography variant="h5" sx={{ fontWeight: 800, color: '#1f2937', lineHeight: 1.05, fontSize: { xs: 27, md: 29 } }}>
+          Torneos
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#7b8797', fontSize: 12.5, mt: 0.2 }}>
+          Crea y gestiona torneos, arma los equipos y controla la respuesta de cada atleta convocado.
+        </Typography>
+      </Box>
+
+      {torneosError && (
+        <Alert severity="error" sx={{ mb: 1.5 }}>
+          {torneosError}
+        </Alert>
+      )}
+
+      <Box sx={{ display: 'flex', gap: 1.1, flexWrap: 'wrap', mb: 1.8 }}>
+        <Button
+          variant="contained"
+          size="small"
+          sx={{
+            backgroundColor: '#f97316',
+            textTransform: 'none',
+            fontWeight: 700,
+            borderRadius: 1.6,
+            px: 1.2,
+            py: 0.4,
+            minHeight: 28,
+            fontSize: 12,
+            boxShadow: 'none',
+            '&:hover': { backgroundColor: '#ea580c' }
+          }}
+          onClick={handleAbrirCrear}
+        >
+          + Crear torneo
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          sx={{ textTransform: 'none', borderRadius: 1.6, minHeight: 28, fontSize: 12, borderColor: '#dbe3ef', color: '#64748b' }}
+          onClick={() => setRosterTemplateOpen(true)}
+        >
+          Configurar membrete roster
+        </Button>
+      </Box>
+
       <Dialog
         open={open}
         onClose={handleClose}
@@ -549,14 +616,24 @@ function Torneos() {
         maxWidth="xl"
         PaperProps={{ sx: { width: '95vw', maxWidth: 1400 } }}
       >
-        <DialogTitle>{editId ? 'Editar Torneo' : 'Crear Torneo'}</DialogTitle>
+        <DialogTitle>Editar Torneo</DialogTitle>
         <DialogContent sx={{ bgcolor: '#f8fafc' }}>
-          <Grid container spacing={3} sx={{ mt: 1 }} wrap="wrap">
-            <Grid item size={{ xs: 12, md: 4 }}>
+          <Grid container spacing={3} sx={{ mt: 1 }}>
+            <Grid item xs={12} md={4}>
               <Box sx={{ bgcolor: '#fff', borderRadius: 3, p: 2.5, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>Datos del torneo</Typography>
-                <TextField label="Nombre" fullWidth margin="normal" value={nombre} onChange={e => setNombre(e.target.value)} />
-                <TextField label="Descripción" fullWidth margin="normal" multiline rows={3} value={descripcion} onChange={e => setDescripcion(e.target.value)} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>
+                  Datos del torneo
+                </Typography>
+                <TextField label="Nombre" fullWidth margin="normal" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+                <TextField
+                  label="Descripcion"
+                  fullWidth
+                  margin="normal"
+                  multiline
+                  rows={3}
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                />
                 <TextField
                   label="Fecha limite de respuesta"
                   type="date"
@@ -564,7 +641,7 @@ function Torneos() {
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
                   value={fechaLimite}
-                  onChange={e => setFechaLimite(e.target.value)}
+                  onChange={(e) => setFechaLimite(e.target.value)}
                 />
                 {saveError && (
                   <Typography variant="body2" color="error" sx={{ mt: 1 }}>
@@ -573,23 +650,24 @@ function Torneos() {
                 )}
               </Box>
             </Grid>
-            <Grid item size={{ xs: 12, md: 8 }}>
+
+            <Grid item xs={12} md={8}>
               <Box sx={{ bgcolor: '#fff', borderRadius: 3, p: 2.5, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>Convocar jugadores</Typography>
-                  <Chip
-                    label={`Seleccionados: ${convocados.length}`}
-                    sx={{ bgcolor: '#fff7ed', color: '#ea580c', fontWeight: 700 }}
-                  />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
+                    Convocar jugadores
+                  </Typography>
+                  <Chip label={`Seleccionados: ${convocados.length}`} sx={{ bgcolor: '#fff7ed', color: '#ea580c', fontWeight: 700 }} />
                 </Box>
+
                 <Grid container spacing={2} sx={{ mb: 2 }}>
-                  <Grid item xs={12} sm={5}>
+                  <Grid item xs={12} md={4}>
                     <TextField
                       placeholder="Buscar por nombre..."
                       size="small"
                       fullWidth
                       value={filtroNombre}
-                      onChange={e => setFiltroNombre(e.target.value)}
+                      onChange={(e) => setFiltroNombre(e.target.value)}
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
@@ -597,18 +675,71 @@ function Torneos() {
                           </InputAdornment>
                         )
                       }}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          bgcolor: '#f8fafc',
-                          borderRadius: 2,
-                          '& fieldset': { borderColor: '#e2e8f0' },
-                          '&:hover fieldset': { borderColor: '#cbd5e1' },
-                          '&.Mui-focused fieldset': { borderColor: '#94a3b8' }
-                        }
-                      }}
                     />
                   </Grid>
-                  <Grid item xs={12} sm={3.5}>
+                  <Grid item xs={12} sm={4} md={2.5}>
+                    <TextField
+                      select
+                      SelectProps={{ native: true }}
+                      label="Sexo"
+                      size="small"
+                      fullWidth
+                      value={filtroSexo}
+                      onChange={(e) => setFiltroSexo(e.target.value)}
+                    >
+                      <option value="todos">Todos</option>
+                      <option value="femenino">Femenino</option>
+                      <option value="masculino">Masculino</option>
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} sm={4} md={2.5}>
+                    <TextField
+                      select
+                      label="Categorias"
+                      size="small"
+                      fullWidth
+                      value={filtroCategoria}
+                      onChange={(e) => {
+                        const { value } = e.target;
+                        setFiltroCategoria(typeof value === 'string' ? value.split(',') : value);
+                      }}
+                      SelectProps={{
+                        multiple: true,
+                        displayEmpty: true,
+                        renderValue: (selected) => {
+                          const values = Array.isArray(selected) ? selected : [];
+                          return values.length > 0 ? values.join(', ') : 'Todas';
+                        }
+                      }}
+                    >
+                      <MenuItem disabled value="">
+                        Todas
+                      </MenuItem>
+                      {categoriaOptions.map((categoria) => (
+                        <MenuItem key={categoria} value={categoria}>
+                          <Checkbox size="small" checked={filtroCategoria.indexOf(categoria) > -1} />
+                          <ListItemText primary={categoria} />
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} sm={4} md={3}>
+                    <TextField
+                      select
+                      SelectProps={{ native: true }}
+                      label="Division"
+                      size="small"
+                      fullWidth
+                      value={filtroDivision}
+                      onChange={(e) => setFiltroDivision(e.target.value)}
+                    >
+                      <option value="todos">Todas</option>
+                      {divisionOptions.map((division) => (
+                        <option key={division} value={division}>{division}</option>
+                      ))}
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
                     <TextField
                       label="Desde"
                       type="date"
@@ -616,19 +747,10 @@ function Torneos() {
                       fullWidth
                       InputLabelProps={{ shrink: true }}
                       value={filtroDesde}
-                      onChange={e => setFiltroDesde(e.target.value)}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          bgcolor: '#f8fafc',
-                          borderRadius: 2,
-                          '& fieldset': { borderColor: '#e2e8f0' },
-                          '&:hover fieldset': { borderColor: '#cbd5e1' },
-                          '&.Mui-focused fieldset': { borderColor: '#94a3b8' }
-                        }
-                      }}
+                      onChange={(e) => setFiltroDesde(e.target.value)}
                     />
                   </Grid>
-                  <Grid item xs={12} sm={3.5}>
+                  <Grid item xs={12} sm={6} md={3}>
                     <TextField
                       label="Hasta"
                       type="date"
@@ -636,28 +758,20 @@ function Torneos() {
                       fullWidth
                       InputLabelProps={{ shrink: true }}
                       value={filtroHasta}
-                      onChange={e => setFiltroHasta(e.target.value)}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          bgcolor: '#f8fafc',
-                          borderRadius: 2,
-                          '& fieldset': { borderColor: '#e2e8f0' },
-                          '&:hover fieldset': { borderColor: '#cbd5e1' },
-                          '&.Mui-focused fieldset': { borderColor: '#94a3b8' }
-                        }
-                      }}
+                      onChange={(e) => setFiltroHasta(e.target.value)}
                     />
                   </Grid>
-                  {hasFiltros && (
-                    <Grid item xs={12}>
-                      <Button variant="text" size="medium" onClick={handleClearFiltros} sx={{ color: '#64748b', fontWeight: 700 }}>
-                        Limpiar filtros
-                      </Button>
-                    </Grid>
-                  )}
                 </Grid>
+
+                {(filtroNombre || filtroDesde || filtroHasta || filtroSexo !== 'todos' || filtroCategoria.length > 0 || filtroDivision !== 'todos') && (
+                  <Button variant="text" size="medium" onClick={handleClearFiltros} sx={{ color: '#64748b', fontWeight: 700, mb: 1 }}>
+                    Limpiar filtros
+                  </Button>
+                )}
+
                 {alumnosError && <Typography variant="body2" color="error" sx={{ mb: 1 }}>{alumnosError}</Typography>}
                 {solvenciasError && <Typography variant="body2" color="error" sx={{ mb: 1 }}>{solvenciasError}</Typography>}
+
                 <Box sx={{ height: 420, width: '100%' }}>
                   <DataGrid
                     rows={alumnosRows}
@@ -697,495 +811,530 @@ function Torneos() {
           </Button>
         </DialogActions>
       </Dialog>
-      <Typography variant="h6" sx={{ mt: 3, mb: 1, fontWeight: 700 }}>Torneos creados</Typography>
-      <Box>
-        {torneos.map(t => {
-          const juegos = Array.isArray(t.partidos) ? t.partidos : [];
-          const convocados = Array.isArray(t.convocados) ? t.convocados : [];
-          const totalConvocados = convocados.length;
-          const aceptados = convocados.filter(c => c.estado === 'aceptado').length;
-          const rechazados = convocados.filter(c => c.estado === 'rechazado').length;
-          const pendientes = convocados.filter(c => c.estado === 'pendiente').length;
-          return (
-            <Accordion
-              key={t._id || t.id}
-              sx={{
-                mb: 2,
-                borderRadius: 3,
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)',
-                bgcolor: '#fff',
-                '&:before': { display: 'none' }
-              }}
-            >
-              <AccordionSummary
-                expandIcon={<ExpandMoreIcon />}
-                sx={{
-                  px: 2,
-                  py: 1.25,
-                  '& .MuiAccordionSummary-content': {
-                    alignItems: 'center',
-                    my: 0
-                  }
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', gap: 2, flexWrap: 'wrap' }}>
-                  <Box
-                    sx={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 2,
-                      bgcolor: '#fdfdfd',
-                      color: '#475569',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <SportsVolleyballIcon fontSize="small" />
-                  </Box>
-                  <Typography sx={{ flexGrow: 1, fontWeight: 700, color: '#0f172a' }}>{t.nombre}</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<AddCircleOutlineIcon />}
-                      onClick={e => { e.stopPropagation(); abrirModalPartidos(t); }}
-                      sx={{
-                        borderRadius: 2,
-                        textTransform: 'none',
-                        borderColor: '#cbd5e1',
-                        color: '#334155',
-                        bgcolor: '#f8fafc',
-                        '&:hover': { bgcolor: '#fdfdfd', borderColor: '#cbd5e1' }
-                      }}
-                    >
-                      Crear juego
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<EditIcon />}
-                      onClick={e => { e.stopPropagation(); handleEditar(t); }}
-                      sx={{
-                        borderRadius: 2,
-                        textTransform: 'none',
-                        borderColor: '#cbd5e1',
-                        color: '#334155',
-                        bgcolor: '#f8fafc',
-                        '&:hover': { bgcolor: '#fdfdfd', borderColor: '#cbd5e1' }
-                      }}
-                    >
-                      Editar torneo
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="error"
-                      startIcon={<DeleteIcon />}
-                      onClick={e => {
-                        e.stopPropagation();
-                        setTorneoAEliminar(t._id || t.id);
-                        setDialogEliminarOpen(true);
-                      }}
-                      sx={{
-                        borderRadius: 2,
-                        textTransform: 'none',
-                        borderColor: '#fecaca',
-                        color: '#ef4444',
-                        bgcolor: '#fff',
-                        '&:hover': { bgcolor: '#fef2f2', borderColor: '#fecaca' }
-                      }}
-                    >
-                      Eliminar torneo
-                    </Button>
-                  </Box>
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails sx={{ px: 2, pb: 2 }}>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, mb: 1.5 }}>
-                  <Box sx={{ minWidth: 240 }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#94a3b8', textTransform: 'uppercase' }}>
-                      Informacion general
-                    </Typography>
-                    <Typography sx={{ fontSize: 13, color: '#475569', mt: 0.5 }}>
-                      Descripcion: {t.descripcion || '-'}
-                    </Typography>
-                    {t.fecha_limite && (
-                      <Typography sx={{ fontSize: 13, color: '#475569', mt: 0.5 }}>
-                        Fecha limite: {t.fecha_limite.substring(0, 10)}
-                      </Typography>
-                    )}
-                  </Box>
-                  {totalConvocados > 0 && (
-                    <Box sx={{ ml: 'auto' }}>
-                      <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#94a3b8', textTransform: 'uppercase', mb: 0.75 }}>
-                        Estado de convocatoria
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                        <Chip
-                          size="small"
-                          label={`Convocados: ${totalConvocados}`}
-                          sx={{ bgcolor: '#e0f2fe', color: '#1d4ed8', fontWeight: 700 }}
-                        />
-                        <Chip
-                          size="small"
-                          label={`Aceptados: ${aceptados}`}
-                          sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 700 }}
-                        />
-                        <Chip
-                          size="small"
-                          label={`Rechazados: ${rechazados}`}
-                          sx={{ bgcolor: '#fee2e2', color: '#b91c1c', fontWeight: 700 }}
-                        />
-                        <Chip
-                          size="small"
-                          label={`Pendientes: ${pendientes}`}
-                          sx={{ bgcolor: '#ffedd5', color: '#c2410c', fontWeight: 700 }}
-                        />
-                      </Box>
-                    </Box>
-                  )}
-                </Box>
-                <Box sx={{ mt: 8 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                    <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>Juegos del Torneo</Typography>
-                    {totalConvocados > 0 && (
-                      <Button
-                        variant="text"
-                        size="small"
-                        onClick={() => {
-                          setConvocadosModalTitle(t.nombre || 'Convocados');
-                          setConvocadosModalList(convocados);
-                          setConvocadosModalOpen(true);
-                        }}
-                        sx={{ px: 0, textTransform: 'none', color: '#f97316', fontWeight: 700 }}
-                      >
-                        Ver listado completo de convocados
-                      </Button>
-                    )}
-                  </Box>
-                  <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2.5, overflow: 'hidden' }}>
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: juegosColumns.map((col) => col.width).join(' '),
-                        bgcolor: '#f8fafc',
-                        px: 2,
-                        py: 1
-                      }}
-                    >
-                      {juegosColumns.map((col) => (
-                        <Typography
-                          key={col.key}
-                          sx={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: '#64748b',
-                            letterSpacing: '0.04em',
-                            textAlign: col.align || 'left'
-                          }}
-                        >
-                          {col.label}
-                        </Typography>
-                      ))}
-                    </Box>
-                    {juegos.length === 0 ? (
-                      <Box sx={{ px: 2, py: 4, textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>
-                        No hay juegos registrados para este torneo aun.
-                      </Box>
-                    ) : (
-                      juegos.map(j => (
-                        <Box
-                          key={j._id || j.id}
-                          sx={{
-                            display: 'grid',
-                            gridTemplateColumns: juegosColumns.map((col) => col.width).join(' '),
-                            px: 2,
-                            py: 1.25,
-                            borderTop: '1px solid #e2e8f0',
-                            alignItems: 'center',
-                            position: 'relative'
-                          }}
-                        >
-                          {juegosColumns.map((col) => (
-                            <Box key={`${col.key}-${j._id || j.id}`} sx={{ textAlign: col.align || 'left' }}>
-                              {typeof col.render === 'function' ? (
-                                col.key === 'enfrentamiento' ? (
-                                  <Typography sx={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
-                                    {col.render(j)}
-                                  </Typography>
-                                ) : (
-                                  <Typography sx={{ fontSize: 13, color: '#475569' }}>
-                                    {col.render(j)}
-                                  </Typography>
-                                )
-                              ) : (
-                                <Typography sx={{ fontSize: 13, color: '#475569' }}>-</Typography>
-                              )}
-                            </Box>
-                          ))}
-                        </Box>
-                      ))
-                    )}
-                  </Box>
-                </Box>
-              </AccordionDetails>
-            </Accordion>
-          );
-        })}
-      </Box>
-      {/* Modal de Partidos */}
+
       <Dialog
-        open={modalPartidos}
-        onClose={cerrarModalPartidos}
-        maxWidth="md"
+        open={openCrear}
+        onClose={() => setOpenCrear(false)}
         fullWidth
+        maxWidth="sm"
         PaperProps={{
           sx: {
-            width: '96vw',
-            maxWidth: 980,
-            borderRadius: 3,
-            overflow: 'hidden'
+            borderRadius: 2,
+            maxWidth: 470,
+            boxShadow: '0 20px 42px rgba(15, 23, 42, 0.2)'
           }
         }}
       >
-        <DialogTitle
-          sx={{
-            bgcolor: '#0f172a',
-            color: '#e2e8f0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <SportsVolleyballIcon fontSize="small" />
-            <Box>
-              <Typography sx={{ fontWeight: 700, color: '#e2e8f0' }}>
-                Juegos de {torneoActual?.nombre}
-              </Typography>
-              <Typography sx={{ fontSize: 11, color: '#94a3b8', letterSpacing: '0.06em' }}>
-                GESTION DE JUEGOS
-              </Typography>
-            </Box>
-          </Box>
-          <IconButton onClick={cerrarModalPartidos} size="small" sx={{ color: '#cbd5f5' }}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
+        <DialogTitle sx={{ px: 2.6, pt: 2.1, pb: 1, fontWeight: 800, color: '#1f2937', fontSize: 22 }}>
+          Crear torneo
         </DialogTitle>
-        <DialogContent sx={{ bgcolor: '#f8fafc', p: { xs: 2, md: 3 } }}>
-          <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 700, color: '#0f172a' }}>{editandoPartido ? 'Editar Juego' : 'Crear Juego'}</Typography>
-          {partidoError && (
-            <Typography variant="body2" color="error" sx={{ mb: 2 }}>
-              {partidoError}
+        <DialogContent sx={{ px: 2.6, pt: '4px !important', pb: 1 }}>
+          <Box sx={{ mb: 1.25 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>
+              Nombre del torneo / liga *
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              value={crearNombre}
+              onChange={(e) => setCrearNombre(e.target.value)}
+              placeholder="Ej. Liga Metropolitana 2026"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1.2,
+                  bgcolor: '#fff',
+                  '& fieldset': { borderColor: '#e6ebf2' },
+                  '&:hover fieldset': { borderColor: '#d7dee8' },
+                  '&.Mui-focused fieldset': { borderColor: '#c9d3e0' }
+                }
+              }}
+            />
+          </Box>
+
+          <Box sx={{ mb: 1.25 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>
+              Descripcion
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              multiline
+              minRows={2}
+              value={crearDescripcion}
+              onChange={(e) => setCrearDescripcion(e.target.value)}
+              placeholder="Sede, disciplina, formato de competencia..."
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1.2,
+                  bgcolor: '#fff',
+                  '& fieldset': { borderColor: '#e6ebf2' },
+                  '&:hover fieldset': { borderColor: '#d7dee8' },
+                  '&.Mui-focused fieldset': { borderColor: '#c9d3e0' }
+                }
+              }}
+            />
+          </Box>
+
+          <Box>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>
+              Fecha limite de respuesta *
+            </Typography>
+            <TextField
+              type="date"
+              fullWidth
+              size="small"
+              value={crearFechaLimite}
+              onChange={(e) => setCrearFechaLimite(e.target.value)}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1.2,
+                  bgcolor: '#fff',
+                  '& fieldset': { borderColor: '#e6ebf2' },
+                  '&:hover fieldset': { borderColor: '#d7dee8' },
+                  '&.Mui-focused fieldset': { borderColor: '#c9d3e0' }
+                }
+              }}
+            />
+          </Box>
+
+          {crearError && (
+            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+              {crearError}
             </Typography>
           )}
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item size={{ xs: 12, md: 7 }}>
-              <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)' }}>
-                <Grid container spacing={2}>
-                  <Grid item size={{ xs: 12, md: 6 }}>
-                    <TextField
-                      label="Nombre del encuentro"
-                      fullWidth
-                      size="small"
-                      value={partidoForm.nombre}
-                      onChange={e => setPartidoForm(f => ({ ...f, nombre: e.target.value }))}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SportsVolleyballIcon fontSize="small" />
-                          </InputAdornment>
-                        )
-                      }}
-                    />
-                  </Grid>
-                  <Grid item size={{ xs: 12, md: 6 }}>
-                    <TextField
-                      label="Equipo contrario"
-                      fullWidth
-                      size="small"
-                      value={partidoForm.equipo_contrario}
-                      onChange={e => setPartidoForm(f => ({ ...f, equipo_contrario: e.target.value }))}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <GroupsIcon fontSize="small" />
-                          </InputAdornment>
-                        )
-                      }}
-                    />
-                  </Grid>
-                  <Grid item size={{ xs: 12 }}>
-                    <TextField
-                      label="Descripcion"
-                      fullWidth
-                      size="small"
-                      multiline
-                      rows={2}
-                      value={partidoForm.descripcion || ''}
-                      onChange={e => setPartidoForm(f => ({ ...f, descripcion: e.target.value }))}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <DescriptionIcon fontSize="small" />
-                          </InputAdornment>
-                        )
-                      }}
-                    />
-                  </Grid>
-                  <Grid item size={{ xs: 12, md: 6 }}>
-                    <TextField
-                      label="Fecha"
-                      type="date"
-                      fullWidth
-                      size="small"
-                      InputLabelProps={{ shrink: true }}
-                      value={partidoForm.fecha}
-                      onChange={e => setPartidoForm(f => ({ ...f, fecha: e.target.value }))}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <EventIcon fontSize="small" />
-                          </InputAdornment>
-                        )
-                      }}
-                    />
-                  </Grid>
-                  <Grid item size={{ xs: 12, md: 6 }}>
-                    <TextField
-                      label="Hora"
-                      type="time"
-                      fullWidth
-                      size="small"
-                      InputLabelProps={{ shrink: true }}
-                      value={partidoForm.hora}
-                      onChange={e => setPartidoForm(f => ({ ...f, hora: e.target.value }))}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <AccessTimeIcon fontSize="small" />
-                          </InputAdornment>
-                        )
-                      }}
-                    />
-                  </Grid>
-                  <Grid item size={{ xs: 12 }}>
-                    <TextField
-                      label="Entrenador encargado"
-                      fullWidth
-                      size="small"
-                      value={partidoForm.entrenador}
-                      onChange={e => setPartidoForm(f => ({ ...f, entrenador: e.target.value }))}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <PersonIcon fontSize="small" />
-                          </InputAdornment>
-                        )
-                      }}
-                    />
-                  </Grid>
-                </Grid>
-              </Paper>
-              <Box sx={{ mt: 2 }}>
-                <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#94a3b8', textTransform: 'uppercase', mb: 0.75 }}>
-                  Ubicacion del evento
-                </Typography>
-                <TextField
-                  label="Direccion"
-                  fullWidth
-                  size="small"
-                  value={partidoForm.direccion}
-                  onChange={e => setPartidoForm(f => ({ ...f, direccion: e.target.value }))}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LocationOnIcon fontSize="small" />
-                      </InputAdornment>
-                    )
-                  }}
-                />
-              </Box>
-            </Grid>
-            <Grid item size={{ xs: 12, md: 5 }}>
-              <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)', bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <Typography sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>Costos del Encuentro</Typography>
-                {torneoActual?.partidos?.length === 0 && (
-                <TextField
-                  label="Monto de inscripcion"
-                  type="number"
-                  fullWidth
-                  size="small"
-                  sx={{ mb: 1.5 }}
-                  value={partidoForm.monto_inscripcion}
-                  onChange={e => setPartidoForm(f => ({ ...f, monto_inscripcion: e.target.value }))}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <AttachMoneyIcon fontSize="small" />
-                      </InputAdornment>
-                    )
-                  }}
-                />
-                )}
-                <TextField
-                  label="Monto de acompanante"
-                  type="number"
-                  fullWidth
-                  size="small"
-                  sx={{ mb: 1.5 }}
-                  value={partidoForm.monto_acompanante}
-                  onChange={e => setPartidoForm(f => ({ ...f, monto_acompanante: e.target.value }))}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <AttachMoneyIcon fontSize="small" />
-                      </InputAdornment>
-                    )
-                  }}
-                />
-                <TextField
-                  label="Monto de arbitraje"
-                  type="number"
-                  fullWidth
-                  size="small"
-                  value={partidoForm.monto}
-                  onChange={e => setPartidoForm(f => ({ ...f, monto: e.target.value }))}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <AttachMoneyIcon fontSize="small" />
-                      </InputAdornment>
-                    )
-                  }}
-                />
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 2 }}>
-                  <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 600 }}>Monto Total Estimado</Typography>
-                  <Typography sx={{ fontSize: 18, fontWeight: 800, color: '#f97316' }}>
-                    ${totalCostosPartido.toFixed(2)}
-                  </Typography>
-                </Box>
-              </Paper>
-            </Grid>
-          </Grid>
-         
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3, bgcolor: '#f8fafc' }}>
-          <Button onClick={cerrarModalPartidos} sx={{ color: '#64748b', fontWeight: 700 }}>
-            Cerrar
+        <DialogActions sx={{ px: 2.6, pb: 2, pt: 0.7 }}>
+          <Button
+            onClick={() => setOpenCrear(false)}
+            variant="outlined"
+            size="small"
+            sx={{
+              textTransform: 'none',
+              borderRadius: 1.6,
+              borderColor: '#e2e8f0',
+              color: '#64748b',
+              minWidth: 72,
+              fontWeight: 700
+            }}
+          >
+            Cancelar
           </Button>
           <Button
-            onClick={handleCrearPartido}
+            onClick={handleCrearTorneo}
             variant="contained"
-            disabled={partidoLoading || !partidoForm.nombre}
-            sx={{ bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' }, fontWeight: 700, borderRadius: 2, px: 3 }}
+            size="small"
+            disabled={!crearNombre.trim() || crearLoading}
+            sx={{
+              textTransform: 'none',
+              borderRadius: 1.6,
+              bgcolor: '#f97316',
+              boxShadow: 'none',
+              minWidth: 72,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#ea580c' }
+            }}
           >
-            {partidoLoading ? 'Guardando...' : editandoPartido ? 'Guardar Cambios' : 'Crear Juego'}
+            {crearLoading ? 'Guardando...' : 'Guardar'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Typography variant="h6" sx={{ mt: 1.2, mb: 1, fontWeight: 700, color: '#334155', fontSize: 16 }}>Torneos creados</Typography>
+      <Box sx={{ display: 'grid', gap: 0.8 }}>
+        {torneos.map((torneo) => {
+          const convocadosTorneo = Array.isArray(torneo.convocados) ? torneo.convocados : [];
+          const totalConvocados = convocadosTorneo.length;
+          const aceptados = convocadosTorneo.filter((c) => c.estado === 'aceptado').length;
+          const rechazados = convocadosTorneo.filter((c) => c.estado === 'rechazado').length;
+          const pendientes = convocadosTorneo.filter((c) => c.estado === 'pendiente').length;
+          const torneoId = torneo._id || torneo.id;
+          const rostersDeTorneo = rostersPorTorneo[torneoId] || [];
+          const plazoCerrado = isPlazoCerrado(torneo.fecha_limite);
+
+          return (
+            <Box
+              key={torneoId}
+              sx={{
+                borderRadius: 1.8,
+                border: '1px solid #e5e7eb',
+                boxShadow: '0 8px 22px rgba(15, 23, 42, 0.07)',
+                bgcolor: '#fff',
+                overflow: 'hidden',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                '&:hover': {
+                  borderColor: '#dbe3ef',
+                  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.1)'
+                }
+              }}
+            >
+              <Box sx={{ px: 1.3, py: 1.05, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box
+                  sx={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 1,
+                    bgcolor: '#fff7ed',
+                    color: '#f97316',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 9,
+                    fontWeight: 800,
+                    flexShrink: 0
+                  }}
+                >
+                  {getTorneoInitials(torneo.nombre)}
+                </Box>
+
+                <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+                  <Typography sx={{ fontSize: 13.2, color: '#1e293b', fontWeight: 700, lineHeight: 1.15 }}>
+                    {torneo.nombre}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11.4, color: '#8090a3', mt: 0.1 }}>
+                    {torneo.descripcion || 'Sin descripcion'}
+                  </Typography>
+                  <Box sx={{ mt: 0.35, display: 'flex', gap: 0.9, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <Typography sx={{ fontSize: 10.5, color: '#6b7280', fontWeight: 600 }}>
+                      Limite de respuesta: {torneo.fecha_limite ? torneo.fecha_limite.substring(0, 10) : '-'}
+                    </Typography>
+                    <Typography sx={{ fontSize: 10.5, color: '#6b7280', fontWeight: 600 }}>
+                      {rostersDeTorneo.length} equipos
+                    </Typography>
+                    <Typography sx={{ fontSize: 10.5, color: '#6b7280', fontWeight: 600 }}>
+                      {totalConvocados} convocados
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={plazoCerrado ? 'Plazo cerrado' : 'Plazo activo'}
+                      sx={{
+                        height: 18,
+                        fontSize: 9.6,
+                        bgcolor: plazoCerrado ? '#fff1f2' : '#ecfdf5',
+                        color: plazoCerrado ? '#be123c' : '#166534',
+                        fontWeight: 700
+                      }}
+                    />
+                  </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.55, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={() => navigate(`/torneos/${torneoId}/equipos`)}
+                    sx={{
+                      borderRadius: 1.4,
+                      textTransform: 'none',
+                      minWidth: 84,
+                      px: 0.95,
+                      py: 0.3,
+                      minHeight: 27,
+                      fontWeight: 700,
+                      fontSize: 11.5,
+                      bgcolor: '#0f172a',
+                      boxShadow: 'none',
+                      '&:hover': { bgcolor: '#1e293b' }
+                    }}
+                  >
+                    Ver equipos
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleEditar(torneo)}
+                    sx={{
+                      borderRadius: 1.4,
+                      textTransform: 'none',
+                      minWidth: 60,
+                      px: 0.9,
+                      py: 0.3,
+                      minHeight: 27,
+                      borderColor: '#e2e8f0',
+                      color: '#64748b',
+                      fontSize: 11.5
+                    }}
+                  >
+                    Editar
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    onClick={() => {
+                      setTorneoAEliminar(torneo._id || torneo.id);
+                      setDialogEliminarOpen(true);
+                    }}
+                    sx={{
+                      borderRadius: 1.4,
+                      textTransform: 'none',
+                      minWidth: 66,
+                      px: 0.9,
+                      py: 0.3,
+                      minHeight: 27,
+                      borderColor: '#fecaca',
+                      fontSize: 11.5
+                    }}
+                  >
+                    Eliminar
+                  </Button>
+                </Box>
+              </Box>
+
+              {false && (
+                <Box sx={{ px: 1.6, pb: 1.7, pt: 1, borderTop: '1px solid #eef2f7', bgcolor: '#ffffff' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.2, flexWrap: 'wrap' }}>
+                    <Box>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => setExpandedTorneoId('')}
+                        sx={{
+                          textTransform: 'none',
+                          color: '#64748b',
+                          fontSize: 11.5,
+                          px: 0,
+                          minWidth: 0,
+                          mb: 0.25,
+                          '&:hover': { bgcolor: 'transparent', color: '#334155' }
+                        }}
+                      >
+                        ← Volver a torneos
+                      </Button>
+                      <Typography sx={{ fontSize: 30, lineHeight: 1.05, fontWeight: 800, color: '#0f172a' }}>{torneo.nombre}</Typography>
+                      <Typography sx={{ fontSize: 12, color: '#64748b' }}>{torneo.descripcion || 'Sin descripcion'}</Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => {
+                        setRosterPrefillTorneoId(torneo._id || torneo.id || '');
+                        setRosterDialogOpen(true);
+                      }}
+                      sx={{
+                        textTransform: 'none',
+                        borderRadius: 2,
+                        px: 1.3,
+                        py: 0.55,
+                        fontWeight: 700,
+                        fontSize: 12,
+                        bgcolor: '#f97316',
+                        boxShadow: 'none',
+                        '&:hover': { bgcolor: '#ea580c' }
+                      }}
+                    >
+                      + Agregar equipo
+                    </Button>
+                  </Box>
+
+                  <Grid container spacing={1.1} sx={{ mt: 0.9 }}>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={{ border: '1px solid #e6ebf2', borderRadius: 1.8, p: 1.2 }}>
+                        <Typography sx={{ fontSize: 10, letterSpacing: '0.08em', color: '#94a3b8', fontWeight: 800 }}>CONVOCADOS</Typography>
+                        <Typography sx={{ fontSize: 34, fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>{totalConvocados}</Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={{ border: '1px solid #e6ebf2', borderRadius: 1.8, p: 1.2 }}>
+                        <Typography sx={{ fontSize: 10, letterSpacing: '0.08em', color: '#94a3b8', fontWeight: 800 }}>ACEPTADOS</Typography>
+                        <Typography sx={{ fontSize: 34, fontWeight: 800, color: '#16a34a', lineHeight: 1 }}>{aceptados}</Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={{ border: '1px solid #e6ebf2', borderRadius: 1.8, p: 1.2 }}>
+                        <Typography sx={{ fontSize: 10, letterSpacing: '0.08em', color: '#94a3b8', fontWeight: 800 }}>RECHAZADOS</Typography>
+                        <Typography sx={{ fontSize: 34, fontWeight: 800, color: '#dc2626', lineHeight: 1 }}>{rechazados}</Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={{ border: '1px solid #e6ebf2', borderRadius: 1.8, p: 1.2 }}>
+                        <Typography sx={{ fontSize: 10, letterSpacing: '0.08em', color: '#94a3b8', fontWeight: 800 }}>PENDIENTES</Typography>
+                        <Typography sx={{ fontSize: 34, fontWeight: 800, color: '#a16207', lineHeight: 1 }}>{pendientes}</Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
+
+                  <Typography sx={{ fontSize: 28, fontWeight: 800, color: '#0f172a', mt: 1.2, mb: 0.8 }}>
+                    Equipos / Rosters
+                  </Typography>
+
+                  {rostersLoading && (
+                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>
+                      Cargando rosters...
+                    </Typography>
+                  )}
+
+                  {!rostersLoading && rostersError && (
+                    <Typography sx={{ fontSize: 13, color: '#dc2626' }}>
+                      {rostersError}
+                    </Typography>
+                  )}
+
+                  {!rostersLoading && !rostersError && rostersDeTorneo.length === 0 && (
+                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>
+                      Aun no hay equipos para este torneo.
+                    </Typography>
+                  )}
+
+                  {!rostersLoading && !rostersError && rostersDeTorneo.length > 0 && (
+                    <Grid container spacing={1.2}>
+                      {rostersDeTorneo.map((roster) => {
+                        const rosterId = roster._id || roster.id;
+                        const rosterJugadorIds = (Array.isArray(roster.jugadores) ? roster.jugadores : []).map((j) => String(j));
+                        const estadoPorAlumno = new Map(
+                          convocadosTorneo.map((c) => [String(c?.alumno?._id || c?.alumno || ''), String(c?.estado || 'pendiente')])
+                        );
+
+                        let rAceptados = 0;
+                        let rRechazados = 0;
+                        let rPendientes = 0;
+                        rosterJugadorIds.forEach((jugadorId) => {
+                          const estado = estadoPorAlumno.get(jugadorId) || 'pendiente';
+                          if (estado === 'aceptado') rAceptados += 1;
+                          else if (estado === 'rechazado') rRechazados += 1;
+                          else rPendientes += 1;
+                        });
+
+                        const totalJugadoras = rosterJugadorIds.length;
+                        const sublinea = [roster.categoria || 'Sin categoria', roster.division || 'Sin division'].join(' | ');
+
+                        return (
+                          <Grid item xs={12} sm={6} md={4} key={rosterId}>
+                            <Box sx={{ border: '1px solid #e6ebf2', borderRadius: 2, p: 1.1, boxShadow: '0 10px 20px rgba(15, 23, 42, 0.05)' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Typography sx={{ fontSize: 19, fontWeight: 800, color: '#0f172a', lineHeight: 1.1 }}>
+                                    {roster.liga_name || `${torneo.nombre} ${roster.categoria || ''}`.trim()}
+                                  </Typography>
+                                  <Typography sx={{ fontSize: 11.5, color: '#64748b', mt: 0.25 }}>{sublinea}</Typography>
+                                </Box>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color="error"
+                                  disabled={savingRosterId === rosterId}
+                                  onClick={() => {
+                                    setRosterAEliminar(roster);
+                                    setDialogEliminarRosterOpen(true);
+                                  }}
+                                  sx={{ borderRadius: 1.4, textTransform: 'none', fontSize: 10.5, minWidth: 62, py: 0.2, px: 0.8 }}
+                                >
+                                  Eliminar
+                                </Button>
+                              </Box>
+
+                              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.9 }}>
+                                <Chip size="small" label={`${totalJugadoras} convocados`} sx={{ bgcolor: '#eff6ff', color: '#1e3a8a', fontWeight: 700, fontSize: 10.5 }} />
+                                <Chip size="small" label={`${rAceptados} aceptados`} sx={{ bgcolor: '#ecfdf5', color: '#166534', fontWeight: 700, fontSize: 10.5 }} />
+                                <Chip size="small" label={`${rRechazados} rechazados`} sx={{ bgcolor: '#fff1f2', color: '#b91c1c', fontWeight: 700, fontSize: 10.5 }} />
+                                <Chip size="small" label={`${rPendientes} pendientes`} sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 700, fontSize: 10.5 }} />
+                              </Box>
+
+                              <Button
+                                fullWidth
+                                size="small"
+                                variant="contained"
+                                onClick={() => descargarRosterPdf(roster)}
+                                disabled={downloadingRosterId === rosterId || savingRosterId === rosterId}
+                                sx={{
+                                  mt: 1,
+                                  textTransform: 'none',
+                                  borderRadius: 1.6,
+                                  minHeight: 30,
+                                  fontWeight: 800,
+                                  bgcolor: '#f97316',
+                                  boxShadow: 'none',
+                                  '&:hover': { bgcolor: '#ea580c' }
+                                }}
+                              >
+                                {downloadingRosterId === rosterId ? 'Descargando...' : 'Agregar atletas'}
+                              </Button>
+
+                              <Box sx={{ mt: 0.8, border: '1px solid #e5e7eb', borderRadius: 1.3, p: 0.7, bgcolor: '#fff' }}>
+                                <Typography sx={{ fontSize: 11, color: '#64748b', mb: 0.5, fontWeight: 700 }}>
+                                  Gestionar roster
+                                </Typography>
+                                <Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'wrap' }}>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => descargarRosterPdf(roster)}
+                                    disabled={downloadingRosterId === rosterId || savingRosterId === rosterId}
+                                    sx={{ textTransform: 'none', borderRadius: 1.2, fontSize: 10.5, minHeight: 24 }}
+                                  >
+                                    PDF
+                                  </Button>
+                                  <TextField
+                                    select
+                                    size="small"
+                                    value={roster.status || 'borrador'}
+                                    onChange={(e) => actualizarEstatusRoster(roster, e.target.value)}
+                                    disabled={savingRosterId === rosterId}
+                                    sx={{ minWidth: 126 }}
+                                  >
+                                    <MenuItem value="borrador">Borrador</MenuItem>
+                                    <MenuItem value="oficial">Oficial</MenuItem>
+                                    <MenuItem value="finalizado">Finalizado</MenuItem>
+                                  </TextField>
+                                </Box>
+                              </Box>
+                            </Box>
+                          </Grid>
+                        );
+                      })}
+                    </Grid>
+                  )}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+      </Box>
+
+      <Dialog open={dialogEliminarOpen} onClose={() => setDialogEliminarOpen(false)}>
+        <DialogTitle>Eliminar torneo</DialogTitle>
+        <DialogContent>
+          <Typography>Esta seguro de eliminar este torneo?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogEliminarOpen(false)}>Cancelar</Button>
+          <Button onClick={handleEliminar} color="error" variant="contained">Eliminar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={dialogEliminarRosterOpen} onClose={() => setDialogEliminarRosterOpen(false)}>
+        <DialogTitle>Eliminar roster</DialogTitle>
+        <DialogContent>
+          <Typography>Esta seguro de eliminar este roster?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogEliminarRosterOpen(false)}>Cancelar</Button>
+          <Button onClick={eliminarRoster} color="error" variant="contained" disabled={!rosterAEliminar || savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id)}>
+            {savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id) ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <RosterCreateDialog
+        open={rosterDialogOpen}
+        onClose={() => {
+          setRosterDialogOpen(false);
+          setRosterPrefillTorneoId('');
+        }}
+        token={token}
+        prefillTorneoId={rosterPrefillTorneoId}
+        onCreated={() => {
+          fetchRostersFrescos().catch(() => {});
+          showUiAlert('success', 'Operacion completada', 'Roster creado con exito.');
+        }}
+      />
+
+      <RosterTemplateDialog
+        open={rosterTemplateOpen}
+        onClose={() => setRosterTemplateOpen(false)}
+        token={token}
+        onSaved={() => showUiAlert('success', 'Operacion completada', 'Membrete de roster actualizado.')}
+      />
+
       <Snackbar
         open={uiAlert.open}
         autoHideDuration={3500}
@@ -1204,99 +1353,7 @@ function Torneos() {
           {uiAlert.message}
         </Alert>
       </Snackbar>
-        <Dialog
-          open={convocadosModalOpen}
-          onClose={() => setConvocadosModalOpen(false)}
-          fullWidth
-          maxWidth="sm"
-          PaperProps={{
-            sx: {
-              bgcolor: '#fff',
-              borderRadius: 3,
-              boxShadow: '0 6px 18px rgba(15, 23, 42, 0.10)',
-              p: 0.5
-            }
-          }}
-        >
-          <DialogTitle sx={{ fontWeight: 700, color: '#0f172a', bgcolor: '#f8fafc', borderTopLeftRadius: 12, borderTopRightRadius: 12, px: 3, py: 2, borderBottom: '1px solid #e2e8f0' }}>
-            Convocados - {convocadosModalTitle}
-          </DialogTitle>
-          <DialogContent sx={{ bgcolor: '#fff', px: 3, py: 2.5 }}>
-            {convocadosModalList.length === 0 ? (
-              <Typography variant="body2" sx={{ color: '#64748b' }}>
-                No hay convocados para este torneo.
-              </Typography>
-            ) : (
-              <List
-                dense
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1.5,
-                  mt: 1,
-                  mb: 1
-                }}
-              >
-                {convocadosModalList.map((c, idx) => {
-                  const estado = c.estado || 'pendiente';
-                  const estadoColor =
-                    estado === 'aceptado'
-                      ? { bg: '#dcfce7', text: '#16a34a' }
-                      : estado === 'rechazado'
-                      ? { bg: '#fee2e2', text: '#dc2626' }
-                      : { bg: '#fef9c3', text: '#f59e0b' };
-                  return (
-                    <ListItem key={c.alumno?._id || c.alumno || idx} sx={{
-                      pl: 0,
-                      pr: 0,
-                      py: 1.2,
-                      borderRadius: 2,
-                      border: '1px solid #e2e8f0',
-                      bgcolor: '#f8fafc',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 2
-                    }}>
-                      {/* Avatar del alumno */}
-                      <Box sx={{ minWidth: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Avatar
-                          src={mediaUrl(c.alumno?.foto) || undefined}
-                          alt={c.alumno ? `${c.alumno.nombres || ''} ${c.alumno.apellidos || ''}` : 'Alumno'}
-                          sx={{ width: 38, height: 38, bgcolor: '#fdfdfd', color: '#475569', fontWeight: 700, fontSize: 18 }}
-                        >
-                          {(!c.alumno?.foto && c.alumno?.nombres) ? c.alumno.nombres[0] : ''}
-                        </Avatar>
-                      </Box>
-                      <ListItemText
-                        primary={<Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>{c.alumno ? `${c.alumno.nombres || ''} ${c.alumno.apellidos || ''}` : 'Alumno'}</Typography>}
-                        secondary={<Typography sx={{ color: '#64748b', fontSize: 12 }}>{c.alumno?.categoria ? `Categoría ${c.alumno.categoria}` : ''}</Typography>}
-                      />
-                      <Chip
-                        size="small"
-                        label={estado === 'aceptado' ? 'Confirmado' : estado === 'rechazado' ? 'Rechazado' : 'Pendiente'}
-                        sx={{ bgcolor: estadoColor.bg, color: estadoColor.text, fontWeight: 700, fontSize: 13, px: 1.5, py: 0.5, mr: 1, borderRadius: 2 }}
-                      />
-                    </ListItem>
-                  );
-                })}
-              </List>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ bgcolor: '#f8fafc', px: 3, py: 2, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }}>
-            <Button onClick={() => setConvocadosModalOpen(false)} sx={{ color: '#f97316', fontWeight: 700 }}>Cerrar</Button>
-          </DialogActions>
-        </Dialog>
-         <Dialog open={dialogEliminarOpen} onClose={() => { setDialogEliminarOpen(false); setTorneoAEliminar(null); }}>
-                              <DialogTitle sx={{ fontWeight: 700, color: '#b91c1c' }}>Eliminar torneo</DialogTitle>
-                              <DialogContent>
-                                <Typography>¿Estás seguro que deseas eliminar este torneo? Esta acción eliminará también todos los partidos asociados y no se puede deshacer.</Typography>
-                              </DialogContent>
-                              <DialogActions>
-                                <Button onClick={() => { setDialogEliminarOpen(false); setTorneoAEliminar(null); }} color="inherit" sx={{ fontWeight: 700 }}>Cancelar</Button>
-                                <Button onClick={handleEliminar} color="error" variant="contained" sx={{ fontWeight: 700 }}>Eliminar</Button>
-                              </DialogActions>
-                            </Dialog>
-    </div>
+    </Box>
   );
 }
 

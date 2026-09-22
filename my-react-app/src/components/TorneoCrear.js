@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Button, TextField, Typography, Box, Grid, Chip, InputAdornment } from '@mui/material';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Button, TextField, Typography, Box, Grid, Chip, InputAdornment, MenuItem, Checkbox, ListItemText } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import SearchIcon from '@mui/icons-material/Search';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +21,9 @@ function TorneoCrear() {
   const [filtroNombre, setFiltroNombre] = useState('');
   const [filtroDesde, setFiltroDesde] = useState('');
   const [filtroHasta, setFiltroHasta] = useState('');
+  const [filtroSexo, setFiltroSexo] = useState('todos');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
+  const [filtroDivision, setFiltroDivision] = useState('todos');
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 10 });
 
   useEffect(() => {
@@ -73,7 +76,25 @@ function TorneoCrear() {
 
   useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }));
-  }, [filtroNombre, filtroDesde, filtroHasta]);
+  }, [filtroNombre, filtroDesde, filtroHasta, filtroSexo, filtroCategoria, filtroDivision]);
+
+  const categoriaOptions = useMemo(() => {
+    const values = Array.from(new Set(
+      alumnos
+        .map((al) => String(al?.categoria || '').trim())
+        .filter(Boolean)
+    ));
+    return values.sort((a, b) => a.localeCompare(b));
+  }, [alumnos]);
+
+  const divisionOptions = useMemo(() => {
+    const values = Array.from(new Set(
+      alumnos
+        .map((al) => String(al?.division || '').trim())
+        .filter(Boolean)
+    ));
+    return values.sort((a, b) => a.localeCompare(b));
+  }, [alumnos]);
 
   const getBaseDate = (fecha) => {
     if (!fecha) return '';
@@ -94,6 +115,16 @@ function TorneoCrear() {
   const alumnosFiltrados = alumnos.filter((al) => {
     const nombreCompleto = `${al.nombres || ''} ${al.apellidos || ''}`.toLowerCase();
     if (filtroNombre && !nombreCompleto.includes(filtroNombre.toLowerCase())) return false;
+
+    const sexo = String(al?.sexo || '').trim().toLowerCase();
+    if (filtroSexo !== 'todos' && sexo !== filtroSexo) return false;
+
+    const categoria = String(al?.categoria || '').trim();
+    if (filtroCategoria.length > 0 && !filtroCategoria.includes(categoria)) return false;
+
+    const division = String(al?.division || '').trim();
+    if (filtroDivision !== 'todos' && division !== filtroDivision) return false;
+
     const base = getBaseDate(al.fecha_nacimiento);
     if (filtroDesde && (!base || base < filtroDesde)) return false;
     if (filtroHasta && (!base || base > filtroHasta)) return false;
@@ -103,6 +134,9 @@ function TorneoCrear() {
   const alumnosRows = alumnosFiltrados.map((al) => ({
     id: getAlumnoId(al),
     nombre_completo: al.nombres + ' ' + al.apellidos || '-',
+    sexo: al.sexo || '-',
+    categoria: al.categoria || '-',
+    division: al.division || '-',
     fecha_nacimiento: formatFechaNacimiento(al.fecha_nacimiento) || '-',
     sede: al.sede?.nombre || '-',
     solvencia: solvencias[getAlumnoId(al)] || (solvenciasLoading ? 'Cargando...' : 'Sin mensualidad')
@@ -110,6 +144,9 @@ function TorneoCrear() {
 
   const alumnosColumns = [
     { field: 'nombre_completo', headerName: 'Nombre completo', flex: 1, minWidth: 150 },
+    { field: 'sexo', headerName: 'Sexo', flex: 0.7, minWidth: 115 },
+    { field: 'categoria', headerName: 'Categoria', flex: 0.8, minWidth: 135 },
+    { field: 'division', headerName: 'Division', flex: 0.9, minWidth: 150 },
     { field: 'fecha_nacimiento', headerName: 'Fecha de nacimiento', flex: 1, minWidth: 170 },
     { field: 'sede', headerName: 'Sede', flex: 1, minWidth: 160 },
     {
@@ -158,12 +195,22 @@ function TorneoCrear() {
     }
   ];
 
-  const hasFiltros = Boolean(filtroNombre || filtroDesde || filtroHasta);
+  const hasFiltros = Boolean(
+    filtroNombre
+    || filtroDesde
+    || filtroHasta
+    || filtroSexo !== 'todos'
+    || filtroCategoria.length > 0
+    || filtroDivision !== 'todos'
+  );
 
   const handleClearFiltros = () => {
     setFiltroNombre('');
     setFiltroDesde('');
     setFiltroHasta('');
+    setFiltroSexo('todos');
+    setFiltroCategoria([]);
+    setFiltroDivision('todos');
     setPaginationModel(prev => ({ ...prev, page: 0 }));
   };
 
@@ -253,7 +300,7 @@ function TorneoCrear() {
                 />
               </Box>
               <Grid container spacing={2} sx={{ mb: 2 }}>
-                <Grid item xs={12} sm={5}>
+                <Grid item xs={12} md={4}>
                   <TextField
                     placeholder="Buscar por nombre..."
                     size="small"
@@ -278,7 +325,96 @@ function TorneoCrear() {
                     }}
                   />
                 </Grid>
-                <Grid item xs={12} sm={3.5}>
+                <Grid item xs={12} sm={4} md={2.5}>
+                  <TextField
+                    select
+                    SelectProps={{ native: true }}
+                    label="Sexo"
+                    size="small"
+                    fullWidth
+                    value={filtroSexo}
+                    onChange={e => setFiltroSexo(e.target.value)}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        bgcolor: '#f8fafc',
+                        borderRadius: 2,
+                        '& fieldset': { borderColor: '#e2e8f0' },
+                        '&:hover fieldset': { borderColor: '#cbd5e1' },
+                        '&.Mui-focused fieldset': { borderColor: '#94a3b8' }
+                      }
+                    }}
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="femenino">Femenino</option>
+                    <option value="masculino">Masculino</option>
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} sm={4} md={2.5}>
+                  <TextField
+                    select
+                    label="Categorias"
+                    size="small"
+                    fullWidth
+                    value={filtroCategoria}
+                    onChange={(e) => {
+                      const { value } = e.target;
+                      setFiltroCategoria(typeof value === 'string' ? value.split(',') : value);
+                    }}
+                    SelectProps={{
+                      multiple: true,
+                      displayEmpty: true,
+                      renderValue: (selected) => {
+                        const values = Array.isArray(selected) ? selected : [];
+                        return values.length > 0 ? values.join(', ') : 'Todas';
+                      }
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        bgcolor: '#f8fafc',
+                        borderRadius: 2,
+                        '& fieldset': { borderColor: '#e2e8f0' },
+                        '&:hover fieldset': { borderColor: '#cbd5e1' },
+                        '&.Mui-focused fieldset': { borderColor: '#94a3b8' }
+                      }
+                    }}
+                  >
+                    <MenuItem disabled value="">
+                      Todas
+                    </MenuItem>
+                    {categoriaOptions.map((categoria) => (
+                      <MenuItem key={categoria} value={categoria}>
+                        <Checkbox size="small" checked={filtroCategoria.indexOf(categoria) > -1} />
+                        <ListItemText primary={categoria} />
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} sm={4} md={3}>
+                  <TextField
+                    select
+                    SelectProps={{ native: true }}
+                    label="Division"
+                    size="small"
+                    fullWidth
+                    value={filtroDivision}
+                    onChange={e => setFiltroDivision(e.target.value)}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        bgcolor: '#f8fafc',
+                        borderRadius: 2,
+                        '& fieldset': { borderColor: '#e2e8f0' },
+                        '&:hover fieldset': { borderColor: '#cbd5e1' },
+                        '&.Mui-focused fieldset': { borderColor: '#94a3b8' }
+                      }
+                    }}
+                  >
+                    <option value="todos">Todas</option>
+                    {divisionOptions.map((division) => (
+                      <option key={division} value={division}>{division}</option>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
                   <TextField
                     label="Desde"
                     type="date"
@@ -298,7 +434,7 @@ function TorneoCrear() {
                     }}
                   />
                 </Grid>
-                <Grid item xs={12} sm={3.5}>
+                <Grid item xs={12} sm={6} md={3}>
                   <TextField
                     label="Hasta"
                     type="date"

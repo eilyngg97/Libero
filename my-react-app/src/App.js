@@ -21,12 +21,14 @@ import Mensualidades from './components/Mensualidades';
 import TablaAlumnos from './components/TablaAlumnos';
 import Torneos from './components/Torneos';
 import TorneoCrear from './components/TorneoCrear';
+import TorneoEquiposView from './components/TorneoEquiposView';
+import RosterAtletasView from './components/RosterAtletasView';
+import RosterDocumentEditor from './components/RosterDocumentEditor';
 import Sedes from './components/Sedes';
 import Login from './components/Login';
 import LandingPage from './components/LandingPage';
 import Constancias from './components/Constancias';
 import ListadoSolicitudesConstancias from './components/ListadoSolicitudesConstancias';
-import TorneoDetalle from './components/TorneoDetalle';
 import GestionReposos from './components/GestionReposos';
 import Aspirantes from './components/Aspirantes';
 import LandingConfig from './components/LandingConfig';
@@ -63,7 +65,8 @@ function BackNavigationButton() {
   const location = useLocation();
 
   const rutasSinBotonVolver = ['/dashboard', '/dashboard-usuario', '/panelOpciones', '/entrenadores'];
-  const mostrarBotonVolver = !rutasSinBotonVolver.includes(location.pathname);
+  const esVistaEquiposTorneo = /^\/torneos\/[^/]+\/equipos(?:\/.*)?$/.test(location.pathname);
+  const mostrarBotonVolver = !rutasSinBotonVolver.includes(location.pathname) && !esVistaEquiposTorneo;
 
   if (!mostrarBotonVolver) return null;
 
@@ -385,6 +388,9 @@ function App() {
                           <Route path="alumno-editar/:id" element={<ProtectedRoute allowedRoles={adminAndUser}><EntrypointAlumnoEditar /></ProtectedRoute>} />
                           <Route path="torneos" element={<ProtectedRoute allowedRoles={adminOnly}><Torneos /></ProtectedRoute>} />
                           <Route path="torneos/crear" element={<ProtectedRoute allowedRoles={adminOnly}><TorneoCrear /></ProtectedRoute>} />
+                          <Route path="torneos/:torneoId/equipos" element={<ProtectedRoute allowedRoles={adminOnly}><TorneoEquiposView /></ProtectedRoute>} />
+                          <Route path="torneos/:torneoId/equipos/:rosterId/atletas" element={<ProtectedRoute allowedRoles={adminOnly}><RosterAtletasView /></ProtectedRoute>} />
+                          <Route path="torneos/:torneoId/equipos/:rosterId/documento" element={<ProtectedRoute allowedRoles={adminOnly}><RosterDocumentEditor /></ProtectedRoute>} />
                           <Route path="dashboard-usuario" element={<ProtectedRoute allowedRoles={userOnly}><DashboardUsuario /></ProtectedRoute>} />
                           <Route path="constancias" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['constancias.view']}><Constancias /></ProtectedRoute>} />
                           <Route path="solicitudes-constancias" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['solicitudes_constancias.view']}><TenantOnlyRoute allowedTenantIds={['esporta']}><ListadoSolicitudesConstancias /></TenantOnlyRoute></ProtectedRoute>} />
@@ -407,7 +413,6 @@ function App() {
                           <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
                           <Route path="operaciones" element={<ProtectedRoute allowedRoles={adminOnly}><Operaciones /></ProtectedRoute>} />
                           <Route path="mi-perfil" element={<ProtectedRoute allowedRoles={adminOnly}><MiPerfil /></ProtectedRoute>} />
-                          <Route path="torneos-usuario/:torneoId" element={<ProtectedRoute allowedRoles={userOnly}><TorneoDetalle /></ProtectedRoute>} />
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
                           <Route path="recaudos" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['recaudos.view']}><Recaudos /></ProtectedRoute>} />
                           <Route path="egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><Egresos /></ProtectedRoute>} />
