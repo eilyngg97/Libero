@@ -192,6 +192,7 @@ function TablaAlumnos() {
   const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroPagoCuotas, setFiltroPagoCuotas] = useState('');
+  const [filtroRecargoMensual, setFiltroRecargoMensual] = useState('');
   const [mostrarFiltrosMobile, setMostrarFiltrosMobile] = useState(false);
     // Formatear fecha a DD/MM/YYYY (corrige desfase por zona horaria)
     const formatFecha = (fecha) => {
@@ -208,6 +209,7 @@ function TablaAlumnos() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isCompactTable = useMediaQuery(theme.breakpoints.down('lg'));
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
   const esSuperAdmin = rolActual === 'super_admin';
   const tieneSedeEspecifica = Boolean(sedeSeleccionada?._id);
@@ -842,6 +844,7 @@ function TablaAlumnos() {
     setFiltroTipoMensualidad('');
     setFiltroEstado('');
     setFiltroPagoCuotas('');
+    setFiltroRecargoMensual('');
     setPage(0);
   };
 
@@ -880,7 +883,13 @@ function TablaAlumnos() {
         : filtroPagoCuotas === 'si'
           ? a.habilitar_pago_cuotas === true
           : !a.habilitar_pago_cuotas;
-    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch;
+    const recargoMensualMatch =
+      filtroRecargoMensual === ''
+        ? true
+        : filtroRecargoMensual === 'si'
+          ? a.aplicar_recargo_mensualidad !== false
+          : a.aplicar_recargo_mensualidad === false;
+    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch && recargoMensualMatch;
   });
   alumnosFiltrados = [...alumnosFiltrados].sort((a, b) => {
     const nombreA = String(a?.nombres || '').trim();
@@ -1011,11 +1020,17 @@ function TablaAlumnos() {
             bgcolor: '#fff',
           border: '1px solid #eef0f3',
           borderRadius: 3,
-          p: 2,
+            p: { xs: 1.25, sm: 1.5, lg: 2 },
           mb: 2,
           display: 'grid',
-          gap: 2,
-          gridTemplateColumns: { xs: '1fr', md: 'repeat(8, minmax(0, 1fr))' }
+            gap: { xs: 1.25, md: 1.5 },
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(auto-fit, minmax(145px, 1fr))' },
+          '& .MuiInputBase-root': {
+            height: 40
+          },
+          '& .MuiButton-root': {
+            height: 40
+          }
         }}
       >
         <Box>
@@ -1143,6 +1158,20 @@ function TablaAlumnos() {
             <MenuItem value="no">No habilitado</MenuItem>
           </TextField>
         </Box>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>RECARGO MENSUAL</Typography>
+          <TextField
+            select
+            size="small"
+            value={filtroRecargoMensual}
+            onChange={e => setFiltroRecargoMensual(e.target.value)}
+            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.8, fontSize: 13 } }}
+          >
+            <MenuItem value="">Todos</MenuItem>
+            <MenuItem value="si">Aplica</MenuItem>
+            <MenuItem value="no">No aplica</MenuItem>
+          </TextField>
+        </Box>
         <Box
           sx={{
             display: 'flex',
@@ -1150,7 +1179,8 @@ function TablaAlumnos() {
             justifyContent: 'flex-end',
             gap: 1,
             flexWrap: 'wrap',
-            gridColumn: { xs: '1 / -1', md: '-2 / -1' }
+            gridColumn: { xs: '1 / -1', md: 'auto' },
+            alignSelf: 'end'
           }}
         >
           <Button
@@ -1161,7 +1191,9 @@ function TablaAlumnos() {
               borderColor: '#cbd5e1',
               color: '#475569',
               fontWeight: 700,
-              textTransform: 'none'
+              textTransform: 'none',
+              width: '100%',
+              minHeight: 40
             }}
           >
             Limpiar filtros
@@ -1174,7 +1206,7 @@ function TablaAlumnos() {
         <Typography>Cargando...</Typography>
       ) : error ? (
         <Typography color="error">{error}</Typography>
-      ) : isMobile ? (
+      ) : isCompactTable ? (
         <Box sx={{ display: 'grid', gap: 1.5, width: '100%', boxSizing: 'border-box' }}>
           {alumnosPaginados.map((alumno) => (
             <Tooltip key={alumno._id} title={obtenerNombreCompletoAlumno(alumno)} arrow placement="top">
@@ -1381,22 +1413,22 @@ function TablaAlumnos() {
           component={Paper}
           sx={{
             borderRadius: 3,
-            overflowX: 'hidden',
+            overflowX: 'auto',
             overflowY: 'hidden',
             maxWidth: '100%',
             boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)'
           }}
         >
-          <Table sx={{ width: '100%', tableLayout: 'fixed' }}>
+          <Table sx={{ width: '100%', minWidth: 1060, tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                <TableCell sx={{ width: '26%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1.5 }}>ALUMNO</TableCell>
+                <TableCell sx={{ width: '28%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1.5 }}>ALUMNO</TableCell>
                 <TableCell sx={{ width: '6%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>EDAD</TableCell>
-                <TableCell sx={{ width: '5%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>SEXO</TableCell>
-                <TableCell sx={{ width: '10%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>CATEGORÍA</TableCell>
-                <TableCell sx={{ width: '6%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>FRANELA</TableCell>
-                <TableCell sx={{ width: '12%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>TIPO DE MENSUALIDAD</TableCell>
-                <TableCell sx={{ width: '15%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
+                <TableCell sx={{ width: '8%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>SEXO</TableCell>
+                <TableCell sx={{ width: '11%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>CATEGORÍA</TableCell>
+                <TableCell sx={{ width: '7%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>FRANELA</TableCell>
+                <TableCell sx={{ width: '17%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>TIPO DE MENSUALIDAD</TableCell>
+                <TableCell sx={{ width: '23%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
