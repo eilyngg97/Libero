@@ -1701,6 +1701,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		const rows = fuente.map((m) => {
 			const row = {
 				Categoria: m.id_alumno?.categoria || '-',
+				Sede: m.id_alumno?.sede?.nombre || '-',
 				Mes: meses[(m.mes || 1) - 1],
 				Anio: m.anio || '-',
 				Monto: Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2)),
@@ -1721,6 +1722,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		const headers = [
 			...nombreColumnas,
 			'Categoria',
+			'Sede',
 			'Mes',
 			'Anio',
 			'Monto',

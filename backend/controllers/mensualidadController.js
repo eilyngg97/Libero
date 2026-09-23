@@ -2499,10 +2499,10 @@ exports.getMensualidades = async (req, res) => {
 
     const mensualidades = await TenantMensualidad.find(filtro).populate({
       path: 'id_alumno',
-      populate: {
-        path: 'representante',
-        select: 'nombres apellidos'
-      }
+      populate: [
+        { path: 'representante', select: 'nombres apellidos' },
+        { path: 'sede', select: 'nombre' }
+      ]
     });
 
     const mensualidadIds = mensualidades.map((m) => m._id);
@@ -2610,10 +2610,10 @@ exports.getInscripciones = async (req, res) => {
 
     const mensualidades = await TenantMensualidad.find(filtro).populate({
       path: 'id_alumno',
-      populate: {
-        path: 'representante',
-        select: 'nombres apellidos'
-      }
+      populate: [
+        { path: 'representante', select: 'nombres apellidos' },
+        { path: 'sede', select: 'nombre' }
+      ]
     });
 
     const mensualidadIds = mensualidades.map((m) => m._id);

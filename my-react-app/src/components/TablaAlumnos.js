@@ -403,6 +403,7 @@ function TablaAlumnos() {
       Cedula: a.cedula,
       Categoria: a.categoria || '-',
       Division: a.division || '-',
+      Sede: a.sede?.nombre || '-',
       Nro_Franela: (a.numero_franela ?? '-') || '-',
       Sexo: obtenerSexoAlumno(a),
       Fecha_Nacimiento: formatFecha(a.fecha_nacimiento),
@@ -411,7 +412,7 @@ function TablaAlumnos() {
       Telefono: a.representante && a.representante.telefono ? `${a.representante.telefono}` : ('-'),
       Solvencia: obtenerSolvenciaAlumno(a) === 'insolvente' ? 'Insolvente' : obtenerSolvenciaAlumno(a) === 'solvente' ? 'Solvente' : 'Sin datos',
     }));
-    const headers = ['Nombre', 'Apellido', 'Cedula', 'Categoria', 'Division', 'Nro_Franela', 'Sexo', 'Fecha_Nacimiento', 'Edad', 'Representante', 'Telefono', 'Solvencia'];
+    const headers = ['Nombre', 'Apellido', 'Cedula', 'Categoria', 'Division', 'Sede', 'Nro_Franela', 'Sexo', 'Fecha_Nacimiento', 'Edad', 'Representante', 'Telefono', 'Solvencia'];
     exportToExcel(
       data,
       `alumnos${sedeSeleccionada && sedeSeleccionada.nombre ? '_' + sedeSeleccionada.nombre.replace(/\s+/g, '_') : ''}.xlsx`,
