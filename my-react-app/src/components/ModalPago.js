@@ -96,6 +96,7 @@ function ModalPago({
   currencyCode = '',
   fallbackRate = null,
   disableCuotas = false,
+  uniformInstallmentChoice = false,
   allowedMethodIds = null
 }) {
   const normalizarTelefonoPago = (value) => {
@@ -127,7 +128,8 @@ function ModalPago({
   const [tipoCedulaConfirmacionCantevista, setTipoCedulaConfirmacionCantevista] = useState('V');
   const mostrarPasoConfirmacionCantevista = true;
   const monto = pago?.monto;
-  const cuotasHabilitadas = !disableCuotas && pago?.id_alumno?.habilitar_pago_cuotas === true;
+  const cuotasMensualidadHabilitadas = !disableCuotas && pago?.id_alumno?.habilitar_pago_cuotas === true;
+  const cuotasHabilitadas = cuotasMensualidadHabilitadas || uniformInstallmentChoice;
   const { dolar } = useDolar();
   const monedaDesdeProps = String(currencyCode || '').trim().toUpperCase();
   const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
@@ -501,6 +503,9 @@ function ModalPago({
         setTasaPago(tasaNormalizada);
         if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
           setMontoPagado(tasaNormalizada ? formatMoney(Number(monto) * Number(tasaNormalizada)) : '');
+        } else if (uniformInstallmentChoice && preferenciaCuota === 'parcial') {
+          setMontoPagado(formatMoney(Number(monto || 0) / 2));
+          setMontoPagadoBs(tasaNormalizada ? formatMoney((Number(monto || 0) / 2) * tasaNormalizada) : '');
         }
       } catch {
         if (cancelled) return;
@@ -508,6 +513,9 @@ function ModalPago({
         setTasaPago(tasaActual);
         if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
           setMontoPagado(tasaActual ? formatMoney(Number(monto) * tasaActual) : '');
+        } else if (uniformInstallmentChoice && preferenciaCuota === 'parcial') {
+          setMontoPagado(formatMoney(Number(monto || 0) / 2));
+          setMontoPagadoBs(tasaActual ? formatMoney((Number(monto || 0) / 2) * tasaActual) : '');
         }
       }
     };
@@ -517,7 +525,7 @@ function ModalPago({
     return () => {
       cancelled = true;
     };
-  }, [open, mostrarFormularioPago, fechaPago, monto, cuotasHabilitadas, preferenciaCuota, moneda, tasaBasePorMoneda]);
+  }, [open, mostrarFormularioPago, fechaPago, monto, cuotasHabilitadas, preferenciaCuota, moneda, tasaBasePorMoneda, uniformInstallmentChoice]);
 
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);
@@ -582,7 +590,7 @@ function ModalPago({
     }
     setPreferenciaCuota(tipo);
     if (tipo === 'parcial') {
-      setMontoPagado('');
+      setMontoPagado(uniformInstallmentChoice ? formatMoney(Number(monto || 0) / 2) : '');
       setMontoPagadoBs('');
       setMostrarFormularioPago(false);
       if (fechaPago === '') {
@@ -642,7 +650,10 @@ function ModalPago({
           comprobante,
           montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
           montoPagadoBs: Number(montoPagadoBsFinal.toFixed(2)),
-          moneda
+          moneda,
+          metodoCobranza: uniformInstallmentChoice
+            ? (preferenciaCuota === 'parcial' ? 'dos_partes_50' : 'pago_completo')
+            : undefined
         });
         onClose();
         if (onSuccess) onSuccess({
@@ -736,9 +747,9 @@ function ModalPago({
     : mostrarConfirmacionCantevista
       ? 'Confirma los datos del pago'
     : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
-      ? 'Pago por cuotas habilitado'
+      ? (uniformInstallmentChoice ? 'Elige cómo pagar tu uniforme' : 'Pago por cuotas habilitado')
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
-      ? 'Abono parcial'
+      ? (uniformInstallmentChoice ? 'Pago del 50%' : 'Abono parcial')
     : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Confirma los datos del pago'
       : metodoSeleccionado.id === 'deposito-usd'
@@ -750,7 +761,9 @@ function ModalPago({
     : mostrarConfirmacionCantevista
       ? 'Puedes editar el teléfono y la cédula antes de continuar.'
     : (cuotasHabilitadas && !mostrarFormularioPago && !preferenciaCuota && metodoSeleccionado.id !== 'deposito-usd')
-      ? 'Se ha habilitado el pago por cuotas para su cuenta. Seleccione su preferencia:'
+      ? (uniformInstallmentChoice
+        ? 'Puedes pagar el monto completo o registrar ahora la primera mitad.'
+        : 'Se ha habilitado el pago por cuotas para su cuenta. Seleccione su preferencia:')
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
       ? `Ingresa el monto en ${moneda} y usa el equivalente en Bs para realizar la transferencia.`
     : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
@@ -1141,7 +1154,7 @@ function ModalPago({
                         <PaymentsIcon sx={{ color: '#f97316' }} />
                       </Box>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                        Pagar Mensualidad Completa
+                        {uniformInstallmentChoice ? 'Pagar completo' : 'Pagar Mensualidad Completa'}
                       </Typography>
                     </Box>
                     <ArrowForwardIosIcon sx={{ color: '#cbd5f0', fontSize: 18 }} />
@@ -1173,7 +1186,7 @@ function ModalPago({
                         <PaymentsIcon sx={{ color: '#f97316' }} />
                       </Box>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                        Realizar Abono Parcial
+                        {uniformInstallmentChoice ? 'Pagar 50%' : 'Realizar Abono Parcial'}
                       </Typography>
                     </Box>
                     <ArrowForwardIosIcon sx={{ color: '#cbd5f0', fontSize: 18 }} />
@@ -1281,6 +1294,7 @@ function ModalPago({
                     sx={inputSx}
                     value={montoPagado}
                     onChange={(e) => setMontoPagado(e.target.value)}
+                    disabled={uniformInstallmentChoice}
                     InputProps={{
                         endAdornment: <InputAdornment position="end">{moneda}</InputAdornment>
                     }}
@@ -1423,6 +1437,7 @@ function ModalPago({
                         sx={inputSx}
                         value={montoPagadoBs}
                         onChange={(e) => setMontoPagadoBs(e.target.value)}
+                        disabled={uniformInstallmentChoice}
                         InputProps={{
                           endAdornment: <InputAdornment position="end">Bs</InputAdornment>
                         }}

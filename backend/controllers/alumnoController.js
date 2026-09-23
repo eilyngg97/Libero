@@ -89,6 +89,7 @@ async function getTenantAlumnoReadModels(req) {
   const TenantSede = getTenantModel(connection, 'Sede');
   const TenantAlumno = getTenantModel(connection, 'Alumno');
   const TenantReposo = getTenantModel(connection, 'Reposo');
+  const TenantMensualidad = getTenantModel(connection, 'Mensualidad');
   const TenantHistorialEstadoAlumno = getTenantModel(connection, 'HistorialEstadoAlumno');
   const TenantConfig = getTenantModel(connection, 'TenantConfig');
 
@@ -97,6 +98,7 @@ async function getTenantAlumnoReadModels(req) {
     Representante: TenantRepresentante,
     Sede: TenantSede,
     Reposo: TenantReposo,
+    Mensualidad: TenantMensualidad,
     HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
     TenantConfig
   };
@@ -319,11 +321,41 @@ function parseDateInput(value) {
     const month = Number(matchIso[2]);
     const day = Number(matchIso[3]);
     const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+    if (
+      Number.isNaN(parsed.getTime()) ||
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      return null;
+    }
+    return parsed;
   }
 
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function obtenerFechaCalendarioCaracas(fecha = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(fecha);
+
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  const day = Number(parts.find((part) => part.type === 'day')?.value);
+  return { year, month, day };
+}
+
+function esFechaPosteriorAHoyCaracas(fecha) {
+  if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) return false;
+  const hoy = obtenerFechaCalendarioCaracas();
+  const valorFecha = fecha.getUTCFullYear() * 10000 + (fecha.getUTCMonth() + 1) * 100 + fecha.getUTCDate();
+  const valorHoy = hoy.year * 10000 + hoy.month * 100 + hoy.day;
+  return valorFecha > valorHoy;
 }
 
 function esFechaDelAnioActual(fecha) {
@@ -1493,6 +1525,35 @@ function applySession(query, session) {
   return query.session(session);
 }
 
+async function ejecutarConTransaccionFallback(Model, operacion) {
+  if (!Model?.db || typeof Model.db.startSession !== 'function') {
+    return operacion(null);
+  }
+
+  const session = await Model.db.startSession();
+  try {
+    let resultado;
+    try {
+      await session.withTransaction(async () => {
+        resultado = await operacion(session);
+      });
+      return resultado;
+    } catch (txError) {
+      const message = String(txError?.message || '');
+      const transaccionNoSoportada =
+        message.includes('Transaction numbers are only allowed on a replica set member or mongos') ||
+        message.includes('Standalone servers do not support transactions');
+
+      if (!transaccionNoSoportada) throw txError;
+      return operacion(null);
+    }
+  } finally {
+    if (typeof session.endSession === 'function') {
+      await session.endSession();
+    }
+  }
+}
+
 async function eliminarUsuarioSiQuedaHuerfano(userId, models = {}, options = {}) {
   if (!userId) return;
   const { session } = options;
@@ -1569,7 +1630,8 @@ exports.getAlumnos = async (req, res) => {
     const {
       Alumno: TenantAlumno,
       Representante: TenantRepresentante,
-      Reposo: TenantReposo
+      Reposo: TenantReposo,
+      Mensualidad: TenantMensualidad
     } = await getTenantAlumnoReadModels(req);
 
     const incluirBajas = req.query.incluirBajas === '1';
@@ -1608,9 +1670,26 @@ exports.getAlumnos = async (req, res) => {
       repososActivos.map((reposo) => String(reposo.id_alumno))
     );
 
+    const mensualidadesInsolventes = alumnoIds.length > 0
+      ? await TenantMensualidad.aggregate([
+          {
+            $match: {
+              id_alumno: { $in: alumnoIds },
+              estatus: { $in: ['Insolvente', 'Retrasado'] }
+            }
+          },
+          { $group: { _id: '$id_alumno', cantidad: { $sum: 1 } } }
+        ])
+      : [];
+    const insolvenciasPorAlumno = new Map(
+      mensualidadesInsolventes.map((item) => [String(item._id), item.cantidad])
+    );
+
     const resultado = alumnos.map((alumno) => ({
       ...alumno,
-      tiene_reposo_activo: alumnosConReposoActivo.has(String(alumno._id))
+      tiene_reposo_activo: alumnosConReposoActivo.has(String(alumno._id)),
+      solvencia_mensualidades: insolvenciasPorAlumno.has(String(alumno._id)) ? 'insolvente' : 'solvente',
+      mensualidades_insolventes: insolvenciasPorAlumno.get(String(alumno._id)) || 0
     }));
 
     console.log('Alumnos obtenidos:', resultado);
@@ -3499,40 +3578,197 @@ exports.deleteAlumno = async (req, res) => {
 };
 
 // Dar de baja un alumno (baja lógica)
+exports.previewBajaAlumno = async (req, res) => {
+  try {
+    const {
+      Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle
+    } = await getTenantAlumnoWriteModels(req);
+    const fechaRetiro = parseDateInput(req.query?.fecha_retiro);
+    const decisionMesRetiro = String(req.query?.decision_mes_retiro || 'cobrar').trim().toLowerCase();
+
+    if (!fechaRetiro) {
+      return res.status(400).json({ error: 'fecha_retiro es requerida y debe ser valida.' });
+    }
+    if (!['cobrar', 'no_cobrar'].includes(decisionMesRetiro)) {
+      return res.status(400).json({ error: 'decision_mes_retiro no es valida.' });
+    }
+
+    if (esFechaPosteriorAHoyCaracas(fechaRetiro)) {
+      return res.status(400).json({ error: 'La fecha de retiro no puede estar en el futuro.' });
+    }
+
+    const alumno = await TenantAlumno.findById(req.params.id).select('_id');
+    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+
+    const periodoInicio = { anio: fechaRetiro.getUTCFullYear(), mes: fechaRetiro.getUTCMonth() + 1 };
+    const mensualidades = await TenantMensualidad.find({ id_alumno: alumno._id })
+      .select('_id mes anio estatus monto_esperado monto_con_recargo_usd')
+      .sort({ anio: 1, mes: 1 })
+      .lean();
+    const mensualidadesAEliminar = mensualidades.filter((mensualidad) => (
+      Number(mensualidad.anio) > periodoInicio.anio ||
+      (Number(mensualidad.anio) === periodoInicio.anio && Number(mensualidad.mes) > periodoInicio.mes)
+    ));
+    const mensualidadesConservadas = mensualidades.filter((mensualidad) => (
+      Number(mensualidad.anio) === periodoInicio.anio && Number(mensualidad.mes) === periodoInicio.mes
+    ));
+    const idsPosteriores = mensualidadesAEliminar.map((mensualidad) => mensualidad._id);
+    const pagosPosteriores = idsPosteriores.length > 0
+      ? await TenantPagoDetalle.find({ id_mensualidad: { $in: idsPosteriores } }).select('id_mensualidad').lean()
+      : [];
+    const idsConPago = new Set(pagosPosteriores.map((pago) => String(pago.id_mensualidad)));
+    const estadosProtegidos = ['pagado', 'en revision', 'abono'];
+    const mensualidadesBloqueadas = mensualidadesAEliminar.filter((mensualidad) => (
+      idsConPago.has(String(mensualidad._id)) ||
+      estadosProtegidos.includes(String(mensualidad.estatus || '').toLowerCase())
+    ));
+
+    return res.json({
+      fecha_retiro: fechaRetiro,
+      decision_mes_retiro: decisionMesRetiro,
+      mensualidades: mensualidadesAEliminar,
+      mensualidades_conservadas: mensualidadesConservadas,
+      mensualidades_bloqueadas: mensualidadesBloqueadas,
+      total: mensualidadesAEliminar.length
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudo preparar la baja del alumno' });
+  }
+};
+
 exports.darDeBajaAlumno = async (req, res) => {
   try {
     const {
       Alumno: TenantAlumno,
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
       HistorialEstadoAlumno: TenantHistorialEstadoAlumno
     } = await getTenantAlumnoWriteModels(req);
-    const { motivo_baja } = req.body || {};
-    const fechaBaja = new Date();
-    const alumno = await TenantAlumno.findByIdAndUpdate(
-      req.params.id,
-      {
-        activo: false,
-        dado_de_baja: true,
-        estado: 'Baja',
-        fecha_baja: fechaBaja,
-        ...(motivo_baja ? { motivo_baja } : {})
-      },
-      { new: true }
-    );
-    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+    const { motivo_baja, fecha_retiro } = req.body || {};
+    const decisionMesRetiro = String(req.body?.decision_mes_retiro || 'cobrar').trim().toLowerCase();
+    const fechaBaja = parseDateInput(fecha_retiro);
+    if (!fechaBaja) {
+      return res.status(400).json({ error: 'fecha_retiro es requerida y debe ser valida.' });
+    }
+    if (esFechaPosteriorAHoyCaracas(fechaBaja)) {
+      return res.status(400).json({ error: 'La fecha de retiro no puede estar en el futuro.' });
+    }
+    if (!['cobrar', 'no_cobrar'].includes(decisionMesRetiro)) {
+      return res.status(400).json({ error: 'decision_mes_retiro no es valida.' });
+    }
 
-    await TenantHistorialEstadoAlumno.create({
-      id_alumno: alumno._id,
-      tipo_movimiento: 'BAJA',
-      fecha_evento: fechaBaja,
-      motivo: motivo_baja ? String(motivo_baja).trim() : undefined,
-      actor_id: req.user?.id || undefined,
-      metadata: {
-        estado_resultante: 'Baja'
+    const resultado = await ejecutarConTransaccionFallback(TenantAlumno, async (session) => {
+      const periodoInicio = { anio: fechaBaja.getUTCFullYear(), mes: fechaBaja.getUTCMonth() + 1 };
+      const consultaMensualidades = applySession(
+        TenantMensualidad.find({ id_alumno: req.params.id }),
+        session
+      );
+      const mensualidades = await consultaMensualidades
+        .select('_id mes anio estatus')
+        .lean();
+      const mensualidadesAEliminar = mensualidades.filter((mensualidad) => (
+        Number(mensualidad.anio) > periodoInicio.anio ||
+        (Number(mensualidad.anio) === periodoInicio.anio && Number(mensualidad.mes) > periodoInicio.mes)
+      ));
+      const mensualidadIds = mensualidadesAEliminar.map((mensualidad) => mensualidad._id);
+      const pagosPosteriores = mensualidadIds.length > 0
+        ? await applySession(
+          TenantPagoDetalle.find({ id_mensualidad: { $in: mensualidadIds } }),
+          session
+        ).select('_id id_mensualidad').lean()
+        : [];
+      const estadosPosterioresProtegidos = ['pagado', 'en revision', 'abono'];
+      const tieneMensualidadesProtegidas = mensualidadesAEliminar.some((mensualidad) => (
+        estadosPosterioresProtegidos.includes(String(mensualidad.estatus || '').toLowerCase())
+      ));
+      if (pagosPosteriores.length > 0 || tieneMensualidadesProtegidas) {
+        const conflictoError = new Error('Hay mensualidades posteriores con pagos o movimientos registrados. Debes revisarlas antes de dar de baja al alumno.');
+        conflictoError.statusCode = 409;
+        throw conflictoError;
       }
+      const alumno = await applySession(
+        TenantAlumno.findOneAndUpdate(
+          {
+            _id: req.params.id,
+            activo: { $ne: false },
+            dado_de_baja: { $ne: true }
+          },
+          {
+            activo: false,
+            dado_de_baja: true,
+            estado: 'Baja',
+            fecha_baja: fechaBaja,
+            ...(motivo_baja ? { motivo_baja } : {})
+          },
+          { new: true }
+        ),
+        session
+      );
+      if (!alumno) {
+        const conflictoError = new Error('El alumno no existe o ya se encuentra dado de baja.');
+        conflictoError.statusCode = 409;
+        throw conflictoError;
+      }
+
+      if (mensualidadIds.length > 0) {
+        await applySession(TenantPagoDetalle.deleteMany({ id_mensualidad: { $in: mensualidadIds } }), session);
+        await applySession(TenantMensualidad.deleteMany({ _id: { $in: mensualidadIds } }), session);
+      }
+
+      const mensualidadDelMesRetiro = mensualidades.find((mensualidad) => (
+        Number(mensualidad.anio) === periodoInicio.anio && Number(mensualidad.mes) === periodoInicio.mes
+      ));
+      const estatusMesRetiro = String(mensualidadDelMesRetiro?.estatus || '').toLowerCase();
+      const estatusNoModificables = ['pagado', 'en revision', 'abono', 'exonerado', 'exento por reposo', 'becado'];
+      const nuevoEstatusMesRetiro = decisionMesRetiro === 'cobrar' ? 'Insolvente' : 'Exonerado';
+      if (mensualidadDelMesRetiro && !estatusNoModificables.includes(estatusMesRetiro)) {
+        await applySession(
+          TenantMensualidad.findOneAndUpdate(
+            { _id: mensualidadDelMesRetiro._id },
+            { estatus: nuevoEstatusMesRetiro }
+          ),
+          session
+        );
+      }
+
+      const historialData = {
+        id_alumno: alumno._id,
+        tipo_movimiento: 'BAJA',
+        fecha_evento: fechaBaja,
+        motivo: motivo_baja ? String(motivo_baja).trim() : undefined,
+        actor_id: req.user?.id || undefined,
+        metadata: {
+          estado_resultante: 'Baja',
+          decision_mes_retiro: decisionMesRetiro,
+          estatus_mes_retiro_anterior: mensualidadDelMesRetiro?.estatus || null,
+          estatus_mes_retiro_resultante: mensualidadDelMesRetiro && !estatusNoModificables.includes(estatusMesRetiro)
+            ? nuevoEstatusMesRetiro
+            : (mensualidadDelMesRetiro?.estatus || null)
+        }
+      };
+      if (session) {
+        await TenantHistorialEstadoAlumno.create([historialData], { session });
+      } else {
+        await TenantHistorialEstadoAlumno.create(historialData);
+      }
+
+      return {
+        message: 'Alumno dado de baja',
+        alumno,
+        decision_mes_retiro: decisionMesRetiro,
+        mensualidades_eliminadas: mensualidadesAEliminar,
+        mensualidad_mes_retiro_conservada: mensualidadDelMesRetiro || null,
+        total_mensualidades_eliminadas: mensualidadesAEliminar.length
+      };
     });
 
-    res.json({ message: 'Alumno dado de baja', alumno });
+    res.json(resultado);
   } catch (err) {
+    if (err?.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
     res.status(400).json({ error: 'Error al dar de baja al alumno' });
   }
 };
@@ -3560,8 +3796,9 @@ exports.anularBajaAlumno = async (req, res) => {
     }
 
     const fechaBaja = new Date(alumnoActual.fecha_baja);
-    const fechaActual = new Date();
-    const mismoMesYAnio = fechaBaja.getMonth() === fechaActual.getMonth() && fechaBaja.getFullYear() === fechaActual.getFullYear();
+    const periodoBaja = obtenerPeriodoDesdeFecha(fechaBaja);
+    const periodoActual = getPeriodoZonaCaracas();
+    const mismoMesYAnio = periodoBaja?.mes === periodoActual.mes && periodoBaja?.anio === periodoActual.anio;
     if (!mismoMesYAnio) {
       return res.status(409).json({
         error: 'Solo puedes deshacer la baja en el mismo mes en que ocurrió. Debes usar reingreso.',
@@ -3571,8 +3808,8 @@ exports.anularBajaAlumno = async (req, res) => {
 
     const mensualidadDelMes = await TenantMensualidad.findOne({
       id_alumno: alumnoActual._id,
-      mes: fechaBaja.getMonth() + 1,
-      anio: fechaBaja.getFullYear()
+      mes: periodoBaja.mes,
+      anio: periodoBaja.anio
     }).select('_id estatus mes anio');
 
     if (!mensualidadDelMes) {
@@ -3582,38 +3819,86 @@ exports.anularBajaAlumno = async (req, res) => {
       });
     }
 
+    const ultimaBaja = await TenantHistorialEstadoAlumno.findOne({
+      id_alumno: alumnoActual._id,
+      tipo_movimiento: 'BAJA'
+    })
+      .sort({ fecha_evento: -1, createdAt: -1 })
+      .select('metadata')
+      .lean();
+
     const fechaAnulacion = new Date();
-    const alumno = await TenantAlumno.findByIdAndUpdate(
-      req.params.id,
-      {
-        activo: true,
-        dado_de_baja: false,
-        estado: 'Activo',
-        $unset: {
-          fecha_baja: '',
-          motivo_baja: ''
-        }
-      },
-      { new: true }
-    );
+    const estatusAnterior = String(ultimaBaja?.metadata?.estatus_mes_retiro_anterior || '').trim();
+    const estatusResultante = String(ultimaBaja?.metadata?.estatus_mes_retiro_resultante || '').trim();
+    const alumno = await ejecutarConTransaccionFallback(TenantAlumno, async (session) => {
+      const alumnoRestaurado = await applySession(
+        TenantAlumno.findOneAndUpdate(
+          {
+            _id: req.params.id,
+            activo: false,
+            dado_de_baja: true
+          },
+          {
+            activo: true,
+            dado_de_baja: false,
+            estado: 'Activo',
+            $unset: {
+              fecha_baja: '',
+              motivo_baja: ''
+            }
+          },
+          { new: true }
+        ),
+        session
+      );
 
-    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
-
-    await TenantHistorialEstadoAlumno.create({
-      id_alumno: alumno._id,
-      tipo_movimiento: 'REACTIVACION',
-      fecha_evento: fechaAnulacion,
-      motivo: 'Baja anulada sin reingreso',
-      actor_id: req.user?.id || undefined,
-      metadata: {
-        estado_resultante: 'Activo',
-        anula_movimiento: 'BAJA',
-        tipo_operacion: 'ANULACION_BAJA'
+      if (!alumnoRestaurado) {
+        const conflictoError = new Error('La baja ya fue anulada o el estado del alumno cambió.');
+        conflictoError.statusCode = 409;
+        throw conflictoError;
       }
+
+      if (
+        estatusAnterior &&
+        estatusResultante &&
+        String(mensualidadDelMes.estatus || '').toLowerCase() === estatusResultante.toLowerCase()
+      ) {
+        await applySession(
+          TenantMensualidad.findOneAndUpdate(
+            { _id: mensualidadDelMes._id, estatus: mensualidadDelMes.estatus },
+            { estatus: estatusAnterior }
+          ),
+          session
+        );
+      }
+
+      const historialData = {
+        id_alumno: alumnoRestaurado._id,
+        tipo_movimiento: 'REACTIVACION',
+        fecha_evento: fechaAnulacion,
+        motivo: 'Baja anulada sin reingreso',
+        actor_id: req.user?.id || undefined,
+        metadata: {
+          estado_resultante: 'Activo',
+          anula_movimiento: 'BAJA',
+          tipo_operacion: 'ANULACION_BAJA',
+          estatus_mes_retiro_restaurado: estatusAnterior || null
+        }
+      };
+      if (session) {
+        await TenantHistorialEstadoAlumno.create([historialData], { session });
+      } else {
+        await TenantHistorialEstadoAlumno.create(historialData);
+      }
+
+      return alumnoRestaurado;
     });
 
     res.json({ message: 'Baja anulada. El alumno fue restaurado sin generar reingreso.', alumno });
   } catch (err) {
+    if (err?.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
     res.status(400).json({ error: 'Error al anular la baja del alumno' });
   }
 };

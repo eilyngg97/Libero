@@ -75,6 +75,7 @@ router.get('/:id/ficha-tecnica', authMiddleware, ensureAlumnoOwnershipFromParam(
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
 router.patch('/:id/requisitos-recaudos', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.actualizarEstadoRequisitoRecaudoAlumno);
 router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.updateAlumno);
+router.get('/:id/baja-preview', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.previewBajaAlumno);
 router.patch('/:id/baja', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.darDeBajaAlumno);
 router.patch('/:id/anular-baja', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.anularBajaAlumno);
 router.patch('/:id/reactivar', authMiddleware, permisoMiddleware('alumnos.manage'), upload.single('comprobante'), alumnoController.reactivarAlumno);

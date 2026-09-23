@@ -59,6 +59,8 @@ const initialForm = {
   precio_aplicar_variantes: '',
   moneda: 'USD',
   metodo_cobranza: 'pago_completo',
+  regla_cobranza: 'obligatoria',
+  apertura_segunda_cuota: 'bajo_solicitud',
   variantes_precio_activo: false,
   variantes_generos: [],
   variantes_tallas: [],
@@ -307,6 +309,8 @@ export default function Uniformes() {
         precio: u.precio,
         moneda: String(u.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD',
         metodo_cobranza: String(u.metodo_cobranza || 'pago_completo') === 'dos_partes_50' ? 'dos_partes_50' : 'pago_completo',
+        regla_cobranza: String(u.regla_cobranza || 'obligatoria') === 'flexible' ? 'flexible' : 'obligatoria',
+        apertura_segunda_cuota: String(u.apertura_segunda_cuota || 'bajo_solicitud') === 'libre' ? 'libre' : 'bajo_solicitud',
         variantes_precio_activo: Boolean(u.variantes_precio_activo),
         variantes_generos: generosSeleccionados,
         variantes_tallas: tallasSeleccionadas,
@@ -644,6 +648,8 @@ export default function Uniformes() {
       formData.append('precio', precioBasePayload);
       formData.append('moneda', String(form.moneda || 'USD').toUpperCase());
       formData.append('metodo_cobranza', String(form.metodo_cobranza || 'pago_completo'));
+      formData.append('regla_cobranza', String(form.regla_cobranza || 'obligatoria'));
+      formData.append('apertura_segunda_cuota', String(form.apertura_segunda_cuota || 'bajo_solicitud'));
       formData.append('variantes_precio_activo', String(Boolean(form.variantes_precio_activo)));
       formData.append('variantes_generos', JSON.stringify(variantesGeneros));
       formData.append('variantes_tallas', JSON.stringify(variantesTallas));
@@ -1415,6 +1421,34 @@ export default function Uniformes() {
             >
               <MenuItem value="pago_completo">Pago completo</MenuItem>
               <MenuItem value="dos_partes_50">Dos partes (50/50)</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense" sx={modalInputSx}>
+            <InputLabel id="regla-cobranza-prenda-label">Regla de cobranza</InputLabel>
+            <Select
+              labelId="regla-cobranza-prenda-label"
+              name="regla_cobranza"
+              value={form.regla_cobranza || 'obligatoria'}
+              label="Regla de cobranza"
+              onChange={handleChange}
+              disabled={!token}
+            >
+              <MenuItem value="obligatoria">Obligatoria</MenuItem>
+              <MenuItem value="flexible">Flexible</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense" sx={modalInputSx}>
+            <InputLabel id="apertura-segunda-cuota-label">Apertura de segunda cuota</InputLabel>
+            <Select
+              labelId="apertura-segunda-cuota-label"
+              name="apertura_segunda_cuota"
+              value={form.apertura_segunda_cuota || 'bajo_solicitud'}
+              label="Apertura de segunda cuota"
+              onChange={handleChange}
+              disabled={!token}
+            >
+              <MenuItem value="bajo_solicitud">Bajo solicitud de la academia</MenuItem>
+              <MenuItem value="libre">Libre para el representante</MenuItem>
             </Select>
           </FormControl>
           <Box sx={{ mt: 1, display: 'grid', gap: 0.75 }}>

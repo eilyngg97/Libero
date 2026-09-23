@@ -976,10 +976,7 @@ exports.confirmarMatchTotal = async (req, res) => {
         const montoPrevioPagadoBs = Number(pedido.monto_pagado_bs) || 0;
         const montoUltimoPagoRaw = Number(pedido.monto_ultimo_pago);
         const montoUltimoPagoBsRaw = Number(pedido.monto_ultimo_pago_bs);
-        const saldoActual = Number(pedido.saldo_pendiente);
-        const saldoPendienteActual = Number.isFinite(saldoActual) && saldoActual > 0
-          ? saldoActual
-          : Math.max(totalPedido - montoPrevioPagado, 0);
+        const saldoPendienteActual = Math.max(totalPedido - montoPrevioPagado, 0);
         const montoUltimoPago = Number.isFinite(montoUltimoPagoRaw) && montoUltimoPagoRaw > 0
           ? Math.min(montoUltimoPagoRaw, saldoPendienteActual)
           : saldoPendienteActual;
@@ -1010,6 +1007,14 @@ exports.confirmarMatchTotal = async (req, res) => {
         pedido.monto_pagado_bs = totalPagadoBs;
         pedido.saldo_pendiente = saldoPendiente;
         pedido.estado = saldoPendiente > 0 ? 'abono' : 'verificado';
+        pedido.metodo_pago = undefined;
+        pedido.referencia = undefined;
+        pedido.telefono_pago = undefined;
+        pedido.cedula_titular = undefined;
+        pedido.comprobante_url = undefined;
+        pedido.fecha_pago = undefined;
+        pedido.monto_ultimo_pago = 0;
+        pedido.monto_ultimo_pago_bs = 0;
         await pedido.save();
         actualizadas += 1;
       }
