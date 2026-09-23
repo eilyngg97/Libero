@@ -223,7 +223,7 @@ function normalizarDivision(valor) {
   if (!raw) return undefined;
 
   if (raw === 'primer division' || raw === 'primera division' || raw === 'primera división' || raw === 'primer division') {
-    return 'Primer division';
+    return 'Primera division';
   }
 
   if (raw === 'segunda division' || raw === 'segunda división') {
@@ -2304,7 +2304,7 @@ exports.createAlumno = async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(alumnoData, 'division')) {
       const divisionNormalizada = normalizarDivision(alumnoData.division);
       if (divisionNormalizada === null) {
-        return res.status(400).json({ error: 'El campo division debe ser Primer division, Segunda division o Tercera division.' });
+        return res.status(400).json({ error: 'El campo division debe ser Primera division, Segunda division o Tercera division.' });
       }
       if (divisionNormalizada === undefined) {
         delete alumnoData.division;
@@ -3170,7 +3170,7 @@ exports.updateAlumno = async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(updateData, 'division')) {
       const divisionNormalizada = normalizarDivision(updateData.division);
       if (divisionNormalizada === null) {
-        return res.status(400).json({ error: 'El campo division debe ser Primer division, Segunda division o Tercera division.' });
+        return res.status(400).json({ error: 'El campo division debe ser Primera division, Segunda division o Tercera division.' });
       }
       updateData.division = divisionNormalizada || null;
     }

@@ -36,7 +36,7 @@ const AlumnoSchema = new mongoose.Schema({
   estado: { type: String, default: 'Activo' },
   sede: { type: mongoose.Schema.Types.ObjectId, ref: 'Sede', required: true },
   categoria: { type: String },
-  division: { type: String, enum: ['Primer division', 'Segunda division', 'Tercera division'] },
+  division: { type: String, enum: ['Primera division', 'Primer division', 'Segunda division', 'Tercera division'] },
   representante: { type: mongoose.Schema.Types.ObjectId, ref: 'Representante', required: false },
   usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
   parentesco: { type: String },

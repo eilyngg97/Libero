@@ -193,6 +193,17 @@ function normalizarCategoriaFiltro(valor) {
     .trim();
 }
 
+function normalizarDivisionFiltro(valor) {
+  const division = normalizarCategoriaFiltro(valor);
+  return division === 'PRIMER DIVISION' ? 'PRIMERA DIVISION' : division;
+}
+
+function obtenerDivisionAlumno(valor) {
+  return normalizarDivisionFiltro(valor) === 'PRIMERA DIVISION'
+    ? 'Primera división'
+    : valor;
+}
+
 function formatPeriodoMensualidad(mensualidad) {
   const mes = Number(mensualidad?.mes);
   const anio = Number(mensualidad?.anio);
@@ -955,8 +966,8 @@ function TablaAlumnos() {
     const categoriasSeleccionadas = (filtroCategoria || []).map((item) => normalizarCategoriaFiltro(item));
     const categoriaMatch = categoriasSeleccionadas.length === 0 || categoriasSeleccionadas.includes(categoriaAlumno);
 
-    const divisionAlumno = normalizarCategoriaFiltro(a.division);
-    const divisionesSeleccionadas = filtroDivision.map((item) => normalizarCategoriaFiltro(item));
+    const divisionAlumno = normalizarDivisionFiltro(a.division);
+    const divisionesSeleccionadas = filtroDivision.map((item) => normalizarDivisionFiltro(item));
     const divisionMatch = divisionesSeleccionadas.length === 0 || divisionesSeleccionadas.includes(divisionAlumno);
 
     const tipoMensualidad = obtenerTipoMensualidadKey(a);
@@ -1617,7 +1628,7 @@ function TablaAlumnos() {
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{obtenerSexoAlumno(alumno)}</TableCell>
                   <TableCell sx={{ color: '#64748b', px: 1 }}>
                     <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.2 }}>{alumno.categoria || '-'}</Typography>
-                    {alumno.division && <Typography sx={{ mt: 0.25, fontSize: 11, color: '#94a3b8', lineHeight: 1.2 }}>{alumno.division}</Typography>}
+                    {alumno.division && <Typography sx={{ mt: 0.25, fontSize: 11, color: '#94a3b8', lineHeight: 1.2 }}>{obtenerDivisionAlumno(alumno.division)}</Typography>}
                   </TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{(alumno.numero_franela ?? '-') || '-'}</TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>
