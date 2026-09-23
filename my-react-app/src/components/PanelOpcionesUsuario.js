@@ -71,30 +71,8 @@ function PanelOpcionesUsuario() {
 
   // Utilidad para obtener partidos futuros donde el alumno está convocado
   const fetchProximosJuegos = async (alumnoId, torneos) => {
-    const juegos = [];
-    for (const torneo of torneos) {
-      try {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneo._id}/partidos`);
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const ahora = new Date();
-          data.forEach(partido => {
-            // Buscar convocatoria del alumno en el partido
-            const convocado = Array.isArray(partido.convocados)
-              ? partido.convocados.find(c => (c.alumno?._id || c.alumno) === alumnoId)
-              : null;
-            if (
-              convocado &&
-              new Date(partido.fecha) > ahora
-            ) {
-              juegos.push({ ...partido, torneo, estadoConvocatoria: convocado.estado, respondido_en: convocado.respondido_en });
-            }
-          });
-        }
-      } catch {}
-    }
-    // Ordenar por fecha
-    return juegos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    // El modulo de juegos de torneos fue desactivado temporalmente.
+    return [];
   };
 
   useEffect(() => {
