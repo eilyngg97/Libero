@@ -141,6 +141,7 @@ function SolvenciaChip({ alumno }) {
 }
 
 const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
+const DIVISIONES_DISPONIBLES = ['Primera división', 'Segunda división', 'Tercera división'];
 const PREVIEW_PAGE_SIZE = 20;
 
 function normalizeMetodoPago(value) {
@@ -246,6 +247,7 @@ function TablaAlumnos() {
   const [filtroFechaNacimientoHasta, setFiltroFechaNacimientoHasta] = useState('');
   const [filtroSexo, setFiltroSexo] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState([]);
+  const [filtroDivision, setFiltroDivision] = useState([]);
   const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroPagoCuotas, setFiltroPagoCuotas] = useState('');
@@ -920,6 +922,7 @@ function TablaAlumnos() {
     setFiltroFechaNacimientoHasta('');
     setFiltroSexo('');
     setFiltroCategoria([]);
+    setFiltroDivision([]);
     setFiltroTipoMensualidad('');
     setFiltroEstado('');
     setFiltroPagoCuotas('');
@@ -951,6 +954,10 @@ function TablaAlumnos() {
     const categoriasSeleccionadas = (filtroCategoria || []).map((item) => normalizarCategoriaFiltro(item));
     const categoriaMatch = categoriasSeleccionadas.length === 0 || categoriasSeleccionadas.includes(categoriaAlumno);
 
+    const divisionAlumno = normalizarCategoriaFiltro(a.division);
+    const divisionesSeleccionadas = filtroDivision.map((item) => normalizarCategoriaFiltro(item));
+    const divisionMatch = divisionesSeleccionadas.length === 0 || divisionesSeleccionadas.includes(divisionAlumno);
+
     const tipoMensualidad = obtenerTipoMensualidadKey(a);
     const tipoMensualidadMatch = filtroTipoMensualidad === '' || tipoMensualidad === filtroTipoMensualidad;
 
@@ -970,7 +977,7 @@ function TablaAlumnos() {
           ? a.aplicar_recargo_mensualidad !== false
           : a.aplicar_recargo_mensualidad === false;
     const solvenciaMatch = filtroSolvencia === '' || obtenerSolvenciaAlumno(a) === filtroSolvencia;
-    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch && recargoMensualMatch && solvenciaMatch;
+    return nombreApellidoMatch && fechaDesdeMatch && fechaHastaMatch && sexoMatch && categoriaMatch && divisionMatch && tipoMensualidadMatch && estadoMatch && pagoCuotasMatch && recargoMensualMatch && solvenciaMatch;
   });
   alumnosFiltrados = [...alumnosFiltrados].sort((a, b) => {
     const nombreA = String(a?.nombres || '').trim();
@@ -1190,6 +1197,33 @@ function TablaAlumnos() {
                 <MenuItem key={categoria} value={categoria}>
                   <Checkbox size="small" checked={filtroCategoria.includes(categoria)} />
                   <Typography sx={{ fontSize: 13 }}>{categoria}</Typography>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', mb: 0.5 }}>DIVISIÓN</Typography>
+          <FormControl size="small" sx={{ width: '100%' }}>
+            <Select
+              multiple
+              size="small"
+              value={filtroDivision}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFiltroDivision(typeof value === 'string' ? value.split(',') : value);
+              }}
+              displayEmpty
+              renderValue={(selected) => {
+                if (!selected || selected.length === 0) return 'Todas';
+                return selected.join(', ');
+              }}
+              sx={{ '& .MuiSelect-select': { py: 0.8, fontSize: 13 } }}
+            >
+              {DIVISIONES_DISPONIBLES.map((division) => (
+                <MenuItem key={division} value={division}>
+                  <Checkbox size="small" checked={filtroDivision.includes(division)} />
+                  <Typography sx={{ fontSize: 13 }}>{division}</Typography>
                 </MenuItem>
               ))}
             </Select>
@@ -1580,7 +1614,10 @@ function TablaAlumnos() {
                   </TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{calcularEdad(alumno.fecha_nacimiento)}</TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{obtenerSexoAlumno(alumno)}</TableCell>
-                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{alumno.categoria || '-'}</TableCell>
+                  <TableCell sx={{ color: '#64748b', px: 1 }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.2 }}>{alumno.categoria || '-'}</Typography>
+                    {alumno.division && <Typography sx={{ mt: 0.25, fontSize: 11, color: '#94a3b8', lineHeight: 1.2 }}>{alumno.division}</Typography>}
+                  </TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{(alumno.numero_franela ?? '-') || '-'}</TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>
                     {obtenerTipoMensualidad(alumno)}

@@ -897,6 +897,9 @@ function AlumnoEditar({ locationState }) {
                     {DIVISIONES.map((division) => (
                       <MenuItem key={division} value={division}>{division}</MenuItem>
                     ))}
+                    {!!form.division && !DIVISIONES.includes(form.division) && (
+                      <MenuItem value={form.division}>{form.division}</MenuItem>
+                    )}
                   </Select>
                   <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.5 }}>
                     Solo administrador puede editar este campo.
