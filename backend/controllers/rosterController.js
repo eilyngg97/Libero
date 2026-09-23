@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const sharp = require('sharp');
 const mongoose = require('mongoose');
 const CoreTorneo = require('../models/Torneo');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
@@ -9,10 +10,11 @@ const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const DEFAULT_ROSTER_TEMPLATE = {
   header_title: 'ROSTER',
-  federacion_linea_1: 'FEDERACION VENEZOLANA DE VOLEIBOL',
-  federacion_linea_2: 'ASOCIACION DE VOLEIBOL DEL ESTADO LARA',
-  federacion_linea_3: 'LIGA DE INICIACION DE VOLEIBOL',
-  temporada_texto: 'TEMPORADA',
+  texto_institucional: [
+    'FEDERACION VENEZOLANA DE VOLEIBOL',
+    'ASOCIACION DE VOLEIBOL DEL ESTADO LARA',
+    'LIGA DE INICIACION DE VOLEIBOL'
+  ].join('\n'),
   equipo_label: 'EQUIPO',
   club_label: 'CLUB',
   categoria_label: 'CATEGORIA',
@@ -25,6 +27,11 @@ function cleanValue(value) {
   return String(value || '').trim();
 }
 
+function normalizeAssistants(fields = {}) {
+  const source = Array.isArray(fields.asistentes) ? fields.asistentes : [fields.asistente];
+  return source.map(cleanValue).filter(Boolean).slice(0, 4);
+}
+
 function normalizeSexo(value) {
   const raw = cleanValue(value).toLowerCase();
   if (raw === 'femenino') return 'Femenino';
@@ -35,16 +42,18 @@ function normalizeSexo(value) {
 
 function normalizeRosterTemplate(template = {}) {
   const root = template && typeof template === 'object' ? template : {};
+  const legacyInstitutionalText = [
+    root.federacion_linea_1,
+    root.federacion_linea_2,
+    root.federacion_linea_3
+  ].map(cleanValue).filter(Boolean).join('\n');
   const logos = Array.isArray(root.logos)
-    ? root.logos.map((item) => cleanValue(item)).filter((item) => item.startsWith('/uploads/')).slice(0, 3)
+    ? applyTemplateLogoLayout(root.logos)
     : [];
 
   return {
     header_title: cleanValue(root.header_title || DEFAULT_ROSTER_TEMPLATE.header_title),
-    federacion_linea_1: cleanValue(root.federacion_linea_1 || DEFAULT_ROSTER_TEMPLATE.federacion_linea_1),
-    federacion_linea_2: cleanValue(root.federacion_linea_2 || DEFAULT_ROSTER_TEMPLATE.federacion_linea_2),
-    federacion_linea_3: cleanValue(root.federacion_linea_3 || DEFAULT_ROSTER_TEMPLATE.federacion_linea_3),
-    temporada_texto: cleanValue(root.temporada_texto || DEFAULT_ROSTER_TEMPLATE.temporada_texto),
+    texto_institucional: cleanValue(root.texto_institucional || legacyInstitutionalText || DEFAULT_ROSTER_TEMPLATE.texto_institucional),
     equipo_label: cleanValue(root.equipo_label || DEFAULT_ROSTER_TEMPLATE.equipo_label),
     club_label: cleanValue(root.club_label || DEFAULT_ROSTER_TEMPLATE.club_label),
     categoria_label: cleanValue(root.categoria_label || DEFAULT_ROSTER_TEMPLATE.categoria_label),
@@ -58,6 +67,40 @@ function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
+}
+
+const TEMPLATE_LOGO_LAYOUT = [
+  { x: 0.035, y: 0.018 },
+  { x: 0.145, y: 0.018 },
+  { x: 0.755, y: 0.018 },
+  { x: 0.865, y: 0.018 }
+];
+
+function applyTemplateLogoLayout(logos = []) {
+  return logos
+    .map((logo, index) => {
+      const normalized = normalizeDocumentLogo(logo, index);
+      const position = TEMPLATE_LOGO_LAYOUT[index];
+      if (!normalized || !position) return null;
+      return {
+        ...normalized,
+        ...position,
+        width: 0.1,
+        height: 0.065,
+        zIndex: index + 1
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function hasLegacySequentialLogoLayout(logos = []) {
+  if (!Array.isArray(logos) || logos.length < 2) return false;
+  return logos.every((logo, index) => (
+    Math.abs(Number(logo?.x) - (0.04 + (index * 0.15))) < 0.002 &&
+    Math.abs(Number(logo?.y) - 0.025) < 0.002 &&
+    Math.abs(Number(logo?.width) - 0.12) < 0.002
+  ));
 }
 
 function normalizeDocumentLogo(logo = {}, index = 0) {
@@ -77,23 +120,43 @@ function normalizeDocumentLogo(logo = {}, index = 0) {
 function normalizeRosterDocument(documento = {}, roster = {}, template = {}) {
   const root = documento && typeof documento === 'object' ? documento : {};
   const fields = root.campos && typeof root.campos === 'object' ? root.campos : {};
-  const sourceLogos = Array.isArray(root.logos) && root.logos.length > 0
+  const hasTitulo = Object.prototype.hasOwnProperty.call(fields, 'titulo');
+  const hasSubtitulo = Object.prototype.hasOwnProperty.call(fields, 'subtitulo');
+  const hasTextoInstitucional = Object.prototype.hasOwnProperty.call(fields, 'texto_institucional');
+  const textoInstitucionalAnterior = [
+    fields.federacion_linea_1,
+    fields.federacion_linea_2,
+    fields.federacion_linea_3
+  ].map(cleanValue).filter(Boolean).join('\n');
+  const textoInstitucionalPredeterminado = [
+    template.texto_institucional
+  ].map(cleanValue).filter(Boolean).join('\n');
+  const asistentes = normalizeAssistants(fields);
+  const hasInitializedLogos = root.logos_inicializados === true || (Array.isArray(root.logos) && root.logos.length > 0);
+  const sourceLogos = hasInitializedLogos
     ? root.logos
     : (Array.isArray(template.logos) ? template.logos : []);
+  const normalizedLogos = sourceLogos.map(normalizeDocumentLogo).filter(Boolean).slice(0, 4);
 
   return {
     incluir_fotos_cedula: root.incluir_fotos_cedula === true,
+    logos_inicializados: true,
     campos: {
+      titulo: hasTitulo ? cleanValue(fields.titulo) : cleanValue(template.header_title || 'ROSTER'),
+      subtitulo: hasSubtitulo ? cleanValue(fields.subtitulo) : cleanValue(roster.torneo?.nombre || roster.liga_name || ''),
+      texto_institucional: hasTextoInstitucional
+        ? cleanValue(fields.texto_institucional)
+        : (textoInstitucionalAnterior || textoInstitucionalPredeterminado),
       club: cleanValue(fields.club),
       categoria: cleanValue(fields.categoria || roster.categoria),
       equipo: cleanValue(fields.equipo || roster.grupo_competicion),
       entrenador_principal: cleanValue(fields.entrenador_principal),
-      asistente: cleanValue(fields.asistente)
+      asistente: asistentes[0] || '',
+      asistentes
     },
-    logos: sourceLogos
-      .map(normalizeDocumentLogo)
-      .filter(Boolean)
-      .slice(0, 4)
+    logos: !hasInitializedLogos || hasLegacySequentialLogoLayout(normalizedLogos)
+      ? applyTemplateLogoLayout(normalizedLogos)
+      : normalizedLogos
   };
 }
 
@@ -103,9 +166,28 @@ async function getTenantRosterModels(req) {
   return {
     Roster: getTenantModel(connection, 'Roster'),
     Alumno: getTenantModel(connection, 'Alumno'),
-    Torneo: getTenantModel(connection, 'Torneo'),
     TenantConfig: getTenantModel(connection, 'TenantConfig')
   };
+}
+
+async function populateCoreTournaments(rosters = []) {
+  const source = Array.isArray(rosters) ? rosters : [];
+  const torneoIds = Array.from(new Set(
+    source
+      .map((roster) => cleanValue(roster?.torneo?._id || roster?.torneo))
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+  ));
+  if (torneoIds.length === 0) return source;
+
+  const torneos = await CoreTorneo.find({ _id: { $in: torneoIds } })
+    .select('nombre fecha_limite')
+    .lean();
+  const torneoMap = new Map(torneos.map((torneo) => [String(torneo._id), torneo]));
+
+  return source.map((roster) => {
+    const torneoId = cleanValue(roster?.torneo?._id || roster?.torneo);
+    return { ...roster, torneo: torneoMap.get(torneoId) || roster.torneo };
+  });
 }
 
 function parseJugadorIds(jugadoresRaw) {
@@ -129,10 +211,10 @@ exports.listarRosters = async (req, res) => {
       filter.torneo = torneoId;
     }
 
-    const rosters = await Roster.find(filter)
-      .populate('torneo', 'nombre fecha_limite')
+    const rosterDocs = await Roster.find(filter)
       .sort({ createdAt: -1 })
       .lean();
+    const rosters = await populateCoreTournaments(rosterDocs);
 
     return res.json(rosters);
   } catch (err) {
@@ -142,7 +224,7 @@ exports.listarRosters = async (req, res) => {
 
 exports.obtenerEstudiantesElegibles = async (req, res) => {
   try {
-    const { Roster, Alumno, Torneo } = await getTenantRosterModels(req);
+    const { Roster, Alumno } = await getTenantRosterModels(req);
 
     const sexo = normalizeSexo(req.query?.sexo);
     const categoria = cleanValue(req.query?.categoria);
@@ -161,10 +243,7 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
         return res.status(400).json({ error: 'torneoId invalido' });
       }
 
-      let torneo = await Torneo.findById(torneoId).select('convocados').lean();
-      if (!torneo) {
-        torneo = await CoreTorneo.findById(torneoId).select('convocados').lean();
-      }
+      const torneo = await CoreTorneo.findById(torneoId).select('convocados').lean();
       if (!torneo) {
         return res.status(404).json({ error: 'Torneo no encontrado' });
       }
@@ -248,28 +327,23 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
 
 exports.crearRoster = async (req, res) => {
   try {
-    const { Roster, Alumno, Torneo } = await getTenantRosterModels(req);
+    const { Roster, TenantConfig } = await getTenantRosterModels(req);
 
     const torneoId = cleanValue(req.body?.torneoId);
-    const ligaName = cleanValue(req.body?.ligaName);
     const categoria = cleanValue(req.body?.categoria);
     const sexo = normalizeSexo(req.body?.sexo);
     const division = cleanValue(req.body?.division);
     const grupoCompeticion = cleanValue(req.body?.grupoCompeticion);
-    const status = cleanValue(req.body?.status || 'borrador').toLowerCase();
-    const jugadores = parseJugadorIds(req.body?.jugadores);
 
     if (!torneoId || !mongoose.Types.ObjectId.isValid(torneoId)) {
       return res.status(400).json({ error: 'torneoId es obligatorio y debe ser valido' });
     }
     if (!categoria) return res.status(400).json({ error: 'categoria es obligatoria' });
     if (!sexo) return res.status(400).json({ error: 'sexo es obligatorio' });
+    if (!division) return res.status(400).json({ error: 'division es obligatoria' });
     if (!grupoCompeticion) return res.status(400).json({ error: 'grupoCompeticion es obligatorio' });
-    if (!['borrador', 'oficial', 'finalizado'].includes(status)) {
-      return res.status(400).json({ error: 'status invalido' });
-    }
 
-    const torneo = await Torneo.findById(torneoId).select('_id nombre').lean();
+    const torneo = await CoreTorneo.findById(torneoId).select('_id nombre').lean();
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const existeMismaClave = await Roster.findOne({
@@ -285,70 +359,25 @@ exports.crearRoster = async (req, res) => {
       return res.status(409).json({ error: 'Ya existe un roster activo para esa combinacion de torneo/categoria/sexo/division/grupo.' });
     }
 
-    const alumnos = await Alumno.find({
-      _id: { $in: jugadores },
-      activo: { $ne: false },
-      dado_de_baja: { $ne: true }
-    }).select('_id sexo categoria division').lean();
-
-    const setAlumnos = new Set(alumnos.map((item) => String(item._id)));
-    const faltantes = jugadores.filter((id) => !setAlumnos.has(id));
-    if (faltantes.length > 0) {
-      return res.status(400).json({ error: 'Hay jugadoras no validas o inactivas en la seleccion.' });
-    }
-
-    if (sexo !== 'Mixto') {
-      const invalidosSexo = alumnos.filter((al) => cleanValue(al.sexo).toLowerCase() !== sexo.toLowerCase());
-      if (invalidosSexo.length > 0) {
-        return res.status(400).json({ error: 'Hay jugadoras que no cumplen el filtro de sexo.' });
-      }
-    }
-
-    const invalidosCategoria = alumnos.filter((al) => cleanValue(al.categoria).toLowerCase() !== categoria.toLowerCase());
-    if (invalidosCategoria.length > 0) {
-      return res.status(400).json({ error: 'Hay jugadoras que no cumplen la categoria seleccionada.' });
-    }
-
-    if (division) {
-      const invalidosDivision = alumnos.filter((al) => cleanValue(al.division).toLowerCase() !== division.toLowerCase());
-      if (invalidosDivision.length > 0) {
-        return res.status(400).json({ error: 'Hay jugadoras que no cumplen la division seleccionada.' });
-      }
-    }
-
-    if (jugadores.length > 0) {
-      const rostersConChoque = await Roster.find({
-        torneo: torneoId,
-        status: { $in: ['borrador', 'oficial'] },
-        jugadores: { $in: jugadores }
-      }).select('categoria division grupo_competicion jugadores').lean();
-
-      const jugadoresBloqueados = new Set();
-      rostersConChoque.forEach((roster) => {
-        (roster.jugadores || []).forEach((jugadorId) => {
-          if (jugadores.includes(String(jugadorId))) {
-            jugadoresBloqueados.add(String(jugadorId));
-          }
-        });
-      });
-
-      if (jugadoresBloqueados.size > 0) {
-        return res.status(409).json({
-          error: 'Una o mas jugadoras ya pertenecen a otro roster activo del mismo torneo.',
-          jugadores_conflicto: Array.from(jugadoresBloqueados)
-        });
-      }
-    }
+    const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
+    const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});
+    const documento = normalizeRosterDocument({}, {
+      torneo,
+      liga_name: cleanValue(torneo.nombre),
+      categoria,
+      grupo_competicion: grupoCompeticion
+    }, template);
 
     const roster = await Roster.create({
       torneo: torneoId,
-      liga_name: ligaName,
+      liga_name: cleanValue(torneo.nombre),
       categoria,
       sexo,
       division,
       grupo_competicion: grupoCompeticion,
-      jugadores,
-      status,
+      jugadores: [],
+      documento,
+      status: 'borrador',
       created_by: req.user?.id || req.user?._id || undefined,
       updated_by: req.user?.id || req.user?._id || undefined
     });
@@ -409,7 +438,7 @@ exports.actualizarEstatusRoster = async (req, res) => {
 
 exports.actualizarJugadoresRoster = async (req, res) => {
   try {
-    const { Roster, Alumno, Torneo } = await getTenantRosterModels(req);
+    const { Roster, Alumno } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
     const jugadores = parseJugadorIds(req.body?.jugadores);
 
@@ -441,7 +470,7 @@ exports.actualizarJugadoresRoster = async (req, res) => {
       return res.status(409).json({ error: 'Uno o mas atletas ya pertenecen a otro roster activo de este torneo.' });
     }
 
-    const torneo = await Torneo.findById(roster.torneo);
+    const torneo = await CoreTorneo.findById(roster.torneo);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const seleccionados = new Set(jugadores);
@@ -492,7 +521,7 @@ exports.actualizarJugadoresRoster = async (req, res) => {
 
 exports.actualizarEstadoJugadorRoster = async (req, res) => {
   try {
-    const { Roster, Torneo } = await getTenantRosterModels(req);
+    const { Roster } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
     const alumnoId = cleanValue(req.params?.alumnoId);
     const estado = cleanValue(req.body?.estado).toLowerCase();
@@ -510,7 +539,7 @@ exports.actualizarEstadoJugadorRoster = async (req, res) => {
       return res.status(404).json({ error: 'El atleta no pertenece a este roster' });
     }
 
-    const torneo = await Torneo.findById(roster.torneo);
+    const torneo = await CoreTorneo.findById(roster.torneo);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const convocado = (torneo.convocados || []).find((item) => String(item.alumno) === alumnoId);
@@ -535,8 +564,30 @@ exports.eliminarRoster = async (req, res) => {
       return res.status(400).json({ error: 'Id de roster invalido' });
     }
 
-    const roster = await Roster.findByIdAndDelete(rosterId).lean();
+    const roster = await Roster.findById(rosterId).lean();
     if (!roster) return res.status(404).json({ error: 'Roster no encontrado' });
+
+    const jugadores = (roster.jugadores || []).map((id) => String(id));
+    if (jugadores.length > 0) {
+      const usadosEnOtroRoster = await Roster.find({
+        _id: { $ne: roster._id },
+        torneo: roster.torneo,
+        jugadores: { $in: jugadores }
+      }).select('jugadores').lean();
+      const idsUsados = new Set(
+        usadosEnOtroRoster.flatMap((item) => (item.jugadores || []).map((id) => String(id)))
+      );
+      const torneo = await CoreTorneo.findById(roster.torneo);
+      if (torneo) {
+        torneo.convocados = (torneo.convocados || []).filter((item) => {
+          const alumnoId = String(item.alumno);
+          return !jugadores.includes(alumnoId) || idsUsados.has(alumnoId);
+        });
+        await torneo.save();
+      }
+    }
+
+    await Roster.deleteOne({ _id: roster._id });
 
     return res.json({ message: 'Roster eliminado correctamente' });
   } catch (err) {
@@ -557,8 +608,18 @@ exports.obtenerPlantillaRoster = async (req, res) => {
 
 exports.actualizarPlantillaRoster = async (req, res) => {
   try {
-    const { TenantConfig } = await getTenantRosterModels(req);
+    const { Roster, TenantConfig } = await getTenantRosterModels(req);
     const template = normalizeRosterTemplate(req.body?.template || {});
+    const configActual = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
+    const templateActual = normalizeRosterTemplate(configActual?.rosters?.template || {});
+    const rostersSinLogosInicializados = await Roster.find({
+      'documento.logos_inicializados': { $ne: true }
+    });
+
+    await Promise.all(rostersSinLogosInicializados.map(async (roster) => {
+      roster.documento = normalizeRosterDocument(roster.documento, roster, templateActual);
+      await roster.save();
+    }));
 
     await TenantConfig.findOneAndUpdate(
       { key: 'default' },
@@ -578,6 +639,28 @@ exports.actualizarPlantillaRoster = async (req, res) => {
   }
 };
 
+exports.subirLogoPlantillaRoster = async (req, res) => {
+  const uploadedPath = req.file?.path;
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Selecciona una imagen para el logo' });
+
+    const tenantId = resolveRequestTenantId(req);
+    const logo = normalizeDocumentLogo({
+      url: `/uploads/${tenantId}/rosters/${req.file.filename}`,
+      x: 0.04,
+      y: 0.025,
+      width: 0.12,
+      height: 0.08,
+      zIndex: 1
+    });
+
+    return res.status(201).json({ message: 'Logo cargado', logo });
+  } catch (err) {
+    if (uploadedPath && fs.existsSync(uploadedPath)) fs.unlinkSync(uploadedPath);
+    return res.status(500).json({ error: 'No se pudo subir el logo predeterminado', detalle: err.message });
+  }
+};
+
 exports.obtenerDocumentoRoster = async (req, res) => {
   try {
     const { Roster, TenantConfig } = await getTenantRosterModels(req);
@@ -586,18 +669,18 @@ exports.obtenerDocumentoRoster = async (req, res) => {
       return res.status(400).json({ error: 'Id de roster invalido' });
     }
 
-    const roster = await Roster.findById(rosterId)
-      .populate('torneo', 'nombre fecha_limite')
+    const rosterDoc = await Roster.findById(rosterId)
       .populate({
         path: 'jugadores',
-        select: 'nombres apellidos cedula fecha_nacimiento numero_franela foto sede representante telefono',
+        select: 'nombres apellidos cedula fecha_nacimiento numero_franela foto foto_cedula sede representante telefono',
         populate: [
           { path: 'sede', select: 'nombre' },
           { path: 'representante', select: 'nombres apellidos telefono' }
         ]
       })
       .lean();
-    if (!roster) return res.status(404).json({ error: 'Roster no encontrado' });
+    if (!rosterDoc) return res.status(404).json({ error: 'Roster no encontrado' });
+    const [roster] = await populateCoreTournaments([rosterDoc]);
 
     const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
     const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});
@@ -634,7 +717,7 @@ exports.actualizarDocumentoRoster = async (req, res) => {
 exports.subirLogoDocumentoRoster = async (req, res) => {
   const uploadedPath = req.file?.path;
   try {
-    const { Roster } = await getTenantRosterModels(req);
+    const { Roster, TenantConfig } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
     if (!mongoose.Types.ObjectId.isValid(rosterId)) {
       if (uploadedPath && fs.existsSync(uploadedPath)) fs.unlinkSync(uploadedPath);
@@ -648,24 +731,27 @@ exports.subirLogoDocumentoRoster = async (req, res) => {
       return res.status(404).json({ error: 'Roster no encontrado' });
     }
 
-    const logosActuales = Array.isArray(roster.documento?.logos) ? roster.documento.logos : [];
+    const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
+    const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});
+    const documentoActual = normalizeRosterDocument(roster.documento, roster, template);
+    const logosActuales = documentoActual.logos;
     if (logosActuales.length >= 4) {
       if (fs.existsSync(uploadedPath)) fs.unlinkSync(uploadedPath);
       return res.status(400).json({ error: 'Solo se permiten hasta 4 logos por roster' });
     }
 
     const tenantId = resolveRequestTenantId(req);
+    const logoPosition = TEMPLATE_LOGO_LAYOUT[logosActuales.length] || TEMPLATE_LOGO_LAYOUT[0];
     const logo = normalizeDocumentLogo({
       url: `/uploads/${tenantId}/rosters/${req.file.filename}`,
-      x: 0.04 + (logosActuales.length * 0.15),
-      y: 0.025,
-      width: 0.12,
-      height: 0.08,
+      x: logoPosition.x,
+      y: logoPosition.y,
+      width: 0.1,
+      height: 0.065,
       zIndex: logosActuales.length + 1
     }, logosActuales.length);
 
-    roster.documento = roster.documento || {};
-    roster.documento.logos = [...logosActuales, logo];
+    roster.documento = { ...documentoActual, logos: [...logosActuales, logo], logos_inicializados: true };
     roster.updated_by = req.user?.id || req.user?._id || roster.updated_by;
     await roster.save();
 
@@ -717,6 +803,94 @@ function uploadUrlToLocalPath(uploadUrl) {
   return fs.existsSync(absolutePath) ? absolutePath : '';
 }
 
+async function buildRosterDocHeaderDataUri(logos, template, titulo, subtitulo, textoInstitucional = '') {
+  const width = 718;
+  const height = 170;
+  const pixelRatio = 2;
+  const lineasInstitucionales = cleanValue(textoInstitucional).split(/\r?\n/);
+  const inicioY = 122 - ((lineasInstitucionales.length - 1) * 13);
+  const textoInstitucionalSvg = lineasInstitucionales
+    .map((linea, index) => `<text x="${width}" y="${inicioY + (index * 26)}" font-size="20">${escapeHtml(linea)}</text>`)
+    .join('');
+  const svg = Buffer.from(`
+    <svg width="${width * pixelRatio}" height="${height * pixelRatio}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100%" height="100%" fill="white" />
+      <g fill="#000" text-anchor="middle" font-family="Arial, sans-serif">
+        ${textoInstitucionalSvg}
+        <text x="${width}" y="248" font-family="Arial, sans-serif" font-size="44" font-weight="700">${escapeHtml(titulo)}</text>
+        <text x="${width}" y="296" font-family="Arial, sans-serif" font-size="26" font-weight="700">${escapeHtml(subtitulo)}</text>
+      </g>
+    </svg>
+  `);
+
+  const logoLayers = await Promise.all(
+    logos
+      .map((logo, index) => normalizeDocumentLogo(logo, index))
+      .filter(Boolean)
+      .sort((left, right) => left.zIndex - right.zIndex)
+      .map(async (logo) => {
+        const logoPath = uploadUrlToLocalPath(logo.url);
+        if (!logoPath) return null;
+        const logoWidth = Math.max(24, Math.round(logo.width * width * pixelRatio));
+        const logoHeight = Math.max(20, Math.round(logo.height * 1047 * pixelRatio));
+        try {
+          const input = await sharp(logoPath)
+            .flatten({ background: '#ffffff' })
+            .resize({
+              width: logoWidth,
+              height: logoHeight,
+              fit: 'contain',
+              background: { r: 255, g: 255, b: 255, alpha: 1 }
+            })
+            .png()
+            .toBuffer();
+          return {
+            input,
+            left: Math.max(0, Math.round(logo.x * width * pixelRatio)),
+            top: Math.max(0, Math.round(logo.y * 1047 * pixelRatio))
+          };
+        } catch (_) {
+          return null;
+        }
+      })
+  );
+
+  const header = await sharp({
+    create: {
+      width: width * pixelRatio,
+      height: height * pixelRatio,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 }
+    }
+  })
+    .composite([{ input: svg }, ...logoLayers.filter(Boolean)])
+    .png()
+    .toBuffer();
+
+  return `data:image/png;base64,${header.toString('base64')}`;
+}
+
+async function buildContainedImageDataUri(uploadUrl, width, height) {
+  const imagePath = uploadUrlToLocalPath(uploadUrl);
+  if (!imagePath) return '';
+
+  try {
+    const image = await sharp(imagePath)
+      .resize({
+        width,
+        height,
+        fit: 'contain',
+        background: { r: 255, g: 255, b: 255, alpha: 1 }
+      })
+      .flatten({ background: '#ffffff' })
+      .png()
+      .toBuffer();
+    return `data:image/png;base64,${image.toString('base64')}`;
+  } catch (_) {
+    return '';
+  }
+}
+
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return '';
   const nacimiento = new Date(fechaNacimiento);
@@ -734,33 +908,30 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
 
   const columns = [
     { key: 'nro', label: 'N°', width: 24 },
-    { key: 'foto', label: 'Foto', width: 56 },
-    { key: 'franela', label: 'Franela', width: 42 },
-    { key: 'nombres', label: 'Nombres y Apellidos', width: 112 },
-    { key: 'cedula', label: 'Cedula', width: 62 },
-    { key: 'fecha', label: 'Fecha de Nacimiento', width: 70 },
-    { key: 'representante', label: 'Representante y telefono', width: 94 },
-    { key: 'club', label: 'Club de procedencia', width: 64 }
+    { key: 'foto', label: 'Foto', width: 72 },
+    { key: 'franela', label: 'Número\nFranela', width: 42 },
+    { key: 'nombres', label: 'Nombre y Apellidos', width: 136 },
+    { key: 'cedula', label: 'Nro. de\nCédula', width: 62 },
+    { key: 'fecha', label: 'Edad\nFecha de Nacimiento', width: 70 },
+    { key: 'representante', label: 'Representante y teléfono', width: 118 }
   ];
 
   const headerHeight = 22;
-  const rowHeight = 42;
-  const maxRowsPerPage = 14;
-  const rowsToDraw = Math.min(Array.isArray(jugadores) ? jugadores.length : 0, maxRowsPerPage);
+  const rowHeight = 68;
+  const pageBottom = () => doc.page.height - doc.page.margins.bottom;
 
-  const drawHeader = () => {
+  const drawHeader = (y) => {
     doc.font('Helvetica-Bold').fontSize(7);
     let cursorX = left;
-    doc.rect(left, startY, width, headerHeight).stroke('#000');
+    doc.rect(left, y, width, headerHeight).fillAndStroke('#f1f1ed', '#000');
     columns.forEach((col, idx) => {
-      if (idx > 0) doc.moveTo(cursorX, startY).lineTo(cursorX, startY + headerHeight).stroke('#000');
-      doc.text(col.label, cursorX + 2, startY + 4, { width: col.width - 4, align: 'center' });
+      if (idx > 0) doc.moveTo(cursorX, y).lineTo(cursorX, y + headerHeight).stroke('#000');
+      doc.fillColor('#000').text(col.label, cursorX + 2, y + 3, { width: col.width - 4, height: headerHeight - 4, align: 'center' });
       cursorX += col.width;
     });
   };
 
-  const drawRow = (rowIndex, jugador) => {
-    const y = startY + headerHeight + (rowIndex * rowHeight);
+  const drawRow = (rowIndex, jugador, y) => {
     let cursorX = left;
     doc.rect(left, y, width, rowHeight).stroke('#000');
 
@@ -785,7 +956,7 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
             doc.save();
             doc.rect(cursorX + 2, y + 2, col.width - 4, rowHeight - 4).clip();
             doc.image(photoPath, cursorX + 2, y + 2, {
-              cover: [col.width - 4, rowHeight - 4],
+              fit: [col.width - 4, rowHeight - 4],
               align: 'center',
               valign: 'center'
             });
@@ -799,20 +970,29 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
           width: col.width - 4,
           height: rowHeight - 8,
           ellipsis: true,
-          align: ['nro', 'franela'].includes(col.key) ? 'center' : 'left'
+          align: ['nro', 'franela', 'nombres', 'cedula', 'fecha'].includes(col.key) ? 'center' : 'left'
         });
       }
       cursorX += col.width;
     });
   };
 
-  drawHeader();
+  let cursorY = startY;
+  drawHeader(cursorY);
+  cursorY += headerHeight;
 
-  for (let i = 0; i < rowsToDraw; i += 1) {
-    drawRow(i, jugadores[i]);
+  for (let i = 0; i < jugadores.length; i += 1) {
+    if (cursorY + rowHeight > pageBottom()) {
+      doc.addPage({ margin: 35, size: 'A4' });
+      cursorY = doc.page.margins.top;
+      drawHeader(cursorY);
+      cursorY += headerHeight;
+    }
+    drawRow(i, jugadores[i], cursorY);
+    cursorY += rowHeight;
   }
 
-  return startY + headerHeight + (rowsToDraw * rowHeight);
+  return cursorY;
 }
 
 function writeRosterIdCards(doc, jugadores = [], startY) {
@@ -876,8 +1056,7 @@ exports.exportarRosterPdf = async (req, res) => {
       return res.status(400).json({ error: 'Id de roster invalido' });
     }
 
-    const roster = await Roster.findById(rosterId)
-      .populate('torneo', 'nombre')
+    const rosterDoc = await Roster.findById(rosterId)
       .populate({
         path: 'jugadores',
         select: 'nombres apellidos cedula fecha_nacimiento numero_franela foto foto_cedula sede representante telefono',
@@ -888,7 +1067,8 @@ exports.exportarRosterPdf = async (req, res) => {
       })
       .lean();
 
-    if (!roster) return res.status(404).json({ error: 'Roster no encontrado' });
+    if (!rosterDoc) return res.status(404).json({ error: 'Roster no encontrado' });
+    const [roster] = await populateCoreTournaments([rosterDoc]);
 
     const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
     const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});
@@ -918,17 +1098,14 @@ exports.exportarRosterPdf = async (req, res) => {
       }
     });
 
-    doc.font('Helvetica').fontSize(8).text(template.federacion_linea_1, left + 110, 30, { width: width - 120, align: 'center' });
-    doc.text(template.federacion_linea_2, left + 110, 42, { width: width - 120, align: 'center' });
-    doc.text(template.federacion_linea_3, left + 110, 54, { width: width - 120, align: 'center' });
+    doc.font('Helvetica').fontSize(8).text(documento.campos.texto_institucional, doc.page.width * 0.26, 30, {
+      width: doc.page.width * 0.48,
+      align: 'center',
+      lineGap: 2
+    });
 
-    doc.font('Helvetica-Bold').fontSize(14).text(template.header_title || 'ROSTER', left, 78, { width, align: 'center' });
-    doc.font('Helvetica-Bold').fontSize(10).text(
-      `${cleanValue(roster.division || '').toUpperCase()} · ${cleanValue(roster.torneo?.nombre || roster.liga_name || '').toUpperCase()}`,
-      left,
-      95,
-      { width, align: 'center' }
-    );
+    doc.font('Helvetica-Bold').fontSize(14).text(documento.campos.titulo, left, 78, { width, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(10).text(documento.campos.subtitulo, left, 95, { width, align: 'center' });
 
     const categoriaText = `${template.categoria_label}: ${documento.campos.categoria}`;
     const sexoText = `(${cleanValue(roster.sexo)})`;
@@ -937,7 +1114,12 @@ exports.exportarRosterPdf = async (req, res) => {
 
     doc.font('Helvetica').fontSize(9);
     doc.text(`${clubText}     ${categoriaText} ${sexoText}     ${equipoText}`, left, 117, { width, align: 'left' });
-    doc.text(`${template.entrenador_principal_label}: ${documento.campos.entrenador_principal || '____________________'}   ${template.asistente_label}: ${documento.campos.asistente || '____________________'}`, left, 136, { width, align: 'left' });
+    const asistentesTexto = documento.campos.asistentes.length > 0
+      ? documento.campos.asistentes.join(', ')
+      : '____________________';
+    const personalTecnicoTexto = `${template.entrenador_principal_label}: ${documento.campos.entrenador_principal || '____________________'}   ${template.asistente_label}: ${asistentesTexto}`;
+    const personalTecnicoHeight = doc.heightOfString(personalTecnicoTexto, { width });
+    doc.text(personalTecnicoTexto, left, 136, { width, align: 'left' });
 
     const jugadores = (Array.isArray(roster.jugadores) ? roster.jugadores : []).map((item) => {
       const representante = `${item?.representante?.nombres || ''} ${item?.representante?.apellidos || ''}`.trim();
@@ -949,7 +1131,7 @@ exports.exportarRosterPdf = async (req, res) => {
       return {
         nombre: `${item?.nombres || ''} ${item?.apellidos || ''}`.trim(),
         cedula: cleanValue(item?.cedula),
-        fecha_nacimiento: fecha,
+        fecha_nacimiento: [fecha, calcularEdad(item?.fecha_nacimiento)].filter(Boolean).join('\n'),
         numero_franela: item?.numero_franela || '',
         foto: cleanValue(item?.foto),
         representante: [representante, telefono].filter(Boolean).join(' · '),
@@ -957,7 +1139,7 @@ exports.exportarRosterPdf = async (req, res) => {
       };
     });
 
-    const tableBottomY = writeRosterTable(doc, jugadores, 154);
+    const tableBottomY = writeRosterTable(doc, jugadores, 142 + Math.max(12, personalTecnicoHeight));
 
     let contentBottomY = tableBottomY;
     if (documento.incluir_fotos_cedula) {
@@ -989,8 +1171,7 @@ exports.exportarRosterDoc = async (req, res) => {
       return res.status(400).json({ error: 'Id de roster invalido' });
     }
 
-    const roster = await Roster.findById(rosterId)
-      .populate('torneo', 'nombre')
+    const rosterDoc = await Roster.findById(rosterId)
       .populate({
         path: 'jugadores',
         select: 'nombres apellidos cedula fecha_nacimiento numero_franela foto foto_cedula sede representante telefono',
@@ -1001,16 +1182,19 @@ exports.exportarRosterDoc = async (req, res) => {
       })
       .lean();
 
-    if (!roster) return res.status(404).json({ error: 'Roster no encontrado' });
+    if (!rosterDoc) return res.status(404).json({ error: 'Roster no encontrado' });
+    const [roster] = await populateCoreTournaments([rosterDoc]);
 
     const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
     const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});
     const documento = normalizeRosterDocument(roster.documento, roster, template);
-    const positionedLogos = documento.logos
-      .map((logo, index) => ({ ...normalizeDocumentLogo(logo, index), dataUri: uploadUrlToDataUri(logo?.url || logo) }))
-      .filter((logo) => logo.dataUri)
-      .map((logo) => `<img class="positioned-logo" src="${logo.dataUri}" style="left:${logo.x * 100}%;top:${logo.y * 100}%;width:${logo.width * 100}%;height:${logo.height * 100}%;z-index:${logo.zIndex}" />`)
-      .join('');
+    const headerDataUri = await buildRosterDocHeaderDataUri(
+      documento.logos,
+      template,
+      documento.campos.titulo,
+      documento.campos.subtitulo,
+      documento.campos.texto_institucional
+    );
     const jugadores = (Array.isArray(roster.jugadores) ? roster.jugadores : []).map((item, index) => {
       const representante = `${item?.representante?.nombres || ''} ${item?.representante?.apellidos || ''}`.trim();
       const telefono = cleanValue(item?.representante?.telefono || item?.telefono);
@@ -1022,7 +1206,7 @@ exports.exportarRosterDoc = async (req, res) => {
       return `
         <tr>
           <td class="center">${index + 1}</td>
-          <td class="photo-cell">${foto ? `<img class="player-photo" src="${foto}" />` : ''}</td>
+          <td class="photo-cell">${foto ? `<img class="player-photo" src="${foto}" width="72" height="68" />` : ''}</td>
           <td class="center">${escapeHtml(item?.numero_franela || '')}</td>
           <td class="name">${escapeHtml(`${item?.nombres || ''} ${item?.apellidos || ''}`.trim())}</td>
           <td class="center">${escapeHtml(cleanValue(item?.cedula))}</td>
@@ -1032,123 +1216,116 @@ exports.exportarRosterDoc = async (req, res) => {
     }).join('');
 
     const cedulas = documento.incluir_fotos_cedula
-      ? (Array.isArray(roster.jugadores) ? roster.jugadores : [])
-      .map((item, index) => {
-        const fotoCedula = uploadUrlToDataUri(item?.foto_cedula);
+      ? await Promise.all((Array.isArray(roster.jugadores) ? roster.jugadores : [])
+      .map(async (item, index) => {
+        const fotoCedula = await buildContainedImageDataUri(item?.foto_cedula, 700, 310);
         if (!fotoCedula) return '';
         return `
           <td class="id-card">
             <div class="id-title">CEDULA ${index + 1}</div>
-            <img class="id-image" src="${fotoCedula}" />
+            <img class="id-image" src="${fotoCedula}" width="350" height="155" />
           </td>`;
-      })
-      .filter(Boolean)
+      }))
       : [];
+    const cedulasDisponibles = cedulas.filter(Boolean);
     const cedulaRows = [];
-    for (let index = 0; index < cedulas.length; index += 2) {
-      cedulaRows.push(`<tr>${cedulas[index]}${cedulas[index + 1] || '<td class="id-card"></td>'}</tr>`);
+    for (let index = 0; index < cedulasDisponibles.length; index += 2) {
+      cedulaRows.push(`<tr>${cedulasDisponibles[index]}${cedulasDisponibles[index + 1] || '<td class="id-card"></td>'}</tr>`);
     }
-
-    const torneoNombre = cleanValue(roster.torneo?.nombre || roster.liga_name || 'Roster');
-    const renderHeader = () => `
-      <table class="header">
-        <tr>
-          <td class="logo-cell"></td>
-          <td class="federation">
-            ${escapeHtml(template.federacion_linea_1)}<br />
-            ${escapeHtml(template.federacion_linea_2)}<br />
-            ${escapeHtml(template.federacion_linea_3)}<br />
-            ${escapeHtml(template.temporada_texto)}
-          </td>
-        </tr>
-      </table>`;
 
     const html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
       <head>
         <meta charset="utf-8" />
-        <title>Roster ${escapeHtml(torneoNombre)}</title>
+        <meta name="ProgId" content="Word.Document" />
+        <title>${escapeHtml(documento.campos.titulo)} ${escapeHtml(documento.campos.subtitulo)}</title>
+        <!--[if gte mso 9]><xml>
+          <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>100</w:Zoom>
+            <w:DoNotOptimizeForBrowser />
+          </w:WordDocument>
+        </xml><![endif]-->
         <style>
-          @page Section1 {
-            size: 21cm 29.7cm;
-            margin: 1cm;
+          @page {
+            size: 595.3pt 841.9pt;
+            margin: 28.35pt;
             mso-page-orientation: portrait;
           }
-          div.Section1 { page: Section1; position: relative; }
+          @page Section1 {
+            size: 595.3pt 841.9pt;
+            margin: 28.35pt;
+            mso-page-orientation: portrait;
+          }
+          div.Section1 { page: Section1; position: relative; width: 718px; }
           body {
-            font-family: "Times New Roman", serif;
+            font-family: Arial, sans-serif;
             font-size: 8pt;
             color: #000;
-            width: 100%;
+            width: 718px;
             margin: 0;
           }
-          table { border-collapse: collapse; width: 100%; }
-          .header td { border: 0; padding: 1px 3px; vertical-align: middle; }
-          .logo-cell { width: 13%; text-align: center; }
-          .logo { max-width: 64px; max-height: 42px; }
-          .positioned-logo { position: absolute; object-fit: contain; }
-          .federation { border: 1px solid #5b9bd5 !important; text-align: center; font-size: 7pt; line-height: 1.2; }
-          .title { text-align: center; font-size: 12pt; font-weight: bold; margin: 3px 0 5px; }
-          .meta { font-weight: bold; margin: 3px 0; white-space: nowrap; }
-          .players { table-layout: fixed; width: 100%; }
+          table { border-collapse: collapse; width: 718px; }
+          .players, .ids { width: 718px !important; }
+          .document-header { display: block; width: 718px; height: 170px; mso-width-source: userset; mso-height-source: userset; }
+          .meta { width: 718px; font-family: Arial, sans-serif; font-weight: bold; margin: 3px 0; white-space: normal; overflow-wrap: break-word; }
+          .meta-spacer { width: 718px; height: 7px; line-height: 7px; font-size: 1px; }
+          .meta-technical { margin: 0 0 4px; font-weight: bold; }
+          .players { table-layout: fixed; font-family: Arial, sans-serif; }
           .players th, .players td { border: 1px solid #000; padding: 2px; vertical-align: middle; }
-          .players th { font-size: 7pt; text-align: center; line-height: 1; }
-          .players td { height: 50px; font-size: 7.5pt; }
+          .players th { background-color: #f1f1ed; mso-shading: #f1f1ed; font-size: 7pt; text-align: center; line-height: 1; }
+          .players td { height: 68px; font-size: 7.5pt; }
           .players th:nth-child(1) { width: 4%; }
-          .players th:nth-child(2) { width: 8%; }
+          .players th:nth-child(2) { width: 11%; }
           .players th:nth-child(3) { width: 9%; }
-          .players th:nth-child(4) { width: 24%; }
+          .players th:nth-child(4) { width: 21%; }
           .players th:nth-child(5) { width: 12%; }
           .players th:nth-child(6) { width: 16%; }
           .players th:nth-child(7) { width: 27%; }
           .center { text-align: center; }
           .name { text-align: center; font-weight: bold; }
           .photo-cell { width: 8%; text-align: center; padding: 0 !important; }
-          .player-photo { width: 54px; height: 60px; object-fit: cover; }
-          .ids { table-layout: fixed; width: 100%; }
+          .player-photo { display: block; width: 72px; height: 68px; margin: 0 auto; object-fit: contain; mso-width-source: userset; mso-height-source: userset; }
+          .ids { table-layout: fixed; }
           .ids td { border: 1px solid #000; width: 50%; padding: 0; vertical-align: top; }
-          .id-title { text-align: center; font-weight: bold; border-bottom: 1px solid #000; padding: 2px; }
-          .id-image { display: block; width: 100%; height: 155px; object-fit: contain; }
-          .page-break { page-break-before: always; }
-          .receipt { margin-top: 8px; font-weight: bold; line-height: 2; }
+          .id-title { font-family: Arial, sans-serif; text-align: center; font-weight: bold; border-bottom: 1px solid #000; padding: 2px; }
+          .id-image { display: block; width: 350px; height: 155px; object-fit: contain; mso-width-source: userset; mso-height-source: userset; }
+          .receipt { width: 718px; margin-top: 8px; font-family: Arial, sans-serif; font-weight: bold; line-height: 2; }
         </style>
       </head>
       <body>
         <div class="Section1">
-        ${positionedLogos}
-        ${renderHeader()}
-        <div class="title">${escapeHtml(template.header_title)} ${escapeHtml(torneoNombre.toUpperCase())}</div>
+        <img class="document-header" src="${headerDataUri}" width="718" height="170" />
         <div class="meta">
           ${escapeHtml(template.club_label)}: ${escapeHtml(documento.campos.club || '__________________')} &nbsp;&nbsp;
           ${escapeHtml(template.categoria_label)}: ${escapeHtml(documento.campos.categoria)} (${escapeHtml(cleanValue(roster.sexo))}) &nbsp;&nbsp;
           ${escapeHtml(template.equipo_label)}: ${escapeHtml(documento.campos.equipo)}
         </div>
-        <div class="meta">
-          ${escapeHtml(template.entrenador_principal_label)}: ${escapeHtml(documento.campos.entrenador_principal || '__________________')} &nbsp;&nbsp;
-          ${escapeHtml(template.asistente_label)}: ${escapeHtml(documento.campos.asistente || '__________________')}
+        <div class="meta-spacer">&nbsp;</div>
+        <div class="meta meta-technical" style="font-weight:bold">
+          <strong>${escapeHtml(template.entrenador_principal_label)}: ${escapeHtml(documento.campos.entrenador_principal || '__________________')} &nbsp;&nbsp;
+          ${escapeHtml(template.asistente_label)}: ${escapeHtml(documento.campos.asistentes.length > 0 ? documento.campos.asistentes.join(', ') : '__________________')}</strong>
         </div>
-        <table class="players">
+        <table class="players" width="718">
           <thead>
-            <tr>
+            <tr bgcolor="#f1f1ed" style="background-color:#f1f1ed">
               <th style="width:22px">N°</th>
-              <th style="width:58px">Foto</th>
-              <th style="width:38px">Numero<br />Franela</th>
+              <th style="width:76px">Foto</th>
+              <th style="width:38px">Número<br />Franela</th>
               <th>Nombre y Apellidos</th>
-              <th style="width:58px">Nro. de<br />Cedula</th>
+              <th style="width:58px">Nro. de<br />Cédula</th>
               <th style="width:70px">Edad<br />Fecha de Nacimiento</th>
-              <th>Representante y telefono</th>
+              <th>Representante y teléfono</th>
             </tr>
           </thead>
           <tbody>
             ${jugadores}
           </tbody>
         </table>
-        ${cedulaRows.length ? `<table class="ids">${cedulaRows.join('')}</table>` : ''}
+        ${cedulaRows.length ? `<table class="ids" width="718">${cedulaRows.join('')}</table>` : ''}
 
-        <div class="page-break"></div>
-        ${renderHeader()}
         <div class="receipt">
-          Personal tecnico encargado de recibir: ___________________________________________<br />
+          Recibido por: ___________________________________________________________________<br />
           Fecha, lugar y hora: ____________________________________________________________
         </div>
         </div>

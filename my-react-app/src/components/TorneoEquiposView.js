@@ -8,10 +8,10 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Snackbar,
   Typography
 } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useNavigate, useParams } from 'react-router-dom';
 import RosterCreateDialog from './RosterCreateDialog';
 
@@ -128,16 +128,16 @@ function TorneoEquiposView() {
         headers: buildAuthHeaders()
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'No se pudo eliminar el roster');
+      if (!res.ok) throw new Error(data?.error || 'No se pudo eliminar el equipo');
 
       await fetchData();
       setDialogEliminarRosterOpen(false);
       setRosterAEliminar(null);
-      showUiAlert('success', 'Operacion completada', 'Roster eliminado con exito.');
+      showUiAlert('success', 'Operacion completada', 'Equipo eliminado con exito.');
     } catch (err) {
       setDialogEliminarRosterOpen(false);
       setRosterAEliminar(null);
-      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo eliminar el roster.');
+      showUiAlert('error', 'Operacion fallida', err.message || 'No se pudo eliminar el equipo.');
     } finally {
       setSavingRosterId('');
     }
@@ -341,20 +341,36 @@ function TorneoEquiposView() {
         </Box>
       )}
 
-      <Dialog open={dialogEliminarRosterOpen} onClose={() => setDialogEliminarRosterOpen(false)}>
-        <DialogTitle>Eliminar roster</DialogTitle>
-        <DialogContent>
-          <Typography>Esta seguro de eliminar este roster?</Typography>
+      <Dialog
+        open={dialogEliminarRosterOpen}
+        onClose={() => {
+          setDialogEliminarRosterOpen(false);
+          setRosterAEliminar(null);
+        }}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3, boxShadow: '0 20px 44px rgba(15, 23, 42, 0.22)' } }}
+      >
+        <DialogContent sx={{ px: 3, pt: 3, pb: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.25 }}>
+            <Box sx={{ width: 32, height: 32, display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: '#fff1f2', color: '#dc2626' }}>
+              <DeleteIcon sx={{ fontSize: 17 }} />
+            </Box>
+            <Typography sx={{ fontSize: 20, fontWeight: 800, color: '#172033' }}>Eliminar equipo</Typography>
+          </Box>
+          <Typography sx={{ mt: 0.8, fontSize: 13.5, lineHeight: 1.55, color: '#64748b' }}>Se eliminará permanentemente el equipo</Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogEliminarRosterOpen(false)}>Cancelar</Button>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button onClick={() => { setDialogEliminarRosterOpen(false); setRosterAEliminar(null); }} variant="outlined" sx={{ borderColor: '#d0d5dd', color: '#344054', textTransform: 'none', fontWeight: 700 }}>Cancelar</Button>
           <Button
             onClick={eliminarRoster}
             color="error"
             variant="contained"
+            startIcon={<DeleteIcon />}
+            sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none' }}
             disabled={!rosterAEliminar || savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id)}
           >
-            {savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id) ? 'Eliminando...' : 'Eliminar'}
+            {savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id) ? 'Eliminando...' : 'Eliminar equipo'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -39,6 +39,7 @@ router.patch('/:id/jugadores/:alumnoId/estado', authMiddleware, rolMiddleware('a
 router.delete('/:id', authMiddleware, rolMiddleware('admin'), rosterController.eliminarRoster);
 router.get('/template', authMiddleware, rolMiddleware('admin'), rosterController.obtenerPlantillaRoster);
 router.patch('/template', authMiddleware, rolMiddleware('admin'), rosterController.actualizarPlantillaRoster);
+router.post('/template/logos', authMiddleware, rolMiddleware('admin'), uploadRosterLogo.single('logo'), rosterController.subirLogoPlantillaRoster);
 router.get('/:id/documento', authMiddleware, rolMiddleware('admin'), rosterController.obtenerDocumentoRoster);
 router.patch('/:id/documento', authMiddleware, rolMiddleware('admin'), rosterController.actualizarDocumentoRoster);
 router.post('/:id/documento/logos', authMiddleware, rolMiddleware('admin'), uploadRosterLogo.single('logo'), rosterController.subirLogoDocumentoRoster);

@@ -3,10 +3,13 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
+  ListItemText,
   MenuItem,
   Snackbar,
+  TablePagination,
   TextField,
   Typography
 } from '@mui/material';
@@ -16,7 +19,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 const EMPTY_FILTERS = {
   search: '',
   sexo: '',
-  categoria: '',
+  categoria: [],
   division: '',
   fechaDesde: '',
   fechaHasta: ''
@@ -27,6 +30,8 @@ const STATUS_STYLES = {
   rechazado: { label: 'Rechazado', color: '#dc2626', bg: '#fff1f2' },
   pendiente: { label: 'Pendiente', color: '#a16207', bg: '#fff7ed' }
 };
+
+const DEBT_STATUSES = new Set(['pendiente', 'insolvente', 'retrasado', 'abono', 'en revision']);
 
 function getId(value) {
   return String(value?._id || value?.id || value || '');
@@ -48,6 +53,13 @@ function uniqueOptions(rows, field) {
     .sort((a, b) => a.localeCompare(b, 'es'));
 }
 
+function isCurrentOrPastPeriod(mensualidad, currentPeriod) {
+  const month = Number(mensualidad?.mes);
+  const year = Number(mensualidad?.anio);
+  if (!Number.isInteger(month) || !Number.isInteger(year)) return false;
+  return year < currentPeriod.year || (year === currentPeriod.year && month <= currentPeriod.month);
+}
+
 function RosterAtletasView() {
   const { torneoId, rosterId } = useParams();
   const navigate = useNavigate();
@@ -55,7 +67,10 @@ function RosterAtletasView() {
   const [torneo, setTorneo] = useState(null);
   const [roster, setRoster] = useState(null);
   const [athletes, setAthletes] = useState([]);
+  const [solvencias, setSolvencias] = useState({});
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [loading, setLoading] = useState(true);
   const [savingAthleteId, setSavingAthleteId] = useState('');
   const [error, setError] = useState('');
@@ -69,12 +84,13 @@ function RosterAtletasView() {
     setLoading(true);
     setError('');
     try {
+      const today = new Date();
       const eligibleParams = new URLSearchParams({
         torneoId,
         rosterId,
         todos: 'true'
       });
-      const [torneoResponse, rostersResponse, athletesResponse] = await Promise.all([
+      const [torneoResponse, rostersResponse, athletesResponse, solvenciasResponse] = await Promise.all([
         fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}?_t=${Date.now()}`, {
           cache: 'no-store',
           headers: authHeaders
@@ -86,13 +102,18 @@ function RosterAtletasView() {
         fetch(`${process.env.REACT_APP_API_URL}/api/rosters/eligible-students?${eligibleParams.toString()}`, {
           cache: 'no-store',
           headers: authHeaders
+        }),
+        fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades`, {
+          cache: 'no-store',
+          headers: authHeaders
         })
       ]);
 
-      const [torneoData, rostersData, athletesData] = await Promise.all([
+      const [torneoData, rostersData, athletesData, solvenciasData] = await Promise.all([
         torneoResponse.json(),
         rostersResponse.json(),
-        athletesResponse.json()
+        athletesResponse.json(),
+        solvenciasResponse.json()
       ]);
 
       if (!torneoResponse.ok) throw new Error(torneoData?.error || 'No se pudo cargar el torneo');
@@ -105,6 +126,23 @@ function RosterAtletasView() {
       setTorneo(torneoData);
       setRoster(currentRoster);
       setAthletes(athletesData);
+      setSolvencias(
+        solvenciasResponse.ok && Array.isArray(solvenciasData)
+          ? solvenciasData.reduce((result, mensualidad) => {
+            const athleteId = getId(mensualidad?.id_alumno);
+            if (!athleteId || !isCurrentOrPastPeriod(mensualidad, {
+              month: today.getMonth() + 1,
+              year: today.getFullYear()
+            })) return result;
+
+            if (!result[athleteId]) result[athleteId] = 'Solvente';
+            if (DEBT_STATUSES.has(normalize(mensualidad?.estatus))) {
+              result[athleteId] = 'Insolvente';
+            }
+            return result;
+          }, {})
+          : {}
+      );
     } catch (requestError) {
       setError(requestError.message || 'No se pudo cargar la vista de atletas');
     } finally {
@@ -136,21 +174,35 @@ function RosterAtletasView() {
     divisiones: uniqueOptions(athletes, 'division')
   }), [athletes]);
 
-  const filteredAthletes = useMemo(() => athletes.filter((athlete) => {
-    const fullText = normalize(`${athlete.nombre_completo} ${athlete.cedula}`);
-    if (filters.search && !fullText.includes(normalize(filters.search))) return false;
-    if (filters.sexo && athlete.sexo !== filters.sexo) return false;
-    if (filters.categoria && athlete.categoria !== filters.categoria) return false;
-    if (filters.division && athlete.division !== filters.division) return false;
+  const filteredAthletes = useMemo(() => athletes
+    .filter((athlete) => {
+      const fullText = normalize(`${athlete.nombre_completo} ${athlete.cedula}`);
+      if (filters.search && !fullText.includes(normalize(filters.search))) return false;
+      if (filters.sexo && athlete.sexo !== filters.sexo) return false;
+      if (filters.categoria.length > 0 && !filters.categoria.includes(athlete.categoria)) return false;
+      if (filters.division && athlete.division !== filters.division) return false;
 
-    if (filters.fechaDesde || filters.fechaHasta) {
-      const birthDate = athlete.fecha_nacimiento ? new Date(athlete.fecha_nacimiento) : null;
-      if (!birthDate || Number.isNaN(birthDate.getTime())) return false;
-      if (filters.fechaDesde && birthDate < new Date(`${filters.fechaDesde}T00:00:00`)) return false;
-      if (filters.fechaHasta && birthDate > new Date(`${filters.fechaHasta}T23:59:59`)) return false;
-    }
-    return true;
-  }), [athletes, filters]);
+      if (filters.fechaDesde || filters.fechaHasta) {
+        const birthDate = athlete.fecha_nacimiento ? new Date(athlete.fecha_nacimiento) : null;
+        if (!birthDate || Number.isNaN(birthDate.getTime())) return false;
+        if (filters.fechaDesde && birthDate < new Date(`${filters.fechaDesde}T00:00:00`)) return false;
+        if (filters.fechaHasta && birthDate > new Date(`${filters.fechaHasta}T23:59:59`)) return false;
+      }
+      return true;
+    })
+    .sort((first, second) => (
+      Number(selectedIds.has(getId(second))) - Number(selectedIds.has(getId(first)))
+    )), [athletes, filters, selectedIds]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [filters]);
+
+  const paginatedAthletes = useMemo(() => (
+    filteredAthletes.slice(page * rowsPerPage, (page + 1) * rowsPerPage)
+  ), [filteredAthletes, page, rowsPerPage]);
+
+  const getSolvencia = (athlete) => solvencias[getId(athlete)] || 'Solvente';
 
   const selectedAthletes = useMemo(() => {
     const athleteMap = new Map(athletes.map((athlete) => [getId(athlete), athlete]));
@@ -246,21 +298,6 @@ function RosterAtletasView() {
       <Typography sx={{ fontSize: 21, lineHeight: 1.15, fontWeight: 800 }}>{teamName}</Typography>
       <Typography sx={{ mt: 0.35, fontSize: 10.5, color: '#7b8797' }}>{subtitle}</Typography>
 
-      <Box sx={{ display: 'flex', mt: 1.4, mb: 1.7 }}>
-        <Button
-          variant="outlined"
-          sx={{ minHeight: 31, px: 1.6, borderColor: '#e2e8f0', color: '#334155', bgcolor: '#fff', textTransform: 'none', fontSize: 10.5, fontWeight: 800, borderRadius: '6px 0 0 6px' }}
-        >
-          Agregar atletas
-        </Button>
-        <Button
-          onClick={() => navigate(`/torneos/${torneoId}/equipos`)}
-          sx={{ minHeight: 31, px: 1.6, color: '#64748b', bgcolor: '#f8fafc', textTransform: 'none', fontSize: 10.5, borderRadius: '0 6px 6px 0' }}
-        >
-          Gestionar roster
-        </Button>
-      </Box>
-
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 3fr) minmax(330px, 2fr)' }, gap: 1.4, alignItems: 'start' }}>
         <Box sx={{ border: '1px solid #e7ebf1', borderRadius: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.05)', overflow: 'hidden' }}>
           <Box sx={{ px: 1.5, pt: 1.4, pb: 1 }}>
@@ -280,7 +317,6 @@ function RosterAtletasView() {
               />
               {[
                 ['sexo', 'Sexo', options.sexos],
-                ['categoria', 'Categoria', options.categorias],
                 ['division', 'Division', options.divisiones]
               ].map(([field, label, values]) => (
                 <TextField
@@ -296,6 +332,28 @@ function RosterAtletasView() {
                   {values.map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
                 </TextField>
               ))}
+              <TextField
+                select
+                size="small"
+                label="Categorías"
+                value={filters.categoria}
+                onChange={(event) => {
+                  const { value } = event.target;
+                  setFilters((previous) => ({ ...previous, categoria: typeof value === 'string' ? value.split(',') : value }));
+                }}
+                SelectProps={{
+                  multiple: true,
+                  renderValue: (selected) => selected.length > 0 ? selected.join(', ') : 'Todas'
+                }}
+                sx={{ '& .MuiInputBase-root': { height: 34, fontSize: 10.5 }, '& .MuiInputLabel-root': { fontSize: 10.5 } }}
+              >
+                {options.categorias.map((categoria) => (
+                  <MenuItem key={categoria} value={categoria}>
+                    <Checkbox size="small" checked={filters.categoria.includes(categoria)} />
+                    <ListItemText primary={categoria} />
+                  </MenuItem>
+                ))}
+              </TextField>
               <TextField
                 size="small"
                 type="date"
@@ -319,26 +377,32 @@ function RosterAtletasView() {
           </Box>
 
           <Box sx={{ overflowX: 'auto' }}>
-            <Box sx={{ minWidth: 700 }}>
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1.45fr .8fr .9fr .9fr .8fr 72px', gap: 1, px: 1.5, py: 0.8, borderTop: '1px solid #eef2f6', borderBottom: '1px solid #eef2f6', bgcolor: '#fbfcfd' }}>
-                {['ATLETA', 'SEXO', 'CATEGORIA', 'DIVISION', 'F. NAC.', ''].map((label, index) => (
+            <Box sx={{ minWidth: 880 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1.35fr .65fr .85fr .85fr .75fr 1fr .8fr 72px', gap: 1, px: 1.5, py: 0.8, borderTop: '1px solid #eef2f6', borderBottom: '1px solid #eef2f6', bgcolor: '#fbfcfd' }}>
+                {['ATLETA', 'SEXO', 'CATEGORÍA', 'DIVISIÓN', 'F. NAC.', 'SEDE', 'SOLVENCIA', ''].map((label, index) => (
                   <Typography key={`${label}-${index}`} sx={{ fontSize: 8.5, color: '#94a3b8', fontWeight: 800 }}>{label}</Typography>
                 ))}
               </Box>
-              {filteredAthletes.map((athlete) => {
+              {paginatedAthletes.map((athlete) => {
                 const athleteId = getId(athlete);
                 const selected = selectedIds.has(athleteId);
                 const blocked = athlete.ya_en_otro_roster && !selected;
                 return (
                   <Box
                     key={athleteId}
-                    sx={{ display: 'grid', gridTemplateColumns: '1.45fr .8fr .9fr .9fr .8fr 72px', gap: 1, alignItems: 'center', px: 1.5, py: 0.8, minHeight: 38, borderBottom: '1px solid #f1f5f9', bgcolor: selected ? '#fff9f6' : '#fff' }}
+                    sx={{ display: 'grid', gridTemplateColumns: '1.35fr .65fr .85fr .85fr .75fr 1fr .8fr 72px', gap: 1, alignItems: 'center', px: 1.5, py: 0.8, minHeight: 38, borderBottom: '1px solid #f1f5f9', bgcolor: selected ? '#fff9f6' : '#fff' }}
                   >
                     <Typography noWrap sx={{ fontSize: 10.5, fontWeight: 700 }}>{athlete.nombre_completo || 'Sin nombre'}</Typography>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.sexo || '-'}</Typography>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.categoria || '-'}</Typography>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.division || '-'}</Typography>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{formatDate(athlete.fecha_nacimiento)}</Typography>
+                    <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.sede_nombre || '-'}</Typography>
+                    <Chip
+                      size="small"
+                      label={getSolvencia(athlete)}
+                      sx={{ justifySelf: 'start', height: 20, maxWidth: '100%', fontSize: 8.5, fontWeight: 700, bgcolor: getSolvencia(athlete) === 'Solvente' ? '#dcfce7' : '#fee2e2', color: getSolvencia(athlete) === 'Solvente' ? '#166534' : '#b91c1c' }}
+                    />
                     <Button
                       size="small"
                       variant={selected ? 'outlined' : 'contained'}
@@ -356,6 +420,21 @@ function RosterAtletasView() {
               {filteredAthletes.length === 0 && <Typography sx={{ p: 2, fontSize: 11, color: '#64748b' }}>No hay atletas que coincidan con los filtros.</Typography>}
             </Box>
           </Box>
+          <TablePagination
+            component="div"
+            count={filteredAthletes.length}
+            page={page}
+            onPageChange={(event, nextPage) => setPage(nextPage)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(event) => {
+              setRowsPerPage(Number(event.target.value));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[10, 25, 50]}
+            labelRowsPerPage="Filas por página:"
+            labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`}
+            sx={{ borderTop: '1px solid #eef2f6', '& .MuiTablePagination-toolbar': { minHeight: 42 }, '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows, & .MuiTablePagination-input': { fontSize: 10 } }}
+          />
         </Box>
 
         <Box sx={{ border: '1px solid #e7ebf1', borderRadius: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.05)', overflow: 'hidden' }}>
@@ -378,7 +457,7 @@ function RosterAtletasView() {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
                   <Box sx={{ minWidth: 0 }}>
                     <Typography noWrap sx={{ fontSize: 10.5, fontWeight: 800 }}>{athlete.nombre_completo}</Typography>
-                    <Typography noWrap sx={{ fontSize: 9, color: '#94a3b8' }}>{[athlete.sexo, athlete.categoria, athlete.division].filter(Boolean).join(' · ')}</Typography>
+                    <Typography noWrap sx={{ fontSize: 9, color: '#94a3b8' }}>{[athlete.sexo, athlete.categoria, athlete.sede_nombre].filter(Boolean).join(' · ')}</Typography>
                   </Box>
                   <Chip label={statusStyle.label} size="small" sx={{ height: 20, bgcolor: statusStyle.bg, color: statusStyle.color, fontSize: 8.5, fontWeight: 800 }} />
                 </Box>

@@ -25,6 +25,38 @@ import { useNavigate } from 'react-router-dom';
 import RosterCreateDialog from './RosterCreateDialog';
 import RosterTemplateDialog from './RosterTemplateDialog';
 
+function TournamentFormCard({ mode, name, description, deadline, error, onNameChange, onDescriptionChange, onDeadlineChange }) {
+  const isCreate = mode === 'create';
+  const fieldSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 1.2,
+      bgcolor: '#fff',
+      '& fieldset': { borderColor: '#e6ebf2' },
+      '&:hover fieldset': { borderColor: '#d7dee8' },
+      '&.Mui-focused fieldset': { borderColor: '#c9d3e0' }
+    }
+  };
+
+  return (
+    <Box sx={{ bgcolor: '#fff', borderRadius: 2.5, p: 2.25, border: '1px solid #eef2f6', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
+      <Typography sx={{ fontSize: 15, fontWeight: 700, color: '#0f172a', mb: 1.5 }}>Datos del torneo</Typography>
+      <Box sx={{ mb: 1.25 }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>Nombre del torneo / liga *</Typography>
+        <TextField fullWidth size="small" value={name} onChange={onNameChange} placeholder={isCreate ? 'Ej. Liga Metropolitana 2026' : ''} sx={fieldSx} />
+      </Box>
+      <Box sx={{ mb: 1.25 }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>Descripción</Typography>
+        <TextField fullWidth size="small" multiline minRows={2} value={description} onChange={onDescriptionChange} placeholder={isCreate ? 'Sede, disciplina, formato de competencia...' : ''} sx={fieldSx} />
+      </Box>
+      <Box>
+        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>Fecha límite de respuesta *</Typography>
+        <TextField type="date" fullWidth size="small" value={deadline} onChange={onDeadlineChange} sx={fieldSx} />
+      </Box>
+      {error && <Typography variant="body2" color="error" sx={{ mt: 1 }}>{error}</Typography>}
+    </Box>
+  );
+}
+
 function Torneos() {
   const token = localStorage.getItem('token');
   const navigate = useNavigate();
@@ -43,7 +75,7 @@ function Torneos() {
   const [rosterDialogOpen, setRosterDialogOpen] = useState(false);
   const [rosterTemplateOpen, setRosterTemplateOpen] = useState(false);
   const [rosterPrefillTorneoId, setRosterPrefillTorneoId] = useState('');
-  const [expandedTorneoId, setExpandedTorneoId] = useState('');
+  const [, setExpandedTorneoId] = useState('');
 
   const [torneos, setTorneos] = useState([]);
   const [torneosError, setTorneosError] = useState('');
@@ -249,10 +281,6 @@ function Torneos() {
       setNombre(data.nombre || '');
       setDescripcion(data.descripcion || '');
       setFechaLimite(data.fecha_limite ? data.fecha_limite.substring(0, 10) : '');
-      const convocadosIds = Array.isArray(data.convocados)
-        ? data.convocados.map((c) => c.alumno?._id || c.alumno || c._id || c)
-        : [];
-      setConvocados(convocadosIds);
       setOpen(true);
     } catch (err) {
       setSaveError(err.message);
@@ -272,8 +300,7 @@ function Torneos() {
         body: JSON.stringify({
           nombre,
           descripcion,
-          fecha_limite: fechaLimite || null,
-          convocados
+          fecha_limite: fechaLimite || null
         })
       });
       const data = await res.json();
@@ -292,9 +319,11 @@ function Torneos() {
 
   const handleEliminar = async () => {
     if (!torneoAEliminar) return;
+    const torneoId = torneoAEliminar?._id || torneoAEliminar?.id;
+    if (!torneoId) return;
 
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoAEliminar}`, {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}`, {
         method: 'DELETE',
         headers: buildAuthHeaders()
       });
@@ -613,45 +642,26 @@ function Torneos() {
         open={open}
         onClose={handleClose}
         fullWidth
-        maxWidth="xl"
-        PaperProps={{ sx: { width: '95vw', maxWidth: 1400 } }}
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 2, maxWidth: 470, boxShadow: '0 20px 42px rgba(15, 23, 42, 0.2)' } }}
       >
-        <DialogTitle>Editar Torneo</DialogTitle>
-        <DialogContent sx={{ bgcolor: '#f8fafc' }}>
-          <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={4}>
-              <Box sx={{ bgcolor: '#fff', borderRadius: 3, p: 2.5, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a', mb: 1 }}>
-                  Datos del torneo
-                </Typography>
-                <TextField label="Nombre" fullWidth margin="normal" value={nombre} onChange={(e) => setNombre(e.target.value)} />
-                <TextField
-                  label="Descripcion"
-                  fullWidth
-                  margin="normal"
-                  multiline
-                  rows={3}
-                  value={descripcion}
-                  onChange={(e) => setDescripcion(e.target.value)}
-                />
-                <TextField
-                  label="Fecha limite de respuesta"
-                  type="date"
-                  fullWidth
-                  margin="normal"
-                  InputLabelProps={{ shrink: true }}
-                  value={fechaLimite}
-                  onChange={(e) => setFechaLimite(e.target.value)}
-                />
-                {saveError && (
-                  <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-                    {saveError}
-                  </Typography>
-                )}
-              </Box>
+        <DialogTitle sx={{ px: 2.6, pt: 2.1, pb: 1, fontWeight: 800, color: '#1f2937', fontSize: 22 }}>Editar torneo</DialogTitle>
+        <DialogContent sx={{ px: 2.6, pt: '4px !important', pb: 1 }}>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12 }}>
+              <TournamentFormCard
+                mode="edit"
+                name={nombre}
+                description={descripcion}
+                deadline={fechaLimite}
+                error={saveError}
+                onNameChange={(event) => setNombre(event.target.value)}
+                onDescriptionChange={(event) => setDescripcion(event.target.value)}
+                onDeadlineChange={(event) => setFechaLimite(event.target.value)}
+              />
             </Grid>
 
-            <Grid item xs={12} md={8}>
+            {false && <Grid item xs={12} md={8}>
               <Box sx={{ bgcolor: '#fff', borderRadius: 3, p: 2.5, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
@@ -801,12 +811,12 @@ function Torneos() {
                   />
                 </Box>
               </Box>
-            </Grid>
+            </Grid>}
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleGuardar} variant="contained" sx={{ backgroundColor: '#ff7a00' }} disabled={!nombre || saveLoading}>
+        <DialogActions sx={{ px: 2.6, pb: 2, pt: 0.7 }}>
+          <Button onClick={handleClose} variant="outlined" size="small" sx={{ textTransform: 'none', borderRadius: 1.6, borderColor: '#e2e8f0', color: '#64748b', minWidth: 72, fontWeight: 700 }}>Cancelar</Button>
+          <Button onClick={handleGuardar} variant="contained" size="small" sx={{ textTransform: 'none', borderRadius: 1.6, bgcolor: '#f97316', boxShadow: 'none', minWidth: 72, fontWeight: 700, '&:hover': { bgcolor: '#ea580c' } }} disabled={!nombre || saveLoading}>
             {saveLoading ? 'Guardando...' : 'Guardar'}
           </Button>
         </DialogActions>
@@ -829,79 +839,16 @@ function Torneos() {
           Crear torneo
         </DialogTitle>
         <DialogContent sx={{ px: 2.6, pt: '4px !important', pb: 1 }}>
-          <Box sx={{ mb: 1.25 }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>
-              Nombre del torneo / liga *
-            </Typography>
-            <TextField
-              fullWidth
-              size="small"
-              value={crearNombre}
-              onChange={(e) => setCrearNombre(e.target.value)}
-              placeholder="Ej. Liga Metropolitana 2026"
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 1.2,
-                  bgcolor: '#fff',
-                  '& fieldset': { borderColor: '#e6ebf2' },
-                  '&:hover fieldset': { borderColor: '#d7dee8' },
-                  '&.Mui-focused fieldset': { borderColor: '#c9d3e0' }
-                }
-              }}
-            />
-          </Box>
-
-          <Box sx={{ mb: 1.25 }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>
-              Descripcion
-            </Typography>
-            <TextField
-              fullWidth
-              size="small"
-              multiline
-              minRows={2}
-              value={crearDescripcion}
-              onChange={(e) => setCrearDescripcion(e.target.value)}
-              placeholder="Sede, disciplina, formato de competencia..."
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 1.2,
-                  bgcolor: '#fff',
-                  '& fieldset': { borderColor: '#e6ebf2' },
-                  '&:hover fieldset': { borderColor: '#d7dee8' },
-                  '&.Mui-focused fieldset': { borderColor: '#c9d3e0' }
-                }
-              }}
-            />
-          </Box>
-
-          <Box>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c8798', mb: 0.45 }}>
-              Fecha limite de respuesta *
-            </Typography>
-            <TextField
-              type="date"
-              fullWidth
-              size="small"
-              value={crearFechaLimite}
-              onChange={(e) => setCrearFechaLimite(e.target.value)}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 1.2,
-                  bgcolor: '#fff',
-                  '& fieldset': { borderColor: '#e6ebf2' },
-                  '&:hover fieldset': { borderColor: '#d7dee8' },
-                  '&.Mui-focused fieldset': { borderColor: '#c9d3e0' }
-                }
-              }}
-            />
-          </Box>
-
-          {crearError && (
-            <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-              {crearError}
-            </Typography>
-          )}
+          <TournamentFormCard
+            mode="create"
+            name={crearNombre}
+            description={crearDescripcion}
+            deadline={crearFechaLimite}
+            error={crearError}
+            onNameChange={(event) => setCrearNombre(event.target.value)}
+            onDescriptionChange={(event) => setCrearDescripcion(event.target.value)}
+            onDeadlineChange={(event) => setCrearFechaLimite(event.target.value)}
+          />
         </DialogContent>
         <DialogActions sx={{ px: 2.6, pb: 2, pt: 0.7 }}>
           <Button
@@ -954,17 +901,30 @@ function Torneos() {
           return (
             <Box
               key={torneoId}
+              role="button"
+              tabIndex={0}
+              aria-label={`Ver equipos de ${torneo.nombre}`}
+              onClick={() => navigate(`/torneos/${torneoId}/equipos`)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  navigate(`/torneos/${torneoId}/equipos`);
+                }
+              }}
               sx={{
                 borderRadius: 1.8,
                 border: '1px solid #e5e7eb',
                 boxShadow: '0 8px 22px rgba(15, 23, 42, 0.07)',
                 bgcolor: '#fff',
                 overflow: 'hidden',
-                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                cursor: 'pointer',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease',
                 '&:hover': {
                   borderColor: '#dbe3ef',
-                  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.1)'
-                }
+                  boxShadow: '0 10px 24px rgba(15, 23, 42, 0.1)',
+                  transform: 'translateY(-1px)'
+                },
+                '&:focus-visible': { outline: '2px solid #f97316', outlineOffset: 2 }
               }}
             >
               <Box sx={{ px: 1.3, py: 1.05, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1021,7 +981,10 @@ function Torneos() {
                   <Button
                     size="small"
                     variant="contained"
-                    onClick={() => navigate(`/torneos/${torneoId}/equipos`)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      navigate(`/torneos/${torneoId}/equipos`);
+                    }}
                     sx={{
                       borderRadius: 1.4,
                       textTransform: 'none',
@@ -1041,7 +1004,10 @@ function Torneos() {
                   <Button
                     size="small"
                     variant="outlined"
-                    onClick={() => handleEditar(torneo)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleEditar(torneo);
+                    }}
                     sx={{
                       borderRadius: 1.4,
                       textTransform: 'none',
@@ -1060,8 +1026,9 @@ function Torneos() {
                     size="small"
                     variant="outlined"
                     color="error"
-                    onClick={() => {
-                      setTorneoAEliminar(torneo._id || torneo.id);
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setTorneoAEliminar(torneo);
                       setDialogEliminarOpen(true);
                     }}
                     sx={{
@@ -1290,14 +1257,45 @@ function Torneos() {
         })}
       </Box>
 
-      <Dialog open={dialogEliminarOpen} onClose={() => setDialogEliminarOpen(false)}>
-        <DialogTitle>Eliminar torneo</DialogTitle>
-        <DialogContent>
-          <Typography>Esta seguro de eliminar este torneo?</Typography>
+      <Dialog
+        open={dialogEliminarOpen}
+        onClose={() => {
+          setDialogEliminarOpen(false);
+          setTorneoAEliminar(null);
+        }}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3, boxShadow: '0 20px 44px rgba(15, 23, 42, 0.22)' } }}
+      >
+        <DialogContent sx={{ px: 3, pt: 3, pb: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.25 }}>
+            <Box sx={{ width: 32, height: 32, display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: '#fff1f2', color: '#dc2626' }}>
+              <DeleteIcon sx={{ fontSize: 17 }} />
+            </Box>
+            <Typography sx={{ fontSize: 20, fontWeight: 800, color: '#172033' }}>Eliminar torneo</Typography>
+          </Box>
+          <Typography sx={{ mt: 0.8, fontSize: 13.5, lineHeight: 1.55, color: '#64748b' }}>
+            Se eliminará permanentemente el torneo
+          </Typography>
+          <Typography sx={{ mt: 0.5, p: 1.2, borderRadius: 1.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 14, fontWeight: 800, color: '#0f172a' }}>
+            {torneoAEliminar?.nombre || 'Torneo seleccionado'}
+          </Typography>
+          <Typography sx={{ mt: 1, fontSize: 12, color: '#b42318' }}>Esta acción no se puede deshacer.</Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogEliminarOpen(false)}>Cancelar</Button>
-          <Button onClick={handleEliminar} color="error" variant="contained">Eliminar</Button>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button
+            onClick={() => {
+              setDialogEliminarOpen(false);
+              setTorneoAEliminar(null);
+            }}
+            variant="outlined"
+            sx={{ borderColor: '#d0d5dd', color: '#344054', textTransform: 'none', fontWeight: 700 }}
+          >
+            Cancelar
+          </Button>
+          <Button onClick={handleEliminar} color="error" variant="contained" startIcon={<DeleteIcon />} sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none' }}>
+            Eliminar torneo
+          </Button>
         </DialogActions>
       </Dialog>
 

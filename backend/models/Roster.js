@@ -11,12 +11,27 @@ const RosterDocumentLogoSchema = new mongoose.Schema({
 
 const RosterDocumentSchema = new mongoose.Schema({
   incluir_fotos_cedula: { type: Boolean, default: false },
+  logos_inicializados: { type: Boolean, default: false },
   campos: {
+    titulo: { type: String, trim: true },
+    subtitulo: { type: String, trim: true },
+    texto_institucional: { type: String, trim: true },
+    federacion_linea_1: { type: String, trim: true },
+    federacion_linea_2: { type: String, trim: true },
+    federacion_linea_3: { type: String, trim: true },
     club: { type: String, default: '', trim: true },
     categoria: { type: String, default: '', trim: true },
     equipo: { type: String, default: '', trim: true },
     entrenador_principal: { type: String, default: '', trim: true },
-    asistente: { type: String, default: '', trim: true }
+    asistente: { type: String, default: '', trim: true },
+    asistentes: {
+      type: [{ type: String, trim: true }],
+      default: [],
+      validate: {
+        validator: (value) => !Array.isArray(value) || value.length <= 4,
+        message: 'Solo se permiten hasta 4 asistentes por roster.'
+      }
+    }
   },
   logos: {
     type: [RosterDocumentLogoSchema],

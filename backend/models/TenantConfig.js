@@ -135,23 +135,29 @@ const PublicacionesSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const RosterTemplateLogoSchema = new mongoose.Schema({
+  url: { type: String, required: true, trim: true },
+  x: { type: Number, min: 0, max: 1, default: 0.04 },
+  y: { type: Number, min: 0, max: 1, default: 0.025 },
+  width: { type: Number, min: 0.03, max: 0.5, default: 0.12 },
+  height: { type: Number, min: 0.02, max: 0.3, default: 0.08 },
+  zIndex: { type: Number, default: 1 }
+}, { _id: true });
+
 const RosterTemplateSchema = new mongoose.Schema({
   header_title: { type: String, default: '' },
-  federacion_linea_1: { type: String, default: '' },
-  federacion_linea_2: { type: String, default: '' },
-  federacion_linea_3: { type: String, default: '' },
-  temporada_texto: { type: String, default: '' },
+  texto_institucional: { type: String, default: '' },
   equipo_label: { type: String, default: '' },
   club_label: { type: String, default: '' },
   categoria_label: { type: String, default: '' },
   entrenador_principal_label: { type: String, default: '' },
   asistente_label: { type: String, default: '' },
   logos: {
-    type: [{ type: String }],
+    type: [RosterTemplateLogoSchema],
     default: [],
     validate: {
-      validator: (arr) => Array.isArray(arr) && arr.length <= 3,
-      message: 'Solo se permiten hasta 3 logos en membrete de roster.'
+      validator: (arr) => Array.isArray(arr) && arr.length <= 4,
+      message: 'Solo se permiten hasta 4 logos en membrete de roster.'
     }
   }
 }, { _id: false });
