@@ -533,6 +533,7 @@ exports.actualizarJugadoresRoster = async (req, res) => {
     }
 
     roster.jugadores = jugadores;
+    roster.jugadores_datos = (roster.jugadores_datos || []).filter((item) => seleccionados.has(String(item.alumno)));
     roster.updated_by = req.user?.id || req.user?._id || roster.updated_by;
     await torneo.save();
     await roster.save();
@@ -540,6 +541,50 @@ exports.actualizarJugadoresRoster = async (req, res) => {
     return res.json({ message: 'Atletas del roster actualizados', roster });
   } catch (err) {
     return res.status(500).json({ error: 'No se pudieron actualizar los atletas del roster', detalle: err.message });
+  }
+};
+
+exports.actualizarProcedenciaJugadorRoster = async (req, res) => {
+  try {
+    const { Roster } = await getTenantRosterModels(req);
+    const rosterId = cleanValue(req.params?.id);
+    const alumnoId = cleanValue(req.params?.alumnoId);
+    if (!mongoose.Types.ObjectId.isValid(rosterId) || !mongoose.Types.ObjectId.isValid(alumnoId)) {
+      return res.status(400).json({ error: 'Id de roster o atleta invalido' });
+    }
+
+    const fechaCambioPrestamo = parseOptionalDate(req.body?.fecha_cambio_prestamo);
+    if (fechaCambioPrestamo === undefined) {
+      return res.status(400).json({ error: 'La fecha de cambio o prestamo no es valida' });
+    }
+
+    const roster = await Roster.findById(rosterId);
+    if (!roster) return res.status(404).json({ error: 'Roster no encontrado' });
+    if (!(roster.jugadores || []).some((id) => String(id) === alumnoId)) {
+      return res.status(404).json({ error: 'El atleta no pertenece a este roster' });
+    }
+
+    const clubProcedencia = cleanValue(req.body?.club_procedencia);
+    const existingIndex = (roster.jugadores_datos || []).findIndex((item) => String(item.alumno) === alumnoId);
+    if (!clubProcedencia && !fechaCambioPrestamo) {
+      if (existingIndex >= 0) roster.jugadores_datos.splice(existingIndex, 1);
+    } else if (existingIndex >= 0) {
+      roster.jugadores_datos[existingIndex].club_procedencia = clubProcedencia;
+      roster.jugadores_datos[existingIndex].fecha_cambio_prestamo = fechaCambioPrestamo;
+    } else {
+      roster.jugadores_datos.push({
+        alumno: alumnoId,
+        club_procedencia: clubProcedencia,
+        fecha_cambio_prestamo: fechaCambioPrestamo
+      });
+    }
+
+    roster.updated_by = req.user?.id || req.user?._id || roster.updated_by;
+    await roster.save();
+    const jugadorDato = (roster.jugadores_datos || []).find((item) => String(item.alumno) === alumnoId) || null;
+    return res.json({ message: 'Datos de procedencia actualizados', jugador_dato: jugadorDato });
+  } catch (err) {
+    return res.status(500).json({ error: 'No se pudieron actualizar los datos de procedencia', detalle: err.message });
   }
 };
 
@@ -1069,9 +1114,14 @@ function formatRosterDate(value) {
 }
 
 function buildRosterPlayers(roster = {}) {
+  const jugadoresDatos = new Map(
+    (Array.isArray(roster.jugadores_datos) ? roster.jugadores_datos : [])
+      .map((item) => [String(item?.alumno?._id || item?.alumno || ''), item])
+  );
   const alumnos = (Array.isArray(roster.jugadores) ? roster.jugadores : []).map((item) => {
     const representante = `${item?.representante?.nombres || ''} ${item?.representante?.apellidos || ''}`.trim();
     const telefono = cleanValue(item?.representante?.telefono || item?.telefono);
+    const jugadorDato = jugadoresDatos.get(String(item?._id)) || {};
     return {
       _id: item?._id,
       nombres: cleanValue(item?.nombres),
@@ -1083,7 +1133,7 @@ function buildRosterPlayers(roster = {}) {
       foto: cleanValue(item?.foto),
       foto_cedula: cleanValue(item?.foto_cedula),
       representante: [representante, telefono].filter(Boolean).join(' · '),
-      procedencia: ''
+      procedencia: [cleanValue(jugadorDato.club_procedencia), formatRosterDate(jugadorDato.fecha_cambio_prestamo)].filter(Boolean).join(' · ')
     };
   });
   const prestamos = (Array.isArray(roster.prestamos) ? roster.prestamos : []).map((item) => ({

@@ -64,6 +64,11 @@ const EMPTY_LOAN = {
   fecha_prestamo: ''
 };
 
+const EMPTY_PLAYER_ORIGIN = {
+  club_procedencia: '',
+  fecha_cambio_prestamo: ''
+};
+
 function normalizeDocumentFields(fields = {}) {
   const asistentes = (Array.isArray(fields.asistentes) ? fields.asistentes : [fields.asistente])
     .map((value) => String(value || '').trim())
@@ -79,7 +84,14 @@ function formatRosterDate(value) {
 }
 
 function getRosterPlayers(roster) {
-  const alumnos = (roster?.jugadores || []).map((player) => ({ ...player, rowType: 'alumno' }));
+  const jugadoresDatos = new Map(
+    (roster?.jugadores_datos || []).map((item) => [String(item?.alumno?._id || item?.alumno || ''), item])
+  );
+  const alumnos = (roster?.jugadores || []).map((player) => ({
+    ...player,
+    rowType: 'alumno',
+    jugadorDato: jugadoresDatos.get(String(player._id)) || null
+  }));
   const prestamos = (roster?.prestamos || []).map((player) => ({ ...player, rowType: 'prestamo' }));
   return [...alumnos, ...prestamos];
 }
@@ -103,6 +115,9 @@ function RosterDocumentEditor() {
   const [editingLoan, setEditingLoan] = useState('');
   const [loanForm, setLoanForm] = useState(EMPTY_LOAN);
   const [loanFiles, setLoanFiles] = useState({ foto: null, foto_cedula: null });
+  const [editingPlayerOrigin, setEditingPlayerOrigin] = useState('');
+  const [savingPlayerOrigin, setSavingPlayerOrigin] = useState(false);
+  const [playerOriginForm, setPlayerOriginForm] = useState(EMPTY_PLAYER_ORIGIN);
   const [paperScale, setPaperScale] = useState(1);
   const [notice, setNotice] = useState({ open: false, severity: 'success', message: '' });
 
@@ -331,6 +346,58 @@ function RosterDocumentEditor() {
     }
   };
 
+  const startEditingPlayerOrigin = (player) => {
+    const jugadorDato = player.jugadorDato || {};
+    setEditingPlayerOrigin(player._id);
+    setPlayerOriginForm({
+      club_procedencia: jugadorDato.club_procedencia || '',
+      fecha_cambio_prestamo: jugadorDato.fecha_cambio_prestamo
+        ? String(jugadorDato.fecha_cambio_prestamo).substring(0, 10)
+        : ''
+    });
+  };
+
+  const cancelEditingPlayerOrigin = () => {
+    setEditingPlayerOrigin('');
+    setPlayerOriginForm(EMPTY_PLAYER_ORIGIN);
+  };
+
+  const persistPlayerOrigin = async (payload, successMessage) => {
+    if (!editingPlayerOrigin) return;
+    const playerId = editingPlayerOrigin;
+    setSavingPlayerOrigin(true);
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/rosters/${rosterId}/jugadores/${playerId}/procedencia`, {
+        method: 'PATCH',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || 'No se pudieron guardar los datos de procedencia');
+      setRoster((current) => {
+        const currentData = current?.jugadores_datos || [];
+        const remaining = currentData.filter((item) => String(item?.alumno?._id || item?.alumno) !== playerId);
+        return {
+          ...current,
+          jugadores_datos: data.jugador_dato ? [...remaining, data.jugador_dato] : remaining
+        };
+      });
+      setNotice({ open: true, severity: 'success', message: successMessage });
+      cancelEditingPlayerOrigin();
+    } catch (error) {
+      setNotice({ open: true, severity: 'error', message: error.message });
+    } finally {
+      setSavingPlayerOrigin(false);
+    }
+  };
+
+  const savePlayerOrigin = () => persistPlayerOrigin(playerOriginForm, 'Datos de procedencia actualizados.');
+
+  const clearPlayerOrigin = () => persistPlayerOrigin(
+    EMPTY_PLAYER_ORIGIN,
+    'Datos de procedencia eliminados.'
+  );
+
   const download = async (format) => {
     try {
       const saved = await saveDocument();
@@ -513,7 +580,9 @@ function RosterDocumentEditor() {
                         ? player.telefono
                         : player.representante?.telefono || player.telefono || ''
                     ].filter(Boolean).join(' / ')}</td>
-                    <td>{player.rowType === 'prestamo' ? [player.club_procedencia, formatRosterDate(player.fecha_prestamo)].filter(Boolean).join(' / ') : ''}</td>
+                    <td>{player.rowType === 'prestamo'
+                      ? [player.club_procedencia, formatRosterDate(player.fecha_prestamo)].filter(Boolean).join(' / ')
+                      : [player.jugadorDato?.club_procedencia, formatRosterDate(player.jugadorDato?.fecha_cambio_prestamo)].filter(Boolean).join(' / ')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -728,6 +797,57 @@ function RosterDocumentEditor() {
                 <Button fullWidth variant="outlined" startIcon={<DeleteOutlineIcon />} disabled={!selectedLogo} onClick={removeSelectedLogo} sx={{ borderColor: '#dfe5ec', color: '#667085', textTransform: 'none', fontWeight: 700 }}>
                   Quitar logo
                 </Button>
+              </Stack>
+            </AccordionDetails>
+          </Accordion>
+
+          <Accordion disableGutters sx={sectionSx}>
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#7b8798' }} />} sx={{ minHeight: 54, px: 2 }}>
+              <Box>
+                <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#253047' }}>Datos de procedencia</Typography>
+                <Typography sx={{ fontSize: 10.5, color: '#8a96a8', mt: 0.2 }}>Club y fecha para atletas de la academia</Typography>
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: 2, pt: 0, pb: 2 }}>
+              <Stack spacing={0.8}>
+                {rosterPlayers.filter((player) => player.rowType === 'alumno').map((player) => {
+                  const isEditing = editingPlayerOrigin === player._id;
+                  const originSummary = [player.jugadorDato?.club_procedencia, formatRosterDate(player.jugadorDato?.fecha_cambio_prestamo)].filter(Boolean).join(' · ');
+                  return (
+                    <Box key={player._id} sx={{ p: 1, bgcolor: isEditing ? '#fff7ed' : '#fafbfc', border: `1px solid ${isEditing ? '#fdba74' : '#e8ecf2'}`, borderRadius: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography noWrap sx={{ fontSize: 11.5, fontWeight: 800, color: '#344054' }}>{`${player.nombres || ''} ${player.apellidos || ''}`.trim()}</Typography>
+                          <Typography noWrap sx={{ fontSize: 10, color: originSummary ? '#667085' : '#98a2b3' }}>{originSummary || 'Sin datos de procedencia'}</Typography>
+                        </Box>
+                        <Tooltip title="Editar datos de procedencia">
+                          <IconButton size="small" disabled={savingPlayerOrigin} onClick={() => startEditingPlayerOrigin(player)} aria-label="Editar datos de procedencia" sx={{ color: isEditing ? '#dc5f16' : '#667085' }}>
+                            <EditOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                      {isEditing && (
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.8, mt: 1 }}>
+                          <TextField label="Club de procedencia" value={playerOriginForm.club_procedencia} onChange={(event) => setPlayerOriginForm((current) => ({ ...current, club_procedencia: event.target.value }))} size="small" sx={fieldSx} />
+                          <TextField label="Fecha de cambio o préstamo" type="date" value={playerOriginForm.fecha_cambio_prestamo} onChange={(event) => setPlayerOriginForm((current) => ({ ...current, fecha_cambio_prestamo: event.target.value }))} size="small" InputLabelProps={{ shrink: true }} sx={fieldSx} />
+                          <Box sx={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: player.jugadorDato ? '1fr 1fr 1fr' : '1fr 1fr', gap: 0.8 }}>
+                            <Button size="small" onClick={savePlayerOrigin} disabled={savingPlayerOrigin} variant="contained" startIcon={savingPlayerOrigin ? <CircularProgress size={14} color="inherit" /> : <SaveOutlinedIcon />} sx={{ height: 36, bgcolor: '#dc5f16', textTransform: 'none', fontWeight: 800, boxShadow: 'none', '&:hover': { bgcolor: '#bd4d0d', boxShadow: 'none' } }}>
+                              {savingPlayerOrigin ? 'Guardando...' : 'Guardar'}
+                            </Button>
+                            {player.jugadorDato && (
+                              <Button size="small" onClick={clearPlayerOrigin} disabled={savingPlayerOrigin} variant="outlined" startIcon={<DeleteOutlineIcon />} sx={{ height: 36, borderColor: '#fda29b', color: '#b42318', textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                Quitar datos
+                              </Button>
+                            )}
+                            <Button size="small" onClick={cancelEditingPlayerOrigin} disabled={savingPlayerOrigin} variant="outlined" sx={{ height: 36, borderColor: '#d0d5dd', color: '#475467', textTransform: 'none', fontWeight: 700 }}>
+                              Cancelar
+                            </Button>
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })}
               </Stack>
             </AccordionDetails>
           </Accordion>

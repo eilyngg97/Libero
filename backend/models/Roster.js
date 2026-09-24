@@ -57,6 +57,12 @@ const RosterPrestamoSchema = new mongoose.Schema({
   foto_cedula: { type: String, default: '', trim: true }
 }, { timestamps: true });
 
+const RosterJugadorDatoSchema = new mongoose.Schema({
+  alumno: { type: mongoose.Schema.Types.ObjectId, ref: 'Alumno', required: true },
+  club_procedencia: { type: String, default: '', trim: true },
+  fecha_cambio_prestamo: { type: Date, default: null }
+}, { _id: false });
+
 const RosterSchema = new mongoose.Schema({
   torneo: { type: mongoose.Schema.Types.ObjectId, ref: 'Torneo', required: true, index: true },
   liga_name: { type: String, default: '' },
@@ -65,6 +71,7 @@ const RosterSchema = new mongoose.Schema({
   division: { type: String, default: '', trim: true },
   grupo_competicion: { type: String, required: true, trim: true },
   jugadores: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Alumno' }],
+  jugadores_datos: { type: [RosterJugadorDatoSchema], default: [] },
   prestamos: { type: [RosterPrestamoSchema], default: [] },
   documento: { type: RosterDocumentSchema, default: () => ({}) },
   status: { type: String, enum: ['borrador', 'oficial', 'finalizado'], default: 'borrador' },

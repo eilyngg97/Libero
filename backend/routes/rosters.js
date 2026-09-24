@@ -35,6 +35,7 @@ router.get('/eligible-students', authMiddleware, rolMiddleware('admin'), rosterC
 router.post('/', authMiddleware, rolMiddleware('admin'), rosterController.crearRoster);
 router.patch('/:id/status', authMiddleware, rolMiddleware('admin'), rosterController.actualizarEstatusRoster);
 router.patch('/:id/jugadores', authMiddleware, rolMiddleware('admin'), rosterController.actualizarJugadoresRoster);
+router.patch('/:id/jugadores/:alumnoId/procedencia', authMiddleware, rolMiddleware('admin'), rosterController.actualizarProcedenciaJugadorRoster);
 router.post('/:id/prestamos', authMiddleware, rolMiddleware('admin'), uploadRosterLogo.fields([
 	{ name: 'foto', maxCount: 1 },
 	{ name: 'foto_cedula', maxCount: 1 }
