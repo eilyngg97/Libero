@@ -23,6 +23,8 @@ const DEFAULT_ROSTER_TEMPLATE = {
   logos: []
 };
 
+const DOCUMENT_FOOTER = 'Documento generado por Apex - sistema deportivo 2026';
+
 function cleanValue(value) {
   return String(value || '').trim();
 }
@@ -196,6 +198,28 @@ function parseJugadorIds(jugadoresRaw) {
     .map((id) => cleanValue(id))
     .filter((id) => mongoose.Types.ObjectId.isValid(id));
   return Array.from(new Set(normalized));
+}
+
+function parseOptionalDate(value) {
+  const raw = cleanValue(value);
+  if (!raw) return null;
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function uploadedRosterFiles(req) {
+  return Object.values(req.files || {}).flat().filter(Boolean);
+}
+
+function removeUploadedFiles(files = []) {
+  files.forEach((file) => {
+    if (!file?.path || !fs.existsSync(file.path)) return;
+    try {
+      fs.unlinkSync(file.path);
+    } catch (_) {
+      // La persistencia del roster no debe fallar si el sistema bloquea temporalmente el archivo.
+    }
+  });
 }
 
 exports.listarRosters = async (req, res) => {
@@ -516,6 +540,147 @@ exports.actualizarJugadoresRoster = async (req, res) => {
     return res.json({ message: 'Atletas del roster actualizados', roster });
   } catch (err) {
     return res.status(500).json({ error: 'No se pudieron actualizar los atletas del roster', detalle: err.message });
+  }
+};
+
+exports.agregarPrestamoRoster = async (req, res) => {
+  const uploadedFiles = uploadedRosterFiles(req);
+  try {
+    const { Roster } = await getTenantRosterModels(req);
+    const rosterId = cleanValue(req.params?.id);
+    if (!mongoose.Types.ObjectId.isValid(rosterId)) {
+      removeUploadedFiles(uploadedFiles);
+      return res.status(400).json({ error: 'Id de roster invalido' });
+    }
+
+    const fechaNacimiento = parseOptionalDate(req.body?.fecha_nacimiento);
+    const fechaPrestamo = parseOptionalDate(req.body?.fecha_prestamo);
+    if (fechaNacimiento === undefined || fechaPrestamo === undefined) {
+      removeUploadedFiles(uploadedFiles);
+      return res.status(400).json({ error: 'Una de las fechas no es valida' });
+    }
+
+    const roster = await Roster.findById(rosterId);
+    if (!roster) {
+      removeUploadedFiles(uploadedFiles);
+      return res.status(404).json({ error: 'Roster no encontrado' });
+    }
+
+    const tenantId = resolveRequestTenantId(req);
+    const foto = req.files?.foto?.[0];
+    const fotoCedula = req.files?.foto_cedula?.[0];
+    roster.prestamos.push({
+      nombres: cleanValue(req.body?.nombres),
+      apellidos: cleanValue(req.body?.apellidos),
+      cedula: cleanValue(req.body?.cedula),
+      fecha_nacimiento: fechaNacimiento,
+      numero_franela: cleanValue(req.body?.numero_franela),
+      foto: foto ? `/uploads/${tenantId}/rosters/${foto.filename}` : '',
+      representante: cleanValue(req.body?.representante),
+      telefono: cleanValue(req.body?.telefono),
+      club_procedencia: cleanValue(req.body?.club_procedencia),
+      fecha_prestamo: fechaPrestamo,
+      foto_cedula: fotoCedula ? `/uploads/${tenantId}/rosters/${fotoCedula.filename}` : ''
+    });
+    roster.updated_by = req.user?.id || req.user?._id || roster.updated_by;
+    await roster.save();
+
+    return res.status(201).json({
+      message: 'Atleta prestado agregado al roster',
+      prestamo: roster.prestamos[roster.prestamos.length - 1]
+    });
+  } catch (err) {
+    removeUploadedFiles(uploadedFiles);
+    return res.status(500).json({ error: 'No se pudo agregar el atleta prestado', detalle: err.message });
+  }
+};
+
+exports.actualizarPrestamoRoster = async (req, res) => {
+  const uploadedFiles = uploadedRosterFiles(req);
+  try {
+    const { Roster } = await getTenantRosterModels(req);
+    const rosterId = cleanValue(req.params?.id);
+    const prestamoId = cleanValue(req.params?.prestamoId);
+    if (!mongoose.Types.ObjectId.isValid(rosterId) || !mongoose.Types.ObjectId.isValid(prestamoId)) {
+      removeUploadedFiles(uploadedFiles);
+      return res.status(400).json({ error: 'Id de roster o prestamo invalido' });
+    }
+
+    const fechaNacimiento = parseOptionalDate(req.body?.fecha_nacimiento);
+    const fechaPrestamo = parseOptionalDate(req.body?.fecha_prestamo);
+    if (fechaNacimiento === undefined || fechaPrestamo === undefined) {
+      removeUploadedFiles(uploadedFiles);
+      return res.status(400).json({ error: 'Una de las fechas no es valida' });
+    }
+
+    const roster = await Roster.findById(rosterId);
+    if (!roster) {
+      removeUploadedFiles(uploadedFiles);
+      return res.status(404).json({ error: 'Roster no encontrado' });
+    }
+    const prestamo = roster.prestamos.id(prestamoId);
+    if (!prestamo) {
+      removeUploadedFiles(uploadedFiles);
+      return res.status(404).json({ error: 'Atleta prestado no encontrado' });
+    }
+
+    const tenantId = resolveRequestTenantId(req);
+    const foto = req.files?.foto?.[0];
+    const fotoCedula = req.files?.foto_cedula?.[0];
+    const replacedImagePaths = [
+      foto ? uploadUrlToLocalPath(prestamo.foto) : '',
+      fotoCedula ? uploadUrlToLocalPath(prestamo.foto_cedula) : ''
+    ].filter(Boolean);
+
+    prestamo.set({
+      nombres: cleanValue(req.body?.nombres),
+      apellidos: cleanValue(req.body?.apellidos),
+      cedula: cleanValue(req.body?.cedula),
+      fecha_nacimiento: fechaNacimiento,
+      numero_franela: cleanValue(req.body?.numero_franela),
+      representante: cleanValue(req.body?.representante),
+      telefono: cleanValue(req.body?.telefono),
+      club_procedencia: cleanValue(req.body?.club_procedencia),
+      fecha_prestamo: fechaPrestamo,
+      ...(foto ? { foto: `/uploads/${tenantId}/rosters/${foto.filename}` } : {}),
+      ...(fotoCedula ? { foto_cedula: `/uploads/${tenantId}/rosters/${fotoCedula.filename}` } : {})
+    });
+    roster.updated_by = req.user?.id || req.user?._id || roster.updated_by;
+    await roster.save();
+    removeUploadedFiles(replacedImagePaths.map((filePath) => ({ path: filePath })));
+
+    return res.json({ message: 'Atleta prestado actualizado', prestamo });
+  } catch (err) {
+    removeUploadedFiles(uploadedFiles);
+    return res.status(500).json({ error: 'No se pudo actualizar el atleta prestado', detalle: err.message });
+  }
+};
+
+exports.eliminarPrestamoRoster = async (req, res) => {
+  try {
+    const { Roster } = await getTenantRosterModels(req);
+    const rosterId = cleanValue(req.params?.id);
+    const prestamoId = cleanValue(req.params?.prestamoId);
+    if (!mongoose.Types.ObjectId.isValid(rosterId) || !mongoose.Types.ObjectId.isValid(prestamoId)) {
+      return res.status(400).json({ error: 'Id de roster o prestamo invalido' });
+    }
+
+    const roster = await Roster.findById(rosterId);
+    if (!roster) return res.status(404).json({ error: 'Roster no encontrado' });
+    const prestamo = roster.prestamos.id(prestamoId);
+    if (!prestamo) return res.status(404).json({ error: 'Atleta prestado no encontrado' });
+
+    const imagePaths = [prestamo.foto, prestamo.foto_cedula]
+      .map((url) => uploadUrlToLocalPath(url))
+      .filter(Boolean);
+    prestamo.deleteOne();
+    roster.updated_by = req.user?.id || req.user?._id || roster.updated_by;
+    await roster.save();
+    removeUploadedFiles(imagePaths.map((filePath) => ({ path: filePath })));
+
+    return res.json({ message: 'Atleta prestado eliminado del roster' });
+  } catch (err) {
+    return res.status(500).json({ error: 'No se pudo eliminar el atleta prestado', detalle: err.message });
   }
 };
 
@@ -891,15 +1056,50 @@ async function buildContainedImageDataUri(uploadUrl, width, height) {
   }
 }
 
-function calcularEdad(fechaNacimiento) {
-  if (!fechaNacimiento) return '';
-  const nacimiento = new Date(fechaNacimiento);
-  if (Number.isNaN(nacimiento.getTime())) return '';
-  const hoy = new Date();
-  let edad = hoy.getFullYear() - nacimiento.getFullYear();
-  const diferenciaMes = hoy.getMonth() - nacimiento.getMonth();
-  if (diferenciaMes < 0 || (diferenciaMes === 0 && hoy.getDate() < nacimiento.getDate())) edad -= 1;
-  return edad >= 0 ? `${edad} años` : '';
+function formatRosterDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('es-VE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(date);
+}
+
+function buildRosterPlayers(roster = {}) {
+  const alumnos = (Array.isArray(roster.jugadores) ? roster.jugadores : []).map((item) => {
+    const representante = `${item?.representante?.nombres || ''} ${item?.representante?.apellidos || ''}`.trim();
+    const telefono = cleanValue(item?.representante?.telefono || item?.telefono);
+    return {
+      _id: item?._id,
+      nombres: cleanValue(item?.nombres),
+      apellidos: cleanValue(item?.apellidos),
+      nombre: `${item?.nombres || ''} ${item?.apellidos || ''}`.trim(),
+      cedula: cleanValue(item?.cedula),
+      fecha_nacimiento: formatRosterDate(item?.fecha_nacimiento),
+      numero_franela: item?.numero_franela || '',
+      foto: cleanValue(item?.foto),
+      foto_cedula: cleanValue(item?.foto_cedula),
+      representante: [representante, telefono].filter(Boolean).join(' · '),
+      procedencia: ''
+    };
+  });
+  const prestamos = (Array.isArray(roster.prestamos) ? roster.prestamos : []).map((item) => ({
+    _id: item?._id,
+    nombres: cleanValue(item?.nombres),
+    apellidos: cleanValue(item?.apellidos),
+    nombre: `${item?.nombres || ''} ${item?.apellidos || ''}`.trim(),
+    cedula: cleanValue(item?.cedula),
+    fecha_nacimiento: formatRosterDate(item?.fecha_nacimiento),
+    numero_franela: cleanValue(item?.numero_franela),
+    foto: cleanValue(item?.foto),
+    foto_cedula: cleanValue(item?.foto_cedula),
+    representante: [cleanValue(item?.representante), cleanValue(item?.telefono)].filter(Boolean).join(' · '),
+    procedencia: [cleanValue(item?.club_procedencia), formatRosterDate(item?.fecha_prestamo)].filter(Boolean).join(' · ')
+  }));
+  return [...alumnos, ...prestamos];
 }
 
 function writeRosterTable(doc, jugadores = [], startY = 172) {
@@ -908,22 +1108,23 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
 
   const columns = [
     { key: 'nro', label: 'N°', width: 24 },
-    { key: 'foto', label: 'Foto', width: 72 },
-    { key: 'franela', label: 'Número\nFranela', width: 42 },
-    { key: 'nombres', label: 'Nombre y Apellidos', width: 136 },
-    { key: 'cedula', label: 'Nro. de\nCédula', width: 62 },
-    { key: 'fecha', label: 'Edad\nFecha de Nacimiento', width: 70 },
-    { key: 'representante', label: 'Representante y teléfono', width: 118 }
+    { key: 'nombres', label: 'Nombres y Apellidos de la Atleta', width: 112 },
+    { key: 'cedula', label: 'Cédula', width: 56 },
+    { key: 'fecha', label: 'Fecha de\nnacimiento', width: 62 },
+    { key: 'franela', label: 'Número\nfranela', width: 38 },
+    { key: 'foto', label: 'Foto', width: 64 },
+    { key: 'representante', label: 'Representante y teléfono', width: 86 },
+    { key: 'procedencia', label: 'Club de procedencia y fecha de cambio o préstamo', width: 82 }
   ];
 
-  const headerHeight = 22;
+  const headerHeight = 38;
   const rowHeight = 68;
   const pageBottom = () => doc.page.height - doc.page.margins.bottom;
 
   const drawHeader = (y) => {
     doc.font('Helvetica-Bold').fontSize(7);
     let cursorX = left;
-    doc.rect(left, y, width, headerHeight).fillAndStroke('#f1f1ed', '#000');
+    doc.rect(left, y, width, headerHeight).fillAndStroke('#5b9be6', '#000');
     columns.forEach((col, idx) => {
       if (idx > 0) doc.moveTo(cursorX, y).lineTo(cursorX, y + headerHeight).stroke('#000');
       doc.fillColor('#000').text(col.label, cursorX + 2, y + 3, { width: col.width - 4, height: headerHeight - 4, align: 'center' });
@@ -943,7 +1144,7 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
       franela: jugador.numero_franela || '',
       foto: '',
       representante: jugador.representante || '',
-      club: jugador.club_procedencia || ''
+      procedencia: jugador.procedencia || ''
     };
 
     doc.font('Helvetica').fontSize(7);
@@ -1008,7 +1209,7 @@ function writeRosterIdCards(doc, jugadores = [], startY) {
 
   const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const cardWidth = contentWidth / 2;
-  const cardHeight = 190;
+  const cardHeight = 160;
   const pageBottom = () => doc.page.height - doc.page.margins.bottom;
   let cursorY = startY;
 
@@ -1075,7 +1276,7 @@ exports.exportarRosterPdf = async (req, res) => {
     const documento = normalizeRosterDocument(roster.documento, roster, template);
     const logos = mapDocumentLogosToLocalPaths(documento.logos);
 
-    const doc = new PDFDocument({ margin: 35, size: 'A4' });
+    const doc = new PDFDocument({ margin: 35, size: 'A4', bufferPages: true });
     const buffers = [];
     doc.on('data', buffers.push.bind(buffers));
     doc.on('end', () => {
@@ -1098,10 +1299,10 @@ exports.exportarRosterPdf = async (req, res) => {
       }
     });
 
-    doc.font('Helvetica').fontSize(8).text(documento.campos.texto_institucional, doc.page.width * 0.26, 30, {
-      width: doc.page.width * 0.48,
+    doc.font('Helvetica').fontSize(7.5).text(documento.campos.texto_institucional, doc.page.width * 0.22, 30, {
+      width: doc.page.width * 0.56,
       align: 'center',
-      lineGap: 2
+      lineGap: 1.5
     });
 
     doc.font('Helvetica-Bold').fontSize(14).text(documento.campos.titulo, left, 78, { width, align: 'center' });
@@ -1121,29 +1322,13 @@ exports.exportarRosterPdf = async (req, res) => {
     const personalTecnicoHeight = doc.heightOfString(personalTecnicoTexto, { width });
     doc.text(personalTecnicoTexto, left, 136, { width, align: 'left' });
 
-    const jugadores = (Array.isArray(roster.jugadores) ? roster.jugadores : []).map((item) => {
-      const representante = `${item?.representante?.nombres || ''} ${item?.representante?.apellidos || ''}`.trim();
-      const telefono = cleanValue(item?.representante?.telefono || item?.telefono);
-      const fecha = item?.fecha_nacimiento
-        ? new Intl.DateTimeFormat('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(item.fecha_nacimiento))
-        : '';
-
-      return {
-        nombre: `${item?.nombres || ''} ${item?.apellidos || ''}`.trim(),
-        cedula: cleanValue(item?.cedula),
-        fecha_nacimiento: [fecha, calcularEdad(item?.fecha_nacimiento)].filter(Boolean).join('\n'),
-        numero_franela: item?.numero_franela || '',
-        foto: cleanValue(item?.foto),
-        representante: [representante, telefono].filter(Boolean).join(' · '),
-        club_procedencia: cleanValue(item?.sede?.nombre)
-      };
-    });
+    const jugadores = buildRosterPlayers(roster);
 
     const tableBottomY = writeRosterTable(doc, jugadores, 142 + Math.max(12, personalTecnicoHeight));
 
     let contentBottomY = tableBottomY;
     if (documento.incluir_fotos_cedula) {
-      contentBottomY = writeRosterIdCards(doc, roster.jugadores || [], tableBottomY);
+      contentBottomY = writeRosterIdCards(doc, jugadores, tableBottomY);
     }
 
     const footerHeight = 42;
@@ -1155,6 +1340,18 @@ exports.exportarRosterPdf = async (req, res) => {
     const footerY = contentBottomY + 10;
     doc.text('Recibido por: ________________________________________________', doc.page.margins.left, footerY, { width, align: 'left' });
     doc.text('Fecha, lugar y hora: _________________________________________', doc.page.margins.left, footerY + 16, { width, align: 'left' });
+
+    const pageRange = doc.bufferedPageRange();
+    for (let pageIndex = pageRange.start; pageIndex < pageRange.start + pageRange.count; pageIndex += 1) {
+      doc.switchToPage(pageIndex);
+      const documentFooterY = doc.page.height - doc.page.margins.bottom - 9;
+      doc.font('Helvetica').fontSize(7).fillColor('#555555').text(
+        DOCUMENT_FOOTER,
+        doc.page.margins.left,
+        documentFooterY,
+        { width, align: 'center', lineBreak: false }
+      );
+    }
 
     doc.end();
   } catch (err) {
@@ -1195,28 +1392,25 @@ exports.exportarRosterDoc = async (req, res) => {
       documento.campos.subtitulo,
       documento.campos.texto_institucional
     );
-    const jugadores = (Array.isArray(roster.jugadores) ? roster.jugadores : []).map((item, index) => {
-      const representante = `${item?.representante?.nombres || ''} ${item?.representante?.apellidos || ''}`.trim();
-      const telefono = cleanValue(item?.representante?.telefono || item?.telefono);
-      const fecha = item?.fecha_nacimiento
-        ? new Intl.DateTimeFormat('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(item.fecha_nacimiento))
-        : '';
+    const rosterPlayers = buildRosterPlayers(roster);
+    const jugadores = rosterPlayers.map((item, index) => {
       const foto = uploadUrlToDataUri(item?.foto);
 
       return `
         <tr>
           <td class="center">${index + 1}</td>
-          <td class="photo-cell">${foto ? `<img class="player-photo" src="${foto}" width="72" height="68" />` : ''}</td>
-          <td class="center">${escapeHtml(item?.numero_franela || '')}</td>
-          <td class="name">${escapeHtml(`${item?.nombres || ''} ${item?.apellidos || ''}`.trim())}</td>
+          <td class="name">${escapeHtml(item?.nombre)}</td>
           <td class="center">${escapeHtml(cleanValue(item?.cedula))}</td>
-          <td class="center">${escapeHtml(fecha)}<br /><strong>${escapeHtml(calcularEdad(item?.fecha_nacimiento))}</strong></td>
-          <td>${escapeHtml([representante, telefono].filter(Boolean).join(' / '))}</td>
+          <td class="center">${escapeHtml(item?.fecha_nacimiento)}</td>
+          <td class="center">${escapeHtml(item?.numero_franela || '')}</td>
+          <td class="photo-cell">${foto ? `<img class="player-photo" src="${foto}" width="72" height="68" />` : ''}</td>
+          <td>${escapeHtml(item?.representante)}</td>
+          <td>${escapeHtml(item?.procedencia)}</td>
         </tr>`;
     }).join('');
 
     const cedulas = documento.incluir_fotos_cedula
-      ? await Promise.all((Array.isArray(roster.jugadores) ? roster.jugadores : [])
+      ? await Promise.all(rosterPlayers
       .map(async (item, index) => {
         const fotoCedula = await buildContainedImageDataUri(item?.foto_cedula, 700, 310);
         if (!fotoCedula) return '';
@@ -1256,6 +1450,7 @@ exports.exportarRosterDoc = async (req, res) => {
             size: 595.3pt 841.9pt;
             margin: 28.35pt;
             mso-page-orientation: portrait;
+            mso-footer: f1;
           }
           div.Section1 { page: Section1; position: relative; width: 718px; }
           body {
@@ -1273,15 +1468,16 @@ exports.exportarRosterDoc = async (req, res) => {
           .meta-technical { margin: 0 0 4px; font-weight: bold; }
           .players { table-layout: fixed; font-family: Arial, sans-serif; }
           .players th, .players td { border: 1px solid #000; padding: 2px; vertical-align: middle; }
-          .players th { background-color: #f1f1ed; mso-shading: #f1f1ed; font-size: 7pt; text-align: center; line-height: 1; }
+          .players th { background-color: #5b9be6; mso-shading: #5b9be6; color: #111; font-size: 7pt; text-align: center; line-height: 1; }
           .players td { height: 68px; font-size: 7.5pt; }
           .players th:nth-child(1) { width: 4%; }
-          .players th:nth-child(2) { width: 11%; }
-          .players th:nth-child(3) { width: 9%; }
-          .players th:nth-child(4) { width: 21%; }
-          .players th:nth-child(5) { width: 12%; }
-          .players th:nth-child(6) { width: 16%; }
-          .players th:nth-child(7) { width: 27%; }
+          .players th:nth-child(2) { width: 21%; }
+          .players th:nth-child(3) { width: 10%; }
+          .players th:nth-child(4) { width: 13%; }
+          .players th:nth-child(5) { width: 8%; }
+          .players th:nth-child(6) { width: 11%; }
+          .players th:nth-child(7) { width: 17%; }
+          .players th:nth-child(8) { width: 16%; }
           .center { text-align: center; }
           .name { text-align: center; font-weight: bold; }
           .photo-cell { width: 8%; text-align: center; padding: 0 !important; }
@@ -1291,6 +1487,7 @@ exports.exportarRosterDoc = async (req, res) => {
           .id-title { font-family: Arial, sans-serif; text-align: center; font-weight: bold; border-bottom: 1px solid #000; padding: 2px; }
           .id-image { display: block; width: 350px; height: 155px; object-fit: contain; mso-width-source: userset; mso-height-source: userset; }
           .receipt { width: 718px; margin-top: 8px; font-family: Arial, sans-serif; font-weight: bold; line-height: 2; }
+          .document-footer { mso-element: footer; font-family: Arial, sans-serif; font-size: 7pt; color: #555555; text-align: center; }
         </style>
       </head>
       <body>
@@ -1308,14 +1505,15 @@ exports.exportarRosterDoc = async (req, res) => {
         </div>
         <table class="players" width="718">
           <thead>
-            <tr bgcolor="#f1f1ed" style="background-color:#f1f1ed">
+            <tr bgcolor="#5b9be6" style="background-color:#5b9be6">
               <th style="width:22px">N°</th>
+              <th>Nombres y Apellidos de la Atleta</th>
+              <th style="width:58px">Cédula</th>
+              <th style="width:70px">Fecha de<br />nacimiento</th>
+              <th style="width:38px">Número<br />franela</th>
               <th style="width:76px">Foto</th>
-              <th style="width:38px">Número<br />Franela</th>
-              <th>Nombre y Apellidos</th>
-              <th style="width:58px">Nro. de<br />Cédula</th>
-              <th style="width:70px">Edad<br />Fecha de Nacimiento</th>
               <th>Representante y teléfono</th>
+              <th>Club de procedencia y fecha de cambio o préstamo</th>
             </tr>
           </thead>
           <tbody>
@@ -1327,6 +1525,9 @@ exports.exportarRosterDoc = async (req, res) => {
         <div class="receipt">
           Recibido por: ___________________________________________________________________<br />
           Fecha, lugar y hora: ____________________________________________________________
+        </div>
+        <div style="mso-element:footer" id="f1">
+          <p class="document-footer">${escapeHtml(DOCUMENT_FOOTER)}</p>
         </div>
         </div>
       </body>

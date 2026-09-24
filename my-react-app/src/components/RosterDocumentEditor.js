@@ -6,6 +6,9 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
   Divider,
   IconButton,
   MenuItem,
@@ -25,8 +28,10 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
+import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -45,6 +50,20 @@ const EMPTY_FIELDS = {
   asistentes: []
 };
 
+const DOCUMENT_FOOTER = 'Documento generado por Apex - sistema deportivo 2026';
+
+const EMPTY_LOAN = {
+  nombres: '',
+  apellidos: '',
+  cedula: '',
+  fecha_nacimiento: '',
+  numero_franela: '',
+  representante: '',
+  telefono: '',
+  club_procedencia: '',
+  fecha_prestamo: ''
+};
+
 function normalizeDocumentFields(fields = {}) {
   const asistentes = (Array.isArray(fields.asistentes) ? fields.asistentes : [fields.asistente])
     .map((value) => String(value || '').trim())
@@ -53,15 +72,16 @@ function normalizeDocumentFields(fields = {}) {
   return { ...EMPTY_FIELDS, ...fields, asistente: asistentes[0] || '', asistentes };
 }
 
-function calculateAge(birthDate) {
-  if (!birthDate) return '';
-  const birth = new Date(birthDate);
-  if (Number.isNaN(birth.getTime())) return '';
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDifference = today.getMonth() - birth.getMonth();
-  if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birth.getDate())) age -= 1;
-  return age >= 0 ? `${age} años` : '';
+function formatRosterDate(value) {
+  if (!value) return '';
+  const [year, month, day] = String(value).substring(0, 10).split('-');
+  return year && month && day ? `${day}/${month}/${year}` : '';
+}
+
+function getRosterPlayers(roster) {
+  const alumnos = (roster?.jugadores || []).map((player) => ({ ...player, rowType: 'alumno' }));
+  const prestamos = (roster?.prestamos || []).map((player) => ({ ...player, rowType: 'prestamo' }));
+  return [...alumnos, ...prestamos];
 }
 
 function RosterDocumentEditor() {
@@ -77,6 +97,12 @@ function RosterDocumentEditor() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [savingLoan, setSavingLoan] = useState(false);
+  const [deletingLoan, setDeletingLoan] = useState('');
+  const [loanToDelete, setLoanToDelete] = useState(null);
+  const [editingLoan, setEditingLoan] = useState('');
+  const [loanForm, setLoanForm] = useState(EMPTY_LOAN);
+  const [loanFiles, setLoanFiles] = useState({ foto: null, foto_cedula: null });
   const [paperScale, setPaperScale] = useState(1);
   const [notice, setNotice] = useState({ open: false, severity: 'success', message: '' });
 
@@ -222,6 +248,89 @@ function RosterDocumentEditor() {
     setSelectedLogo('');
   };
 
+  const updateLoanField = (field, value) => {
+    setLoanForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const resetLoanForm = () => {
+    setEditingLoan('');
+    setLoanForm(EMPTY_LOAN);
+    setLoanFiles({ foto: null, foto_cedula: null });
+  };
+
+  const startEditingLoan = (prestamo) => {
+    setEditingLoan(prestamo._id);
+    setLoanForm({
+      nombres: prestamo.nombres || '',
+      apellidos: prestamo.apellidos || '',
+      cedula: prestamo.cedula || '',
+      fecha_nacimiento: prestamo.fecha_nacimiento ? String(prestamo.fecha_nacimiento).substring(0, 10) : '',
+      numero_franela: prestamo.numero_franela || '',
+      representante: prestamo.representante || '',
+      telefono: prestamo.telefono || '',
+      club_procedencia: prestamo.club_procedencia || '',
+      fecha_prestamo: prestamo.fecha_prestamo ? String(prestamo.fecha_prestamo).substring(0, 10) : ''
+    });
+    setLoanFiles({ foto: null, foto_cedula: null });
+  };
+
+  const saveLoanPlayer = async () => {
+    setSavingLoan(true);
+    try {
+      const formData = new FormData();
+      Object.entries(loanForm).forEach(([field, value]) => formData.append(field, value));
+      if (loanFiles.foto) formData.append('foto', loanFiles.foto);
+      if (loanFiles.foto_cedula) formData.append('foto_cedula', loanFiles.foto_cedula);
+      const endpoint = editingLoan
+        ? `${process.env.REACT_APP_API_URL}/api/rosters/${rosterId}/prestamos/${editingLoan}`
+        : `${process.env.REACT_APP_API_URL}/api/rosters/${rosterId}/prestamos`;
+      const response = await fetch(endpoint, {
+        method: editingLoan ? 'PATCH' : 'POST',
+        headers: authHeaders(),
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || `No se pudo ${editingLoan ? 'actualizar' : 'agregar'} el préstamo`);
+      setRoster((current) => ({
+        ...current,
+        prestamos: editingLoan
+          ? (current?.prestamos || []).map((item) => item._id === editingLoan ? data.prestamo : item)
+          : [...(current?.prestamos || []), data.prestamo]
+      }));
+      setNotice({ open: true, severity: 'success', message: editingLoan ? 'Atleta prestado actualizado.' : 'Atleta prestado agregado al roster.' });
+      resetLoanForm();
+    } catch (error) {
+      setNotice({ open: true, severity: 'error', message: error.message });
+    } finally {
+      setSavingLoan(false);
+    }
+  };
+
+  const removeLoanPlayer = async () => {
+    const prestamoId = loanToDelete?._id;
+    if (!prestamoId) return;
+    setDeletingLoan(prestamoId);
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/rosters/${rosterId}/prestamos/${prestamoId}`, {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || 'No se pudo quitar el préstamo');
+      setRoster((current) => ({
+        ...current,
+        prestamos: (current?.prestamos || []).filter((item) => item._id !== prestamoId)
+      }));
+      if (editingLoan === prestamoId) resetLoanForm();
+      setLoanToDelete(null);
+      setNotice({ open: true, severity: 'success', message: 'Atleta prestado eliminado.' });
+    } catch (error) {
+      setNotice({ open: true, severity: 'error', message: error.message });
+    } finally {
+      setDeletingLoan('');
+    }
+  };
+
   const download = async (format) => {
     try {
       const saved = await saveDocument();
@@ -246,10 +355,12 @@ function RosterDocumentEditor() {
     return <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 360 }}><CircularProgress size={30} /></Box>;
   }
 
-  const cedulasDisponibles = (roster?.jugadores || [])
+  const rosterPlayers = getRosterPlayers(roster);
+  const editingLoanData = (roster?.prestamos || []).find((item) => item._id === editingLoan);
+  const cedulasDisponibles = rosterPlayers
     .map((player, index) => ({ player, rosterIndex: index }))
     .filter(({ player }) => Boolean(player.foto_cedula));
-  const playerTableBottom = 190 + 28 + ((roster?.jugadores || []).length * 77);
+  const playerTableBottom = 190 + 44 + (rosterPlayers.length * 77);
   const idCardRowHeight = 181;
   const receiptHeight = 44;
   const firstPageIdRows = Math.max(0, Math.floor((1123 - 38 - receiptHeight - playerTableBottom) / idCardRowHeight));
@@ -361,8 +472,8 @@ function RosterDocumentEditor() {
               );
             })}
 
-            <Box sx={{ width: '46%', minHeight: 74, mx: 'auto', textAlign: 'center', pt: 1, position: 'relative', zIndex: 5 }}>
-              <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 10, fontWeight: 400, lineHeight: 1.35, letterSpacing: 0, whiteSpace: 'pre-line' }}>{documento.campos.texto_institucional}</Typography>
+            <Box sx={{ width: '54%', minHeight: 74, mx: 'auto', textAlign: 'center', pt: 1, position: 'relative', zIndex: 5 }}>
+              <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 9, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0, whiteSpace: 'pre-line' }}>{documento.campos.texto_institucional}</Typography>
               {documento.campos.titulo && <Typography sx={{ mt: 2.2, fontFamily: 'Arial, sans-serif', fontSize: 22, fontWeight: 700, letterSpacing: 0 }}>{documento.campos.titulo}</Typography>}
               {documento.campos.subtitulo && <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 13, fontWeight: 700, letterSpacing: 0 }}>{documento.campos.subtitulo}</Typography>}
             </Box>
@@ -379,26 +490,30 @@ function RosterDocumentEditor() {
               </Box>
             </Box>
 
-            <Box component="table" sx={{ width: '100%', mt: 1.5, borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: 'Arial, sans-serif', fontSize: 9, '& th, & td': { border: '1px solid #252525', p: '4px', verticalAlign: 'middle' }, '& th': { bgcolor: '#f1f1ed', fontWeight: 700, textAlign: 'center', lineHeight: 1.15 }, '& td': { height: 68 } }}>
-              <thead><tr><th style={{ width: 28 }}>N°</th><th style={{ width: 76 }}>Foto</th><th style={{ width: 48 }}>Número<br />Franela</th><th>Nombre y Apellidos</th><th style={{ width: 82 }}>Nro. de<br />Cédula</th><th style={{ width: 88 }}>Edad<br />Fecha de Nacimiento</th><th style={{ width: 128 }}>Representante y teléfono</th></tr></thead>
+            <Box component="table" sx={{ width: '100%', mt: 1.5, borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: 'Arial, sans-serif', fontSize: 9, '& th, & td': { border: '1px solid #252525', p: '4px', verticalAlign: 'middle' }, '& th': { bgcolor: '#5b9be6', color: '#111', fontWeight: 700, textAlign: 'center', lineHeight: 1.15 }, '& td': { height: 68 } }}>
+              <thead><tr><th style={{ width: 28 }}>N°</th><th>Nombres y Apellidos de la Atleta</th><th style={{ width: 72 }}>Cédula</th><th style={{ width: 82 }}>Fecha de<br />nacimiento</th><th style={{ width: 46 }}>Número<br />franela</th><th style={{ width: 68 }}>Foto</th><th style={{ width: 108 }}>Representante y teléfono</th><th style={{ width: 110 }}>Club de procedencia y fecha de cambio o préstamo</th></tr></thead>
               <tbody>
-                {(roster?.jugadores || []).map((player, index) => (
-                  <tr key={player._id}>
+                {rosterPlayers.map((player, index) => (
+                  <tr key={`${player.rowType}-${player._id}`}>
                     <td style={{ textAlign: 'center', fontWeight: 700 }}>{index + 1}</td>
-                    <td style={{ padding: 0, textAlign: 'center' }}>
-                      {player.foto ? <Box component="img" src={mediaUrl(player.foto)} alt={`${player.nombres || ''} ${player.apellidos || ''}`} sx={{ width: 72, height: 68, mx: 'auto', objectFit: 'contain', objectPosition: 'center', display: 'block' }} /> : null}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>{player.numero_franela || ''}</td>
                     <td style={{ textAlign: 'center', fontWeight: 700 }}>{`${player.nombres || ''} ${player.apellidos || ''}`.trim()}</td>
                     <td style={{ textAlign: 'center' }}>{player.cedula || ''}</td>
                     <td style={{ textAlign: 'center' }}>
-                      {player.fecha_nacimiento ? new Date(player.fecha_nacimiento).toLocaleDateString('es-VE') : ''}
-                      {player.fecha_nacimiento && <><br /><strong>{calculateAge(player.fecha_nacimiento)}</strong></>}
+                      {formatRosterDate(player.fecha_nacimiento)}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>{player.numero_franela || ''}</td>
+                    <td style={{ padding: 0, textAlign: 'center' }}>
+                      {player.foto ? <Box component="img" src={mediaUrl(player.foto)} alt={`${player.nombres || ''} ${player.apellidos || ''}`} sx={{ width: 64, height: 68, mx: 'auto', objectFit: 'contain', objectPosition: 'center', display: 'block' }} /> : null}
                     </td>
                     <td>{[
-                      `${player.representante?.nombres || ''} ${player.representante?.apellidos || ''}`.trim(),
-                      player.representante?.telefono || player.telefono || ''
+                      player.rowType === 'prestamo'
+                        ? player.representante
+                        : `${player.representante?.nombres || ''} ${player.representante?.apellidos || ''}`.trim(),
+                      player.rowType === 'prestamo'
+                        ? player.telefono
+                        : player.representante?.telefono || player.telefono || ''
                     ].filter(Boolean).join(' / ')}</td>
+                    <td>{player.rowType === 'prestamo' ? [player.club_procedencia, formatRosterDate(player.fecha_prestamo)].filter(Boolean).join(' / ') : ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -406,7 +521,7 @@ function RosterDocumentEditor() {
             {firstPageCedulas.length > 0 && (
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridAutoRows: idCardRowHeight, borderLeft: '1px solid #444' }}>
                 {firstPageCedulas.map(({ player, rosterIndex }) => (
-                  <Box key={player._id} sx={{ borderRight: '1px solid #444', borderBottom: '1px solid #444', display: 'grid', gridTemplateRows: '25px 155px', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+                  <Box key={`${player.rowType}-${player._id}`} sx={{ borderRight: '1px solid #444', borderBottom: '1px solid #444', display: 'grid', gridTemplateRows: '25px 155px', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
                     <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 10, lineHeight: '24px', fontWeight: 700, textAlign: 'center', borderBottom: '1px solid #444' }}>
                       CÉDULA {rosterIndex + 1}
                     </Typography>
@@ -416,6 +531,9 @@ function RosterDocumentEditor() {
               </Box>
             )}
             {extraPageCount === 0 && receiptBlock}
+            <Typography sx={{ position: 'absolute', bottom: 12, left: 38, right: 38, fontFamily: 'Arial, sans-serif', fontSize: 9.33, lineHeight: 1, color: '#555', textAlign: 'center' }}>
+              {DOCUMENT_FOOTER}
+            </Typography>
             </Box>
             {cedulaPages.map((pageCedulas, pageIndex) => (
               <Box
@@ -429,7 +547,7 @@ function RosterDocumentEditor() {
               >
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridAutoRows: idCardRowHeight, borderTop: '1px solid #444', borderLeft: '1px solid #444' }}>
                   {pageCedulas.map(({ player, rosterIndex }) => (
-                    <Box key={player._id} sx={{ borderRight: '1px solid #444', borderBottom: '1px solid #444', display: 'grid', gridTemplateRows: '25px 155px', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+                    <Box key={`${player.rowType}-${player._id}`} sx={{ borderRight: '1px solid #444', borderBottom: '1px solid #444', display: 'grid', gridTemplateRows: '25px 155px', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
                       <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 10, lineHeight: '24px', fontWeight: 700, textAlign: 'center', borderBottom: '1px solid #444' }}>
                         CÉDULA {rosterIndex + 1}
                       </Typography>
@@ -438,6 +556,9 @@ function RosterDocumentEditor() {
                   ))}
                 </Box>
                 {pageIndex === cedulaPages.length - 1 && receiptBlock}
+                <Typography sx={{ position: 'absolute', bottom: 12, left: 28, right: 28, fontFamily: 'Arial, sans-serif', fontSize: 9.33, lineHeight: 1, color: '#555', textAlign: 'center' }}>
+                  {DOCUMENT_FOOTER}
+                </Typography>
               </Box>
             ))}
           </Box>
@@ -464,6 +585,74 @@ function RosterDocumentEditor() {
                 </TextField>
                 <TextField label="Equipo" value={documento.campos.equipo} onChange={(event) => updateField('equipo', event.target.value)} size="small" sx={fieldSx} />
                 <TextField label="Entrenador principal" placeholder="Nombre y apellido" value={documento.campos.entrenador_principal} onChange={(event) => updateField('entrenador_principal', event.target.value)} size="small" sx={{ ...fieldSx, gridColumn: '1 / -1' }} />
+              </Box>
+            </AccordionDetails>
+          </Accordion>
+
+          <Accordion defaultExpanded disableGutters sx={{ ...sectionSx, order: 1 }}>
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#7b8798' }} />} sx={{ minHeight: 54, px: 2 }}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <PersonAddAltOutlinedIcon sx={{ color: '#dc5f16', fontSize: 20 }} />
+                <Box>
+                  <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#253047' }}>Préstamos</Typography>
+                  <Typography sx={{ fontSize: 10.5, color: '#8a96a8', mt: 0.2 }}>Atletas de otros clubes</Typography>
+                </Box>
+                <Chip label={(roster?.prestamos || []).length} size="small" sx={{ height: 20, bgcolor: '#fff2e8', color: '#b54708', fontSize: 10, fontWeight: 800 }} />
+              </Stack>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: 2, pt: 0, pb: 2 }}>
+              {(roster?.prestamos || []).length > 0 && (
+                <Stack spacing={0.8} sx={{ mb: 1.5 }}>
+                  {(roster.prestamos || []).map((prestamo, index) => (
+                    <Box key={prestamo._id} sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: editingLoan === prestamo._id ? '#fff7ed' : '#fafbfc', border: `1px solid ${editingLoan === prestamo._id ? '#fdba74' : '#e8ecf2'}`, borderRadius: 1.5 }}>
+                      <Box sx={{ width: 26, height: 26, display: 'grid', placeItems: 'center', bgcolor: '#fff2e8', color: '#b54708', borderRadius: 1, fontSize: 11, fontWeight: 800 }}>{index + 1}</Box>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography noWrap sx={{ fontSize: 11.5, fontWeight: 800, color: '#344054' }}>{`${prestamo.nombres || ''} ${prestamo.apellidos || ''}`.trim() || 'Atleta sin nombre'}</Typography>
+                        <Typography noWrap sx={{ fontSize: 10, color: '#98a2b3' }}>{prestamo.club_procedencia || 'Club no indicado'}</Typography>
+                      </Box>
+                      <Tooltip title="Editar préstamo">
+                        <IconButton size="small" disabled={savingLoan || deletingLoan === prestamo._id} onClick={() => startEditingLoan(prestamo)} aria-label="Editar atleta prestado" sx={{ color: editingLoan === prestamo._id ? '#dc5f16' : '#667085' }}>
+                          <EditOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Quitar préstamo">
+                        <IconButton size="small" disabled={deletingLoan === prestamo._id} onClick={() => setLoanToDelete(prestamo)} aria-label="Quitar atleta prestado" sx={{ color: '#98a2b3' }}>
+                          {deletingLoan === prestamo._id ? <CircularProgress size={16} /> : <DeleteOutlineIcon fontSize="small" />}
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+                <TextField label="Nombres" value={loanForm.nombres} onChange={(event) => updateLoanField('nombres', event.target.value)} size="small" sx={fieldSx} />
+                <TextField label="Apellidos" value={loanForm.apellidos} onChange={(event) => updateLoanField('apellidos', event.target.value)} size="small" sx={fieldSx} />
+                <TextField label="Cédula" value={loanForm.cedula} onChange={(event) => updateLoanField('cedula', event.target.value)} size="small" sx={fieldSx} />
+                <TextField label="Fecha de nacimiento" type="date" value={loanForm.fecha_nacimiento} onChange={(event) => updateLoanField('fecha_nacimiento', event.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={fieldSx} />
+                <TextField label="Número de franela" value={loanForm.numero_franela} onChange={(event) => updateLoanField('numero_franela', event.target.value)} size="small" sx={fieldSx} />
+                <TextField label="TELÉFONO REPRESENTANTE" value={loanForm.telefono} onChange={(event) => updateLoanField('telefono', event.target.value)} size="small" sx={fieldSx} />
+                <TextField label="NOMBRE Y APELLIDO REPRESENTANTE" value={loanForm.representante} onChange={(event) => updateLoanField('representante', event.target.value)} size="small" sx={{ ...fieldSx, gridColumn: '1 / -1' }} />
+                <TextField label="Club de procedencia" value={loanForm.club_procedencia} onChange={(event) => updateLoanField('club_procedencia', event.target.value)} size="small" sx={fieldSx} />
+                <TextField label="Fecha de cambio o préstamo" type="date" value={loanForm.fecha_prestamo} onChange={(event) => updateLoanField('fecha_prestamo', event.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={fieldSx} />
+                <Button component="label" variant="outlined" startIcon={<ImageOutlinedIcon />} sx={{ borderColor: '#dfe5ec', color: '#475467', textTransform: 'none', fontSize: 11, overflow: 'hidden' }}>
+                  {loanFiles.foto?.name || (editingLoanData?.foto ? 'Conservar foto actual' : 'Foto del atleta')}
+                  <input hidden type="file" accept="image/*" onChange={(event) => setLoanFiles((current) => ({ ...current, foto: event.target.files?.[0] || null }))} />
+                </Button>
+                <Button component="label" variant="outlined" startIcon={<ImageOutlinedIcon />} sx={{ borderColor: '#dfe5ec', color: '#475467', textTransform: 'none', fontSize: 11, overflow: 'hidden' }}>
+                  {loanFiles.foto_cedula?.name || (editingLoanData?.foto_cedula ? 'Conservar cédula actual' : 'Foto de cédula')}
+                  <input hidden type="file" accept="image/*" onChange={(event) => setLoanFiles((current) => ({ ...current, foto_cedula: event.target.files?.[0] || null }))} />
+                </Button>
+                <Box sx={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: editingLoan ? { xs: '1fr', sm: 'minmax(0, 1.6fr) minmax(132px, .8fr)' } : '1fr', gap: 0.8 }}>
+                  <Button size="small" onClick={saveLoanPlayer} disabled={savingLoan} variant="contained" startIcon={savingLoan ? <CircularProgress size={14} color="inherit" /> : editingLoan ? <SaveOutlinedIcon /> : <PersonAddAltOutlinedIcon />} sx={{ height: 38, px: 2, bgcolor: '#dc5f16', textTransform: 'none', fontWeight: 800, boxShadow: 'none', '&:hover': { bgcolor: '#bd4d0d', boxShadow: 'none' } }}>
+                    {savingLoan ? 'Guardando...' : editingLoan ? 'Guardar cambios' : 'Agregar atleta prestado'}
+                  </Button>
+                  {editingLoan && (
+                    <Button size="small" onClick={resetLoanForm} disabled={savingLoan} variant="outlined" sx={{ height: 38, px: 2, borderColor: '#d0d5dd', color: '#475467', textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      Cancelar edición
+                    </Button>
+                  )}
+                </Box>
+                <Typography sx={{ gridColumn: '1 / -1', fontSize: 10, color: '#98a2b3', textAlign: 'center' }}>Todos los campos son opcionales.</Typography>
               </Box>
             </AccordionDetails>
           </Accordion>
@@ -506,7 +695,7 @@ function RosterDocumentEditor() {
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
                 <Box>
                   <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#344054' }}>Incluir fotos de cédulas</Typography>
-                  <Typography sx={{ fontSize: 10.5, color: '#98a2b3' }}>{cedulasDisponibles.length} de {(roster?.jugadores || []).length} atletas tienen cédula registrada.</Typography>
+                  <Typography sx={{ fontSize: 10.5, color: '#98a2b3' }}>{cedulasDisponibles.length} de {rosterPlayers.length} atletas tienen cédula registrada.</Typography>
                 </Box>
                 <Switch checked={documento.incluir_fotos_cedula} onChange={(event) => setDocumento((current) => ({ ...current, incluir_fotos_cedula: event.target.checked }))} sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#dc5f16' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#dc5f16' } }} />
               </Box>
@@ -544,6 +733,37 @@ function RosterDocumentEditor() {
           </Accordion>
         </Stack>
       </Box>
+
+      <Dialog
+        open={Boolean(loanToDelete)}
+        onClose={() => { if (!deletingLoan) setLoanToDelete(null); }}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 2, boxShadow: '0 20px 48px rgba(23, 32, 51, .22)' } }}
+      >
+        <DialogContent sx={{ p: 2.5, pb: 1.5 }}>
+          <Stack direction="row" spacing={1.5} alignItems="flex-start">
+            <Box sx={{ width: 38, height: 38, flex: '0 0 auto', display: 'grid', placeItems: 'center', borderRadius: 1.5, bgcolor: '#fff1f0', color: '#d92d20' }}>
+              <DeleteOutlineIcon />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: 16, fontWeight: 800, color: '#172033' }}>Quitar atleta prestado</Typography>
+              <Typography sx={{ mt: 0.55, fontSize: 12, lineHeight: 1.55, color: '#667085' }}>
+                Se eliminará a <Box component="span" sx={{ fontWeight: 800, color: '#344054' }}>{`${loanToDelete?.nombres || ''} ${loanToDelete?.apellidos || ''}`.trim() || 'este atleta'}</Box> del roster y del documento.
+              </Typography>
+              <Typography sx={{ mt: 0.65, fontSize: 11, color: '#98a2b3' }}>Esta acción no se puede deshacer.</Typography>
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, pb: 2.25, pt: 1, gap: 0.8 }}>
+          <Button size="small" disabled={Boolean(deletingLoan)} onClick={() => setLoanToDelete(null)} variant="outlined" sx={{ height: 36, px: 2, borderColor: '#d0d5dd', color: '#475467', textTransform: 'none', fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button size="small" disabled={Boolean(deletingLoan)} onClick={removeLoanPlayer} variant="contained" startIcon={deletingLoan ? <CircularProgress size={14} color="inherit" /> : <DeleteOutlineIcon />} sx={{ height: 36, px: 2, bgcolor: '#d92d20', textTransform: 'none', fontWeight: 800, boxShadow: 'none', '&:hover': { bgcolor: '#b42318', boxShadow: 'none' } }}>
+            {deletingLoan ? 'Eliminando...' : 'Quitar préstamo'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar open={notice.open} autoHideDuration={3500} onClose={() => setNotice((current) => ({ ...current, open: false }))} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert severity={notice.severity} variant="filled" onClose={() => setNotice((current) => ({ ...current, open: false }))}>{notice.message}</Alert>
