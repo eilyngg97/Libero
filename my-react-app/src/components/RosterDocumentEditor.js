@@ -658,7 +658,7 @@ function RosterDocumentEditor() {
             </AccordionDetails>
           </Accordion>
 
-          <Accordion defaultExpanded disableGutters sx={{ ...sectionSx, order: 1 }}>
+          <Accordion disableGutters sx={{ ...sectionSx, order: 1 }}>
             <AccordionSummary expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#7b8798' }} />} sx={{ minHeight: 54, px: 2 }}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <PersonAddAltOutlinedIcon sx={{ color: '#dc5f16', fontSize: 20 }} />

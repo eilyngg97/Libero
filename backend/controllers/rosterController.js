@@ -3,7 +3,6 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const mongoose = require('mongoose');
-const CoreTorneo = require('../models/Torneo');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
@@ -12,8 +11,8 @@ const DEFAULT_ROSTER_TEMPLATE = {
   header_title: 'ROSTER',
   texto_institucional: [
     'FEDERACION VENEZOLANA DE VOLEIBOL',
-    'ASOCIACION DE VOLEIBOL DEL ESTADO LARA',
-    'LIGA DE INICIACION DE VOLEIBOL'
+    'ASOCIACION DE VOLEIBOL DEL ESTADO LARA LIGA NACIONAL DE',
+    'INICIACION DE VOLEIBOL LIGA DE VOLEIBOL MENOR DEL ESTADO LARA'
   ].join('\n'),
   equipo_label: 'EQUIPO',
   club_label: 'CLUB',
@@ -168,11 +167,12 @@ async function getTenantRosterModels(req) {
   return {
     Roster: getTenantModel(connection, 'Roster'),
     Alumno: getTenantModel(connection, 'Alumno'),
+    Torneo: getTenantModel(connection, 'Torneo'),
     TenantConfig: getTenantModel(connection, 'TenantConfig')
   };
 }
 
-async function populateCoreTournaments(rosters = []) {
+async function populateTenantTournaments(Torneo, rosters = []) {
   const source = Array.isArray(rosters) ? rosters : [];
   const torneoIds = Array.from(new Set(
     source
@@ -181,7 +181,7 @@ async function populateCoreTournaments(rosters = []) {
   ));
   if (torneoIds.length === 0) return source;
 
-  const torneos = await CoreTorneo.find({ _id: { $in: torneoIds } })
+  const torneos = await Torneo.find({ _id: { $in: torneoIds } })
     .select('nombre fecha_limite')
     .lean();
   const torneoMap = new Map(torneos.map((torneo) => [String(torneo._id), torneo]));
@@ -224,7 +224,7 @@ function removeUploadedFiles(files = []) {
 
 exports.listarRosters = async (req, res) => {
   try {
-    const { Roster } = await getTenantRosterModels(req);
+    const { Roster, Torneo } = await getTenantRosterModels(req);
     const torneoId = cleanValue(req.query?.torneoId);
     const filter = {};
 
@@ -238,7 +238,7 @@ exports.listarRosters = async (req, res) => {
     const rosterDocs = await Roster.find(filter)
       .sort({ createdAt: -1 })
       .lean();
-    const rosters = await populateCoreTournaments(rosterDocs);
+    const rosters = await populateTenantTournaments(Torneo, rosterDocs);
 
     return res.json(rosters);
   } catch (err) {
@@ -248,7 +248,7 @@ exports.listarRosters = async (req, res) => {
 
 exports.obtenerEstudiantesElegibles = async (req, res) => {
   try {
-    const { Roster, Alumno } = await getTenantRosterModels(req);
+    const { Roster, Alumno, Torneo } = await getTenantRosterModels(req);
 
     const sexo = normalizeSexo(req.query?.sexo);
     const categoria = cleanValue(req.query?.categoria);
@@ -267,7 +267,7 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
         return res.status(400).json({ error: 'torneoId invalido' });
       }
 
-      const torneo = await CoreTorneo.findById(torneoId).select('convocados').lean();
+      const torneo = await Torneo.findById(torneoId).select('convocados').lean();
       if (!torneo) {
         return res.status(404).json({ error: 'Torneo no encontrado' });
       }
@@ -351,7 +351,7 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
 
 exports.crearRoster = async (req, res) => {
   try {
-    const { Roster, TenantConfig } = await getTenantRosterModels(req);
+    const { Roster, Torneo, TenantConfig } = await getTenantRosterModels(req);
 
     const torneoId = cleanValue(req.body?.torneoId);
     const categoria = cleanValue(req.body?.categoria);
@@ -367,7 +367,7 @@ exports.crearRoster = async (req, res) => {
     if (!division) return res.status(400).json({ error: 'division es obligatoria' });
     if (!grupoCompeticion) return res.status(400).json({ error: 'grupoCompeticion es obligatorio' });
 
-    const torneo = await CoreTorneo.findById(torneoId).select('_id nombre').lean();
+    const torneo = await Torneo.findById(torneoId).select('_id nombre').lean();
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const existeMismaClave = await Roster.findOne({
@@ -462,7 +462,7 @@ exports.actualizarEstatusRoster = async (req, res) => {
 
 exports.actualizarJugadoresRoster = async (req, res) => {
   try {
-    const { Roster, Alumno } = await getTenantRosterModels(req);
+    const { Roster, Alumno, Torneo } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
     const jugadores = parseJugadorIds(req.body?.jugadores);
 
@@ -494,7 +494,7 @@ exports.actualizarJugadoresRoster = async (req, res) => {
       return res.status(409).json({ error: 'Uno o mas atletas ya pertenecen a otro roster activo de este torneo.' });
     }
 
-    const torneo = await CoreTorneo.findById(roster.torneo);
+    const torneo = await Torneo.findById(roster.torneo);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const seleccionados = new Set(jugadores);
@@ -731,7 +731,7 @@ exports.eliminarPrestamoRoster = async (req, res) => {
 
 exports.actualizarEstadoJugadorRoster = async (req, res) => {
   try {
-    const { Roster } = await getTenantRosterModels(req);
+    const { Roster, Torneo } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
     const alumnoId = cleanValue(req.params?.alumnoId);
     const estado = cleanValue(req.body?.estado).toLowerCase();
@@ -749,7 +749,7 @@ exports.actualizarEstadoJugadorRoster = async (req, res) => {
       return res.status(404).json({ error: 'El atleta no pertenece a este roster' });
     }
 
-    const torneo = await CoreTorneo.findById(roster.torneo);
+    const torneo = await Torneo.findById(roster.torneo);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
 
     const convocado = (torneo.convocados || []).find((item) => String(item.alumno) === alumnoId);
@@ -767,7 +767,7 @@ exports.actualizarEstadoJugadorRoster = async (req, res) => {
 
 exports.eliminarRoster = async (req, res) => {
   try {
-    const { Roster } = await getTenantRosterModels(req);
+    const { Roster, Torneo } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
 
     if (!mongoose.Types.ObjectId.isValid(rosterId)) {
@@ -787,7 +787,7 @@ exports.eliminarRoster = async (req, res) => {
       const idsUsados = new Set(
         usadosEnOtroRoster.flatMap((item) => (item.jugadores || []).map((id) => String(id)))
       );
-      const torneo = await CoreTorneo.findById(roster.torneo);
+      const torneo = await Torneo.findById(roster.torneo);
       if (torneo) {
         torneo.convocados = (torneo.convocados || []).filter((item) => {
           const alumnoId = String(item.alumno);
@@ -873,7 +873,7 @@ exports.subirLogoPlantillaRoster = async (req, res) => {
 
 exports.obtenerDocumentoRoster = async (req, res) => {
   try {
-    const { Roster, TenantConfig } = await getTenantRosterModels(req);
+    const { Roster, Torneo, TenantConfig } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
     if (!mongoose.Types.ObjectId.isValid(rosterId)) {
       return res.status(400).json({ error: 'Id de roster invalido' });
@@ -890,7 +890,7 @@ exports.obtenerDocumentoRoster = async (req, res) => {
       })
       .lean();
     if (!rosterDoc) return res.status(404).json({ error: 'Roster no encontrado' });
-    const [roster] = await populateCoreTournaments([rosterDoc]);
+    const [roster] = await populateTenantTournaments(Torneo, [rosterDoc]);
 
     const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
     const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});
@@ -1300,7 +1300,7 @@ function writeRosterIdCards(doc, jugadores = [], startY) {
 
 exports.exportarRosterPdf = async (req, res) => {
   try {
-    const { Roster, TenantConfig } = await getTenantRosterModels(req);
+    const { Roster, Torneo, TenantConfig } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
 
     if (!mongoose.Types.ObjectId.isValid(rosterId)) {
@@ -1319,7 +1319,7 @@ exports.exportarRosterPdf = async (req, res) => {
       .lean();
 
     if (!rosterDoc) return res.status(404).json({ error: 'Roster no encontrado' });
-    const [roster] = await populateCoreTournaments([rosterDoc]);
+    const [roster] = await populateTenantTournaments(Torneo, [rosterDoc]);
 
     const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
     const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});
@@ -1411,7 +1411,7 @@ exports.exportarRosterPdf = async (req, res) => {
 
 exports.exportarRosterDoc = async (req, res) => {
   try {
-    const { Roster, TenantConfig } = await getTenantRosterModels(req);
+    const { Roster, Torneo, TenantConfig } = await getTenantRosterModels(req);
     const rosterId = cleanValue(req.params?.id);
 
     if (!mongoose.Types.ObjectId.isValid(rosterId)) {
@@ -1430,7 +1430,7 @@ exports.exportarRosterDoc = async (req, res) => {
       .lean();
 
     if (!rosterDoc) return res.status(404).json({ error: 'Roster no encontrado' });
-    const [roster] = await populateCoreTournaments([rosterDoc]);
+    const [roster] = await populateTenantTournaments(Torneo, [rosterDoc]);
 
     const configDoc = await TenantConfig.findOne({ key: 'default' }).select('rosters').lean();
     const template = normalizeRosterTemplate(configDoc?.rosters?.template || {});

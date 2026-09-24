@@ -130,9 +130,10 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
       });
     }
 
+    options.push({ text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' });
+
     if (tenantId === 'villasport') {
       options.push(
-        { text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' },
         { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
         { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' }
       );

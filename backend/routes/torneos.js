@@ -1,15 +1,24 @@
 const express = require('express');
 const router = express.Router();
-const Torneo = require('../models/Torneo');
-const Partido = require('../models/Partido');
-const Alumno = require('../models/Alumno');
 const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
+
+async function getTenantTournamentModels(req) {
+  const connection = await getTenantBusinessConnection(req.tenant || { tenantId: req.tenantId });
+  return {
+    Torneo: getTenantModel(connection, 'Torneo'),
+    Partido: getTenantModel(connection, 'Partido'),
+    Alumno: getTenantModel(connection, 'Alumno')
+  };
+}
 
 // ...otros endpoints...
 
 // DELETE /api/torneos/:id
 router.delete('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
   try {
+    const { Torneo, Partido } = await getTenantTournamentModels(req);
     const torneo = await Torneo.findById(req.params.id);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
     // Eliminar todos los partidos asociados a este torneo
@@ -26,6 +35,7 @@ router.delete('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) =
 // GET /api/torneos
 router.get('/', authMiddleware, async (req, res) => {
   try {
+    const { Torneo } = await getTenantTournamentModels(req);
     const torneos = await Torneo.find()
       .populate({
         path: 'convocados.alumno',
@@ -41,6 +51,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // GET /api/torneos/por-alumno/:alumnoId
 router.get('/por-alumno/:alumnoId', authMiddleware, async (req, res) => {
   try {
+    const { Torneo } = await getTenantTournamentModels(req);
     const { alumnoId } = req.params;
     const torneos = await Torneo.find({ 'convocados.alumno': alumnoId })
       .select('nombre descripcion fecha_limite convocados')
@@ -65,6 +76,7 @@ router.get('/por-alumno/:alumnoId', authMiddleware, async (req, res) => {
 // GET /api/torneos/:id
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
+    const { Torneo } = await getTenantTournamentModels(req);
     const torneo = await Torneo.findById(req.params.id)
       .populate('convocados.alumno');
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
@@ -77,6 +89,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // POST /api/torneos
 router.post('/', authMiddleware, rolMiddleware('admin'), async (req, res) => {
   try {
+    const { Torneo, Alumno } = await getTenantTournamentModels(req);
     const { nombre, descripcion, fecha_limite, convocados } = req.body;
     if (!nombre) {
       return res.status(400).json({ error: 'Nombre es obligatorio' });
@@ -112,6 +125,7 @@ router.post('/', authMiddleware, rolMiddleware('admin'), async (req, res) => {
 // PUT /api/torneos/:id
 router.put('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
   try {
+    const { Torneo, Alumno } = await getTenantTournamentModels(req);
     const { nombre, descripcion, fecha_limite, convocados } = req.body;
     const update = {};
     if (nombre !== undefined) update.nombre = nombre;
@@ -162,6 +176,7 @@ router.put('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
 // PATCH /api/torneos/:id/convocados/:alumnoId
 router.patch('/:id/convocados/:alumnoId', authMiddleware, async (req, res) => {
   try {
+    const { Torneo } = await getTenantTournamentModels(req);
     const { id, alumnoId } = req.params;
     const { estado } = req.body;
     if (!['aceptado', 'rechazado'].includes(estado)) {
