@@ -48,6 +48,10 @@ function normalize(value) {
   return String(value || '').trim().toLocaleLowerCase('es');
 }
 
+function formatDivision(value) {
+  return normalize(value) === 'primer division' ? 'Primera división' : value;
+}
+
 function uniqueOptions(rows, field) {
   return Array.from(new Set(rows.map((row) => String(row?.[field] || '').trim()).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b, 'es'));
@@ -71,6 +75,8 @@ function RosterAtletasView() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [convocatoriaPage, setConvocatoriaPage] = useState(0);
+  const [convocatoriaRowsPerPage, setConvocatoriaRowsPerPage] = useState(5);
   const [loading, setLoading] = useState(true);
   const [savingAthleteId, setSavingAthleteId] = useState('');
   const [error, setError] = useState('');
@@ -209,6 +215,17 @@ function RosterAtletasView() {
     return Array.from(selectedIds).map((id) => athleteMap.get(id)).filter(Boolean);
   }, [athletes, selectedIds]);
 
+  useEffect(() => {
+    setConvocatoriaPage(0);
+  }, [selectedAthletes.length]);
+
+  const paginatedSelectedAthletes = useMemo(() => (
+    selectedAthletes.slice(
+      convocatoriaPage * convocatoriaRowsPerPage,
+      (convocatoriaPage + 1) * convocatoriaRowsPerPage
+    )
+  ), [convocatoriaPage, convocatoriaRowsPerPage, selectedAthletes]);
+
   const counts = useMemo(() => {
     const result = { aceptado: 0, rechazado: 0, pendiente: 0 };
     selectedAthletes.forEach((athlete) => {
@@ -298,7 +315,7 @@ function RosterAtletasView() {
       <Typography sx={{ fontSize: 21, lineHeight: 1.15, fontWeight: 800 }}>{teamName}</Typography>
       <Typography sx={{ mt: 0.35, fontSize: 10.5, color: '#7b8797' }}>{subtitle}</Typography>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 3fr) minmax(330px, 2fr)' }, gap: 1.4, alignItems: 'start' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 4fr) minmax(280px, 1.4fr)' }, gap: 1.4, alignItems: 'start' }}>
         <Box sx={{ border: '1px solid #e7ebf1', borderRadius: 1.5, boxShadow: '0 4px 14px rgba(15, 23, 42, 0.05)', overflow: 'hidden' }}>
           <Box sx={{ px: 1.5, pt: 1.4, pb: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
@@ -329,7 +346,7 @@ function RosterAtletasView() {
                   sx={{ '& .MuiInputBase-root': { height: 34, fontSize: 10.5 }, '& .MuiInputLabel-root': { fontSize: 10.5 } }}
                 >
                   <MenuItem value="">Todos</MenuItem>
-                  {values.map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
+                  {values.map((value) => <MenuItem key={value} value={value}>{field === 'division' ? formatDivision(value) : value}</MenuItem>)}
                 </TextField>
               ))}
               <TextField
@@ -377,9 +394,9 @@ function RosterAtletasView() {
           </Box>
 
           <Box sx={{ overflowX: 'auto' }}>
-            <Box sx={{ minWidth: 880 }}>
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1.35fr .65fr .85fr .85fr .75fr 1fr .8fr 72px', gap: 1, px: 1.5, py: 0.8, borderTop: '1px solid #eef2f6', borderBottom: '1px solid #eef2f6', bgcolor: '#fbfcfd' }}>
-                {['ATLETA', 'SEXO', 'CATEGORÍA', 'DIVISIÓN', 'F. NAC.', 'SEDE', 'SOLVENCIA', ''].map((label, index) => (
+            <Box sx={{ minWidth: 820 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1.35fr .65fr 1.25fr .75fr 1fr .8fr 72px', gap: 1, px: 1.5, py: 0.8, borderTop: '1px solid #eef2f6', borderBottom: '1px solid #eef2f6', bgcolor: '#fbfcfd' }}>
+                {['ATLETA', 'SEXO', 'CATEGORÍA', 'F. NAC.', 'SEDE', 'SOLVENCIA', ''].map((label, index) => (
                   <Typography key={`${label}-${index}`} sx={{ fontSize: 8.5, color: '#94a3b8', fontWeight: 800 }}>{label}</Typography>
                 ))}
               </Box>
@@ -390,12 +407,14 @@ function RosterAtletasView() {
                 return (
                   <Box
                     key={athleteId}
-                    sx={{ display: 'grid', gridTemplateColumns: '1.35fr .65fr .85fr .85fr .75fr 1fr .8fr 72px', gap: 1, alignItems: 'center', px: 1.5, py: 0.8, minHeight: 38, borderBottom: '1px solid #f1f5f9', bgcolor: selected ? '#fff9f6' : '#fff' }}
+                    sx={{ display: 'grid', gridTemplateColumns: '1.35fr .65fr 1.25fr .75fr 1fr .8fr 72px', gap: 1, alignItems: 'center', px: 1.5, py: 0.8, minHeight: 38, borderBottom: '1px solid #f1f5f9', bgcolor: selected ? '#fff9f6' : '#fff' }}
                   >
                     <Typography noWrap sx={{ fontSize: 10.5, fontWeight: 700 }}>{athlete.nombre_completo || 'Sin nombre'}</Typography>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.sexo || '-'}</Typography>
-                    <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.categoria || '-'}</Typography>
-                    <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.division || '-'}</Typography>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b', lineHeight: 1.2 }}>{athlete.categoria || '-'}</Typography>
+                      {athlete.division && <Typography noWrap sx={{ mt: 0.25, fontSize: 8.5, color: '#94a3b8', lineHeight: 1.2 }}>{formatDivision(athlete.division)}</Typography>}
+                    </Box>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{formatDate(athlete.fecha_nacimiento)}</Typography>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.sede_nombre || '-'}</Typography>
                     <Chip
@@ -448,7 +467,7 @@ function RosterAtletasView() {
             </Box>
           </Box>
 
-          {selectedAthletes.map((athlete) => {
+          {paginatedSelectedAthletes.map((athlete) => {
             const athleteId = getId(athlete);
             const status = statusByAthlete.get(athleteId) || 'pendiente';
             const statusStyle = STATUS_STYLES[status];
@@ -466,7 +485,7 @@ function RosterAtletasView() {
                     ['aceptado', 'Acepto'],
                     ['rechazado', 'Rechazo'],
                     ['pendiente', 'Pendiente']
-                  ].map(([value, label]) => (
+                  ].filter(([value]) => value !== status).map(([value, label]) => (
                     <Button
                       key={value}
                       size="small"
@@ -489,6 +508,21 @@ function RosterAtletasView() {
             );
           })}
           {selectedAthletes.length === 0 && <Typography sx={{ p: 2, fontSize: 11, color: '#64748b' }}>Todavia no hay atletas convocados.</Typography>}
+          <TablePagination
+            component="div"
+            count={selectedAthletes.length}
+            page={convocatoriaPage}
+            onPageChange={(event, nextPage) => setConvocatoriaPage(nextPage)}
+            rowsPerPage={convocatoriaRowsPerPage}
+            onRowsPerPageChange={(event) => {
+              setConvocatoriaRowsPerPage(Number(event.target.value));
+              setConvocatoriaPage(0);
+            }}
+            rowsPerPageOptions={[5, 10, 25, 50]}
+            labelRowsPerPage="Filas por página:"
+            labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`}
+            sx={{ borderTop: '1px solid #eef2f6', '& .MuiTablePagination-toolbar': { minHeight: 42 }, '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows, & .MuiTablePagination-input': { fontSize: 10 } }}
+          />
         </Box>
       </Box>
 

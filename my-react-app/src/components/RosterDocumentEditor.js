@@ -270,7 +270,7 @@ function RosterDocumentEditor() {
     ...CATEGORIAS_DISPONIBLES
   ].filter(Boolean)));
   const receiptBlock = (
-    <Box sx={{ mt: 1, fontFamily: 'Arial, sans-serif', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>
+    <Box sx={{ mt: 2, fontFamily: 'Arial, sans-serif', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>
       <Box sx={{ display: 'flex', alignItems: 'baseline' }}>
         <Box component="span" sx={{ whiteSpace: 'nowrap' }}>Recibido por:</Box>
         <Box sx={{ flex: 1, ml: 0.5, borderBottom: '1px solid #111' }} />
