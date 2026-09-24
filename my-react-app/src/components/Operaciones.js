@@ -23,6 +23,7 @@ import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
@@ -68,6 +69,9 @@ function getOperationStyle(tipo) {
   }
   if (tipo === 'pago_registrado') {
     return { icon: PaymentsOutlinedIcon, color: '#15966b', background: '#eaf8f1' };
+  }
+  if (tipo === 'descarga_roster') {
+    return { icon: DownloadOutlinedIcon, color: '#d95f21', background: '#fff2e8' };
   }
   return { icon: AddOutlinedIcon, color: '#805ad5', background: '#f3edff' };
 }
@@ -141,6 +145,7 @@ export default function Operaciones() {
             <MenuItem value="conciliacion_bancaria">Conciliacion bancaria</MenuItem>
             <MenuItem value="nueva_inscripcion">Nueva inscripcion</MenuItem>
             <MenuItem value="generacion_constancia">Constancias</MenuItem>
+            <MenuItem value="descarga_roster">Descargas de roster</MenuItem>
           </Select>
         </FormControl>
       </Box>

@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
+const { registrarOperacion } = require('../services/operacionService');
 
 const DEFAULT_ROSTER_TEMPLATE = {
   header_title: 'ROSTER',
@@ -1152,6 +1153,26 @@ function buildRosterPlayers(roster = {}) {
   return [...alumnos, ...prestamos];
 }
 
+async function registrarDescargaRoster(req, roster, formato, cantidadAtletas) {
+  const torneoNombre = cleanValue(roster?.torneo?.nombre || roster?.liga_name);
+  const equipo = cleanValue(roster?.documento?.campos?.equipo || roster?.grupo_competicion);
+  await registrarOperacion(req, {
+    tipo: 'descarga_roster',
+    nombre: `Roster descargado en ${formato}`,
+    detalle: [torneoNombre, equipo, cleanValue(roster?.categoria)].filter(Boolean).join(' · '),
+    entidad_tipo: 'Roster',
+    entidad_id: roster?._id,
+    metadata: {
+      formato: formato.toLowerCase(),
+      torneo_id: roster?.torneo?._id || roster?.torneo || null,
+      torneo_nombre: torneoNombre,
+      equipo,
+      categoria: cleanValue(roster?.categoria),
+      cantidad_atletas: cantidadAtletas
+    }
+  });
+}
+
 function writeRosterTable(doc, jugadores = [], startY = 172) {
   const left = doc.page.margins.left;
   const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
@@ -1329,8 +1350,9 @@ exports.exportarRosterPdf = async (req, res) => {
     const doc = new PDFDocument({ margin: 35, size: 'A4', bufferPages: true });
     const buffers = [];
     doc.on('data', buffers.push.bind(buffers));
-    doc.on('end', () => {
+    doc.on('end', async () => {
       const pdfData = Buffer.concat(buffers);
+      await registrarDescargaRoster(req, roster, 'PDF', jugadores.length);
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename=roster-${rosterId}.pdf`);
       res.send(pdfData);
@@ -1586,6 +1608,7 @@ exports.exportarRosterDoc = async (req, res) => {
 
     res.setHeader('Content-Type', 'application/msword');
     res.setHeader('Content-Disposition', `attachment; filename=roster-${rosterId}.doc`);
+    await registrarDescargaRoster(req, roster, 'DOC', rosterPlayers.length);
     return res.send(Buffer.from(`\ufeff${html}`, 'utf-8'));
   } catch (err) {
     return res.status(500).json({ error: 'No se pudo exportar el roster en DOC', detalle: err.message });

@@ -4,7 +4,7 @@ const OperacionSchema = new mongoose.Schema(
   {
     tipo: {
       type: String,
-      enum: ['conciliacion_bancaria', 'nueva_inscripcion', 'generacion_constancia'],
+      enum: ['conciliacion_bancaria', 'nueva_inscripcion', 'generacion_constancia', 'descarga_roster'],
       required: true,
       index: true
     },
