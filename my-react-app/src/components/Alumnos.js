@@ -18,6 +18,7 @@ import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import IconButton from '@mui/material/IconButton';
+import ImageCropDialog, { fileToDataUrl } from './ImageCropDialog';
 
 // ...existing code...
 // Opciones de parentesco para el representante
@@ -145,6 +146,7 @@ function Alumnos() {
   }, [form.sinRepresentante]);
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoCedulaFile, setFotoCedulaFile] = useState(null);
+  const [cedulaCrop, setCedulaCrop] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -443,19 +445,19 @@ function Alumnos() {
     }
   };
 
-  const handleFotoCedulaChange = (e) => {
+  const handleFotoCedulaChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      setFotoCedulaFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewCedula(reader.result);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setFotoCedulaFile(null);
-      setPreviewCedula(null);
+      const source = await fileToDataUrl(file);
+      setCedulaCrop({ source, fileName: file.name });
     }
+    e.target.value = '';
+  };
+
+  const handleCedulaCropConfirm = async (file) => {
+    setFotoCedulaFile(file);
+    setPreviewCedula(await fileToDataUrl(file));
+    setCedulaCrop(null);
   };
 
   const handleDragOver = (e) => {
@@ -1709,6 +1711,13 @@ function Alumnos() {
           </Button>
         </DialogActions>
       </Dialog>
+      <ImageCropDialog
+        open={Boolean(cedulaCrop)}
+        imageSrc={cedulaCrop?.source}
+        fileName={cedulaCrop?.fileName}
+        onCancel={() => setCedulaCrop(null)}
+        onConfirm={handleCedulaCropConfirm}
+      />
       </Box>
     </Box>
   );

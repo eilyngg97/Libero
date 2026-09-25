@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Alert } from '@mui/material';
+import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Alert, Dialog, DialogActions, DialogContent } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -8,6 +8,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
+import CloseIcon from '@mui/icons-material/Close';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { mediaUrl } from '../utils/mediaUrl';
@@ -46,6 +48,7 @@ function PanelOpcionesUsuario() {
    const location = useLocation();
   const navigate = useNavigate();
   const [loadingRep, setLoadingRep] = useState(false);
+  const [avisoExpedienteOpen, setAvisoExpedienteOpen] = useState(false);
   const [, setTorneosAlumno] = useState([]);
   const [, setTorneosLoading] = useState(false);
   const [, setTorneosError] = useState('');
@@ -68,6 +71,12 @@ function PanelOpcionesUsuario() {
   const { dolar } = useDolar();
   const monedaCobro = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
+  const avisoExpedienteKey = alumno?._id ? `aviso-expediente-leido:${tenantId}:${alumno._id}` : '';
+
+  useEffect(() => {
+    if (!avisoExpedienteKey) return;
+    setAvisoExpedienteOpen(localStorage.getItem(avisoExpedienteKey) !== 'true');
+  }, [avisoExpedienteKey]);
 
   // Utilidad para obtener partidos futuros donde el alumno está convocado
   const fetchProximosJuegos = async (alumnoId, torneos) => {
@@ -259,6 +268,36 @@ function PanelOpcionesUsuario() {
     };
   }, [uniformesError, uniformesLoading, uniformesPendientesPago]);
 
+  const irAMisDatos = async () => {
+    if (!alumno?._id || loadingRep) return;
+    if (alumno.representante && typeof alumno.representante === 'string') {
+      setLoadingRep(true);
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/api/representantes/${alumno.representante}`);
+        if (res.ok) {
+          const repData = await res.json();
+          navigate(`/alumno-editar/${alumno._id}`, { state: { alumno: { ...alumno, representante: repData }, sede } });
+          return;
+        }
+      } catch {
+        // El formulario puede cargar al representante con los datos disponibles.
+      } finally {
+        setLoadingRep(false);
+      }
+    }
+    navigate(`/alumno-editar/${alumno._id}`, { state: { alumno, sede } });
+  };
+
+  const cerrarAvisoExpediente = () => {
+    if (avisoExpedienteKey) localStorage.setItem(avisoExpedienteKey, 'true');
+    setAvisoExpedienteOpen(false);
+  };
+
+  const irAMisDatosDesdeAviso = () => {
+    cerrarAvisoExpediente();
+    irAMisDatos();
+  };
+
   return (
     <Box sx={{ p: 2 }}>
         <TerminosPendientesAlert sx={{ mb: 2, borderRadius: 2 }} />
@@ -271,6 +310,73 @@ function PanelOpcionesUsuario() {
             Aqui tienes el resumen de actividades de {alumno?.nombres || 'tu cuenta'}.
           </Typography>
         </Box>
+        <Dialog
+          open={avisoExpedienteOpen}
+          onClose={cerrarAvisoExpediente}
+          fullWidth
+          maxWidth="sm"
+          sx={{
+            '& .MuiDialog-paper': {
+              m: { xs: 1.5, sm: 3 },
+              width: { xs: 'calc(100% - 24px)', sm: '100%' },
+              maxHeight: { xs: 'calc(100% - 24px)', sm: 'calc(100% - 64px)' },
+              borderRadius: 3,
+              overflow: 'hidden',
+              boxShadow: '0 24px 60px rgba(15, 23, 42, 0.28)'
+            }
+          }}
+        >
+          <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 1.75, display: 'flex', alignItems: 'center', gap: 1.1, bgcolor: '#fff7ed', borderBottom: '1px solid #fed7aa' }}>
+            <Box sx={{ width: 36, height: 36, borderRadius: 1.5, bgcolor: '#ffedd5', color: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <PushPinOutlinedIcon sx={{ fontSize: 20 }} />
+            </Box>
+            <Typography sx={{ flex: 1, fontSize: { xs: 17, sm: 19 }, fontWeight: 900, color: '#0f172a' }}>
+              ¡Atención, representante!
+            </Typography>
+            <IconButton aria-label="Cerrar aviso" onClick={cerrarAvisoExpediente} size="small" sx={{ color: '#64748b' }}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
+          <DialogContent sx={{ px: { xs: 2, sm: 2.5 }, py: 2 }}>
+            <Typography sx={{ color: '#475569', fontSize: 13.5, lineHeight: 1.55 }}>
+              Para completar la ficha de registro de tu atleta y mantener al día el expediente digital de la academia, realiza estas acciones:
+            </Typography>
+            <Box component="ol" sx={{ m: 0, mt: 1.5, pl: 2.5, display: 'grid', gap: 1.15, color: '#334155' }}>
+              <Box component="li" sx={{ pl: 0.35, fontSize: 13.5, lineHeight: 1.5 }}>
+                <Typography component="span" sx={{ fontSize: 'inherit', fontWeight: 800 }}>Foto de perfil del atleta: </Typography>
+                Sube una imagen clara, tipo carnet y reciente con la franela de la academia.
+              </Box>
+              <Box component="li" sx={{ pl: 0.35, fontSize: 13.5, lineHeight: 1.5 }}>
+                <Typography component="span" sx={{ fontSize: 'inherit', fontWeight: 800 }}>Cédula de identidad: </Typography>
+                Adjunta una foto o captura legible del documento de identidad del atleta.
+              </Box>
+              <Box component="li" sx={{ pl: 0.35, fontSize: 13.5, lineHeight: 1.5 }}>
+                <Typography component="span" sx={{ fontSize: 'inherit', fontWeight: 800 }}>Completar datos pendientes: </Typography>
+                Ingresa a la sección “Mis datos” y llena los campos restantes del formulario.
+              </Box>
+            </Box>
+            <Typography sx={{ mt: 1.75, p: 1.25, borderRadius: 1.5, bgcolor: '#f8fafc', color: '#64748b', fontSize: 12.5, fontStyle: 'italic', lineHeight: 1.5 }}>
+              Tener los datos actualizados nos ayuda a gestionar mejor la inscripción, los uniformes y el registro en torneos. ¡Gracias por tu apoyo!
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: { xs: 2, sm: 2.5 }, py: 1.75, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'auto 1fr' }, gap: 1, borderTop: '1px solid #e2e8f0' }}>
+            <Button
+              onClick={cerrarAvisoExpediente}
+              sx={{ minHeight: 44, px: 2.25, borderRadius: 1.5, color: '#475569', fontWeight: 800, textTransform: 'none', order: { xs: 2, sm: 1 }, '&:hover': { bgcolor: '#f1f5f9' } }}
+            >
+              Entendido
+            </Button>
+            <Button
+              variant="contained"
+              endIcon={<ArrowForwardIosIcon sx={{ fontSize: '14px !important' }} />}
+              onClick={irAMisDatosDesdeAviso}
+              disabled={loadingRep || !alumno?._id}
+              sx={{ minHeight: 44, px: 2.5, borderRadius: 1.5, bgcolor: '#f97316', color: '#fff', fontWeight: 800, textTransform: 'none', order: { xs: 1, sm: 2 }, boxShadow: '0 6px 14px rgba(249, 115, 22, 0.24)', '&:hover': { bgcolor: '#ea580c', boxShadow: '0 8px 18px rgba(234, 88, 12, 0.3)' }, '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' } }}
+            >
+              {loadingRep ? 'Cargando...' : 'Ir a Mis Datos'}
+            </Button>
+          </DialogActions>
+        </Dialog>
         {uniformesPendientesPago.length > 0 && (
           <Alert
             severity="warning"
@@ -370,26 +476,7 @@ function PanelOpcionesUsuario() {
                   '& > *:not(.bg-icon)': { position: 'relative', zIndex: 1 },
                   '&:hover': { transform: 'scale(1.04)' }
                 }}
-                  onClick={async () => {
-                    if (alumno && alumno.representante && typeof alumno.representante === 'string') {
-                      setLoadingRep(true);
-                      try {
-                        const res = await fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/api/representantes/${alumno.representante}`);
-                        if (res.ok) {
-                          const repData = await res.json();
-                          navigate(`/alumno-editar/${alumno._id}`, { state: { alumno: { ...alumno, representante: repData }, sede } });
-                        } else {
-                          navigate(`/alumno-editar/${alumno._id}`, { state: { alumno, sede } });
-                        }
-                      } catch {
-                        navigate(`/alumno-editar/${alumno._id}`, { state: { alumno, sede } });
-                      } finally {
-                        setLoadingRep(false);
-                      }
-                    } else {
-                      navigate(`/alumno-editar/${alumno._id}`, { state: { alumno, sede } });
-                    }
-                  }}
+                  onClick={irAMisDatos}
                 >
                   <IconButton sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 1 }}>
                     <PersonIcon sx={{ fontSize: 32, color: 'white' }} />

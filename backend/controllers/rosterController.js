@@ -297,7 +297,7 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
     }
 
     const alumnos = await Alumno.find(filtroAlumnos)
-      .select('nombres apellidos cedula fecha_nacimiento numero_franela sexo categoria division telefono sede representante')
+      .select('nombres apellidos foto cedula fecha_nacimiento numero_franela sexo categoria division telefono sede representante')
       .populate('sede', 'nombre')
       .populate('representante', 'nombres apellidos telefono')
       .sort({ apellidos: 1, nombres: 1 })
@@ -330,6 +330,7 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
         nombres: alumno.nombres || '',
         apellidos: alumno.apellidos || '',
         nombre_completo: `${alumno.nombres || ''} ${alumno.apellidos || ''}`.trim(),
+        foto: alumno.foto || '',
         cedula: alumno.cedula || '',
         fecha_nacimiento: alumno.fecha_nacimiento || null,
         numero_franela: alumno.numero_franela || null,

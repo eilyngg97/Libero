@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Checkbox,
@@ -409,7 +410,16 @@ function RosterAtletasView() {
                     key={athleteId}
                     sx={{ display: 'grid', gridTemplateColumns: '1.35fr .65fr 1.25fr .75fr 1fr .8fr 72px', gap: 1, alignItems: 'center', px: 1.5, py: 0.8, minHeight: 38, borderBottom: '1px solid #f1f5f9', bgcolor: selected ? '#fff9f6' : '#fff' }}
                   >
-                    <Typography noWrap sx={{ fontSize: 10.5, fontWeight: 700 }}>{athlete.nombre_completo || 'Sin nombre'}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, minWidth: 0 }}>
+                      <Avatar
+                        src={athlete.foto || undefined}
+                        alt={athlete.nombre_completo || 'Atleta'}
+                        sx={{ width: 28, height: 28, flexShrink: 0, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 9, fontWeight: 800 }}
+                      >
+                        {`${athlete.nombres?.[0] || ''}${athlete.apellidos?.[0] || ''}`.toUpperCase()}
+                      </Avatar>
+                      <Typography noWrap sx={{ minWidth: 0, fontSize: 10.5, fontWeight: 700 }}>{athlete.nombre_completo || 'Sin nombre'}</Typography>
+                    </Box>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.sexo || '-'}</Typography>
                     <Box sx={{ minWidth: 0 }}>
                       <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b', lineHeight: 1.2 }}>{athlete.categoria || '-'}</Typography>
@@ -473,10 +483,19 @@ function RosterAtletasView() {
             const statusStyle = STATUS_STYLES[status];
             return (
               <Box key={athleteId} sx={{ px: 1.5, py: 1.1, borderBottom: '1px solid #eef2f6' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography noWrap sx={{ fontSize: 10.5, fontWeight: 800 }}>{athlete.nombre_completo}</Typography>
-                    <Typography noWrap sx={{ fontSize: 9, color: '#94a3b8' }}>{[athlete.sexo, athlete.categoria, athlete.sede_nombre].filter(Boolean).join(' · ')}</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, minWidth: 0 }}>
+                    <Avatar
+                      src={athlete.foto || undefined}
+                      alt={athlete.nombre_completo || 'Atleta'}
+                      sx={{ width: 28, height: 28, flexShrink: 0, bgcolor: '#e0ecff', color: '#2563eb', fontSize: 9, fontWeight: 800 }}
+                    >
+                      {`${athlete.nombres?.[0] || ''}${athlete.apellidos?.[0] || ''}`.toUpperCase()}
+                    </Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography noWrap sx={{ fontSize: 10.5, fontWeight: 800 }}>{athlete.nombre_completo}</Typography>
+                      <Typography noWrap sx={{ fontSize: 9, color: '#94a3b8' }}>{[athlete.sexo, athlete.categoria, athlete.sede_nombre].filter(Boolean).join(' · ')}</Typography>
+                    </Box>
                   </Box>
                   <Chip label={statusStyle.label} size="small" sx={{ height: 20, bgcolor: statusStyle.bg, color: statusStyle.color, fontSize: 8.5, fontWeight: 800 }} />
                 </Box>

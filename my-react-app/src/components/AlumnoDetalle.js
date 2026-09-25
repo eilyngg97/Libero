@@ -20,8 +20,12 @@ import { useParams } from "react-router-dom";
 import { Button, Typography, Paper, Avatar, Dialog, DialogTitle, DialogContent, Box, IconButton, Checkbox, FormControlLabel, CircularProgress, Collapse } from "@mui/material";
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import CropIcon from '@mui/icons-material/Crop';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import Grid from "@mui/material/Grid";
 import { mediaUrl } from '../utils/mediaUrl';
+import ImageCropDialog, { fileToDataUrl } from './ImageCropDialog';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return "";
@@ -111,7 +115,13 @@ function AlumnoDetalle() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openFotoAlumno, setOpenFotoAlumno] = useState(false);
+  const [descargandoFotoAlumno, setDescargandoFotoAlumno] = useState(false);
   const [openFotoCedula, setOpenFotoCedula] = useState(false);
+  const [cedulaCrop, setCedulaCrop] = useState(null);
+  const [savingFotoCedula, setSavingFotoCedula] = useState(false);
+  const [descargandoFotoCedula, setDescargandoFotoCedula] = useState(false);
+  const [fotoCedulaError, setFotoCedulaError] = useState('');
+  const [fotoCedulaSuccess, setFotoCedulaSuccess] = useState('');
   const [openHistorialEstados, setOpenHistorialEstados] = useState(false);
   const [historialEstados, setHistorialEstados] = useState([]);
   const [historialLoading, setHistorialLoading] = useState(false);
@@ -124,6 +134,116 @@ function AlumnoDetalle() {
   const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
     return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const handleDescargarFotoAlumno = async () => {
+    if (!alumno?.foto || descargandoFotoAlumno) return;
+    setDescargandoFotoAlumno(true);
+    try {
+      const response = await fetch(mediaUrl(alumno.foto));
+      if (!response.ok) throw new Error('No se pudo descargar la foto del alumno');
+      const blob = await response.blob();
+      const extension = blob.type === 'image/png' ? 'png' : 'jpg';
+      const nombreAlumno = `${alumno.nombres || ''}-${alumno.apellidos || ''}`
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-zA-Z0-9-_]/g, '') || id;
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `foto-${nombreAlumno}.${extension}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      setError(downloadError.message || 'No se pudo descargar la foto del alumno');
+    } finally {
+      setDescargandoFotoAlumno(false);
+    }
+  };
+
+  const openCedulaCrop = async (file) => {
+    setFotoCedulaError('');
+    setFotoCedulaSuccess('');
+    try {
+      const source = await fileToDataUrl(file);
+      setCedulaCrop({ source, fileName: file.name || `cedula-${id}.jpg` });
+    } catch (cropError) {
+      setFotoCedulaError(cropError.message || 'No se pudo abrir la imagen');
+    }
+  };
+
+  const handleCropCurrentCedula = async () => {
+    setFotoCedulaError('');
+    setFotoCedulaSuccess('');
+    try {
+      const response = await fetch(mediaUrl(alumno.foto_cedula));
+      if (!response.ok) throw new Error('No se pudo cargar la foto actual');
+      const blob = await response.blob();
+      await openCedulaCrop(new File([blob], `cedula-${id}.jpg`, { type: blob.type || 'image/jpeg' }));
+    } catch (cropError) {
+      setFotoCedulaError(cropError.message || 'No se pudo cargar la foto actual');
+    }
+  };
+
+  const handleFotoCedulaSelection = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) await openCedulaCrop(file);
+  };
+
+  const handleDescargarFotoCedula = async () => {
+    if (!alumno?.foto_cedula || descargandoFotoCedula) return;
+    setDescargandoFotoCedula(true);
+    setFotoCedulaError('');
+    try {
+      const response = await fetch(mediaUrl(alumno.foto_cedula));
+      if (!response.ok) throw new Error('No se pudo descargar la foto de cédula');
+      const blob = await response.blob();
+      const extension = blob.type === 'image/png' ? 'png' : 'jpg';
+      const nombreAlumno = `${alumno.nombres || ''}-${alumno.apellidos || ''}`
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-zA-Z0-9-_]/g, '') || id;
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `cedula-${nombreAlumno}.${extension}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      setFotoCedulaError(downloadError.message || 'No se pudo descargar la foto de cédula');
+    } finally {
+      setDescargandoFotoCedula(false);
+    }
+  };
+
+  const handleSaveCroppedCedula = async (file) => {
+    setSavingFotoCedula(true);
+    setFotoCedulaError('');
+    setFotoCedulaSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append('foto_cedula', file);
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'No se pudo guardar la foto recortada');
+      setAlumno((current) => ({ ...current, ...data }));
+      setCedulaCrop(null);
+      setFotoCedulaSuccess('Foto de cédula actualizada.');
+    } catch (saveError) {
+      setFotoCedulaError(saveError.message || 'No se pudo guardar la foto recortada');
+      throw saveError;
+    } finally {
+      setSavingFotoCedula(false);
+    }
   };
 
   const fetchHistorialEstados = async () => {
@@ -759,12 +879,33 @@ function AlumnoDetalle() {
         </DialogTitle>
         <DialogContent dividers>
           {alumno.foto ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 280, backgroundColor: '#f8fafc', borderRadius: 2, p: 1 }}>
+            <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 280, backgroundColor: '#f8fafc', borderRadius: 2, p: 1 }}>
               <img
                 src={mediaUrl(alumno.foto)}
                 alt={`Foto de ${alumno.nombres} ${alumno.apellidos}`}
                 style={{ maxWidth: '100%', maxHeight: '75vh', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: 8 }}
               />
+              <IconButton
+                aria-label="Descargar foto del alumno"
+                title="Descargar foto"
+                onClick={handleDescargarFotoAlumno}
+                disabled={descargandoFotoAlumno}
+                sx={{
+                  position: 'absolute',
+                  top: 16,
+                  right: 16,
+                  width: 40,
+                  height: 40,
+                  bgcolor: 'rgba(255, 255, 255, 0.94)',
+                  color: '#334155',
+                  border: '1px solid rgba(203, 213, 225, 0.9)',
+                  boxShadow: '0 4px 12px rgba(15, 23, 42, 0.18)',
+                  '&:hover': { bgcolor: '#fff7ed', color: '#ea580c', borderColor: '#fdba74' },
+                  '&.Mui-disabled': { bgcolor: 'rgba(255, 255, 255, 0.8)', color: '#94a3b8' }
+                }}
+              >
+                {descargandoFotoAlumno ? <CircularProgress size={18} sx={{ color: '#f97316' }} /> : <DownloadIcon sx={{ fontSize: 20 }} />}
+              </IconButton>
             </Box>
           ) : (
             <Typography variant="body2">Foto del alumno no disponible.</Typography>
@@ -785,18 +926,96 @@ function AlumnoDetalle() {
         </DialogTitle>
         <DialogContent dividers>
           {alumno.foto_cedula ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-              <img
-                src={mediaUrl(alumno.foto_cedula)}
-                alt="Foto de cédula"
-                style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: 8 }}
-              />
-            </Box>
+            <>
+              <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+                <img
+                  src={mediaUrl(alumno.foto_cedula)}
+                  alt="Foto de cédula"
+                  style={{ maxWidth: '100%', maxHeight: '62vh', borderRadius: 8 }}
+                />
+                <IconButton
+                  aria-label="Descargar foto de cédula"
+                  title="Descargar foto"
+                  onClick={handleDescargarFotoCedula}
+                  disabled={descargandoFotoCedula}
+                  sx={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    width: 38,
+                    height: 38,
+                    bgcolor: 'rgba(255, 255, 255, 0.94)',
+                    color: '#334155',
+                    border: '1px solid rgba(203, 213, 225, 0.9)',
+                    boxShadow: '0 4px 12px rgba(15, 23, 42, 0.18)',
+                    '&:hover': { bgcolor: '#fff7ed', color: '#ea580c', borderColor: '#fdba74' },
+                    '&.Mui-disabled': { bgcolor: 'rgba(255, 255, 255, 0.8)', color: '#94a3b8' }
+                  }}
+                >
+                  {descargandoFotoCedula ? <CircularProgress size={17} sx={{ color: '#f97316' }} /> : <DownloadIcon sx={{ fontSize: 19 }} />}
+                </IconButton>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1, mt: 2, p: 1.25, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                <Button
+                  startIcon={<CropIcon />}
+                  variant="contained"
+                  onClick={handleCropCurrentCedula}
+                  disabled={savingFotoCedula}
+                  sx={{
+                    minHeight: 40,
+                    borderRadius: 1.5,
+                    bgcolor: '#f97316',
+                    color: '#fff',
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    boxShadow: '0 4px 10px rgba(249, 115, 22, 0.2)',
+                    '&:hover': { bgcolor: '#ea580c', boxShadow: '0 5px 12px rgba(234, 88, 12, 0.26)' },
+                    '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' }
+                  }}
+                >
+                  Recortar actual
+                </Button>
+                <Button
+                  component="label"
+                  startIcon={<PhotoCameraIcon />}
+                  variant="outlined"
+                  disabled={savingFotoCedula}
+                  sx={{
+                    minHeight: 40,
+                    borderRadius: 1.5,
+                    borderColor: '#cbd5e1',
+                    bgcolor: '#fff',
+                    color: '#334155',
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#94a3b8', bgcolor: '#f1f5f9' },
+                    '&.Mui-disabled': { borderColor: '#e2e8f0', color: '#94a3b8' }
+                  }}
+                >
+                  Cambiar foto
+                  <input hidden type="file" accept="image/*" onChange={handleFotoCedulaSelection} />
+                </Button>
+              </Box>
+              {fotoCedulaSuccess && (
+                <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6, color: '#15803d' }}>
+                  <CheckCircleOutlineIcon sx={{ fontSize: 16 }} />
+                  <Typography sx={{ fontSize: 12, fontWeight: 700 }}>{fotoCedulaSuccess}</Typography>
+                </Box>
+              )}
+              {fotoCedulaError && <Typography color="error" sx={{ mt: 1.5, textAlign: 'center', fontSize: 12 }}>{fotoCedulaError}</Typography>}
+            </>
           ) : (
             <Typography variant="body2">Foto de cédula no disponible.</Typography>
           )}
         </DialogContent>
       </Dialog>
+      <ImageCropDialog
+        open={Boolean(cedulaCrop)}
+        imageSrc={cedulaCrop?.source}
+        fileName={cedulaCrop?.fileName}
+        onCancel={() => setCedulaCrop(null)}
+        onConfirm={handleSaveCroppedCedula}
+      />
       <Dialog
         open={openHistorialEstados}
         onClose={() => setOpenHistorialEstados(false)}

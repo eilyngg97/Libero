@@ -8,6 +8,7 @@ import { mediaUrl } from '../utils/mediaUrl';
 import './Alumnos.css';
 import { Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ImageCropDialog, { fileToDataUrl } from './ImageCropDialog';
 
 const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
@@ -44,6 +45,7 @@ function AlumnoEditar({ locationState }) {
   const [previewCedula, setPreviewCedula] = useState(null);
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoCedulaFile, setFotoCedulaFile] = useState(null);
+  const [cedulaCrop, setCedulaCrop] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -350,19 +352,19 @@ function AlumnoEditar({ locationState }) {
     }
   };
 
-  const handleFotoCedulaChange = (e) => {
+  const handleFotoCedulaChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      setFotoCedulaFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewCedula(reader.result);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setFotoCedulaFile(null);
-      setPreviewCedula(null);
+      const source = await fileToDataUrl(file);
+      setCedulaCrop({ source, fileName: file.name });
     }
+    e.target.value = '';
+  };
+
+  const handleCedulaCropConfirm = async (file) => {
+    setFotoCedulaFile(file);
+    setPreviewCedula(await fileToDataUrl(file));
+    setCedulaCrop(null);
   };
 
   const handleDragOver = (e) => {
@@ -1204,6 +1206,13 @@ function AlumnoEditar({ locationState }) {
           </Box>
         </Box>
       </Box>
+      <ImageCropDialog
+        open={Boolean(cedulaCrop)}
+        imageSrc={cedulaCrop?.source}
+        fileName={cedulaCrop?.fileName}
+        onCancel={() => setCedulaCrop(null)}
+        onConfirm={handleCedulaCropConfirm}
+      />
     </Box>
   );
 }
