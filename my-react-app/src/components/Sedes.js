@@ -354,23 +354,24 @@ function Sedes() {
           return (
             <Paper key={sede.id || `sede-card-${idx}`}
               sx={{
-                p: 3,
+                p: { xs: 1.5, sm: 3 },
                 borderRadius: 3,
                 boxShadow: '0 2px 8px rgba(15,23,42,0.06)',
                 display: 'flex',
-                alignItems: 'center',
-                gap: 3,
+                flexDirection: { xs: 'column', sm: 'row' },
+                alignItems: { xs: 'stretch', sm: 'center' },
+                gap: { xs: 1.5, sm: 3 },
                 flexWrap: 'wrap',
                 minHeight: 120
               }}
             >
-              <Box sx={{ minWidth: 180, flex: 1 }}>
+              <Box sx={{ minWidth: 0, width: { xs: '100%', sm: 'auto' }, flex: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <LocationOnIcon sx={{ color: '#f59e0b', fontSize: 28 }} />
                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f172a' }}>{sede.nombre}</Typography>
                 </Box>
                 <Typography sx={{ color: '#64748b', fontSize: 14 }}>{sede.direccion || '-'}</Typography>
-                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Chip label={sede.estado} size="small" sx={{ bgcolor: sede.estado === 'Activa' ? '#dcfce7' : '#fee2e2', color: sede.estado === 'Activa' ? '#16a34a' : '#dc2626', fontWeight: 700 }} />
                   <Typography sx={{ fontSize: 13, color: '#475569', fontWeight: 700 }}>
                     Mensualidad: {simboloMonedaActiva}{sede.costo || '-'}
@@ -383,8 +384,8 @@ function Sedes() {
                   </Typography>
                 </Box>
               </Box>
-              <Box sx={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                <Box sx={{ display: 'flex', gap: 1 }}>
+              <Box sx={{ flex: 1, minWidth: 0, width: { xs: '100%', sm: 'auto' }, display: 'flex', flexDirection: 'column', alignItems: { xs: 'stretch', sm: 'flex-end' }, gap: 1 }}>
+                <Box sx={{ display: { xs: 'grid', sm: 'flex' }, gridTemplateColumns: { xs: '1fr 1fr' }, gap: 1, width: { xs: '100%', sm: 'auto' } }}>
                     {!usaRecargoGlobal(sede) && (
                       <Button
                         variant="outlined"
@@ -399,7 +400,12 @@ function Sedes() {
                           textTransform: 'uppercase',
                           boxShadow: 'none',
                           letterSpacing: 1,
-                          px: 2.5,
+                          minWidth: 0,
+                          width: { xs: '100%', sm: 'auto' },
+                          gridColumn: { xs: '1 / -1', sm: 'auto' },
+                          px: { xs: 1.5, sm: 2.5 },
+                          fontSize: { xs: 11, sm: 13 },
+                          lineHeight: 1.2,
                           '&:hover': {
                             bgcolor: '#fff7ed',
                             borderColor: '#fb923c',
@@ -423,7 +429,10 @@ function Sedes() {
                         textTransform: 'uppercase',
                         boxShadow: 'none',
                         letterSpacing: 1,
-                        px: 2.5,
+                        minWidth: 0,
+                        width: { xs: '100%', sm: 'auto' },
+                        px: { xs: 1.5, sm: 2.5 },
+                        fontSize: { xs: 11, sm: 13 },
                         '&:hover': {
                           bgcolor: '#fdfdfd',
                           borderColor: '#cbd5e1',
@@ -446,7 +455,10 @@ function Sedes() {
                         textTransform: 'uppercase',
                         boxShadow: 'none',
                         letterSpacing: 1,
-                        px: 2.5,
+                        minWidth: 0,
+                        width: { xs: '100%', sm: 'auto' },
+                        px: { xs: 1.5, sm: 2.5 },
+                        fontSize: { xs: 11, sm: 13 },
                         '&:hover': {
                           bgcolor: '#fef2f2',
                           borderColor: '#fca5a5',

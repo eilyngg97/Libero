@@ -6,7 +6,7 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Box, MenuItem, Select, FormControl, InputLabel, Checkbox, Radio, RadioGroup, FormControlLabel, Chip } from '@mui/material';
@@ -251,19 +251,32 @@ function construirPreviewPeriodosReingreso(fechaReingresoRaw) {
   return periodos;
 }
 
+const FILAS_POR_PAGINA_PERMITIDAS = [5, 10, 25];
+
+function obtenerPaginaInicial(searchParams) {
+  const pagina = Number.parseInt(searchParams.get('pagina'), 10);
+  return Number.isInteger(pagina) && pagina > 0 ? pagina - 1 : 0;
+}
+
+function obtenerFilasPorPaginaInicial(searchParams) {
+  const filas = Number.parseInt(searchParams.get('filas'), 10);
+  return FILAS_POR_PAGINA_PERMITIDAS.includes(filas) ? filas : 5;
+}
+
 function TablaAlumnos() {
+  const [searchParams, setSearchParams] = useSearchParams();
   // Estados para filtros
-  const [filtroNombreApellido, setFiltroNombreApellido] = useState('');
-  const [filtroFechaNacimientoDesde, setFiltroFechaNacimientoDesde] = useState('');
-  const [filtroFechaNacimientoHasta, setFiltroFechaNacimientoHasta] = useState('');
-  const [filtroSexo, setFiltroSexo] = useState('');
-  const [filtroCategoria, setFiltroCategoria] = useState([]);
-  const [filtroDivision, setFiltroDivision] = useState([]);
-  const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('');
-  const [filtroPagoCuotas, setFiltroPagoCuotas] = useState('');
-  const [filtroRecargoMensual, setFiltroRecargoMensual] = useState('');
-  const [filtroSolvencia, setFiltroSolvencia] = useState('');
+  const [filtroNombreApellido, setFiltroNombreApellido] = useState(() => searchParams.get('q') || '');
+  const [filtroFechaNacimientoDesde, setFiltroFechaNacimientoDesde] = useState(() => searchParams.get('nacDesde') || '');
+  const [filtroFechaNacimientoHasta, setFiltroFechaNacimientoHasta] = useState(() => searchParams.get('nacHasta') || '');
+  const [filtroSexo, setFiltroSexo] = useState(() => searchParams.get('sexo') || '');
+  const [filtroCategoria, setFiltroCategoria] = useState(() => searchParams.getAll('categoria'));
+  const [filtroDivision, setFiltroDivision] = useState(() => searchParams.getAll('division'));
+  const [filtroTipoMensualidad, setFiltroTipoMensualidad] = useState(() => searchParams.get('tipoMensualidad') || '');
+  const [filtroEstado, setFiltroEstado] = useState(() => searchParams.get('estado') || '');
+  const [filtroPagoCuotas, setFiltroPagoCuotas] = useState(() => searchParams.get('cuotas') || '');
+  const [filtroRecargoMensual, setFiltroRecargoMensual] = useState(() => searchParams.get('recargo') || '');
+  const [filtroSolvencia, setFiltroSolvencia] = useState(() => searchParams.get('solvencia') || '');
   const [mostrarFiltrosMobile, setMostrarFiltrosMobile] = useState(false);
     // Formatear fecha a DD/MM/YYYY (corrige desfase por zona horaria)
     const formatFecha = (fecha) => {
@@ -285,8 +298,8 @@ function TablaAlumnos() {
   const esSuperAdmin = rolActual === 'super_admin';
   const tieneSedeEspecifica = Boolean(sedeSeleccionada?._id);
   const [alumnos, setAlumnos] = useState([]);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
+  const [page, setPage] = useState(() => obtenerPaginaInicial(searchParams));
+  const [rowsPerPage, setRowsPerPage] = useState(() => obtenerFilasPorPaginaInicial(searchParams));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
@@ -363,6 +376,47 @@ function TablaAlumnos() {
   const mensualidadMesRetiro = bajaMensualidadConservada[0] || null;
   const estatusMesRetiro = String(mensualidadMesRetiro?.estatus || '').toLowerCase();
   const mesRetiroTieneMovimiento = ['pagado', 'en revision', 'abono', 'exonerado', 'exento por reposo', 'becado'].includes(estatusMesRetiro);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams();
+    const agregarParametro = (nombre, valor) => {
+      if (valor) nextParams.set(nombre, valor);
+    };
+
+    agregarParametro('q', filtroNombreApellido);
+    agregarParametro('nacDesde', filtroFechaNacimientoDesde);
+    agregarParametro('nacHasta', filtroFechaNacimientoHasta);
+    agregarParametro('sexo', filtroSexo);
+    filtroCategoria.forEach((categoria) => nextParams.append('categoria', categoria));
+    filtroDivision.forEach((division) => nextParams.append('division', division));
+    agregarParametro('tipoMensualidad', filtroTipoMensualidad);
+    agregarParametro('estado', filtroEstado);
+    agregarParametro('cuotas', filtroPagoCuotas);
+    agregarParametro('recargo', filtroRecargoMensual);
+    agregarParametro('solvencia', filtroSolvencia);
+    if (page > 0) nextParams.set('pagina', String(page + 1));
+    if (rowsPerPage !== 5) nextParams.set('filas', String(rowsPerPage));
+
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [
+    filtroCategoria,
+    filtroDivision,
+    filtroEstado,
+    filtroFechaNacimientoDesde,
+    filtroFechaNacimientoHasta,
+    filtroNombreApellido,
+    filtroPagoCuotas,
+    filtroRecargoMensual,
+    filtroSexo,
+    filtroSolvencia,
+    filtroTipoMensualidad,
+    page,
+    rowsPerPage,
+    searchParams,
+    setSearchParams
+  ]);
 
   useEffect(() => {
     if (!bajaId || !fechaRetiro) {
