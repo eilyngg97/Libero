@@ -83,7 +83,8 @@ function DashboardUsuario() {
           fecha: fechaPeriodo,
           fechaVencimientoVisible,
           estado: normalizarEstado(m.estatus),
-          monto: m.monto_esperado
+          monto: m.monto_con_recargo_usd ?? m.monto_esperado,
+          recargoAplicado: Math.max(0, Number(m.recargo_aplicado_usd) || 0)
         };
       })
       .filter((m) => !Number.isNaN(m.fecha.getTime()))
@@ -110,7 +111,8 @@ function DashboardUsuario() {
         fechaVencimientoVisible: (siguientePeriodo.mes && siguientePeriodo.anio)
           ? construirFechaPeriodoConDia(siguientePeriodo.mes, siguientePeriodo.anio, diaReferencia)
           : ultimaMensualidad.fechaVencimientoVisible,
-        monto: ultimaMensualidad?.monto
+        monto: ultimaMensualidad?.monto,
+        recargoAplicado: 0
       };
     }
 
@@ -119,6 +121,7 @@ function DashboardUsuario() {
         ? referencia.fechaVencimientoVisible.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
         : referencia.fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
       monto: referencia.monto,
+      recargoAplicado: referencia.recargoAplicado || 0,
       estado: pendientes.length ? 'pendiente' : 'al dia'
     };
   }, [obtenerFechaVencimientoVisible]);
@@ -298,9 +301,23 @@ function DashboardUsuario() {
                         </Box>
                         <Box sx={{ borderTop: '1px solid #cfd4dc', my: 0.2 }} />
 
+                        {resumen.recargoAplicado > 0 && (
+                          <>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
+                              <Typography variant="body2" sx={{ color: '#b91c1c', fontWeight: 700, lineHeight: 1.25 }}>
+                                Recargo aplicado:
+                              </Typography>
+                              <Typography variant="body2" sx={{ color: '#b91c1c', fontWeight: 800, lineHeight: 1.25, textAlign: 'right' }}>
+                                +{formatMonto(resumen.recargoAplicado).replace(' USD', '')}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ borderTop: '1px solid #cfd4dc', my: 0.2 }} />
+                          </>
+                        )}
+
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
                           <Typography variant="body2" sx={{ color: '#374151', lineHeight: 1.25 }}>
-                            Monto:
+                            Monto total:
                           </Typography>
                           <Typography variant="body2" sx={{ color: '#111827', lineHeight: 1.25, textAlign: 'right' }}>
                             {formatMonto(resumen.monto).replace(' USD', '')}

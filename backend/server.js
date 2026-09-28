@@ -69,7 +69,9 @@ async function getTenantJobModels(tenant) {
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
     Sede: getTenantModel(connection, 'Sede'),
     Reposo: getTenantModel(connection, 'Reposo'),
-    Representante: getTenantModel(connection, 'Representante')
+    Representante: getTenantModel(connection, 'Representante'),
+    TenantConfig: getTenantModel(connection, 'TenantConfig'),
+    HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno')
   };
 }
 

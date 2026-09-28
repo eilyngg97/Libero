@@ -314,7 +314,7 @@ function obtenerFechaVencimientoPeriodo(mes, anio, diaVencimiento = 5) {
 }
 
 function obtenerFechaRecargoPeriodo(mes, anio, cobroConfig) {
-  const fechaVencimiento = obtenerFechaVencimientoPeriodo(mes, anio, cobroConfig?.dia_vencimiento);
+  const fechaVencimiento = construirFechaPeriodoConDia(mes, anio, cobroConfig?.dia_vencimiento);
   const fechaRecargo = new Date(fechaVencimiento);
   fechaRecargo.setUTCDate(fechaRecargo.getUTCDate() + (Number(cobroConfig?.dias_gracia) || 0));
   return fechaRecargo;
@@ -323,7 +323,7 @@ function obtenerFechaRecargoPeriodo(mes, anio, cobroConfig) {
 function obtenerFechaRecargoAlumnoPeriodo(mes, anio, cobroConfig, alumno) {
   const diaPersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado, null);
   if (diaPersonalizado) {
-    return construirFechaPeriodoConDia(mes, anio, diaPersonalizado, { finDelDia: true });
+    return construirFechaPeriodoConDia(mes, anio, diaPersonalizado);
   }
 
   return obtenerFechaRecargoPeriodo(mes, anio, cobroConfig);
@@ -649,7 +649,7 @@ async function aplicarRecargoMensualidadSegunConfig(
   const estatusActual = String(mensualidad.estatus || '').toLowerCase();
   const recargoBloqueadoManual = mensualidad?.bloqueo_recargo_automatico === true;
 
-  const elegibleEstatus = ['pendiente', 'insolvente', 'abono'];
+  const elegibleEstatus = ['pendiente', 'insolvente', 'retrasado', 'abono'];
   const montoActual = redondearMonto(mensualidad.monto_esperado || 0);
   const montoSinRecargoActual = redondearMonto(
     mensualidad.monto_sin_recargo_usd !== undefined && mensualidad.monto_sin_recargo_usd !== null
@@ -1794,7 +1794,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
   }
 
   const candidatasRecargo = await MensualidadModel.find({
-    estatus: { $in: ['Pendiente', 'Insolvente', 'Abono'] },
+    estatus: { $in: ['Pendiente', 'Insolvente', 'Retrasado', 'Abono'] },
     bloqueo_recargo_automatico: { $ne: true },
     monto_esperado: { $gt: 0 },
     $or: [
@@ -1803,7 +1803,11 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     ]
   }).populate({
     path: 'id_alumno',
-    select: 'tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado'
+    select: 'tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado sede',
+    populate: {
+      path: 'sede',
+      select: 'recargo_usd usar_recargo_global'
+    }
   });
 
   let recargosAplicados = 0;
@@ -2435,12 +2439,13 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
 // Consultar mensualidades (por sede, alumno, mes, año)
 exports.getMensualidades = async (req, res) => {
   try {
+    const tenantModels = await getTenantMensualidadModels(req);
     const {
       Representante: TenantRepresentante,
       Alumno: TenantAlumno,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle
-    } = await getTenantMensualidadModels(req);
+    } = tenantModels;
 
     const filtro = {};
     let ownedAlumnoIds = null;
@@ -2501,9 +2506,29 @@ exports.getMensualidades = async (req, res) => {
       path: 'id_alumno',
       populate: [
         { path: 'representante', select: 'nombres apellidos' },
-        { path: 'sede', select: 'nombre' }
+        { path: 'sede', select: 'nombre recargo_usd usar_recargo_global' }
       ]
     });
+
+    const candidatasRecargo = mensualidades.filter((mensualidad) => (
+      ['pendiente', 'insolvente', 'retrasado', 'abono'].includes(String(mensualidad.estatus || '').toLowerCase()) &&
+      mensualidad.bloqueo_recargo_automatico !== true &&
+      Number(mensualidad.monto_esperado || 0) > 0 &&
+      Number(mensualidad.recargo_aplicado_usd || 0) <= 0
+    ));
+
+    if (candidatasRecargo.length > 0) {
+      const cobroConfig = await obtenerConfigCobro(tenantModels);
+      const fechaReferencia = new Date();
+      for (const mensualidad of candidatasRecargo) {
+        await aplicarRecargoMensualidadSegunConfig(mensualidad, {
+          models: tenantModels,
+          cobroConfig,
+          fechaReferencia,
+          persistir: true
+        });
+      }
+    }
 
     const mensualidadIds = mensualidades.map((m) => m._id);
     const pagosPorMensualidad = mensualidadIds.length > 0
