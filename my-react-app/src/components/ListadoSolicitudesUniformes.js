@@ -591,9 +591,7 @@ function ListadoSolicitudesUniformes() {
       }
     : ultimoPagoHistorial;
 
-  const historialPagosAnteriores = pedidoSeleccionado?.estado === 'pago_en_revision'
-    ? pagosHistorialOrdenados
-    : pagosHistorialOrdenados.slice(0, -1);
+  const historialPagosAnteriores = pagosHistorialOrdenados;
 
   const pedidosPaginados = pedidosFiltrados.slice(
     pagina * filasPorPagina,
