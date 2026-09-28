@@ -68,6 +68,7 @@ function AlumnoEditar({ locationState }) {
   const inputCedulaRef = useRef(null);
   const categoriaAutoRef = useRef('');
   const fechaNacimientoAnteriorRef = useRef(null);
+  const categoriaManualRef = useRef(false);
 
   const buscarOpcionesRepresentantes = async (cedula) => {
     if (!cedula || cedula.length < 4) {
@@ -93,6 +94,7 @@ function AlumnoEditar({ locationState }) {
       rest.fecha_nacimiento = rest.fecha_nacimiento.slice(0, 10);
     }
     fechaNacimientoAnteriorRef.current = String(rest.fecha_nacimiento || '').trim();
+    categoriaManualRef.current = false;
     if (rest.fecha_inscripcion) {
       rest.fecha_inscripcion = rest.fecha_inscripcion.slice(0, 10);
     }
@@ -254,8 +256,8 @@ function AlumnoEditar({ locationState }) {
           setCategoriasDisponibles(lista);
           setCategoria(sugerida);
 
-          if (fechaNacimientoCambio) {
-            setForm((prev) => ({ ...prev, categoria: sugerida }));
+          if (fechaNacimientoCambio && !categoriaManualRef.current) {
+            setForm((prev) => ({ ...prev, categoria: sugerida, categoria_ajustada_manualmente: false }));
           }
 
           categoriaAutoRef.current = sugerida;
@@ -402,7 +404,14 @@ function AlumnoEditar({ locationState }) {
   const handleChange = (e) => {
     const { name, value } = e.target;
     // Si cambia el tipo de mensualidad y no es personalizado, limpia el valor personalizado
-    if (name === 'tipo_mensualidad') {
+    if (name === 'fecha_nacimiento') {
+      categoriaManualRef.current = false;
+      setForm((prev) => ({ ...prev, fecha_nacimiento: value, categoria_ajustada_manualmente: false }));
+    } else if (name === 'categoria') {
+      categoriaManualRef.current = true;
+      setCategoria(value);
+      setForm((prev) => ({ ...prev, categoria: value, categoria_ajustada_manualmente: true }));
+    } else if (name === 'tipo_mensualidad') {
       setForm((prev) => ({
         ...prev,
         tipo_mensualidad: value,
@@ -462,7 +471,7 @@ function AlumnoEditar({ locationState }) {
         'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
         'aplicar_recargo_mensualidad',
         'dia_limite_personalizado',
-        'sede', 'categoria', 'usuario', 'parentesco', 'tipo_mensualidad',
+        'sede', 'categoria', 'categoria_ajustada_manualmente', 'usuario', 'parentesco', 'tipo_mensualidad',
         'monto_personalizado_valor', 'sinRepresentante',
         'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_fecha_nacimiento', 'rep_correo', 'rep_direccion'
       ];

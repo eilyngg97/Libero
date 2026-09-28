@@ -2317,9 +2317,25 @@ exports.createAlumno = async (req, res) => {
       usuario: user ? user._id : undefined,
       cedula
     };
-    if (alumnoData.categoria !== undefined) {
+    const categoriaAjustadaManualmente = req.body.categoria_ajustada_manualmente === true
+      || req.body.categoria_ajustada_manualmente === 'true';
+    const fechaNacimientoRaw = String(req.body.fecha_nacimiento || '').trim();
+    if (fechaNacimientoRaw) {
+      const fechaNacimiento = parseDateInput(fechaNacimientoRaw);
+      if (!fechaNacimiento) {
+        return res.status(400).json({ error: 'fecha_nacimiento debe ser una fecha valida.' });
+      }
+      alumnoData.fecha_nacimiento = fechaNacimiento;
+      if (categoriaAjustadaManualmente && alumnoData.categoria) {
+        alumnoData.categoria = normalizarCategoria(alumnoData.categoria);
+      } else {
+        const { reglasCategorias } = await getCategoriasConfigTenant(TenantConfigModel);
+        alumnoData.categoria = getCategoriaPorFechaNacimiento(fechaNacimiento, reglasCategorias) || '';
+      }
+    } else if (alumnoData.categoria !== undefined) {
       alumnoData.categoria = normalizarCategoria(alumnoData.categoria);
     }
+    delete alumnoData.categoria_ajustada_manualmente;
     if (Object.prototype.hasOwnProperty.call(alumnoData, 'division')) {
       const divisionNormalizada = normalizarDivision(alumnoData.division);
       if (divisionNormalizada === null) {
@@ -3009,6 +3025,9 @@ exports.updateAlumno = async (req, res) => {
     const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
     const esAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
     let fechaInicioCobroCambio = false;
+    const categoriaAjustadaManualmente = req.body.categoria_ajustada_manualmente === true
+      || req.body.categoria_ajustada_manualmente === 'true';
+    delete updateData.categoria_ajustada_manualmente;
 
     if (req.body.fecha_nacimiento !== undefined) {
       const fechaNacimientoRaw = String(req.body.fecha_nacimiento || '').trim();
@@ -3021,7 +3040,7 @@ exports.updateAlumno = async (req, res) => {
         : Boolean(alumnoActual.fecha_nacimiento);
       updateData.fecha_nacimiento = fechaNacimiento;
 
-      if (fechaNacimientoCambio) {
+      if (fechaNacimientoCambio && !categoriaAjustadaManualmente) {
         const { reglasCategorias } = await getCategoriasConfigTenant(TenantConfigModel);
         updateData.categoria = getCategoriaPorFechaNacimiento(fechaNacimiento, reglasCategorias) || '';
       }

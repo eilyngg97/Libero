@@ -190,6 +190,7 @@ function Alumnos() {
   // const [sedes, setSedes] = useState([]); // Eliminado porque no se usa
   const [categoria, setCategoria] = useState('');
   const [categoriasDisponibles, setCategoriasDisponibles] = useState([]);
+  const categoriaManualRef = useRef(false);
   const navigate = useNavigate();
   const { dolar } = useDolar();
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
@@ -231,7 +232,6 @@ function Alumnos() {
     }
   }, [requiereReferenciaInscripcion, referenciaPagoInscripcion, comprobantePagoInscripcion]);
 
-  const categoriaAutoRef = useRef('');
 
   const modalInputSx = {
     '& .MuiOutlinedInput-root': {
@@ -272,7 +272,7 @@ function Alumnos() {
 
     if (!fechaNacimiento) {
       setCategoria('');
-      categoriaAutoRef.current = '';
+      setForm((prev) => ({ ...prev, categoria: '', categoria_ajustada_manualmente: false }));
       return;
     }
 
@@ -287,20 +287,14 @@ function Alumnos() {
         if (!cancelled) {
           const sugerida = String(data?.categoria_sugerida || '').trim();
           const lista = Array.isArray(data?.categorias_disponibles) ? data.categorias_disponibles : [];
-          const autoAnterior = categoriaAutoRef.current;
 
           setCategoriasDisponibles(lista);
           setCategoria(sugerida);
 
-          setForm((prev) => {
-            const actual = String(prev.categoria || '').trim();
-            if (!actual || actual === autoAnterior) {
-              return { ...prev, categoria: sugerida };
-            }
-            return prev;
-          });
+          if (!categoriaManualRef.current) {
+            setForm((prev) => ({ ...prev, categoria: sugerida, categoria_ajustada_manualmente: false }));
+          }
 
-          categoriaAutoRef.current = sugerida;
         }
       } catch {
         if (!cancelled) setCategoria('');
@@ -507,7 +501,14 @@ function Alumnos() {
 
   const handleChange = (e) => {
     const { name, value, checked } = e.target;
-    if (name === 'sinRepresentante') {
+    if (name === 'fecha_nacimiento') {
+      categoriaManualRef.current = false;
+      setForm((prev) => ({ ...prev, fecha_nacimiento: value, categoria_ajustada_manualmente: false }));
+    } else if (name === 'categoria') {
+      categoriaManualRef.current = true;
+      setCategoria(value);
+      setForm((prev) => ({ ...prev, categoria: value, categoria_ajustada_manualmente: true }));
+    } else if (name === 'sinRepresentante') {
       setSinRepresentante(checked);
       setForm((prev) => ({ ...prev, sinRepresentante: checked }));
     } else if (name === 'habilitar_pago_cuotas') {
