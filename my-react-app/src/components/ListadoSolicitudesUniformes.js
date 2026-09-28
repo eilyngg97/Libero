@@ -413,6 +413,10 @@ function ListadoSolicitudesUniformes() {
       : 'Pago completo'
   );
   const isDosPartes50 = (pedido) => String(pedido?.metodo_cobranza || '').trim().toLowerCase() === 'dos_partes_50';
+  const tienePagoConfirmado = (pedido) => (
+    (Array.isArray(pedido?.pagos_historial) && pedido.pagos_historial.length > 0)
+    || Number(pedido?.monto_pagado) > 0
+  );
   const getMontoPrimeraParteObjetivo = (pedido) => {
     const total = Number(pedido?.precio) || 0;
     const base = Number(pedido?.monto_primera_parte_objetivo);
@@ -1669,6 +1673,22 @@ function ListadoSolicitudesUniformes() {
               <PaidIcon fontSize="small" />
             </IconButton>
           </Tooltip>
+          {tienePagoConfirmado(pedido) && (
+            <Tooltip title="Ver detalle del primer pago">
+              <IconButton
+                size="small"
+                onClick={() => openDetallePagoDialog(pedido)}
+                aria-label="Ver detalle del primer pago"
+                sx={{
+                  bgcolor: '#eef2ff',
+                  color: '#1d4ed8',
+                  '&:hover': { bgcolor: '#e0e7ff' }
+                }}
+              >
+                <VisibilityIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           <Tooltip title={eliminandoId === pedido._id ? 'Eliminando...' : 'Eliminar solicitud'}>
             <span>
               <IconButton
