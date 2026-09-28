@@ -547,7 +547,7 @@ function RosterDocumentEditor() {
               <Box sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                 {template?.club_label || 'CLUB'}: {documento.campos.club || '________________'} &nbsp;&nbsp;
                 {template?.categoria_label || 'CATEGORIA'}: {documento.campos.categoria} ({roster?.sexo || ''}) &nbsp;&nbsp;
-                {template?.equipo_label || 'EQUIPO'}: {documento.campos.equipo}
+                {template?.equipo_label || 'GRUPO DE COMPETICIÓN'}: {documento.campos.equipo}
               </Box>
               <Box sx={{ mt: 0.75, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                 {template?.entrenador_principal_label || 'ENTRENADOR'}: {documento.campos.entrenador_principal || '________________'} &nbsp;&nbsp;
@@ -636,7 +636,7 @@ function RosterDocumentEditor() {
             <AccordionSummary expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#7b8798' }} />} sx={{ minHeight: 58, px: 2, '& .MuiAccordionSummary-content': { my: 1.2 } }}>
               <Box>
                 <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#253047' }}>Contenido del documento</Typography>
-                <Typography sx={{ fontSize: 10.5, color: '#8a96a8', mt: 0.2 }}>Club, categoría, equipo y entrenador</Typography>
+                <Typography sx={{ fontSize: 10.5, color: '#8a96a8', mt: 0.2 }}>Club, categoría, grupo de competición y entrenador</Typography>
               </Box>
             </AccordionSummary>
             <AccordionDetails sx={{ px: 2, pt: 0, pb: 2 }}>
@@ -650,7 +650,7 @@ function RosterDocumentEditor() {
                     <MenuItem key={categoria} value={categoria}>{categoria}</MenuItem>
                   ))}
                 </TextField>
-                <TextField label="Equipo" value={documento.campos.equipo} onChange={(event) => updateField('equipo', event.target.value)} size="small" sx={fieldSx} />
+                <TextField label="Grupo de competición" value={documento.campos.equipo} onChange={(event) => updateField('equipo', event.target.value)} size="small" sx={fieldSx} />
                 <TextField label="Entrenador principal" placeholder="Nombre y apellido" value={documento.campos.entrenador_principal} onChange={(event) => updateField('entrenador_principal', event.target.value)} size="small" sx={{ ...fieldSx, gridColumn: '1 / -1' }} />
               </Box>
             </AccordionDetails>

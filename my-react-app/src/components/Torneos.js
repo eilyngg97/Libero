@@ -1162,7 +1162,11 @@ function Torneos() {
                         });
 
                         const totalJugadoras = rosterJugadorIds.length;
-                        const sublinea = [roster.categoria || 'Sin categoria', roster.division || 'Sin division'].join(' | ');
+                        const sublinea = [
+                          roster.categoria || 'Sin categoria',
+                          roster.division || 'Sin division',
+                          roster.grupo_competicion || 'Sin grupo'
+                        ].join(' | ');
 
                         return (
                           <Grid item xs={12} sm={6} md={4} key={rosterId}>
@@ -1299,15 +1303,28 @@ function Torneos() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={dialogEliminarRosterOpen} onClose={() => setDialogEliminarRosterOpen(false)}>
-        <DialogTitle>Eliminar roster</DialogTitle>
+      <Dialog open={dialogEliminarRosterOpen} onClose={() => setDialogEliminarRosterOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Eliminar equipo</DialogTitle>
         <DialogContent>
-          <Typography>Esta seguro de eliminar este roster?</Typography>
+          <Typography sx={{ color: '#64748b' }}>Se eliminará permanentemente el siguiente equipo:</Typography>
+          <Box sx={{ mt: 1.25, p: 1.5, display: 'grid', gap: 0.8, borderRadius: 1.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+            {[
+              ['Categoría', rosterAEliminar?.categoria || 'Sin categoría'],
+              ['División', rosterAEliminar?.division || 'Sin división'],
+              ['Grupo', rosterAEliminar?.grupo_competicion || 'Sin grupo']
+            ].map(([label, value]) => (
+              <Box key={label} sx={{ display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', gap: 1 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>{label}</Typography>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#172033' }}>{value}</Typography>
+              </Box>
+            ))}
+          </Box>
+          <Typography sx={{ mt: 1, fontSize: 12, color: '#b42318' }}>Esta acción no se puede deshacer.</Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogEliminarRosterOpen(false)}>Cancelar</Button>
           <Button onClick={eliminarRoster} color="error" variant="contained" disabled={!rosterAEliminar || savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id)}>
-            {savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id) ? 'Eliminando...' : 'Eliminar'}
+            {savingRosterId === (rosterAEliminar?._id || rosterAEliminar?.id) ? 'Eliminando...' : 'Eliminar equipo'}
           </Button>
         </DialogActions>
       </Dialog>

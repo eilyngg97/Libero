@@ -12,10 +12,10 @@ const DEFAULT_ROSTER_TEMPLATE = {
   header_title: 'ROSTER',
   texto_institucional: [
     'FEDERACION VENEZOLANA DE VOLEIBOL',
-    'ASOCIACION DE VOLEIBOL DEL ESTADO LARA LIGA NACIONAL DE',
-    'INICIACION DE VOLEIBOL LIGA DE VOLEIBOL MENOR DEL ESTADO LARA'
+    'ASOCIACION DE VOLEIBOL DEL ESTADO LARA',
+    'LIGA DE VOLEIBOL MENOR DEL ESTADO LARA'
   ].join('\n'),
-  equipo_label: 'EQUIPO',
+  equipo_label: 'GRUPO DE COMPETICIÓN',
   club_label: 'CLUB',
   categoria_label: 'CATEGORIA',
   entrenador_principal_label: 'ENTRENADOR (A) PRINCIPAL',
@@ -44,6 +44,7 @@ function normalizeSexo(value) {
 
 function normalizeRosterTemplate(template = {}) {
   const root = template && typeof template === 'object' ? template : {};
+  const equipoLabel = cleanValue(root.equipo_label);
   const legacyInstitutionalText = [
     root.federacion_linea_1,
     root.federacion_linea_2,
@@ -56,7 +57,9 @@ function normalizeRosterTemplate(template = {}) {
   return {
     header_title: cleanValue(root.header_title || DEFAULT_ROSTER_TEMPLATE.header_title),
     texto_institucional: cleanValue(root.texto_institucional || legacyInstitutionalText || DEFAULT_ROSTER_TEMPLATE.texto_institucional),
-    equipo_label: cleanValue(root.equipo_label || DEFAULT_ROSTER_TEMPLATE.equipo_label),
+    equipo_label: !equipoLabel || equipoLabel.toUpperCase() === 'EQUIPO'
+      ? DEFAULT_ROSTER_TEMPLATE.equipo_label
+      : equipoLabel,
     club_label: cleanValue(root.club_label || DEFAULT_ROSTER_TEMPLATE.club_label),
     categoria_label: cleanValue(root.categoria_label || DEFAULT_ROSTER_TEMPLATE.categoria_label),
     entrenador_principal_label: cleanValue(root.entrenador_principal_label || DEFAULT_ROSTER_TEMPLATE.entrenador_principal_label),
@@ -145,7 +148,7 @@ function normalizeRosterDocument(documento = {}, roster = {}, template = {}) {
     logos_inicializados: true,
     campos: {
       titulo: hasTitulo ? cleanValue(fields.titulo) : cleanValue(template.header_title || 'ROSTER'),
-      subtitulo: hasSubtitulo ? cleanValue(fields.subtitulo) : cleanValue(roster.torneo?.nombre || roster.liga_name || ''),
+      subtitulo: hasSubtitulo ? cleanValue(fields.subtitulo) : '',
       texto_institucional: hasTextoInstitucional
         ? cleanValue(fields.texto_institucional)
         : (textoInstitucionalAnterior || textoInstitucionalPredeterminado),

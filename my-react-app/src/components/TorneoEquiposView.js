@@ -262,7 +262,11 @@ function TorneoEquiposView() {
             });
 
             const totalJugadoras = rosterJugadorIds.length;
-            const sublinea = [roster.categoria || 'Sin categoria', roster.division || 'Sin division'].join(' | ');
+            const sublinea = [
+              roster.categoria || 'Sin categoria',
+              roster.division || 'Sin division',
+              roster.grupo_competicion || 'Sin grupo'
+            ].join(' | ');
 
             return (
               <Box key={rosterId} sx={{ width: '100%', border: '1px solid #e6ebf2', borderRadius: 1.5, p: 1.4, boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)', bgcolor: '#ffffff', boxSizing: 'border-box' }}>
@@ -358,7 +362,20 @@ function TorneoEquiposView() {
             </Box>
             <Typography sx={{ fontSize: 20, fontWeight: 800, color: '#172033' }}>Eliminar equipo</Typography>
           </Box>
-          <Typography sx={{ mt: 0.8, fontSize: 13.5, lineHeight: 1.55, color: '#64748b' }}>Se eliminará permanentemente el equipo</Typography>
+          <Typography sx={{ mt: 0.8, fontSize: 13.5, lineHeight: 1.55, color: '#64748b' }}>Se eliminará permanentemente el siguiente equipo:</Typography>
+          <Box sx={{ mt: 1.25, p: 1.5, display: 'grid', gap: 0.8, borderRadius: 1.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+            {[
+              ['Categoría', rosterAEliminar?.categoria || 'Sin categoría'],
+              ['División', rosterAEliminar?.division || 'Sin división'],
+              ['Grupo', rosterAEliminar?.grupo_competicion || 'Sin grupo']
+            ].map(([label, value]) => (
+              <Box key={label} sx={{ display: 'grid', gridTemplateColumns: '80px minmax(0, 1fr)', gap: 1 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>{label}</Typography>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#172033' }}>{value}</Typography>
+              </Box>
+            ))}
+          </Box>
+          <Typography sx={{ mt: 1, fontSize: 12, color: '#b42318' }}>Esta acción no se puede deshacer.</Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
           <Button onClick={() => { setDialogEliminarRosterOpen(false); setRosterAEliminar(null); }} variant="outlined" sx={{ borderColor: '#d0d5dd', color: '#344054', textTransform: 'none', fontWeight: 700 }}>Cancelar</Button>
