@@ -7,6 +7,10 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   ListItemText,
   MenuItem,
   Snackbar,
@@ -80,6 +84,7 @@ function RosterAtletasView() {
   const [convocatoriaRowsPerPage, setConvocatoriaRowsPerPage] = useState(5);
   const [loading, setLoading] = useState(true);
   const [savingAthleteId, setSavingAthleteId] = useState('');
+  const [athleteToConfirm, setAthleteToConfirm] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState({ open: false, severity: 'success', message: '' });
 
@@ -404,7 +409,6 @@ function RosterAtletasView() {
               {paginatedAthletes.map((athlete) => {
                 const athleteId = getId(athlete);
                 const selected = selectedIds.has(athleteId);
-                const blocked = athlete.ya_en_otro_roster && !selected;
                 return (
                   <Box
                     key={athleteId}
@@ -436,12 +440,20 @@ function RosterAtletasView() {
                       size="small"
                       variant={selected ? 'outlined' : 'contained'}
                       color={selected ? 'inherit' : 'primary'}
-                      disabled={savingAthleteId === athleteId || blocked}
-                      title={blocked ? 'Ya pertenece a otro roster activo' : ''}
-                      onClick={() => updateRosterAthletes(athlete, !selected)}
+                      disabled={savingAthleteId === athleteId}
+                      title={athlete.ya_en_otro_roster && !selected ? 'Ya pertenece a otro equipo de este torneo' : ''}
+                      onClick={() => {
+                        if (selected) {
+                          updateRosterAthletes(athlete, false);
+                        } else if (athlete.ya_en_otro_roster) {
+                          setAthleteToConfirm(athlete);
+                        } else {
+                          updateRosterAthletes(athlete, true);
+                        }
+                      }}
                       sx={{ minWidth: 64, minHeight: 25, px: 0.7, borderRadius: 1.2, textTransform: 'none', fontSize: 9, color: selected ? '#64748b' : '#fff', bgcolor: selected ? '#fff' : '#f97316', borderColor: '#e2e8f0', boxShadow: 'none', '&:hover': { bgcolor: selected ? '#f8fafc' : '#ea580c' } }}
                     >
-                      {savingAthleteId === athleteId ? '...' : selected ? 'Quitar' : blocked ? 'Ocupado' : 'Convocar'}
+                      {savingAthleteId === athleteId ? '...' : selected ? 'Quitar' : 'Convocar'}
                     </Button>
                   </Box>
                 );
@@ -544,6 +556,41 @@ function RosterAtletasView() {
           />
         </Box>
       </Box>
+
+      <Dialog open={Boolean(athleteToConfirm)} onClose={() => setAthleteToConfirm(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 17, fontWeight: 800 }}>Atleta en otro equipo</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+            {athleteToConfirm?.nombre_completo || 'Esta atleta'} ya está convocada en:
+          </Typography>
+          <Box component="ul" sx={{ my: 1.2, pl: 2.5, color: '#334155' }}>
+            {(athleteToConfirm?.rosters_existentes || []).map((equipo, index) => (
+              <Typography component="li" key={`${equipo}-${index}`} sx={{ fontSize: 12.5, mb: 0.5 }}>
+                {equipo}
+              </Typography>
+            ))}
+          </Box>
+          <Typography sx={{ fontSize: 13, color: '#475569' }}>
+            ¿Deseas convocarla también a este equipo?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setAthleteToConfirm(null)} color="inherit" sx={{ textTransform: 'none' }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              const athlete = athleteToConfirm;
+              setAthleteToConfirm(null);
+              updateRosterAthletes(athlete, true);
+            }}
+            sx={{ bgcolor: '#f97316', textTransform: 'none', '&:hover': { bgcolor: '#ea580c' } }}
+          >
+            Convocar también
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar open={notice.open} autoHideDuration={3000} onClose={() => setNotice((previous) => ({ ...previous, open: false }))} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert severity={notice.severity} variant="filled" onClose={() => setNotice((previous) => ({ ...previous, open: false }))}>{notice.message}</Alert>

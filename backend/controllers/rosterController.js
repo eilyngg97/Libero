@@ -485,17 +485,6 @@ exports.actualizarJugadoresRoster = async (req, res) => {
       return res.status(400).json({ error: 'Hay atletas no validos o inactivos en la seleccion.' });
     }
 
-    const conflicto = await Roster.findOne({
-      _id: { $ne: roster._id },
-      torneo: roster.torneo,
-      status: { $in: ['borrador', 'oficial'] },
-      jugadores: { $in: jugadores }
-    }).select('_id').lean();
-
-    if (conflicto) {
-      return res.status(409).json({ error: 'Uno o mas atletas ya pertenecen a otro roster activo de este torneo.' });
-    }
-
     const torneo = await Torneo.findById(roster.torneo);
     if (!torneo) return res.status(404).json({ error: 'Torneo no encontrado' });
 
