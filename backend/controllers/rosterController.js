@@ -31,7 +31,7 @@ function cleanValue(value) {
 
 function normalizeAssistants(fields = {}) {
   const source = Array.isArray(fields.asistentes) ? fields.asistentes : [fields.asistente];
-  return source.map(cleanValue).filter(Boolean).slice(0, 4);
+  return source.map(cleanValue).filter(Boolean);
 }
 
 function normalizeSexo(value) {
@@ -1029,7 +1029,7 @@ async function buildRosterDocHeaderDataUri(logos, template, titulo, subtitulo, t
       <rect width="100%" height="100%" fill="white" />
       <g fill="#000" text-anchor="middle" font-family="Arial, sans-serif">
         ${textoInstitucionalSvg}
-        <text x="${width}" y="248" font-family="Arial, sans-serif" font-size="44" font-weight="700">${escapeHtml(titulo)}</text>
+        <text x="${width}" y="248" font-family="Arial, sans-serif" font-size="36" font-weight="700">${escapeHtml(titulo)}</text>
         <text x="${width}" y="296" font-family="Arial, sans-serif" font-size="26" font-weight="700">${escapeHtml(subtitulo)}</text>
       </g>
     </svg>
@@ -1378,7 +1378,7 @@ exports.exportarRosterPdf = async (req, res) => {
       lineGap: 1.5
     });
 
-    doc.font('Helvetica-Bold').fontSize(14).text(documento.campos.titulo, left, 78, { width, align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(12).text(documento.campos.titulo, left, 78, { width, align: 'center' });
     doc.font('Helvetica-Bold').fontSize(10).text(documento.campos.subtitulo, left, 95, { width, align: 'center' });
 
     const categoriaText = `${template.categoria_label}: ${documento.campos.categoria}`;

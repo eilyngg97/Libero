@@ -72,8 +72,7 @@ const EMPTY_PLAYER_ORIGIN = {
 function normalizeDocumentFields(fields = {}) {
   const asistentes = (Array.isArray(fields.asistentes) ? fields.asistentes : [fields.asistente])
     .map((value) => String(value || '').trim())
-    .filter(Boolean)
-    .slice(0, 4);
+    .filter(Boolean);
   return { ...EMPTY_FIELDS, ...fields, asistente: asistentes[0] || '', asistentes };
 }
 
@@ -180,7 +179,6 @@ function RosterDocumentEditor() {
 
   const addAssistant = () => {
     setDocumento((current) => {
-      if (current.campos.asistentes.length >= 4) return current;
       return { ...current, campos: { ...current.campos, asistentes: [...current.campos.asistentes, ''] } };
     });
   };
@@ -541,7 +539,7 @@ function RosterDocumentEditor() {
 
             <Box sx={{ width: '54%', minHeight: 74, mx: 'auto', textAlign: 'center', pt: 1, position: 'relative', zIndex: 5 }}>
               <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 9, fontWeight: 400, lineHeight: 1.2, letterSpacing: 0, whiteSpace: 'pre-line' }}>{documento.campos.texto_institucional}</Typography>
-              {documento.campos.titulo && <Typography sx={{ mt: 2.2, fontFamily: 'Arial, sans-serif', fontSize: 22, fontWeight: 700, letterSpacing: 0 }}>{documento.campos.titulo}</Typography>}
+              {documento.campos.titulo && <Typography sx={{ mt: 2.2, fontFamily: 'Arial, sans-serif', fontSize: 18, fontWeight: 700, letterSpacing: 0 }}>{documento.campos.titulo}</Typography>}
               {documento.campos.subtitulo && <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 13, fontWeight: 700, letterSpacing: 0 }}>{documento.campos.subtitulo}</Typography>}
             </Box>
 
@@ -730,11 +728,11 @@ function RosterDocumentEditor() {
             <AccordionSummary expandIcon={<ExpandMoreRoundedIcon sx={{ color: '#7b8798' }} />} sx={{ minHeight: 54, px: 2 }}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#253047' }}>Asistentes</Typography>
-                <Chip label={`${documento.campos.asistentes.length} de 4`} size="small" sx={{ height: 20, bgcolor: '#eef2ff', color: '#667085', fontSize: 10, fontWeight: 700 }} />
+                <Chip label={documento.campos.asistentes.length} size="small" sx={{ height: 20, bgcolor: '#eef2ff', color: '#667085', fontSize: 10, fontWeight: 700 }} />
               </Stack>
             </AccordionSummary>
             <AccordionDetails sx={{ px: 2, pt: 0, pb: 2 }}>
-              <Typography sx={{ fontSize: 10.5, color: '#98a2b3', mb: 1.2 }}>Puedes registrar hasta 4 asistentes técnicos. Aparecerán en este orden.</Typography>
+              <Typography sx={{ fontSize: 10.5, color: '#98a2b3', mb: 1.2 }}>Los asistentes técnicos aparecerán en este orden.</Typography>
               <Stack spacing={0.9}>
                 {documento.campos.asistentes.map((asistente, index) => (
                   <Stack key={`assistant-${index}`} direction="row" spacing={0.8} alignItems="center">
@@ -745,10 +743,9 @@ function RosterDocumentEditor() {
                     </Tooltip>
                   </Stack>
                 ))}
-                <Button fullWidth variant="outlined" startIcon={<AddRoundedIcon />} onClick={addAssistant} disabled={documento.campos.asistentes.length >= 4} sx={{ borderColor: '#e4e9f0', color: '#475467', textTransform: 'none', fontWeight: 700, borderStyle: 'dashed' }}>
+                <Button fullWidth variant="outlined" startIcon={<AddRoundedIcon />} onClick={addAssistant} sx={{ borderColor: '#e4e9f0', color: '#475467', textTransform: 'none', fontWeight: 700, borderStyle: 'dashed' }}>
                   Agregar asistente
                 </Button>
-                <Typography sx={{ fontSize: 10, color: '#98a2b3' }}>{4 - documento.campos.asistentes.length} espacios disponibles.</Typography>
               </Stack>
             </AccordionDetails>
           </Accordion>

@@ -26,11 +26,7 @@ const RosterDocumentSchema = new mongoose.Schema({
     asistente: { type: String, default: '', trim: true },
     asistentes: {
       type: [{ type: String, trim: true }],
-      default: [],
-      validate: {
-        validator: (value) => !Array.isArray(value) || value.length <= 4,
-        message: 'Solo se permiten hasta 4 asistentes por roster.'
-      }
+      default: []
     }
   },
   logos: {
