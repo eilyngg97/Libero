@@ -1080,6 +1080,7 @@ async function buildContainedImageDataUri(uploadUrl, width, height) {
 
   try {
     const image = await sharp(imagePath)
+      .rotate()
       .resize({
         width,
         height,
@@ -1472,8 +1473,8 @@ exports.exportarRosterDoc = async (req, res) => {
       documento.campos.texto_institucional
     );
     const rosterPlayers = buildRosterPlayers(roster);
-    const jugadores = rosterPlayers.map((item, index) => {
-      const foto = uploadUrlToDataUri(item?.foto);
+    const jugadores = (await Promise.all(rosterPlayers.map(async (item, index) => {
+      const foto = await buildContainedImageDataUri(item?.foto, 144, 136);
 
       return `
         <tr>
@@ -1486,7 +1487,7 @@ exports.exportarRosterDoc = async (req, res) => {
           <td>${escapeHtml(item?.representante)}</td>
           <td>${escapeHtml(item?.procedencia)}</td>
         </tr>`;
-    }).join('');
+    }))).join('');
 
     const cedulas = documento.incluir_fotos_cedula
       ? await Promise.all(rosterPlayers
