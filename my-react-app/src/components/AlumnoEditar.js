@@ -67,6 +67,7 @@ function AlumnoEditar({ locationState }) {
   const inputRef = useRef(null);
   const inputCedulaRef = useRef(null);
   const categoriaAutoRef = useRef('');
+  const fechaNacimientoAnteriorRef = useRef(null);
 
   const buscarOpcionesRepresentantes = async (cedula) => {
     if (!cedula || cedula.length < 4) {
@@ -91,6 +92,7 @@ function AlumnoEditar({ locationState }) {
     if (rest.fecha_nacimiento) {
       rest.fecha_nacimiento = rest.fecha_nacimiento.slice(0, 10);
     }
+    fechaNacimientoAnteriorRef.current = String(rest.fecha_nacimiento || '').trim();
     if (rest.fecha_inscripcion) {
       rest.fecha_inscripcion = rest.fecha_inscripcion.slice(0, 10);
     }
@@ -222,10 +224,17 @@ function AlumnoEditar({ locationState }) {
   useEffect(() => {
     let cancelled = false;
     const fechaNacimiento = String(form.fecha_nacimiento || '').trim();
+    const fechaNacimientoCambio = fechaNacimientoAnteriorRef.current !== null
+      && fechaNacimientoAnteriorRef.current !== fechaNacimiento;
+    if (fechaNacimientoAnteriorRef.current === null && !fechaNacimiento) return;
+    fechaNacimientoAnteriorRef.current = fechaNacimiento;
 
     if (!fechaNacimiento) {
       setCategoria('');
       categoriaAutoRef.current = '';
+      if (fechaNacimientoCambio) {
+        setForm((prev) => ({ ...prev, categoria: '' }));
+      }
       return;
     }
 
@@ -241,18 +250,13 @@ function AlumnoEditar({ locationState }) {
         if (!cancelled) {
           const sugerida = String(data?.categoria_sugerida || '').trim();
           const lista = Array.isArray(data?.categorias_disponibles) ? data.categorias_disponibles : [];
-          const autoAnterior = categoriaAutoRef.current;
 
           setCategoriasDisponibles(lista);
           setCategoria(sugerida);
 
-          setForm((prev) => {
-            const actual = String(prev.categoria || '').trim();
-            if (!actual || actual === autoAnterior) {
-              return { ...prev, categoria: sugerida };
-            }
-            return prev;
-          });
+          if (fechaNacimientoCambio) {
+            setForm((prev) => ({ ...prev, categoria: sugerida }));
+          }
 
           categoriaAutoRef.current = sugerida;
         }

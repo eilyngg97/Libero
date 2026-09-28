@@ -15,7 +15,7 @@ const DEFAULT_ROSTER_TEMPLATE = {
     'ASOCIACION DE VOLEIBOL DEL ESTADO LARA',
     'LIGA DE VOLEIBOL MENOR DEL ESTADO LARA'
   ].join('\n'),
-  equipo_label: 'GRUPO DE COMPETICIÓN',
+  equipo_label: 'GRUPO',
   club_label: 'CLUB',
   categoria_label: 'CATEGORIA',
   entrenador_principal_label: 'ENTRENADOR (A) PRINCIPAL',
@@ -57,7 +57,7 @@ function normalizeRosterTemplate(template = {}) {
   return {
     header_title: cleanValue(root.header_title || DEFAULT_ROSTER_TEMPLATE.header_title),
     texto_institucional: cleanValue(root.texto_institucional || legacyInstitutionalText || DEFAULT_ROSTER_TEMPLATE.texto_institucional),
-    equipo_label: !equipoLabel || equipoLabel.toUpperCase() === 'EQUIPO'
+    equipo_label: !equipoLabel || ['EQUIPO', 'GRUPO DE COMPETICIÓN'].includes(equipoLabel.toUpperCase())
       ? DEFAULT_ROSTER_TEMPLATE.equipo_label
       : equipoLabel,
     club_label: cleanValue(root.club_label || DEFAULT_ROSTER_TEMPLATE.club_label),
@@ -1107,6 +1107,20 @@ function formatRosterDate(value) {
   }).format(date);
 }
 
+function compareRosterJerseyNumbers(leftPlayer, rightPlayer) {
+  const leftValue = cleanValue(leftPlayer.numero_franela);
+  const rightValue = cleanValue(rightPlayer.numero_franela);
+  const leftNumber = Number(leftValue);
+  const rightNumber = Number(rightValue);
+  const leftIsNumeric = leftValue !== '' && Number.isFinite(leftNumber);
+  const rightIsNumeric = rightValue !== '' && Number.isFinite(rightNumber);
+
+  if (leftIsNumeric && rightIsNumeric) return leftNumber - rightNumber;
+  if (leftIsNumeric) return -1;
+  if (rightIsNumeric) return 1;
+  return leftValue.localeCompare(rightValue, 'es', { numeric: true, sensitivity: 'base' });
+}
+
 function buildRosterPlayers(roster = {}) {
   const jugadoresDatos = new Map(
     (Array.isArray(roster.jugadores_datos) ? roster.jugadores_datos : [])
@@ -1143,7 +1157,7 @@ function buildRosterPlayers(roster = {}) {
     representante: [cleanValue(item?.representante), cleanValue(item?.telefono)].filter(Boolean).join(' · '),
     procedencia: [cleanValue(item?.club_procedencia), formatRosterDate(item?.fecha_prestamo)].filter(Boolean).join(' · ')
   }));
-  return [...alumnos, ...prestamos];
+  return [...alumnos, ...prestamos].sort(compareRosterJerseyNumbers);
 }
 
 async function registrarDescargaRoster(req, roster, formato, cantidadAtletas) {

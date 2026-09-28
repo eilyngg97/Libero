@@ -1472,6 +1472,57 @@ describe('Backend smoke tests', () => {
     expect(payloadCreado).not.toHaveProperty('numero_franela');
   });
 
+  test('POST /api/alumnos updates datos no vacios de un representante existente', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const representante = {
+      _id: 'rep1',
+      nombres: 'Belky',
+      apellidos: 'Rodriguez',
+      cedula: '7356268',
+      telefono: '04120208868',
+      correo: '',
+      direccion: '',
+      fecha_nacimiento: undefined,
+      usuario: 'u1',
+      save: jest.fn().mockResolvedValue(undefined)
+    };
+    const usuario = {
+      _id: 'u1',
+      nombre: 'Belky Rodriguez',
+      save: jest.fn().mockResolvedValue(undefined)
+    };
+    Representante.findOne.mockResolvedValue(representante);
+    User.findOne.mockResolvedValue(usuario);
+
+    const response = await request(app)
+      .post('/api/alumnos')
+      .set('Authorization', `Bearer ${token}`)
+      .field('fecha_inscripcion', '2026-03-06')
+      .field('fecha_inicio_cobro', '2026-03-06')
+      .field('nombres', 'Maria')
+      .field('apellidos', 'Perez')
+      .field('sede', 's1')
+      .field('rep_cedula', '7356268')
+      .field('rep_nombres', 'Belky Maria')
+      .field('rep_apellidos', 'Rodriguez')
+      .field('rep_telefono', '')
+      .field('rep_correo', 'belky@example.com')
+      .field('rep_direccion', 'Av. Principal')
+      .field('rep_fecha_nacimiento', '1985-04-12');
+
+    expect(response.status).toBe(201);
+    expect(representante).toEqual(expect.objectContaining({
+      nombres: 'Belky Maria',
+      telefono: '04120208868',
+      correo: 'belky@example.com',
+      direccion: 'Av. Principal',
+      fecha_nacimiento: expect.any(Date)
+    }));
+    expect(representante.save).toHaveBeenCalledTimes(1);
+    expect(usuario.nombre).toBe('Belky Maria Rodriguez');
+    expect(usuario.save).toHaveBeenCalledTimes(1);
+  });
+
   test('PUT /api/alumnos/:id creates usuario when alumno sin representante agrega cedula', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 
@@ -1506,6 +1557,45 @@ describe('Backend smoke tests', () => {
     expect(Alumno.findByIdAndUpdate).toHaveBeenCalledWith(
       'a1',
       expect.objectContaining({ usuario: 'u-new', cedula: '12345678' }),
+      { new: true }
+    );
+  });
+
+  test('PUT /api/alumnos/:id recalcula categoria cuando cambia fecha de nacimiento', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    Alumno.findById.mockReturnValue({
+      select: jest.fn().mockResolvedValue({
+        _id: 'a1',
+        categoria: 'U9/INICIACION',
+        sexo: 'Femenino',
+        numero_franela: null,
+        nombres: 'Ana',
+        apellidos: 'Perez',
+        fecha_nacimiento: new Date('2017-01-01T12:00:00.000Z'),
+        fecha_inicio_cobro: new Date('2026-03-06T12:00:00.000Z'),
+        tipo_mensualidad: 'monto_sede',
+        usuario: null,
+        representante: null
+      })
+    });
+    Alumno.findByIdAndUpdate.mockResolvedValue({
+      _id: 'a1',
+      fecha_nacimiento: new Date('2013-01-01T12:00:00.000Z'),
+      categoria: 'U13/MINI'
+    });
+
+    const response = await request(app)
+      .put('/api/alumnos/a1')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fecha_nacimiento: '2013-01-01', categoria: 'U9/INICIACION' });
+
+    expect(response.status).toBe(200);
+    expect(Alumno.findByIdAndUpdate).toHaveBeenCalledWith(
+      'a1',
+      expect.objectContaining({
+        fecha_nacimiento: expect.any(Date),
+        categoria: 'U13/MINI'
+      }),
       { new: true }
     );
   });

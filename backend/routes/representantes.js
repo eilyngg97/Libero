@@ -22,6 +22,21 @@ router.get('/', authMiddleware, async (req, res) => {
       return res.status(500).json({ error: 'Error al buscar representantes por cédula' });
     }
   }
+  if (req.query.nombre) {
+    try {
+      const Representante = await getTenantRepresentanteModel(req);
+      const nombre = String(req.query.nombre).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const reps = await Representante.find({
+        $or: [
+          { nombres: { $regex: nombre, $options: 'i' } },
+          { apellidos: { $regex: nombre, $options: 'i' } }
+        ]
+      }).limit(20);
+      return res.json(reps);
+    } catch (err) {
+      return res.status(500).json({ error: 'Error al buscar representantes por nombre' });
+    }
+  }
   // Si no hay query param, continuar con el controlador normal
   return representanteController.getAllRepresentantes(req, res);
 });

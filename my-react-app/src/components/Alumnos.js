@@ -118,23 +118,40 @@ function Alumnos() {
 
   // Buscar representante por cédula
 
-  // Buscar representantes que coincidan con la cédula tipeada
-  const buscarOpcionesRepresentantes = async (cedula) => {
-    if (!cedula || cedula.length < 4) {
+  // Buscar representantes por cédula, nombres o apellidos.
+  const buscarOpcionesRepresentantes = async (valor, campo = 'cedula') => {
+    const valorBusqueda = String(valor || '').trim();
+    const minimoCaracteres = campo === 'cedula' ? 4 : 2;
+    if (valorBusqueda.length < minimoCaracteres) {
       setOpcionesRepresentantes([]);
       return;
     }
     setLoadingOpciones(true);
     try {
-      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/representantes?cedula=${cedula}`);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/representantes?${campo}=${encodeURIComponent(valorBusqueda)}`);
       if (!res.ok) throw new Error('Error buscando representantes');
       const data = await res.json();
-      setOpcionesRepresentantes(data.filter(r => r.cedula.includes(cedula)));
+      setOpcionesRepresentantes(campo === 'cedula'
+        ? data.filter((representante) => String(representante.cedula || '').includes(valorBusqueda))
+        : data);
     } catch (err) {
       setOpcionesRepresentantes([]);
     } finally {
       setLoadingOpciones(false);
     }
+  };
+  const seleccionarRepresentante = (representante) => {
+    if (!representante?.cedula) return;
+    setForm((prev) => ({
+      ...prev,
+      rep_cedula: representante.cedula,
+      rep_nombres: representante.nombres || '',
+      rep_apellidos: representante.apellidos || '',
+      rep_telefono: representante.telefono || '',
+      rep_fecha_nacimiento: representante.fecha_nacimiento ? String(representante.fecha_nacimiento).slice(0, 10) : '',
+      rep_correo: representante.correo || '',
+      rep_direccion: representante.direccion || representante.domicilio || ''
+    }));
   };
   const { sedeSeleccionada } = useSede();
   const [preview, setPreview] = useState(null);
@@ -1249,8 +1266,80 @@ function Alumnos() {
         <fieldset style={{ border: 'none', borderRadius: 16, padding: 20, background: '#ffffff', boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
           <legend>Datos del Representante</legend>
           <div className="form-row">
-            <TextField id="outlined-basic-rep-nombres" label="Nombres del representante *" name="rep_nombres" variant="outlined" value={form.rep_nombres || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
-            <TextField id="outlined-basic-rep-apellidos" label="Apellidos del representante *" name="rep_apellidos" variant="outlined" value={form.rep_apellidos || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+            <Autocomplete
+              freeSolo
+              id="autocomplete-rep-nombres"
+              options={opcionesRepresentantes}
+              getOptionLabel={(option) => typeof option === 'string' ? option : `${option.nombres || ''} ${option.apellidos || ''} - ${option.cedula || ''}`.trim()}
+              inputValue={form.rep_nombres || ''}
+              onInputChange={(event, newInputValue, reason) => {
+                if (reason === 'input') {
+                  setForm((prev) => ({ ...prev, rep_nombres: newInputValue }));
+                  buscarOpcionesRepresentantes(newInputValue, 'nombre');
+                }
+              }}
+              onChange={(event, value) => seleccionarRepresentante(value)}
+              loading={loadingOpciones}
+              filterOptions={(options) => options}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  id="outlined-basic-rep-nombres"
+                  label="Nombres del representante *"
+                  name="rep_nombres"
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                  sx={{ my: 1 }}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingOpciones ? <CircularProgress color="inherit" size={18} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    )
+                  }}
+                />
+              )}
+            />
+            <Autocomplete
+              freeSolo
+              id="autocomplete-rep-apellidos"
+              options={opcionesRepresentantes}
+              getOptionLabel={(option) => typeof option === 'string' ? option : `${option.nombres || ''} ${option.apellidos || ''} - ${option.cedula || ''}`.trim()}
+              inputValue={form.rep_apellidos || ''}
+              onInputChange={(event, newInputValue, reason) => {
+                if (reason === 'input') {
+                  setForm((prev) => ({ ...prev, rep_apellidos: newInputValue }));
+                  buscarOpcionesRepresentantes(newInputValue, 'nombre');
+                }
+              }}
+              onChange={(event, value) => seleccionarRepresentante(value)}
+              loading={loadingOpciones}
+              filterOptions={(options) => options}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  id="outlined-basic-rep-apellidos"
+                  label="Apellidos del representante *"
+                  name="rep_apellidos"
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                  sx={{ my: 1 }}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingOpciones ? <CircularProgress color="inherit" size={18} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    )
+                  }}
+                />
+              )}
+            />
           </div>
           <div className="form-row">
             <Autocomplete
@@ -1263,7 +1352,7 @@ function Alumnos() {
                 if (reason === 'input') {
                   const cedulaNumerica = newInputValue.replace(/\D/g, '').slice(0, 8);
                   setForm(prev => ({ ...prev, rep_cedula: cedulaNumerica }));
-                  buscarOpcionesRepresentantes(cedulaNumerica);
+                  buscarOpcionesRepresentantes(cedulaNumerica, 'cedula');
                 }
                 if (reason === 'reset' && newInputValue) {
                   const cedulaSolo = newInputValue.split(' - ')[0];
@@ -1271,18 +1360,7 @@ function Alumnos() {
                 }
               }}
               onChange={(event, value) => {
-                if (value && value.cedula) {
-                  setForm(prev => ({
-                    ...prev,
-                    rep_cedula: value.cedula,
-                    rep_nombres: value.nombres,
-                    rep_apellidos: value.apellidos,
-                    rep_telefono: value.telefono,
-                    rep_fecha_nacimiento: value.fecha_nacimiento ? String(value.fecha_nacimiento).slice(0, 10) : '',
-                    rep_correo: value.correo || '',
-                    rep_direccion: value.direccion || value.domicilio || '',
-                  }));
-                }
+                seleccionarRepresentante(value);
               }}
               loading={loadingOpciones}
               renderInput={(params) => (

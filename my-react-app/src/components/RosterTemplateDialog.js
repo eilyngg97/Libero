@@ -24,7 +24,7 @@ const DEFAULT_FORM = {
     'ASOCIACION DE VOLEIBOL DEL ESTADO LARA',
     'LIGA DE VOLEIBOL MENOR DEL ESTADO LARA'
   ].join('\n'),
-  equipo_label: 'GRUPO DE COMPETICIÓN',
+  equipo_label: 'GRUPO',
   club_label: 'CLUB',
   categoria_label: 'CATEGORIA',
   entrenador_principal_label: 'ENTRENADOR (A) PRINCIPAL',
@@ -201,7 +201,7 @@ function RosterTemplateDialog({ open, onClose, token, onSaved }) {
               <TextField size="small" label="Categoría" fullWidth disabled={loading} value={form.categoria_label} onChange={updateField('categoria_label')} sx={fieldSx} />
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
-              <TextField size="small" label="Grupo de competición" fullWidth disabled={loading} value={form.equipo_label} onChange={updateField('equipo_label')} sx={fieldSx} />
+              <TextField size="small" label="Grupo" fullWidth disabled={loading} value={form.equipo_label} onChange={updateField('equipo_label')} sx={fieldSx} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField size="small" label="Entrenador principal" fullWidth disabled={loading} value={form.entrenador_principal_label} onChange={updateField('entrenador_principal_label')} sx={fieldSx} />

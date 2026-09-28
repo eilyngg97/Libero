@@ -2262,10 +2262,29 @@ exports.createAlumno = async (req, res) => {
       if (!representante) {
         representante = new TenantRepresentante({ ...repData, usuario: user._id });
         await representante.save();
-      } else if (!representante.usuario) {
-        // Si el representante existe pero no tiene usuario asociado, actualizarlo
-        representante.usuario = user._id;
-        await representante.save();
+      } else {
+        let representanteActualizado = false;
+        ['nombres', 'apellidos', 'telefono', 'correo', 'direccion'].forEach((campo) => {
+          if (repData[campo] && representante[campo] !== repData[campo]) {
+            representante[campo] = repData[campo];
+            representanteActualizado = true;
+          }
+        });
+        if (repData.fecha_nacimiento && new Date(representante.fecha_nacimiento || 0).getTime() !== repData.fecha_nacimiento.getTime()) {
+          representante.fecha_nacimiento = repData.fecha_nacimiento;
+          representanteActualizado = true;
+        }
+        if (!representante.usuario) {
+          representante.usuario = user._id;
+          representanteActualizado = true;
+        }
+        if (representanteActualizado) await representante.save();
+
+        const nombrePortal = `${repData.nombres} ${repData.apellidos}`.trim();
+        if (user && nombrePortal && user.nombre !== nombrePortal) {
+          user.nombre = nombrePortal;
+          await user.save();
+        }
       }
     } else {
       // Si no hay datos de representante, crear usuario con la cédula del alumno y asociar al alumno
@@ -2983,13 +3002,30 @@ exports.updateAlumno = async (req, res) => {
       TenantConfig: TenantConfigModel
     } = tenantModels;
 
-    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria sexo numero_franela nombres apellidos cedula usuario representante fecha_inicio_cobro tipo_mensualidad monto_personalizado_valor');
+    const alumnoActual = await TenantAlumno.findById(req.params.id).select('_id categoria sexo numero_franela nombres apellidos cedula usuario representante fecha_nacimiento fecha_inicio_cobro tipo_mensualidad monto_personalizado_valor');
     if (!alumnoActual) return res.status(404).json({ error: 'Alumno no encontrado' });
 
     let updateData = { ...req.body };
     const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
     const esAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
     let fechaInicioCobroCambio = false;
+
+    if (req.body.fecha_nacimiento !== undefined) {
+      const fechaNacimientoRaw = String(req.body.fecha_nacimiento || '').trim();
+      const fechaNacimiento = fechaNacimientoRaw ? parseDateInput(fechaNacimientoRaw) : null;
+      if (fechaNacimientoRaw && !fechaNacimiento) {
+        return res.status(400).json({ error: 'fecha_nacimiento debe ser una fecha valida.' });
+      }
+      const fechaNacimientoCambio = fechaNacimiento
+        ? !esMismaFechaUtc(fechaNacimiento, alumnoActual.fecha_nacimiento)
+        : Boolean(alumnoActual.fecha_nacimiento);
+      updateData.fecha_nacimiento = fechaNacimiento;
+
+      if (fechaNacimientoCambio) {
+        const { reglasCategorias } = await getCategoriasConfigTenant(TenantConfigModel);
+        updateData.categoria = getCategoriaPorFechaNacimiento(fechaNacimiento, reglasCategorias) || '';
+      }
+    }
 
     if (!esAdmin && Object.prototype.hasOwnProperty.call(updateData, 'division')) {
       delete updateData.division;
