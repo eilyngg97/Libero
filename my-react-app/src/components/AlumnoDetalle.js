@@ -115,7 +115,11 @@ function AlumnoDetalle() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openFotoAlumno, setOpenFotoAlumno] = useState(false);
+  const [fotoAlumnoCrop, setFotoAlumnoCrop] = useState(null);
+  const [savingFotoAlumno, setSavingFotoAlumno] = useState(false);
   const [descargandoFotoAlumno, setDescargandoFotoAlumno] = useState(false);
+  const [fotoAlumnoError, setFotoAlumnoError] = useState('');
+  const [fotoAlumnoSuccess, setFotoAlumnoSuccess] = useState('');
   const [openFotoCedula, setOpenFotoCedula] = useState(false);
   const [cedulaCrop, setCedulaCrop] = useState(null);
   const [savingFotoCedula, setSavingFotoCedula] = useState(false);
@@ -160,6 +164,61 @@ function AlumnoDetalle() {
       setError(downloadError.message || 'No se pudo descargar la foto del alumno');
     } finally {
       setDescargandoFotoAlumno(false);
+    }
+  };
+
+  const openAlumnoCrop = async (file) => {
+    setFotoAlumnoError('');
+    setFotoAlumnoSuccess('');
+    try {
+      const source = await fileToDataUrl(file);
+      setFotoAlumnoCrop({ source, fileName: file.name || `perfil-${id}.jpg` });
+    } catch (cropError) {
+      setFotoAlumnoError(cropError.message || 'No se pudo abrir la imagen');
+    }
+  };
+
+  const handleCropCurrentAlumno = async () => {
+    setFotoAlumnoError('');
+    setFotoAlumnoSuccess('');
+    try {
+      const response = await fetch(mediaUrl(alumno.foto));
+      if (!response.ok) throw new Error('No se pudo cargar la foto actual');
+      const blob = await response.blob();
+      await openAlumnoCrop(new File([blob], `perfil-${id}.jpg`, { type: blob.type || 'image/jpeg' }));
+    } catch (cropError) {
+      setFotoAlumnoError(cropError.message || 'No se pudo cargar la foto actual');
+    }
+  };
+
+  const handleFotoAlumnoSelection = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) await openAlumnoCrop(file);
+  };
+
+  const handleSaveCroppedAlumno = async (file) => {
+    setSavingFotoAlumno(true);
+    setFotoAlumnoError('');
+    setFotoAlumnoSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append('foto', file);
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'No se pudo guardar la foto recortada');
+      setAlumno((current) => ({ ...current, ...data }));
+      setFotoAlumnoCrop(null);
+      setFotoAlumnoSuccess('Foto del alumno actualizada.');
+    } catch (saveError) {
+      setFotoAlumnoError(saveError.message || 'No se pudo guardar la foto recortada');
+      throw saveError;
+    } finally {
+      setSavingFotoAlumno(false);
     }
   };
 
@@ -868,22 +927,23 @@ function AlumnoDetalle() {
       <Dialog
         open={openFotoAlumno}
         onClose={() => setOpenFotoAlumno(false)}
-        maxWidth="md"
+        maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.25, px: 2 }}>
           Foto del alumno
           <IconButton aria-label="cerrar" onClick={() => setOpenFotoAlumno(false)} size="small">
             <CloseIcon fontSize="small" />
           </IconButton>
         </DialogTitle>
-        <DialogContent dividers>
+        <DialogContent dividers sx={{ p: 1.5, overflow: 'hidden' }}>
           {alumno.foto ? (
-            <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 280, backgroundColor: '#f8fafc', borderRadius: 2, p: 1 }}>
+            <>
+            <Box sx={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'clamp(260px, 55vh, 440px)', backgroundColor: '#f8fafc', borderRadius: 1.5, p: 0.75 }}>
               <img
                 src={mediaUrl(alumno.foto)}
                 alt={`Foto de ${alumno.nombres} ${alumno.apellidos}`}
-                style={{ maxWidth: '100%', maxHeight: '75vh', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: 8 }}
+                style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: 6 }}
               />
               <IconButton
                 aria-label="Descargar foto del alumno"
@@ -892,10 +952,10 @@ function AlumnoDetalle() {
                 disabled={descargandoFotoAlumno}
                 sx={{
                   position: 'absolute',
-                  top: 16,
-                  right: 16,
-                  width: 40,
-                  height: 40,
+                  top: 10,
+                  right: 10,
+                  width: 36,
+                  height: 36,
                   bgcolor: 'rgba(255, 255, 255, 0.94)',
                   color: '#334155',
                   border: '1px solid rgba(203, 213, 225, 0.9)',
@@ -904,9 +964,58 @@ function AlumnoDetalle() {
                   '&.Mui-disabled': { bgcolor: 'rgba(255, 255, 255, 0.8)', color: '#94a3b8' }
                 }}
               >
-                {descargandoFotoAlumno ? <CircularProgress size={18} sx={{ color: '#f97316' }} /> : <DownloadIcon sx={{ fontSize: 20 }} />}
+                {descargandoFotoAlumno ? <CircularProgress size={16} sx={{ color: '#f97316' }} /> : <DownloadIcon sx={{ fontSize: 18 }} />}
               </IconButton>
             </Box>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75, mt: 1, p: 0.75, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 1.5 }}>
+              <Button
+                startIcon={<CropIcon />}
+                variant="contained"
+                onClick={handleCropCurrentAlumno}
+                disabled={savingFotoAlumno}
+                sx={{
+                  minHeight: 36,
+                  borderRadius: 1.5,
+                  bgcolor: '#f97316',
+                  color: '#fff',
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  boxShadow: '0 4px 10px rgba(249, 115, 22, 0.2)',
+                  '&:hover': { bgcolor: '#ea580c', boxShadow: '0 5px 12px rgba(234, 88, 12, 0.26)' },
+                  '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' }
+                }}
+              >
+                Recortar actual
+              </Button>
+              <Button
+                component="label"
+                startIcon={<PhotoCameraIcon />}
+                variant="outlined"
+                disabled={savingFotoAlumno}
+                sx={{
+                  minHeight: 36,
+                  borderRadius: 1.5,
+                  borderColor: '#cbd5e1',
+                  bgcolor: '#fff',
+                  color: '#334155',
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  '&:hover': { borderColor: '#94a3b8', bgcolor: '#f1f5f9' },
+                  '&.Mui-disabled': { borderColor: '#e2e8f0', color: '#94a3b8' }
+                }}
+              >
+                Cambiar foto
+                <input hidden type="file" accept="image/*" onChange={handleFotoAlumnoSelection} />
+              </Button>
+            </Box>
+            {fotoAlumnoSuccess && (
+              <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6, color: '#15803d' }}>
+                <CheckCircleOutlineIcon sx={{ fontSize: 16 }} />
+                <Typography sx={{ fontSize: 12, fontWeight: 700 }}>{fotoAlumnoSuccess}</Typography>
+              </Box>
+            )}
+            {fotoAlumnoError && <Typography color="error" sx={{ mt: 1.5, textAlign: 'center', fontSize: 12 }}>{fotoAlumnoError}</Typography>}
+            </>
           ) : (
             <Typography variant="body2">Foto del alumno no disponible.</Typography>
           )}
@@ -1009,6 +1118,17 @@ function AlumnoDetalle() {
           )}
         </DialogContent>
       </Dialog>
+      <ImageCropDialog
+        open={Boolean(fotoAlumnoCrop)}
+        imageSrc={fotoAlumnoCrop?.source}
+        fileName={fotoAlumnoCrop?.fileName}
+        aspect={1}
+        title="Recortar foto del alumno"
+        imageAlt="Foto del alumno para recortar"
+        filePrefix="perfil"
+        onCancel={() => setFotoAlumnoCrop(null)}
+        onConfirm={handleSaveCroppedAlumno}
+      />
       <ImageCropDialog
         open={Boolean(cedulaCrop)}
         imageSrc={cedulaCrop?.source}

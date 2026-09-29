@@ -56,7 +56,7 @@ async function rotateImage(source) {
   return URL.createObjectURL(await canvasToBlob(canvas));
 }
 
-async function createCroppedFile(image, crop, fileName) {
+async function createCroppedFile(image, crop, fileName, filePrefix) {
   const scaleX = image.naturalWidth / image.width;
   const scaleY = image.naturalHeight / image.height;
   const sourceWidth = crop.width * scaleX;
@@ -78,10 +78,20 @@ async function createCroppedFile(image, crop, fileName) {
     canvas.height
   );
   const blob = await canvasToBlob(canvas);
-  return new File([blob], fileName || `cedula-${Date.now()}.jpg`, { type: 'image/jpeg' });
+  return new File([blob], fileName || `${filePrefix}-${Date.now()}.jpg`, { type: 'image/jpeg' });
 }
 
-function ImageCropDialog({ open, imageSrc, fileName, onCancel, onConfirm }) {
+function ImageCropDialog({
+  open,
+  imageSrc,
+  fileName,
+  onCancel,
+  onConfirm,
+  aspect = CEDULA_ASPECT,
+  title = 'Recortar foto de la cédula',
+  imageAlt = 'Cédula para recortar',
+  filePrefix = 'cedula'
+}) {
   const imageRef = useRef(null);
   const generatedUrlRef = useRef('');
   const [workingImageSrc, setWorkingImageSrc] = useState(imageSrc);
@@ -108,7 +118,7 @@ function ImageCropDialog({ open, imageSrc, fileName, onCancel, onConfirm }) {
   const handleImageLoad = (event) => {
     const { width, height } = event.currentTarget;
     setCrop(centerCrop(
-      makeAspectCrop({ unit: '%', width: 90 }, CEDULA_ASPECT, width, height),
+      makeAspectCrop({ unit: '%', width: 90 }, aspect, width, height),
       width,
       height
     ));
@@ -137,7 +147,7 @@ function ImageCropDialog({ open, imageSrc, fileName, onCancel, onConfirm }) {
     setSaving(true);
     setError('');
     try {
-      const croppedFile = await createCroppedFile(imageRef.current, completedCrop, fileName);
+      const croppedFile = await createCroppedFile(imageRef.current, completedCrop, fileName, filePrefix);
       await onConfirm(croppedFile);
     } catch (cropError) {
       setError(cropError.message || 'No se pudo recortar la imagen');
@@ -151,7 +161,7 @@ function ImageCropDialog({ open, imageSrc, fileName, onCancel, onConfirm }) {
   return (
     <Dialog open={open} onClose={busy ? undefined : onCancel} maxWidth="md" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        Recortar foto de la cédula
+        {title}
         <IconButton aria-label="cerrar" onClick={onCancel} disabled={busy} size="small">
           <CloseIcon fontSize="small" />
         </IconButton>
@@ -170,7 +180,7 @@ function ImageCropDialog({ open, imageSrc, fileName, onCancel, onConfirm }) {
               <img
                 ref={imageRef}
                 src={workingImageSrc}
-                alt="Cédula para recortar"
+                alt={imageAlt}
                 onLoad={handleImageLoad}
                 style={{ display: 'block', maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }}
               />

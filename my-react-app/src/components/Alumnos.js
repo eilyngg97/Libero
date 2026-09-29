@@ -163,6 +163,7 @@ function Alumnos() {
   }, [form.sinRepresentante]);
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoCedulaFile, setFotoCedulaFile] = useState(null);
+  const [fotoCrop, setFotoCrop] = useState(null);
   const [cedulaCrop, setCedulaCrop] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -441,19 +442,19 @@ function Alumnos() {
   const inputRef = useRef(null);
   const inputCedulaRef = useRef(null);
 
-  const handleFotoChange = (e) => {
+  const handleFotoChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      setFotoFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setFotoFile(null);
-      setPreview(null);
+      const source = await fileToDataUrl(file);
+      setFotoCrop({ source, fileName: file.name });
     }
+    e.target.value = '';
+  };
+
+  const handleFotoCropConfirm = async (file) => {
+    setFotoFile(file);
+    setPreview(await fileToDataUrl(file));
+    setFotoCrop(null);
   };
 
   const handleFotoCedulaChange = async (e) => {
@@ -1790,6 +1791,17 @@ function Alumnos() {
           </Button>
         </DialogActions>
       </Dialog>
+      <ImageCropDialog
+        open={Boolean(fotoCrop)}
+        imageSrc={fotoCrop?.source}
+        fileName={fotoCrop?.fileName}
+        aspect={1}
+        title="Recortar foto del alumno"
+        imageAlt="Foto del alumno para recortar"
+        filePrefix="perfil"
+        onCancel={() => setFotoCrop(null)}
+        onConfirm={handleFotoCropConfirm}
+      />
       <ImageCropDialog
         open={Boolean(cedulaCrop)}
         imageSrc={cedulaCrop?.source}
