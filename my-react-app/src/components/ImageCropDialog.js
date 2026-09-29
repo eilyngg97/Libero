@@ -27,6 +27,39 @@ export function fileToDataUrl(file) {
   });
 }
 
+export async function prepareImageFile(file) {
+  const header = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+  const headerText = String.fromCharCode(...header).toLowerCase();
+  const fileTypeOffset = headerText.indexOf('ftyp');
+  const brands = fileTypeOffset >= 0
+    ? (headerText.slice(fileTypeOffset + 4).match(/.{4}/g) || [])
+    : [];
+  const hasHeicBrand = brands.some((brand) => (
+    ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'heif', 'mif1', 'msf1'].includes(brand)
+  ));
+  const hasAvifBrand = brands.some((brand) => brand === 'avif' || brand === 'avis');
+  const isHeic = /image\/(heic|heif)/i.test(file.type)
+    || /\.(heic|heif)$/i.test(file.name)
+    || (hasHeicBrand && !hasAvifBrand);
+
+  if (!isHeic) return file;
+
+  try {
+    const heicModule = await import('heic2any');
+    const convertHeic = heicModule.default || heicModule;
+    const heicBlob = /image\/(heic|heif)/i.test(file.type)
+      ? file
+      : new Blob([file], { type: 'image/heic' });
+    const converted = await convertHeic({ blob: heicBlob, toType: 'image/jpeg', quality: 0.92 });
+    const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+    if (!(jpegBlob instanceof Blob)) throw new Error('El conversor no produjo una imagen JPEG');
+    const jpegName = String(file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([jpegBlob], jpegName, { type: 'image/jpeg' });
+  } catch (conversionError) {
+    throw new Error(conversionError.message || 'No se pudo convertir la foto HEIC. Intenta guardar la imagen como JPEG.');
+  }
+}
+
 function loadImage(source) {
   return new Promise((resolve, reject) => {
     const image = new Image();

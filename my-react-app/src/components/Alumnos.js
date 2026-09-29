@@ -18,7 +18,7 @@ import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import IconButton from '@mui/material/IconButton';
-import ImageCropDialog, { fileToDataUrl } from './ImageCropDialog';
+import ImageCropDialog, { fileToDataUrl, prepareImageFile } from './ImageCropDialog';
 
 // ...existing code...
 // Opciones de parentesco para el representante
@@ -445,8 +445,13 @@ function Alumnos() {
   const handleFotoChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const source = await fileToDataUrl(file);
-      setFotoCrop({ source, fileName: file.name });
+      try {
+        const preparedFile = await prepareImageFile(file);
+        const source = await fileToDataUrl(preparedFile);
+        setFotoCrop({ source, fileName: preparedFile.name });
+      } catch (imageError) {
+        setError(imageError.message || 'No se pudo preparar la foto');
+      }
     }
     e.target.value = '';
   };
@@ -460,8 +465,13 @@ function Alumnos() {
   const handleFotoCedulaChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const source = await fileToDataUrl(file);
-      setCedulaCrop({ source, fileName: file.name });
+      try {
+        const preparedFile = await prepareImageFile(file);
+        const source = await fileToDataUrl(preparedFile);
+        setCedulaCrop({ source, fileName: preparedFile.name });
+      } catch (imageError) {
+        setError(imageError.message || 'No se pudo preparar la foto de cédula');
+      }
     }
     e.target.value = '';
   };
@@ -857,7 +867,7 @@ function Alumnos() {
                 >
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     onChange={handleFotoChange}
                     ref={inputRef}
                     style={{ display: 'none' }}
@@ -895,7 +905,7 @@ function Alumnos() {
               >
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.heic,.heif"
                   onChange={handleFotoCedulaChange}
                   ref={inputCedulaRef}
                   style={{ display: 'none' }}

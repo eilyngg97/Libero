@@ -25,7 +25,7 @@ import CropIcon from '@mui/icons-material/Crop';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import Grid from "@mui/material/Grid";
 import { mediaUrl } from '../utils/mediaUrl';
-import ImageCropDialog, { fileToDataUrl } from './ImageCropDialog';
+import ImageCropDialog, { fileToDataUrl, prepareImageFile } from './ImageCropDialog';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return "";
@@ -171,8 +171,9 @@ function AlumnoDetalle() {
     setFotoAlumnoError('');
     setFotoAlumnoSuccess('');
     try {
-      const source = await fileToDataUrl(file);
-      setFotoAlumnoCrop({ source, fileName: file.name || `perfil-${id}.jpg` });
+      const preparedFile = await prepareImageFile(file);
+      const source = await fileToDataUrl(preparedFile);
+      setFotoAlumnoCrop({ source, fileName: preparedFile.name || `perfil-${id}.jpg` });
     } catch (cropError) {
       setFotoAlumnoError(cropError.message || 'No se pudo abrir la imagen');
     }
@@ -226,8 +227,9 @@ function AlumnoDetalle() {
     setFotoCedulaError('');
     setFotoCedulaSuccess('');
     try {
-      const source = await fileToDataUrl(file);
-      setCedulaCrop({ source, fileName: file.name || `cedula-${id}.jpg` });
+      const preparedFile = await prepareImageFile(file);
+      const source = await fileToDataUrl(preparedFile);
+      setCedulaCrop({ source, fileName: preparedFile.name || `cedula-${id}.jpg` });
     } catch (cropError) {
       setFotoCedulaError(cropError.message || 'No se pudo abrir la imagen');
     }
@@ -1005,7 +1007,7 @@ function AlumnoDetalle() {
                 }}
               >
                 Cambiar foto
-                <input hidden type="file" accept="image/*" onChange={handleFotoAlumnoSelection} />
+                <input hidden type="file" accept="image/*,.heic,.heif" onChange={handleFotoAlumnoSelection} />
               </Button>
             </Box>
             {fotoAlumnoSuccess && (
@@ -1102,7 +1104,7 @@ function AlumnoDetalle() {
                   }}
                 >
                   Cambiar foto
-                  <input hidden type="file" accept="image/*" onChange={handleFotoCedulaSelection} />
+                  <input hidden type="file" accept="image/*,.heic,.heif" onChange={handleFotoCedulaSelection} />
                 </Button>
               </Box>
               {fotoCedulaSuccess && (

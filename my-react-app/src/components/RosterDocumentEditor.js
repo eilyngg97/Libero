@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Rnd } from 'react-rnd';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -117,6 +118,7 @@ function RosterDocumentEditor() {
   const token = localStorage.getItem('token');
   const [roster, setRoster] = useState(null);
   const [template, setTemplate] = useState(null);
+  const [entrenadores, setEntrenadores] = useState([]);
   const [documento, setDocumento] = useState({ incluir_fotos_cedula: false, logos_inicializados: false, campos: EMPTY_FIELDS, logos: [] });
   const [selectedLogo, setSelectedLogo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -165,6 +167,26 @@ function RosterDocumentEditor() {
   useEffect(() => {
     loadDocument();
   }, [loadDocument]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadEntrenadores = async () => {
+      try {
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/entrenadores`, {
+          headers: authHeaders()
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) {
+          setEntrenadores(Array.isArray(data) ? data : []);
+        }
+      } catch (_) {
+        if (!cancelled) setEntrenadores([]);
+      }
+    };
+    loadEntrenadores();
+    return () => { cancelled = true; };
+  }, [authHeaders]);
 
   useEffect(() => {
     if (!previewRef.current) return undefined;
@@ -439,22 +461,41 @@ function RosterDocumentEditor() {
   const cedulasDisponibles = rosterPlayers
     .map((player, index) => ({ player, rosterIndex: index }))
     .filter(({ player }) => Boolean(player.foto_cedula));
+  const firstRosterPageSize = 10;
+  const continuationRosterPageSize = 12;
+  const rosterPages = [rosterPlayers.slice(0, firstRosterPageSize)];
+  for (let index = firstRosterPageSize; index < rosterPlayers.length; index += continuationRosterPageSize) {
+    rosterPages.push(rosterPlayers.slice(index, index + continuationRosterPageSize));
+  }
+  const hasRosterContinuation = rosterPages.length > 1;
   const playerTableBottom = 190 + 44 + (rosterPlayers.length * 77);
   const idCardRowHeight = 181;
   const receiptHeight = 44;
-  const firstPageIdRows = Math.max(0, Math.floor((1123 - 38 - receiptHeight - playerTableBottom) / idCardRowHeight));
+  const firstPageIdRows = hasRosterContinuation
+    ? 0
+    : Math.max(0, Math.floor((1123 - 38 - receiptHeight - playerTableBottom) / idCardRowHeight));
   const firstPageIdCount = firstPageIdRows * 2;
   const firstPageCedulas = documento.incluir_fotos_cedula
     ? cedulasDisponibles.slice(0, firstPageIdCount)
     : [];
+  const lastRosterPagePlayerCount = rosterPages[rosterPages.length - 1].length;
+  const lastRosterTableBottom = 28 + 44 + (lastRosterPagePlayerCount * 77);
+  const lastRosterPageIdRows = hasRosterContinuation
+    ? Math.max(0, Math.floor((1123 - 28 - receiptHeight - lastRosterTableBottom) / idCardRowHeight))
+    : 0;
+  const lastRosterPageIdCount = lastRosterPageIdRows * 2;
+  const lastRosterPageCedulas = documento.incluir_fotos_cedula && hasRosterContinuation
+    ? cedulasDisponibles.slice(firstPageIdCount, firstPageIdCount + lastRosterPageIdCount)
+    : [];
   const remainingCedulas = documento.incluir_fotos_cedula
-    ? cedulasDisponibles.slice(firstPageIdCount)
+    ? cedulasDisponibles.slice(firstPageIdCount + lastRosterPageIdCount)
     : [];
   const cedulaPages = [];
   for (let index = 0; index < remainingCedulas.length; index += 8) {
     cedulaPages.push(remainingCedulas.slice(index, index + 8));
   }
-  const extraPageCount = cedulaPages.length;
+  const rosterContinuationPages = rosterPages.slice(1);
+  const extraPageCount = rosterContinuationPages.length + cedulaPages.length;
   const categoriasDisponibles = Array.from(new Set([
     documento.campos.categoria,
     ...CATEGORIAS_DISPONIBLES
@@ -469,6 +510,37 @@ function RosterDocumentEditor() {
         <Box component="span" sx={{ whiteSpace: 'nowrap' }}>Fecha, lugar y hora:</Box>
         <Box sx={{ flex: 1, ml: 0.5, borderBottom: '1px solid #111' }} />
       </Box>
+    </Box>
+  );
+
+  const renderRosterTable = (players, startIndex = 0, marginTop = 1.5) => (
+    <Box component="table" sx={{ width: '100%', mt: marginTop, borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: 'Arial, sans-serif', fontSize: 9, '& th, & td': { border: '1px solid #252525', p: '4px', verticalAlign: 'middle' }, '& th': { bgcolor: '#5b9be6', color: '#111', fontWeight: 700, textAlign: 'center', lineHeight: 1.15 }, '& td': { height: 68 } }}>
+      <thead><tr><th style={{ width: 28 }}>N°</th><th>Nombres y Apellidos de la Atleta</th><th style={{ width: 72 }}>Cédula</th><th style={{ width: 82 }}>Fecha de<br />nacimiento</th><th style={{ width: 46 }}>Número<br />franela</th><th style={{ width: 68 }}>Foto</th><th style={{ width: 108 }}>Representante y teléfono</th><th style={{ width: 110 }}>Club de procedencia y fecha de cambio o préstamo</th></tr></thead>
+      <tbody>
+        {players.map((player, index) => (
+          <tr key={`${player.rowType}-${player._id}`}>
+            <td style={{ textAlign: 'center', fontWeight: 700 }}>{startIndex + index + 1}</td>
+            <td style={{ textAlign: 'center', fontWeight: 700 }}>{`${player.nombres || ''} ${player.apellidos || ''}`.trim()}</td>
+            <td style={{ textAlign: 'center' }}>{player.cedula || ''}</td>
+            <td style={{ textAlign: 'center' }}>{formatRosterDate(player.fecha_nacimiento)}</td>
+            <td style={{ textAlign: 'center' }}>{player.numero_franela || ''}</td>
+            <td style={{ padding: 0, textAlign: 'center' }}>
+              {player.foto ? <Box component="img" src={mediaUrl(player.foto)} alt={`${player.nombres || ''} ${player.apellidos || ''}`} sx={{ width: 64, height: 68, mx: 'auto', objectFit: 'contain', objectPosition: 'center', display: 'block' }} /> : null}
+            </td>
+            <td>{[
+              player.rowType === 'prestamo'
+                ? player.representante
+                : `${player.representante?.nombres || ''} ${player.representante?.apellidos || ''}`.trim(),
+              player.rowType === 'prestamo'
+                ? player.telefono
+                : player.representante?.telefono || player.telefono || ''
+            ].filter(Boolean).join(' / ')}</td>
+            <td>{player.rowType === 'prestamo'
+              ? [player.club_procedencia, formatRosterDate(player.fecha_prestamo)].filter(Boolean).join(' / ')
+              : [player.jugadorDato?.club_procedencia, formatRosterDate(player.jugadorDato?.fecha_cambio_prestamo)].filter(Boolean).join(' / ')}</td>
+          </tr>
+        ))}
+      </tbody>
     </Box>
   );
 
@@ -569,36 +641,7 @@ function RosterDocumentEditor() {
               </Box>
             </Box>
 
-            <Box component="table" sx={{ width: '100%', mt: 1.5, borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: 'Arial, sans-serif', fontSize: 9, '& th, & td': { border: '1px solid #252525', p: '4px', verticalAlign: 'middle' }, '& th': { bgcolor: '#5b9be6', color: '#111', fontWeight: 700, textAlign: 'center', lineHeight: 1.15 }, '& td': { height: 68 } }}>
-              <thead><tr><th style={{ width: 28 }}>N°</th><th>Nombres y Apellidos de la Atleta</th><th style={{ width: 72 }}>Cédula</th><th style={{ width: 82 }}>Fecha de<br />nacimiento</th><th style={{ width: 46 }}>Número<br />franela</th><th style={{ width: 68 }}>Foto</th><th style={{ width: 108 }}>Representante y teléfono</th><th style={{ width: 110 }}>Club de procedencia y fecha de cambio o préstamo</th></tr></thead>
-              <tbody>
-                {rosterPlayers.map((player, index) => (
-                  <tr key={`${player.rowType}-${player._id}`}>
-                    <td style={{ textAlign: 'center', fontWeight: 700 }}>{index + 1}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 700 }}>{`${player.nombres || ''} ${player.apellidos || ''}`.trim()}</td>
-                    <td style={{ textAlign: 'center' }}>{player.cedula || ''}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      {formatRosterDate(player.fecha_nacimiento)}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>{player.numero_franela || ''}</td>
-                    <td style={{ padding: 0, textAlign: 'center' }}>
-                      {player.foto ? <Box component="img" src={mediaUrl(player.foto)} alt={`${player.nombres || ''} ${player.apellidos || ''}`} sx={{ width: 64, height: 68, mx: 'auto', objectFit: 'contain', objectPosition: 'center', display: 'block' }} /> : null}
-                    </td>
-                    <td>{[
-                      player.rowType === 'prestamo'
-                        ? player.representante
-                        : `${player.representante?.nombres || ''} ${player.representante?.apellidos || ''}`.trim(),
-                      player.rowType === 'prestamo'
-                        ? player.telefono
-                        : player.representante?.telefono || player.telefono || ''
-                    ].filter(Boolean).join(' / ')}</td>
-                    <td>{player.rowType === 'prestamo'
-                      ? [player.club_procedencia, formatRosterDate(player.fecha_prestamo)].filter(Boolean).join(' / ')
-                      : [player.jugadorDato?.club_procedencia, formatRosterDate(player.jugadorDato?.fecha_cambio_prestamo)].filter(Boolean).join(' / ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </Box>
+            {renderRosterTable(rosterPages[0])}
             {firstPageCedulas.length > 0 && (
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridAutoRows: idCardRowHeight, borderLeft: '1px solid #444' }}>
                 {firstPageCedulas.map(({ player, rosterIndex }) => (
@@ -616,11 +659,40 @@ function RosterDocumentEditor() {
               {DOCUMENT_FOOTER}
             </Typography>
             </Box>
+            {rosterContinuationPages.map((pagePlayers, pageIndex) => (
+              <Box
+                key={`roster-${pageIndex}`}
+                sx={{
+                  position: 'absolute', left: 0, top: (1147 * (pageIndex + 1)) * paperScale,
+                  width: 794, height: 1123, bgcolor: '#fff', color: '#111',
+                  transform: `scale(${paperScale})`, transformOrigin: 'top left',
+                  boxShadow: '0 16px 45px rgba(35, 45, 55, .18)', p: '28px', boxSizing: 'border-box', overflow: 'hidden'
+                }}
+              >
+                {renderRosterTable(pagePlayers, firstRosterPageSize + (pageIndex * continuationRosterPageSize), 0)}
+                {pageIndex === rosterContinuationPages.length - 1 && lastRosterPageCedulas.length > 0 && (
+                  <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridAutoRows: idCardRowHeight, borderLeft: '1px solid #444' }}>
+                    {lastRosterPageCedulas.map(({ player, rosterIndex }) => (
+                      <Box key={`${player.rowType}-${player._id}`} sx={{ borderRight: '1px solid #444', borderBottom: '1px solid #444', display: 'grid', gridTemplateRows: '25px 155px', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+                        <Typography sx={{ fontFamily: 'Arial, sans-serif', fontSize: 10, lineHeight: '24px', fontWeight: 700, textAlign: 'center', borderBottom: '1px solid #444' }}>
+                          CÉDULA {rosterIndex + 1}
+                        </Typography>
+                        <Box component="img" src={mediaUrl(player.foto_cedula)} alt={`Cédula de ${player.nombres || 'atleta'}`} sx={{ width: '100%', height: 155, minHeight: 0, objectFit: 'contain', display: 'block' }} />
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+                {pageIndex === rosterContinuationPages.length - 1 && cedulaPages.length === 0 && receiptBlock}
+                <Typography sx={{ position: 'absolute', bottom: 12, left: 28, right: 28, fontFamily: 'Arial, sans-serif', fontSize: 9.33, lineHeight: 1, color: '#555', textAlign: 'center' }}>
+                  {DOCUMENT_FOOTER}
+                </Typography>
+              </Box>
+            ))}
             {cedulaPages.map((pageCedulas, pageIndex) => (
               <Box
                 key={`cedulas-${pageIndex}`}
                 sx={{
-                  position: 'absolute', left: 0, top: (1147 * (pageIndex + 1)) * paperScale,
+                  position: 'absolute', left: 0, top: (1147 * (rosterPages.length + pageIndex)) * paperScale,
                   width: 794, height: 1123, bgcolor: '#fff', color: '#111',
                   transform: `scale(${paperScale})`, transformOrigin: 'top left',
                   boxShadow: '0 16px 45px rgba(35, 45, 55, .18)', p: '28px', boxSizing: 'border-box', overflow: 'hidden'
@@ -665,7 +737,39 @@ function RosterDocumentEditor() {
                   ))}
                 </TextField>
                 <TextField label="Grupo" value={documento.campos.equipo} onChange={(event) => updateField('equipo', event.target.value)} size="small" sx={fieldSx} />
-                <TextField label="Entrenador principal" placeholder="Nombre y apellido" value={documento.campos.entrenador_principal} onChange={(event) => updateField('entrenador_principal', event.target.value)} size="small" sx={{ ...fieldSx, gridColumn: '1 / -1' }} />
+                <Autocomplete
+                  freeSolo
+                  options={entrenadores}
+                  getOptionLabel={(option) => {
+                    if (typeof option === 'string') return option;
+                    return `${option.nombre || option.nombres || ''} ${option.apellido || option.apellidos || ''}`.trim();
+                  }}
+                  value={documento.campos.entrenador_principal || ''}
+                  inputValue={documento.campos.entrenador_principal || ''}
+                  onInputChange={(event, value) => updateField('entrenador_principal', value)}
+                  onChange={(event, value) => {
+                    const nombre = typeof value === 'string'
+                      ? value
+                      : value
+                        ? `${value.nombre || value.nombres || ''} ${value.apellido || value.apellidos || ''}`.trim()
+                        : '';
+                    updateField('entrenador_principal', nombre);
+                  }}
+                  isOptionEqualToValue={(option, value) => (
+                    typeof value === 'string'
+                      ? `${option.nombre || option.nombres || ''} ${option.apellido || option.apellidos || ''}`.trim() === value
+                      : String(option._id) === String(value?._id)
+                  )}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Entrenador principal"
+                      placeholder={entrenadores.length ? 'Seleccionar o escribir nombre' : 'Nombre y apellido'}
+                      size="small"
+                      sx={{ ...fieldSx, gridColumn: '1 / -1' }}
+                    />
+                  )}
+                />
               </Box>
             </AccordionDetails>
           </Accordion>
@@ -751,7 +855,41 @@ function RosterDocumentEditor() {
                 {documento.campos.asistentes.map((asistente, index) => (
                   <Stack key={`assistant-${index}`} direction="row" spacing={0.8} alignItems="center">
                     <Box sx={{ width: 24, height: 24, flex: '0 0 auto', display: 'grid', placeItems: 'center', borderRadius: 1, bgcolor: '#172033', color: '#fff', fontSize: 11, fontWeight: 800 }}>{index + 1}</Box>
-                    <TextField fullWidth placeholder="Nombre del asistente" value={asistente} onChange={(event) => updateAssistant(index, event.target.value)} size="small" sx={fieldSx} inputProps={{ 'aria-label': `Asistente ${index + 1}` }} />
+                    <Autocomplete
+                      freeSolo
+                      fullWidth
+                      options={entrenadores}
+                      getOptionLabel={(option) => {
+                        if (typeof option === 'string') return option;
+                        return `${option.nombre || option.nombres || ''} ${option.apellido || option.apellidos || ''}`.trim();
+                      }}
+                      value={asistente}
+                      inputValue={asistente}
+                      onInputChange={(event, value) => updateAssistant(index, value)}
+                      onChange={(event, value) => {
+                        const nombre = typeof value === 'string'
+                          ? value
+                          : value
+                            ? `${value.nombre || value.nombres || ''} ${value.apellido || value.apellidos || ''}`.trim()
+                            : '';
+                        updateAssistant(index, nombre);
+                      }}
+                      isOptionEqualToValue={(option, value) => (
+                        typeof value === 'string'
+                          ? `${option.nombre || option.nombres || ''} ${option.apellido || option.apellidos || ''}`.trim() === value
+                          : String(option._id) === String(value?._id)
+                      )}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          fullWidth
+                          placeholder={entrenadores.length ? 'Seleccionar o escribir nombre' : 'Nombre del asistente'}
+                          size="small"
+                          sx={fieldSx}
+                          inputProps={{ ...params.inputProps, 'aria-label': `Asistente ${index + 1}` }}
+                        />
+                      )}
+                    />
                     <Tooltip title="Quitar asistente">
                       <IconButton size="small" onClick={() => removeAssistant(index)} aria-label={`Quitar asistente ${index + 1}`} sx={{ border: '1px solid #e4e9f0', borderRadius: 1.2, color: '#98a2b3' }}><CloseRoundedIcon fontSize="small" /></IconButton>
                     </Tooltip>

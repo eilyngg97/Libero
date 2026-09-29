@@ -8,7 +8,7 @@ import { mediaUrl } from '../utils/mediaUrl';
 import './Alumnos.css';
 import { Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ImageCropDialog, { fileToDataUrl } from './ImageCropDialog';
+import ImageCropDialog, { fileToDataUrl, prepareImageFile } from './ImageCropDialog';
 
 const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
@@ -347,8 +347,13 @@ function AlumnoEditar({ locationState }) {
   const handleFotoChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const source = await fileToDataUrl(file);
-      setFotoCrop({ source, fileName: file.name });
+      try {
+        const preparedFile = await prepareImageFile(file);
+        const source = await fileToDataUrl(preparedFile);
+        setFotoCrop({ source, fileName: preparedFile.name });
+      } catch (imageError) {
+        setError(imageError.message || 'No se pudo preparar la foto');
+      }
     }
     e.target.value = '';
   };
@@ -362,8 +367,13 @@ function AlumnoEditar({ locationState }) {
   const handleFotoCedulaChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const source = await fileToDataUrl(file);
-      setCedulaCrop({ source, fileName: file.name });
+      try {
+        const preparedFile = await prepareImageFile(file);
+        const source = await fileToDataUrl(preparedFile);
+        setCedulaCrop({ source, fileName: preparedFile.name });
+      } catch (imageError) {
+        setError(imageError.message || 'No se pudo preparar la foto de cédula');
+      }
     }
     e.target.value = '';
   };
@@ -662,7 +672,7 @@ function AlumnoEditar({ locationState }) {
                 >
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     onChange={handleFotoChange}
                     ref={inputRef}
                     style={{ display: 'none' }}
@@ -700,7 +710,7 @@ function AlumnoEditar({ locationState }) {
               >
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.heic,.heif"
                   onChange={handleFotoCedulaChange}
                   ref={inputCedulaRef}
                   style={{ display: 'none' }}
