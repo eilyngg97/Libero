@@ -39,6 +39,7 @@ function Login({ onLogin }) {
   const [openSnackbar, setOpenSnackbar] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [branding, setBranding] = useState(DEFAULT_BRANDING);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -91,6 +92,8 @@ function Login({ onLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     const emailNormalizado = String(email || '').trim();
     const passwordNormalizada = String(password || '').trim();
 
@@ -99,6 +102,7 @@ function Login({ onLogin }) {
     setPassword(passwordNormalizada);
 
     try {
+      setIsSubmitting(true);
       const res = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,6 +181,8 @@ function Login({ onLogin }) {
       setError(err.message);
       setOpenSnackbar(true);
       console.error(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -354,6 +360,7 @@ function Login({ onLogin }) {
               type="submit"
               variant="contained"
               fullWidth
+              disabled={isSubmitting}
               sx={{
                 mt: 1.2,
                 fontWeight: 800,
@@ -366,7 +373,7 @@ function Login({ onLogin }) {
                 boxShadow: '0 14px 26px rgba(249, 115, 22, 0.32)'
               }}
             >
-              Entrar
+              {isSubmitting ? 'Ingresando...' : 'Entrar'}
             </Button>
           </Box>
         </Paper>

@@ -16,6 +16,10 @@ const { getConfiguredDefaultTenantId, getFailSafeTenantId } = require('./service
 const app = express();
 const isTestEnv = process.env.NODE_ENV === 'test';
 
+// Nginx se conecta localmente al backend. Esto permite usar la IP reenviada
+// sin confiar en cabeceras enviadas por clientes que accedan directamente.
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
+
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
   .split(',')
   .map((origin) => origin.trim())
@@ -29,6 +33,14 @@ function tenantRateLimitKey(req) {
   const tenantId = req.tenantId || 'unknown';
   const rawIp = req.ip || req.connection?.remoteAddress || 'unknown-ip';
   return `${tenantId}:${ipKeyGenerator(rawIp)}`;
+}
+
+function loginRateLimitKey(req) {
+  const identifier = String(req.body?.email || req.body?.cedula || '')
+    .trim()
+    .toLowerCase()
+    .slice(0, 160) || 'missing-identifier';
+  return `${tenantRateLimitKey(req)}:${identifier}`;
 }
 
 function getRequestHost(req) {
@@ -144,11 +156,12 @@ const authLimiter = isTestEnv
   ? passThroughLimiter
   : rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 25,
-    keyGenerator: tenantRateLimitKey,
+    max: Number(process.env.AUTH_LOGIN_MAX_ATTEMPTS || 15),
+    keyGenerator: loginRateLimitKey,
+    skipSuccessfulRequests: true,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { msg: 'Demasiados intentos de autenticacion. Intenta nuevamente en unos minutos.' }
+    message: { msg: 'Demasiados intentos fallidos para esta cuenta. Intenta nuevamente en unos minutos.' }
   });
 
 const writeLimiter = isTestEnv
@@ -224,12 +237,6 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(morgan('dev'));
 app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use('/api', (req, res, next) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return writeLimiter(req, res, next);
-  }
-  return next();
-});
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.removeHeader('X-Frame-Options');
@@ -253,8 +260,15 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(path.join(__dirname, 'uploads')));
 app.use('/api', tenantResolver);
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return writeLimiter(req, res, next);
+  }
+  return next();
+});
 
-app.use('/api/auth', authLimiter, require('./routes/auth'));
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth', require('./routes/auth'));
 
 app.get('/', (req, res) => res.send('API de gestión deportiva funcionando'));
 app.get('/health', (req, res) => {
