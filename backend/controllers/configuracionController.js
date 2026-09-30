@@ -24,6 +24,20 @@ const DEFAULT_CONFIG = {
     },
     deposito_usd: {
       instrucciones: ''
+    },
+    por_concepto: {
+      mensualidades: {
+        usar_generales: true,
+        pago_movil: {},
+        transferencia: {},
+        deposito_usd: {}
+      },
+      uniformes: {
+        usar_generales: true,
+        pago_movil: {},
+        transferencia: {},
+        deposito_usd: {}
+      }
     }
   },
   cobro: {
@@ -554,6 +568,25 @@ function normalizeConfigPayload(payload = {}) {
   const pagoMovil = pagos.pago_movil || {};
   const transferencia = pagos.transferencia || {};
   const depositoUsd = pagos.deposito_usd || {};
+  const normalizeConceptoPago = (concepto = {}) => ({
+    usar_generales: concepto.usar_generales !== false,
+    pago_movil: {
+      banco: cleanValue(concepto?.pago_movil?.banco),
+      codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
+      telefono: cleanValue(concepto?.pago_movil?.telefono),
+      cedula: cleanValue(concepto?.pago_movil?.cedula),
+      titular: cleanValue(concepto?.pago_movil?.titular)
+    },
+    transferencia: {
+      banco: cleanValue(concepto?.transferencia?.banco),
+      cuenta: cleanValue(concepto?.transferencia?.cuenta),
+      titular: cleanValue(concepto?.transferencia?.titular),
+      cedula: cleanValue(concepto?.transferencia?.cedula)
+    },
+    deposito_usd: {
+      instrucciones: cleanValue(concepto?.deposito_usd?.instrucciones)
+    }
+  });
 
   return {
     pagos: {
@@ -572,6 +605,10 @@ function normalizeConfigPayload(payload = {}) {
       },
       deposito_usd: {
         instrucciones: cleanValue(depositoUsd.instrucciones)
+      },
+      por_concepto: {
+        mensualidades: normalizeConceptoPago(pagos?.por_concepto?.mensualidades),
+        uniformes: normalizeConceptoPago(pagos?.por_concepto?.uniformes)
       }
     },
     cobro: {
@@ -619,6 +656,39 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
       pagosPatch.deposito_usd = {
         instrucciones: cleanValue(root.pagos.deposito_usd.instrucciones)
       };
+    }
+
+    if (root.pagos.por_concepto && typeof root.pagos.por_concepto === 'object') {
+      const normalizeConceptoPatch = (concepto = {}) => ({
+        usar_generales: concepto.usar_generales !== false,
+        pago_movil: {
+          banco: cleanValue(concepto?.pago_movil?.banco),
+          codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
+          telefono: cleanValue(concepto?.pago_movil?.telefono),
+          cedula: cleanValue(concepto?.pago_movil?.cedula),
+          titular: cleanValue(concepto?.pago_movil?.titular)
+        },
+        transferencia: {
+          banco: cleanValue(concepto?.transferencia?.banco),
+          cuenta: cleanValue(concepto?.transferencia?.cuenta),
+          titular: cleanValue(concepto?.transferencia?.titular),
+          cedula: cleanValue(concepto?.transferencia?.cedula)
+        },
+        deposito_usd: {
+          instrucciones: cleanValue(concepto?.deposito_usd?.instrucciones)
+        }
+      });
+
+      pagosPatch.por_concepto = {};
+      ['mensualidades', 'uniformes'].forEach((concepto) => {
+        if (root.pagos.por_concepto[concepto] && typeof root.pagos.por_concepto[concepto] === 'object') {
+          pagosPatch.por_concepto[concepto] = normalizeConceptoPatch(root.pagos.por_concepto[concepto]);
+        }
+      });
+
+      if (Object.keys(pagosPatch.por_concepto).length === 0) {
+        delete pagosPatch.por_concepto;
+      }
     }
 
     if (Object.keys(pagosPatch).length > 0) {
@@ -765,6 +835,25 @@ function serializeConfig(doc) {
   const categoriasParaRespuesta = Array.isArray(categorias?.reglas) && categorias.reglas.length > 0
     ? categorias
     : DEFAULT_CONFIG.categorias;
+  const serializeConceptoPago = (concepto = {}) => ({
+    usar_generales: concepto?.usar_generales !== false,
+    pago_movil: {
+      banco: cleanValue(concepto?.pago_movil?.banco),
+      codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
+      telefono: cleanValue(concepto?.pago_movil?.telefono),
+      cedula: cleanValue(concepto?.pago_movil?.cedula),
+      titular: cleanValue(concepto?.pago_movil?.titular)
+    },
+    transferencia: {
+      banco: cleanValue(concepto?.transferencia?.banco),
+      cuenta: cleanValue(concepto?.transferencia?.cuenta),
+      titular: cleanValue(concepto?.transferencia?.titular),
+      cedula: cleanValue(concepto?.transferencia?.cedula)
+    },
+    deposito_usd: {
+      instrucciones: cleanValue(concepto?.deposito_usd?.instrucciones)
+    }
+  });
 
   return {
     pagos: {
@@ -783,6 +872,10 @@ function serializeConfig(doc) {
       },
       deposito_usd: {
         instrucciones: cleanValue(pagos?.deposito_usd?.instrucciones)
+      },
+      por_concepto: {
+        mensualidades: serializeConceptoPago(pagos?.por_concepto?.mensualidades),
+        uniformes: serializeConceptoPago(pagos?.por_concepto?.uniformes)
       }
     },
     cobro: {
@@ -811,6 +904,25 @@ function serializePagosConfig(doc) {
 
   const pagos = doc?.pagos || {};
   const cobro = doc?.cobro || {};
+  const serializeConceptoPago = (concepto = {}) => ({
+    usar_generales: concepto?.usar_generales !== false,
+    pago_movil: {
+      banco: cleanValue(concepto?.pago_movil?.banco),
+      codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
+      telefono: cleanValue(concepto?.pago_movil?.telefono),
+      cedula: cleanValue(concepto?.pago_movil?.cedula),
+      titular: cleanValue(concepto?.pago_movil?.titular)
+    },
+    transferencia: {
+      banco: cleanValue(concepto?.transferencia?.banco),
+      cuenta: cleanValue(concepto?.transferencia?.cuenta),
+      titular: cleanValue(concepto?.transferencia?.titular),
+      cedula: cleanValue(concepto?.transferencia?.cedula)
+    },
+    deposito_usd: {
+      instrucciones: cleanValue(concepto?.deposito_usd?.instrucciones)
+    }
+  });
   return {
     pagos: {
       pago_movil: {
@@ -828,6 +940,10 @@ function serializePagosConfig(doc) {
       },
       deposito_usd: {
         instrucciones: cleanValue(pagos?.deposito_usd?.instrucciones)
+      },
+      por_concepto: {
+        mensualidades: serializeConceptoPago(pagos?.por_concepto?.mensualidades),
+        uniformes: serializeConceptoPago(pagos?.por_concepto?.uniformes)
       }
     },
     cobro: {
@@ -907,6 +1023,11 @@ exports.patchConfiguracionAdmin = async (req, res) => {
       }
       if (normalizedPatch.pagos.deposito_usd) {
         setPayload['pagos.deposito_usd'] = normalizedPatch.pagos.deposito_usd;
+      }
+      if (normalizedPatch.pagos.por_concepto) {
+        Object.entries(normalizedPatch.pagos.por_concepto).forEach(([concepto, value]) => {
+          setPayload[`pagos.por_concepto.${concepto}`] = value;
+        });
       }
     }
 

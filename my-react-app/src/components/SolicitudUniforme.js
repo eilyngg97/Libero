@@ -1773,6 +1773,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         currencyCode={normalizarMoneda(pedidoPago?.moneda)}
         fallbackRate={pedidoPago ? obtenerTasaPorMoneda(pedidoPago?.moneda) : null}
         disableCuotas
+        conceptoPago="uniformes"
         uniformInstallmentChoice={String(pedidoPago?.regla_cobranza || '').trim().toLowerCase() === 'flexible'
           && (Number(pedidoPago?.monto_pagado) || 0) <= 0}
         allowedMethodIds={['pago-movil', 'transferencia']}

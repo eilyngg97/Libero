@@ -1617,6 +1617,7 @@ function PagosAlumno(props) {
         open={openModalPago}
         onClose={() => setOpenModalPago(false)}
         pago={pagoSeleccionado}
+        conceptoPago="mensualidades"
         onSuccess={(payloadPago) => {
           fetchMensualidades();
           const periodoTxt = construirPeriodoLegible(pagoSeleccionado);

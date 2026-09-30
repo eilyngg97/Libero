@@ -8,10 +8,16 @@ import {
   MenuItem,
   Paper,
   Snackbar,
+  Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography
 } from '@mui/material';
 import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
+import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
+import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
+import CheckroomOutlinedIcon from '@mui/icons-material/CheckroomOutlined';
 import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
@@ -36,6 +42,20 @@ const EMPTY_CONFIG = {
     },
     deposito_usd: {
       instrucciones: ''
+    },
+    por_concepto: {
+      mensualidades: {
+        usar_generales: true,
+        pago_movil: { banco: '', codigo_banco: '', telefono: '', cedula: '', titular: '' },
+        transferencia: { banco: '', cuenta: '', titular: '', cedula: '' },
+        deposito_usd: { instrucciones: '' }
+      },
+      uniformes: {
+        usar_generales: true,
+        pago_movil: { banco: '', codigo_banco: '', telefono: '', cedula: '', titular: '' },
+        transferencia: { banco: '', cuenta: '', titular: '', cedula: '' },
+        deposito_usd: { instrucciones: '' }
+      }
     }
   },
   cobro: {
@@ -60,6 +80,32 @@ const buildConfigFromResponse = (data = {}) => ({
     deposito_usd: {
       ...EMPTY_CONFIG.pagos.deposito_usd,
       ...(data?.pagos?.deposito_usd || {})
+    },
+    por_concepto: {
+      mensualidades: {
+        ...EMPTY_CONFIG.pagos.por_concepto.mensualidades,
+        ...(data?.pagos?.por_concepto?.mensualidades || {}),
+        pago_movil: {
+          ...EMPTY_CONFIG.pagos.por_concepto.mensualidades.pago_movil,
+          ...(data?.pagos?.por_concepto?.mensualidades?.pago_movil || {})
+        },
+        transferencia: {
+          ...EMPTY_CONFIG.pagos.por_concepto.mensualidades.transferencia,
+          ...(data?.pagos?.por_concepto?.mensualidades?.transferencia || {})
+        }
+      },
+      uniformes: {
+        ...EMPTY_CONFIG.pagos.por_concepto.uniformes,
+        ...(data?.pagos?.por_concepto?.uniformes || {}),
+        pago_movil: {
+          ...EMPTY_CONFIG.pagos.por_concepto.uniformes.pago_movil,
+          ...(data?.pagos?.por_concepto?.uniformes?.pago_movil || {})
+        },
+        transferencia: {
+          ...EMPTY_CONFIG.pagos.por_concepto.uniformes.transferencia,
+          ...(data?.pagos?.por_concepto?.uniformes?.transferencia || {})
+        }
+      }
     }
   },
   cobro: {
@@ -74,10 +120,16 @@ function PaymentConfig() {
   const [loading, setLoading] = useState(true);
   const [savingPagos, setSavingPagos] = useState(false);
   const [savingCobro, setSavingCobro] = useState(false);
+  const [paymentScope, setPaymentScope] = useState('generales');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const monedaCobro = String(config?.cobro?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
+  const activePayments = paymentScope === 'generales'
+    ? config.pagos
+    : config.pagos.por_concepto[paymentScope];
+  const usingGeneralPayments = paymentScope !== 'generales' && activePayments.usar_generales;
+  const displayedPayments = usingGeneralPayments ? config.pagos : activePayments;
 
   const buildFechaInicioRecargoTexto = () => {
     const diaVencimiento = Number(config?.cobro?.dia_vencimiento);
@@ -207,14 +259,37 @@ function PaymentConfig() {
     fetchConfig();
   }, [fetchConfig]);
 
-  const updateField = (group, section, field, value) => {
+  const updatePaymentField = (section, field, value) => {
     setConfig((prev) => ({
       ...prev,
-      [group]: {
-        ...prev[group],
-        [section]: {
-          ...prev[group][section],
-          [field]: value
+      pagos: paymentScope === 'generales' ? {
+        ...prev.pagos,
+        [section]: { ...prev.pagos[section], [field]: value }
+      } : {
+        ...prev.pagos,
+        por_concepto: {
+          ...prev.pagos.por_concepto,
+          [paymentScope]: {
+            ...prev.pagos.por_concepto[paymentScope],
+            [section]: { ...prev.pagos.por_concepto[paymentScope][section], [field]: value }
+          }
+        }
+      }
+    }));
+  };
+
+  const toggleGeneralPayments = (checked) => {
+    if (paymentScope === 'generales') return;
+    setConfig((prev) => ({
+      ...prev,
+      pagos: {
+        ...prev.pagos,
+        por_concepto: {
+          ...prev.pagos.por_concepto,
+          [paymentScope]: {
+            ...prev.pagos.por_concepto[paymentScope],
+            usar_generales: checked
+          }
         }
       }
     }));
@@ -233,36 +308,18 @@ function PaymentConfig() {
   const handleBancoPagoMovilChange = (value) => {
     const codigoSeleccionado = String(value || '');
     const bancoSeleccionado = BANCOS_PAGO_MOVIL.find((item) => item.codigo === codigoSeleccionado);
-    setConfig((prev) => ({
-      ...prev,
-      pagos: {
-        ...prev.pagos,
-        pago_movil: {
-          ...prev.pagos.pago_movil,
-          codigo_banco: codigoSeleccionado,
-          banco: bancoSeleccionado?.nombre || ''
-        }
-      }
-    }));
+    updatePaymentField('pago_movil', 'codigo_banco', codigoSeleccionado);
+    updatePaymentField('pago_movil', 'banco', bancoSeleccionado?.nombre || '');
   };
 
   const handleBancoTransferenciaChange = (value) => {
     const codigoSeleccionado = String(value || '');
     const bancoSeleccionado = BANCOS_PAGO_MOVIL.find((item) => item.codigo === codigoSeleccionado);
-    setConfig((prev) => ({
-      ...prev,
-      pagos: {
-        ...prev.pagos,
-        transferencia: {
-          ...prev.pagos.transferencia,
-          banco: bancoSeleccionado?.nombre || ''
-        }
-      }
-    }));
+    updatePaymentField('transferencia', 'banco', bancoSeleccionado?.nombre || '');
   };
 
   const selectedCodigoBancoTransferencia = (() => {
-    const bancoActual = String(config?.pagos?.transferencia?.banco || '').trim().toUpperCase();
+    const bancoActual = String(displayedPayments?.transferencia?.banco || '').trim().toUpperCase();
     const match = BANCOS_PAGO_MOVIL.find((item) => item.nombre === bancoActual);
     return match?.codigo || '';
   })();
@@ -344,7 +401,104 @@ function PaymentConfig() {
         <Typography sx={{ fontWeight: 900, color: '#2a374d', fontSize: 24 }}>Metodos de Pago</Typography>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 1.25, mb: 2 }}>
+        <ToggleButtonGroup
+          exclusive
+          value={paymentScope}
+          onChange={(_, value) => value && setPaymentScope(value)}
+          aria-label="Concepto de pago"
+          sx={{
+            width: '100%',
+            gap: 0.5,
+            p: 0.5,
+            bgcolor: '#f1f4f8',
+            border: '1px solid #e2e7ef',
+            borderRadius: 1,
+            '& .MuiToggleButtonGroup-grouped': {
+              flex: 1,
+              minHeight: 38,
+              px: { xs: 1.25, sm: 2 },
+              gap: 0.8,
+              border: '0 !important',
+              borderRadius: '6px !important',
+              color: '#66758d',
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: 0,
+              textTransform: 'none',
+              transition: 'background-color 160ms ease, color 160ms ease, box-shadow 160ms ease',
+              '&:hover': {
+                bgcolor: '#e6ebf2',
+                color: '#26354a'
+              },
+              '&.Mui-selected': {
+                bgcolor: '#111827',
+                color: '#ffffff',
+                boxShadow: '0 2px 5px rgba(15, 23, 42, 0.2)',
+                '&:hover': {
+                  bgcolor: '#111827'
+                },
+                '& .MuiSvgIcon-root': {
+                  color: '#ff8a32'
+                }
+              }
+            },
+            '& .MuiSvgIcon-root': {
+              fontSize: 17,
+              color: '#8a96a8'
+            }
+          }}
+        >
+          <ToggleButton value="generales">
+            <AccountBalanceWalletOutlinedIcon />
+            Generales
+          </ToggleButton>
+          <ToggleButton value="mensualidades">
+            <CalendarMonthOutlinedIcon />
+            Mensualidades
+          </ToggleButton>
+          <ToggleButton value="uniformes">
+            <CheckroomOutlinedIcon />
+            Uniformes
+          </ToggleButton>
+        </ToggleButtonGroup>
+        {paymentScope !== 'generales' && (
+          <Box sx={{
+            display: 'flex',
+            alignSelf: 'flex-end',
+            alignItems: 'center',
+            gap: 0.75,
+            minHeight: 40,
+            px: 1.25,
+            pr: 1.75,
+            bgcolor: usingGeneralPayments ? '#fff7ed' : '#f7f9fc',
+            border: `1px solid ${usingGeneralPayments ? '#fed7aa' : '#e2e7ef'}`,
+            borderRadius: 1
+          }}>
+            <Switch
+              size="small"
+              checked={usingGeneralPayments}
+              onChange={(event) => toggleGeneralPayments(event.target.checked)}
+              inputProps={{ 'aria-label': 'Usar datos generales' }}
+              sx={{
+                '& .MuiSwitch-switchBase.Mui-checked': { color: '#f97316' },
+                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#f97316' }
+              }}
+            />
+            <Typography sx={{ color: '#445269', fontWeight: 800, fontSize: 12.5 }}>
+              Usar datos generales
+            </Typography>
+          </Box>
+        )}
+      </Box>
+
+      {usingGeneralPayments && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Este concepto mostrara los datos generales. Desactiva la opcion para configurar una cuenta diferente.
+        </Alert>
+      )}
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 2, opacity: usingGeneralPayments ? 0.55 : 1 }}>
         <Paper sx={sectionCardSx}>
           <Box sx={cardTitleSx}>
             <PhoneIphoneOutlinedIcon sx={{ color: '#bd6e26', fontSize: 18 }} />
@@ -358,17 +512,18 @@ function PaymentConfig() {
               size="small"
               select
               sx={fieldSx}
-              value={config.pagos.pago_movil.codigo_banco || ''}
+              value={displayedPayments.pago_movil.codigo_banco || ''}
               onChange={(e) => handleBancoPagoMovilChange(e.target.value)}
+              disabled={usingGeneralPayments}
             >
               <MenuItem value="">Seleccione un banco</MenuItem>
               {BANCOS_PAGO_MOVIL.map((item) => (
                 <MenuItem key={item.codigo} value={item.codigo}>{`${item.codigo}-${item.nombre}`}</MenuItem>
               ))}
             </TextField>
-            <TextField label="Telefono" placeholder="0412 000 0000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.telefono} onChange={(e) => updateField('pagos', 'pago_movil', 'telefono', e.target.value)} />
-            <TextField label="Cedula" placeholder="V-00.000.000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.cedula} onChange={(e) => updateField('pagos', 'pago_movil', 'cedula', e.target.value)} />
-            <TextField label="Titular (opcional)" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.pago_movil.titular} onChange={(e) => updateField('pagos', 'pago_movil', 'titular', e.target.value)} />
+            <TextField disabled={usingGeneralPayments} label="Telefono" placeholder="0412 000 0000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={displayedPayments.pago_movil.telefono} onChange={(e) => updatePaymentField('pago_movil', 'telefono', e.target.value)} />
+            <TextField disabled={usingGeneralPayments} label="Cedula" placeholder="V-00.000.000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={displayedPayments.pago_movil.cedula} onChange={(e) => updatePaymentField('pago_movil', 'cedula', e.target.value)} />
+            <TextField disabled={usingGeneralPayments} label="Titular (opcional)" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={displayedPayments.pago_movil.titular} onChange={(e) => updatePaymentField('pago_movil', 'titular', e.target.value)} />
           </Box>
         </Paper>
 
@@ -387,15 +542,16 @@ function PaymentConfig() {
               sx={fieldSx}
               value={selectedCodigoBancoTransferencia}
               onChange={(e) => handleBancoTransferenciaChange(e.target.value)}
+              disabled={usingGeneralPayments}
             >
               <MenuItem value="">Seleccione un banco</MenuItem>
               {BANCOS_PAGO_MOVIL.map((item) => (
                 <MenuItem key={`tr-${item.codigo}`} value={item.codigo}>{`${item.codigo}-${item.nombre}`}</MenuItem>
               ))}
             </TextField>
-            <TextField label="Cuenta" placeholder="0000 0000 00 0000000000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.cuenta} onChange={(e) => updateField('pagos', 'transferencia', 'cuenta', e.target.value)} />
-            <TextField label="Titular" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.titular} onChange={(e) => updateField('pagos', 'transferencia', 'titular', e.target.value)} />
-            <TextField label="Cedula" placeholder="J-00000000-0" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={config.pagos.transferencia.cedula} onChange={(e) => updateField('pagos', 'transferencia', 'cedula', e.target.value)} />
+            <TextField disabled={usingGeneralPayments} label="Cuenta" placeholder="0000 0000 00 0000000000" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={displayedPayments.transferencia.cuenta} onChange={(e) => updatePaymentField('transferencia', 'cuenta', e.target.value)} />
+            <TextField disabled={usingGeneralPayments} label="Titular" placeholder="Nombre completo" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={displayedPayments.transferencia.titular} onChange={(e) => updatePaymentField('transferencia', 'titular', e.target.value)} />
+            <TextField disabled={usingGeneralPayments} label="Cedula" placeholder="J-00000000-0" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={displayedPayments.transferencia.cedula} onChange={(e) => updatePaymentField('transferencia', 'cedula', e.target.value)} />
           </Box>
         </Paper>
 

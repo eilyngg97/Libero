@@ -15,8 +15,12 @@ import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../u
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
-function buildMetodosFromConfig(config = {}) {
+function buildMetodosFromConfig(config = {}, conceptoPago = '') {
   const pagos = config?.pagos || {};
+  const pagosConcepto = pagos?.por_concepto?.[conceptoPago];
+  const pagosAplicables = pagosConcepto && pagosConcepto.usar_generales === false
+    ? pagosConcepto
+    : pagos;
 
   return [
     {
@@ -24,11 +28,11 @@ function buildMetodosFromConfig(config = {}) {
       nombre: 'Pago movil',
       etiqueta: 'Pago Movil',
       detalles: {
-        banco: pagos?.pago_movil?.banco || '',
-        codigo_banco: pagos?.pago_movil?.codigo_banco || '',
-        telefono: pagos?.pago_movil?.telefono || '',
-        cedula: pagos?.pago_movil?.cedula || '',
-        titular: pagos?.pago_movil?.titular || ''
+        banco: pagosAplicables?.pago_movil?.banco || '',
+        codigo_banco: pagosAplicables?.pago_movil?.codigo_banco || '',
+        telefono: pagosAplicables?.pago_movil?.telefono || '',
+        cedula: pagosAplicables?.pago_movil?.cedula || '',
+        titular: pagosAplicables?.pago_movil?.titular || ''
       }
     },
     {
@@ -36,17 +40,17 @@ function buildMetodosFromConfig(config = {}) {
       nombre: 'Transferencia',
       etiqueta: 'Transferencia',
       detalles: {
-        banco: pagos?.transferencia?.banco || '',
-        cuenta: pagos?.transferencia?.cuenta || '',
-        titular: pagos?.transferencia?.titular || '',
-        cedula: pagos?.transferencia?.cedula || ''
+        banco: pagosAplicables?.transferencia?.banco || '',
+        cuenta: pagosAplicables?.transferencia?.cuenta || '',
+        titular: pagosAplicables?.transferencia?.titular || '',
+        cedula: pagosAplicables?.transferencia?.cedula || ''
       }
     },
     {
       id: 'deposito-usd',
       nombre: 'Deposito USD',
       etiqueta: 'Deposito USD',
-      instrucciones: pagos?.deposito_usd?.instrucciones || ''
+      instrucciones: pagosAplicables?.deposito_usd?.instrucciones || ''
     }
   ];
 }
@@ -97,7 +101,8 @@ function ModalPago({
   fallbackRate = null,
   disableCuotas = false,
   uniformInstallmentChoice = false,
-  allowedMethodIds = null
+  allowedMethodIds = null,
+  conceptoPago = ''
 }) {
   const normalizarTelefonoPago = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
@@ -221,10 +226,10 @@ function ModalPago({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || 'No se pudo cargar configuracion de pagos');
         if (cancelled) return;
-        setMetodos(buildMetodosFromConfig(data));
+        setMetodos(buildMetodosFromConfig(data, conceptoPago));
       } catch (err) {
         if (cancelled) return;
-        setMetodos(buildMetodosFromConfig({}));
+        setMetodos(buildMetodosFromConfig({}, conceptoPago));
         setMetodosError(err.message || 'No se pudo cargar configuracion de pagos');
       } finally {
         if (!cancelled) setLoadingMetodos(false);
@@ -236,7 +241,7 @@ function ModalPago({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, conceptoPago]);
 
   useEffect(() => {
     if (open) {

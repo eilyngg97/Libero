@@ -9,11 +9,24 @@ const PaymentMethodSchema = new mongoose.Schema({
   titular: { type: String, default: '' }
 }, { _id: false });
 
+const PaymentConceptSchema = new mongoose.Schema({
+  usar_generales: { type: Boolean, default: true },
+  pago_movil: { type: PaymentMethodSchema, default: () => ({}) },
+  transferencia: { type: PaymentMethodSchema, default: () => ({}) },
+  deposito_usd: {
+    instrucciones: { type: String, default: '' }
+  }
+}, { _id: false });
+
 const PagosSchema = new mongoose.Schema({
   pago_movil: { type: PaymentMethodSchema, default: () => ({}) },
   transferencia: { type: PaymentMethodSchema, default: () => ({}) },
   deposito_usd: {
     instrucciones: { type: String, default: '' }
+  },
+  por_concepto: {
+    mensualidades: { type: PaymentConceptSchema, default: () => ({}) },
+    uniformes: { type: PaymentConceptSchema, default: () => ({}) }
   }
 }, { _id: false });
 
