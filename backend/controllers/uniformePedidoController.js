@@ -58,6 +58,13 @@ function normalizeAperturaSegundaCuota(value) {
   return String(value || '').trim().toLowerCase() === 'libre' ? 'libre' : 'bajo_solicitud';
 }
 
+function normalizeSexo(value) {
+  const sexo = String(value || '').trim().toLowerCase();
+  if (sexo === 'f' || sexo === 'femenino' || sexo === 'femenina') return 'Femenino';
+  if (sexo === 'm' || sexo === 'masculino') return 'Masculino';
+  return null;
+}
+
 function calcularMontoPrimeraParteObjetivo(precio) {
   return redondearMonto((Number(precio) || 0) / 2);
 }
@@ -465,7 +472,7 @@ exports.createPedidoUniforme = async (req, res) => {
     const esFranelaRepresentante = uniforme?.franela_representante === true;
     const requiereNombrePersonalizado = llevaNombreAtleta;
     const requiereNumeroFranela = uniforme?.lleva_numero_franela !== false;
-    const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo sexo');
+    const alumno = await TenantAlumno.findById(alumnoId).select('numero_franela categoria activo dado_de_baja estado sexo');
 
     if (!alumno) {
       return res.status(404).json({ error: 'Alumno no encontrado' });
@@ -497,15 +504,26 @@ exports.createPedidoUniforme = async (req, res) => {
             return res.status(400).json({ error: 'El alumno no tiene categoria asignada para validar numero de franela.' });
           }
 
+          const sexo = normalizeSexo(alumno.sexo);
+          if (!sexo) {
+            return res.status(400).json({ error: 'El alumno no tiene sexo asignado para validar numero de franela.' });
+          }
+
           const numeroOcupado = await TenantAlumno.findOne({
             _id: { $ne: alumno._id },
             activo: { $ne: false },
+            dado_de_baja: { $ne: true },
+            $or: [
+              { estado: { $exists: false } },
+              { estado: { $not: /^baja$/i } }
+            ],
             categoria: { $regex: new RegExp(`^${String(categoria).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+            sexo,
             numero_franela: numeroSolicitado
           }).select('_id');
 
           if (numeroOcupado) {
-            return res.status(409).json({ error: `El numero de franela ${numeroSolicitado} ya esta ocupado en la categoria ${categoria}.` });
+            return res.status(409).json({ error: `El numero de franela ${numeroSolicitado} ya esta ocupado en la categoria ${categoria} (${sexo}).` });
           }
 
           alumno.numero_franela = numeroSolicitado;
