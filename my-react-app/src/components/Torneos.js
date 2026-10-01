@@ -24,6 +24,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import { useNavigate } from 'react-router-dom';
 import RosterCreateDialog from './RosterCreateDialog';
 import RosterTemplateDialog from './RosterTemplateDialog';
+import useTenantCategorias, { combinarCategoriasTenant } from '../hooks/useTenantCategorias';
 
 function TournamentFormCard({ mode, name, description, deadline, error, onNameChange, onDescriptionChange, onDeadlineChange }) {
   const isCreate = mode === 'create';
@@ -60,6 +61,7 @@ function TournamentFormCard({ mode, name, description, deadline, error, onNameCh
 function Torneos() {
   const token = localStorage.getItem('token');
   const navigate = useNavigate();
+  const { categorias: categoriasTenant } = useTenantCategorias();
 
   const buildAuthHeaders = useCallback((baseHeaders = {}) => ({
     ...baseHeaders,
@@ -247,13 +249,9 @@ function Torneos() {
   };
 
   const categoriaOptions = useMemo(() => {
-    const values = Array.from(new Set(
-      alumnos
-        .map((al) => String(al?.categoria || '').trim())
-        .filter(Boolean)
-    ));
-    return values.sort((a, b) => a.localeCompare(b));
-  }, [alumnos]);
+    const observadas = alumnos.map((al) => al?.categoria);
+    return combinarCategoriasTenant(categoriasTenant, observadas);
+  }, [alumnos, categoriasTenant]);
 
   const divisionOptions = useMemo(() => {
     const values = Array.from(new Set(

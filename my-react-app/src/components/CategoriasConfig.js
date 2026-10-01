@@ -16,6 +16,24 @@ import {
 } from '@mui/material';
 import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 import CloseIcon from '@mui/icons-material/Close';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
@@ -38,6 +56,62 @@ const EMPTY_CATEGORIAS_CONFIG = {
   ]
 };
 
+let categoriaDragSequence = 0;
+
+function createCategoriaDragId() {
+  categoriaDragSequence += 1;
+  return `categoria-regla-${categoriaDragSequence}`;
+}
+
+function SortableCategoriaRegla({ id, disabled, children }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id, disabled });
+
+  return (
+    <Box
+      ref={setNodeRef}
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: 'auto minmax(0, 1fr) auto', md: 'auto 1.2fr 0.7fr 0.7fr auto' },
+        gap: 1,
+        p: 1,
+        border: '1px solid',
+        borderColor: isDragging ? '#f97316' : '#e2e8f0',
+        borderRadius: 2,
+        bgcolor: isDragging ? '#fff7ed' : '#f8fafc',
+        boxShadow: isDragging ? '0 8px 24px rgba(15, 23, 42, 0.14)' : 'none',
+        opacity: isDragging ? 0.92 : 1,
+        position: 'relative',
+        zIndex: isDragging ? 2 : 1,
+        transform: CSS.Transform.toString(transform),
+        transition
+      }}
+    >
+      <Tooltip title="Arrastrar para cambiar posicion">
+        <span style={{ alignSelf: 'center' }}>
+          <IconButton
+            size="small"
+            disabled={disabled}
+            aria-label="Arrastrar categoria para cambiar posicion"
+            {...attributes}
+            {...listeners}
+            sx={{ cursor: disabled ? 'default' : 'grab', touchAction: 'none', color: '#64748b' }}
+          >
+            <DragIndicatorIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+      {children}
+    </Box>
+  );
+}
+
 function buildCategoriasConfig(data = {}) {
   const reglas = Array.isArray(data?.reglas) && data.reglas.length
     ? data.reglas
@@ -58,7 +132,8 @@ function buildCategoriasConfig(data = {}) {
       anio_nacimiento_hasta: regla?.anio_nacimiento_hasta === null || regla?.anio_nacimiento_hasta === undefined
         ? null
         : Number(regla.anio_nacimiento_hasta),
-      orden: Number(regla?.orden) || (index + 1)
+      orden: Number(regla?.orden) || (index + 1),
+      _dragId: regla?._dragId || createCategoriaDragId()
     }))
   };
 }
@@ -68,7 +143,7 @@ function CategoriasConfig() {
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
   const puedeGestionarCategorias = rolActual === 'super_admin' || rolActual === 'admin';
 
-  const [categoriasConfig, setCategoriasConfig] = useState(EMPTY_CATEGORIAS_CONFIG);
+  const [categoriasConfig, setCategoriasConfig] = useState(() => buildCategoriasConfig());
   const [guardandoCategoriasConfig, setGuardandoCategoriasConfig] = useState(false);
   const [cargandoConfig, setCargandoConfig] = useState(true);
 
@@ -82,6 +157,11 @@ function CategoriasConfig() {
   const [successMessage, setSuccessMessage] = useState('');
 
   const apiBase = useMemo(() => (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/$/, ''), []);
+  const dragSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const sectionCardSx = {
     p: 2.4,
@@ -223,7 +303,8 @@ function CategoriasConfig() {
           etiqueta: '',
           anio_nacimiento_desde: null,
           anio_nacimiento_hasta: null,
-          orden: prev.reglas.length + 1
+          orden: prev.reglas.length + 1,
+          _dragId: createCategoriaDragId()
         }
       ]
     }));
@@ -234,6 +315,24 @@ function CategoriasConfig() {
       ...prev,
       reglas: prev.reglas.filter((_, idx) => idx !== index).map((regla, idx) => ({ ...regla, orden: idx + 1 }))
     }));
+  };
+
+  const reordenarCategoriaRegla = ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+
+    setCategoriasConfig((prev) => {
+      const oldIndex = prev.reglas.findIndex((regla) => regla._dragId === active.id);
+      const newIndex = prev.reglas.findIndex((regla) => regla._dragId === over.id);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+
+      return {
+        ...prev,
+        reglas: arrayMove(prev.reglas, oldIndex, newIndex).map((regla, index) => ({
+          ...regla,
+          orden: index + 1
+        }))
+      };
+    });
   };
 
   const guardarCategoriasConfig = async () => {
@@ -392,27 +491,25 @@ function CategoriasConfig() {
               />
             </Box>
 
-            <Box sx={{ mt: 1.5, display: 'grid', gap: 1 }}>
-              {(categoriasConfig.reglas || []).map((regla, index) => (
-                <Box
-                  key={`regla-${index}`}
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.7fr 0.7fr auto' },
-                    gap: 1,
-                    p: 1,
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 2,
-                    bgcolor: '#f8fafc'
-                  }}
-                >
+            <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={reordenarCategoriaRegla}>
+              <SortableContext
+                items={(categoriasConfig.reglas || []).map((regla) => regla._dragId)}
+                strategy={verticalListSortingStrategy}
+              >
+                <Box sx={{ mt: 1.5, display: 'grid', gap: 1 }}>
+                  {(categoriasConfig.reglas || []).map((regla, index) => (
+                    <SortableCategoriaRegla
+                      key={regla._dragId}
+                      id={regla._dragId}
+                      disabled={guardandoCategoriasConfig}
+                    >
                   <TextField
                     label={`Categoria #${index + 1}`}
                     size="small"
                     value={regla.etiqueta || ''}
                     onChange={(e) => updateCategoriaRegla(index, 'etiqueta', e.target.value)}
                     InputLabelProps={{ shrink: true }}
-                    sx={fieldLabelSx}
+                    sx={{ ...fieldLabelSx, gridColumn: { xs: '2 / 3', md: 'auto' } }}
                   />
                   <TextField
                     label="Desde"
@@ -421,7 +518,7 @@ function CategoriasConfig() {
                     value={regla.anio_nacimiento_desde ?? ''}
                     onChange={(e) => updateCategoriaRegla(index, 'anio_nacimiento_desde', e.target.value)}
                     InputLabelProps={{ shrink: true }}
-                    sx={fieldLabelSx}
+                    sx={{ ...fieldLabelSx, gridColumn: { xs: '2 / 3', md: 'auto' } }}
                   />
                   <TextField
                     label="Hasta"
@@ -430,7 +527,7 @@ function CategoriasConfig() {
                     value={regla.anio_nacimiento_hasta ?? ''}
                     onChange={(e) => updateCategoriaRegla(index, 'anio_nacimiento_hasta', e.target.value)}
                     InputLabelProps={{ shrink: true }}
-                    sx={fieldLabelSx}
+                    sx={{ ...fieldLabelSx, gridColumn: { xs: '2 / 3', md: 'auto' } }}
                   />
                   <Tooltip title="Quitar">
                     <span>
@@ -439,15 +536,17 @@ function CategoriasConfig() {
                         onClick={() => eliminarCategoriaRegla(index)}
                         disabled={(categoriasConfig.reglas || []).length <= 1}
                         size="small"
-                        sx={{ alignSelf: 'center', justifySelf: { xs: 'flex-start', md: 'center' } }}
+                        sx={{ alignSelf: 'center', justifySelf: 'center', gridColumn: { xs: '3 / 4', md: 'auto' }, gridRow: { xs: '1', md: 'auto' } }}
                       >
                         <CloseIcon fontSize="small" />
                       </IconButton>
                     </span>
                   </Tooltip>
+                    </SortableCategoriaRegla>
+                  ))}
                 </Box>
-              ))}
-            </Box>
+              </SortableContext>
+            </DndContext>
 
             <Box sx={{ mt: 1.2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               <Button

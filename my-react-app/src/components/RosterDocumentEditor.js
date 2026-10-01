@@ -37,7 +37,7 @@ import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { useNavigate, useParams } from 'react-router-dom';
 import { mediaUrl } from '../utils/mediaUrl';
-import { CATEGORIAS_DISPONIBLES } from '../utils/categoria';
+import useTenantCategorias, { combinarCategoriasTenant } from '../hooks/useTenantCategorias';
 
 const EMPTY_FIELDS = {
   titulo: '',
@@ -113,6 +113,7 @@ function getRosterPlayers(roster) {
 function RosterDocumentEditor() {
   const { torneoId, rosterId } = useParams();
   const navigate = useNavigate();
+  const { categorias: categoriasTenant } = useTenantCategorias();
   const paperRef = useRef(null);
   const previewRef = useRef(null);
   const token = localStorage.getItem('token');
@@ -496,10 +497,7 @@ function RosterDocumentEditor() {
   }
   const rosterContinuationPages = rosterPages.slice(1);
   const extraPageCount = rosterContinuationPages.length + cedulaPages.length;
-  const categoriasDisponibles = Array.from(new Set([
-    documento.campos.categoria,
-    ...CATEGORIAS_DISPONIBLES
-  ].filter(Boolean)));
+  const categoriasDisponibles = combinarCategoriasTenant(categoriasTenant, [documento.campos.categoria]);
   const receiptBlock = (
     <Box sx={{ mt: 2, fontFamily: 'Arial, sans-serif', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>
       <Box sx={{ display: 'flex', alignItems: 'baseline' }}>

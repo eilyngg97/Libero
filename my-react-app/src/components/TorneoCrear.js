@@ -3,9 +3,11 @@ import { Button, TextField, Typography, Box, Grid, Chip, InputAdornment, MenuIte
 import { DataGrid } from '@mui/x-data-grid';
 import SearchIcon from '@mui/icons-material/Search';
 import { useNavigate } from 'react-router-dom';
+import useTenantCategorias, { combinarCategoriasTenant } from '../hooks/useTenantCategorias';
 
 function TorneoCrear() {
   const navigate = useNavigate();
+  const { categorias: categoriasTenant } = useTenantCategorias();
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [fechaLimite, setFechaLimite] = useState('');
@@ -79,13 +81,9 @@ function TorneoCrear() {
   }, [filtroNombre, filtroDesde, filtroHasta, filtroSexo, filtroCategoria, filtroDivision]);
 
   const categoriaOptions = useMemo(() => {
-    const values = Array.from(new Set(
-      alumnos
-        .map((al) => String(al?.categoria || '').trim())
-        .filter(Boolean)
-    ));
-    return values.sort((a, b) => a.localeCompare(b));
-  }, [alumnos]);
+    const observadas = alumnos.map((al) => al?.categoria);
+    return combinarCategoriasTenant(categoriasTenant, observadas);
+  }, [alumnos, categoriasTenant]);
 
   const divisionOptions = useMemo(() => {
     const values = Array.from(new Set(

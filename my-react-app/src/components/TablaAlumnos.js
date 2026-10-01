@@ -29,7 +29,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import { mediaUrl } from '../utils/mediaUrl';
-import { CATEGORIAS_DISPONIBLES } from '../utils/categoria';
+import useTenantCategorias from '../hooks/useTenantCategorias';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return '';
@@ -142,6 +142,8 @@ function SolvenciaChip({ alumno }) {
 
 const METODOS_PAGO = ['Pago movil', 'Transferencia', 'Efectivo'];
 const DIVISIONES_DISPONIBLES = ['Primera división', 'Segunda división', 'Tercera división'];
+const TODAS_CATEGORIAS_VALUE = '__todas_categorias__';
+const TODAS_DIVISIONES_VALUE = '__todas_divisiones__';
 const PREVIEW_PAGE_SIZE = 20;
 
 function normalizeMetodoPago(value) {
@@ -265,6 +267,7 @@ function obtenerFilasPorPaginaInicial(searchParams) {
 
 function TablaAlumnos() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { categorias: categoriasDisponibles } = useTenantCategorias();
   // Estados para filtros
   const [filtroNombreApellido, setFiltroNombreApellido] = useState(() => searchParams.get('q') || '');
   const [filtroFechaNacimientoDesde, setFiltroFechaNacimientoDesde] = useState(() => searchParams.get('nacDesde') || '');
@@ -1250,7 +1253,8 @@ function TablaAlumnos() {
             value={filtroCategoria}
               onChange={(e) => {
                 const value = e.target.value;
-                setFiltroCategoria(typeof value === 'string' ? value.split(',') : value);
+                const nextValues = typeof value === 'string' ? value.split(',') : value;
+                setFiltroCategoria(nextValues.includes(TODAS_CATEGORIAS_VALUE) ? [] : nextValues);
               }}
               displayEmpty
               renderValue={(selected) => {
@@ -1259,7 +1263,11 @@ function TablaAlumnos() {
               }}
               sx={{ '& .MuiSelect-select': { py: 0.8, fontSize: 13 } }}
             >
-              {CATEGORIAS_DISPONIBLES.map((categoria) => (
+              <MenuItem value={TODAS_CATEGORIAS_VALUE}>
+                <Checkbox size="small" checked={filtroCategoria.length === 0} />
+                <Typography sx={{ fontSize: 13 }}>Todas las categorías</Typography>
+              </MenuItem>
+              {categoriasDisponibles.map((categoria) => (
                 <MenuItem key={categoria} value={categoria}>
                   <Checkbox size="small" checked={filtroCategoria.includes(categoria)} />
                   <Typography sx={{ fontSize: 13 }}>{categoria}</Typography>
@@ -1277,7 +1285,8 @@ function TablaAlumnos() {
               value={filtroDivision}
               onChange={(e) => {
                 const value = e.target.value;
-                setFiltroDivision(typeof value === 'string' ? value.split(',') : value);
+                const nextValues = typeof value === 'string' ? value.split(',') : value;
+                setFiltroDivision(nextValues.includes(TODAS_DIVISIONES_VALUE) ? [] : nextValues);
               }}
               displayEmpty
               renderValue={(selected) => {
@@ -1286,6 +1295,10 @@ function TablaAlumnos() {
               }}
               sx={{ '& .MuiSelect-select': { py: 0.8, fontSize: 13 } }}
             >
+              <MenuItem value={TODAS_DIVISIONES_VALUE}>
+                <Checkbox size="small" checked={filtroDivision.length === 0} />
+                <Typography sx={{ fontSize: 13 }}>Todas las divisiones</Typography>
+              </MenuItem>
               {DIVISIONES_DISPONIBLES.map((division) => (
                 <MenuItem key={division} value={division}>
                   <Checkbox size="small" checked={filtroDivision.includes(division)} />

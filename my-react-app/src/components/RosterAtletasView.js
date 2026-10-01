@@ -21,6 +21,7 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import { useNavigate, useParams } from 'react-router-dom';
+import useTenantCategorias, { combinarCategoriasTenant } from '../hooks/useTenantCategorias';
 
 const EMPTY_FILTERS = {
   search: '',
@@ -84,6 +85,7 @@ function isCurrentOrPastPeriod(mensualidad, currentPeriod) {
 function RosterAtletasView() {
   const { torneoId, rosterId } = useParams();
   const navigate = useNavigate();
+  const { categorias: categoriasTenant } = useTenantCategorias();
   const token = localStorage.getItem('token');
   const [torneo, setTorneo] = useState(null);
   const [roster, setRoster] = useState(null);
@@ -198,9 +200,9 @@ function RosterAtletasView() {
 
   const options = useMemo(() => ({
     sexos: uniqueOptions(athletes, 'sexo'),
-    categorias: uniqueOptions(athletes, 'categoria'),
+    categorias: combinarCategoriasTenant(categoriasTenant, uniqueOptions(athletes, 'categoria')),
     divisiones: uniqueOptions(athletes, 'division')
-  }), [athletes]);
+  }), [athletes, categoriasTenant]);
 
   const filteredAthletes = useMemo(() => athletes
     .filter((athlete) => {

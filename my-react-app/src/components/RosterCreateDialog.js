@@ -12,11 +12,12 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { CATEGORIAS_DISPONIBLES } from '../utils/categoria';
+import useTenantCategorias from '../hooks/useTenantCategorias';
 
 const DIVISIONES_DISPONIBLES = ['Primera división', 'Segunda división', 'Tercera división'];
 
 function RosterCreateDialog({ open, onClose, token, prefillTorneoId = '', onCreated }) {
+  const { categorias } = useTenantCategorias();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -88,7 +89,7 @@ function RosterCreateDialog({ open, onClose, token, prefillTorneoId = '', onCrea
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField select label="Categoría" fullWidth value={form.categoria} onChange={(e) => setForm((prev) => ({ ...prev, categoria: e.target.value }))} sx={fieldSx}>
-                {CATEGORIAS_DISPONIBLES.map((categoria) => <MenuItem key={categoria} value={categoria}>{categoria}</MenuItem>)}
+                {categorias.map((categoria) => <MenuItem key={categoria} value={categoria}>{categoria}</MenuItem>)}
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>

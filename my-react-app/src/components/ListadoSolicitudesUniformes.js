@@ -46,6 +46,7 @@ import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
 import { exportToExcel } from '../utils/exportExcel';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
+import useTenantCategorias, { combinarCategoriasTenant } from '../hooks/useTenantCategorias';
 
 const ESTADO_LABELS = {
   pendiente: 'Pendiente',
@@ -135,6 +136,7 @@ function getInputDateFromValue(fecha) {
 }
 
 function ListadoSolicitudesUniformes() {
+  const { categorias: categoriasTenant } = useTenantCategorias();
   const [pedidos, setPedidos] = useState([]);
   const [uniformesCatalogo, setUniformesCatalogo] = useState([]);
   const [prendasCatalogo, setPrendasCatalogo] = useState([]);
@@ -487,21 +489,10 @@ function ListadoSolicitudesUniformes() {
   };
 
   const opcionesCategoria = useMemo(() => {
-    const categoriasUnicas = new Map();
-
-    pedidos.forEach((pedido) => {
-      const categoria = String(pedido?.alumno?.categoria || '').trim();
-      if (!categoria) return;
-      const clave = categoria.toLowerCase();
-      if (!categoriasUnicas.has(clave)) {
-        categoriasUnicas.set(clave, categoria);
-      }
-    });
-
-    return Array.from(categoriasUnicas.entries())
-      .map(([value, label]) => ({ value, label }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
-  }, [pedidos]);
+    const observadas = pedidos.map((pedido) => pedido?.alumno?.categoria);
+    return combinarCategoriasTenant(categoriasTenant, observadas)
+      .map((categoria) => ({ value: categoria.toLowerCase(), label: categoria }));
+  }, [pedidos, categoriasTenant]);
 
   const opcionesSexo = useMemo(() => {
     const sexosUnicos = new Map();
