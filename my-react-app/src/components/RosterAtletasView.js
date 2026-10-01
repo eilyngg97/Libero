@@ -16,6 +16,7 @@ import {
   Snackbar,
   TablePagination,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
@@ -36,7 +37,18 @@ const STATUS_STYLES = {
   pendiente: { label: 'Pendiente', color: '#a16207', bg: '#fff7ed' }
 };
 
-const DEBT_STATUSES = new Set(['pendiente', 'insolvente', 'retrasado', 'abono', 'en revision']);
+const SOLVENCY_STATUSES = {
+  insolvente: { label: 'Insolvente', priority: 60, color: '#b91c1c', bg: '#fee2e2' },
+  retrasado: { label: 'Insolvente', priority: 60, color: '#b91c1c', bg: '#fee2e2' },
+  abono: { label: 'Abono', priority: 50, color: '#c2410c', bg: '#ffedd5' },
+  'en revision': { label: 'En revisión', priority: 40, color: '#1d4ed8', bg: '#e0f2fe' },
+  pendiente: { label: 'Pendiente', priority: 30, color: '#a16207', bg: '#fff7ed' },
+  pagado: { label: 'Solvente', priority: 20, color: '#166534', bg: '#dcfce7' },
+  exonerado: { label: 'Solvente', priority: 20, color: '#166534', bg: '#dcfce7' },
+  becado: { label: 'Solvente', priority: 20, color: '#166534', bg: '#dcfce7' }
+};
+
+const DEFAULT_SOLVENCY = { label: 'Solvente', priority: 0, color: '#166534', bg: '#dcfce7' };
 
 function getId(value) {
   return String(value?._id || value?.id || value || '');
@@ -147,10 +159,14 @@ function RosterAtletasView() {
               year: today.getFullYear()
             })) return result;
 
-            if (!result[athleteId]) result[athleteId] = 'Solvente';
-            if (DEBT_STATUSES.has(normalize(mensualidad?.estatus))) {
-              result[athleteId] = 'Insolvente';
-            }
+            const statusKey = normalize(mensualidad?.estatus);
+            const nextStatus = SOLVENCY_STATUSES[statusKey] || DEFAULT_SOLVENCY;
+            const currentStatus = result[athleteId] || DEFAULT_SOLVENCY;
+            const displayedStatus = nextStatus.priority > currentStatus.priority ? nextStatus : currentStatus;
+            result[athleteId] = {
+              ...displayedStatus,
+              insolventCount: (currentStatus.insolventCount || 0) + (statusKey === 'insolvente' || statusKey === 'retrasado' ? 1 : 0)
+            };
             return result;
           }, {})
           : {}
@@ -214,7 +230,7 @@ function RosterAtletasView() {
     filteredAthletes.slice(page * rowsPerPage, (page + 1) * rowsPerPage)
   ), [filteredAthletes, page, rowsPerPage]);
 
-  const getSolvencia = (athlete) => solvencias[getId(athlete)] || 'Solvente';
+  const getSolvencia = (athlete) => solvencias[getId(athlete)] || DEFAULT_SOLVENCY;
 
   const selectedAthletes = useMemo(() => {
     const athleteMap = new Map(athletes.map((athlete) => [getId(athlete), athlete]));
@@ -409,6 +425,7 @@ function RosterAtletasView() {
               {paginatedAthletes.map((athlete) => {
                 const athleteId = getId(athlete);
                 const selected = selectedIds.has(athleteId);
+                const solvencia = getSolvencia(athlete);
                 return (
                   <Box
                     key={athleteId}
@@ -431,11 +448,18 @@ function RosterAtletasView() {
                     </Box>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{formatDate(athlete.fecha_nacimiento)}</Typography>
                     <Typography noWrap sx={{ fontSize: 9.5, color: '#64748b' }}>{athlete.sede_nombre || '-'}</Typography>
-                    <Chip
-                      size="small"
-                      label={getSolvencia(athlete)}
-                      sx={{ justifySelf: 'start', height: 20, maxWidth: '100%', fontSize: 8.5, fontWeight: 700, bgcolor: getSolvencia(athlete) === 'Solvente' ? '#dcfce7' : '#fee2e2', color: getSolvencia(athlete) === 'Solvente' ? '#166534' : '#b91c1c' }}
-                    />
+                    <Tooltip
+                      title={solvencia.insolventCount > 0
+                        ? `${solvencia.insolventCount} mensualidad${solvencia.insolventCount === 1 ? '' : 'es'} insolvente${solvencia.insolventCount === 1 ? '' : 's'}`
+                        : 'Sin mensualidades insolventes'}
+                      arrow
+                    >
+                      <Chip
+                        size="small"
+                        label={solvencia.label}
+                        sx={{ justifySelf: 'start', height: 20, maxWidth: '100%', fontSize: 8.5, fontWeight: 700, bgcolor: solvencia.bg, color: solvencia.color }}
+                      />
+                    </Tooltip>
                     <Button
                       size="small"
                       variant={selected ? 'outlined' : 'contained'}
