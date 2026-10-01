@@ -297,6 +297,32 @@ function getMontoBaseMensualUsd(entrenador = {}) {
   return round2(numeric);
 }
 
+function getMontoBaseMensualUsdParaPeriodo(entrenador = {}, periodoMesClave = '') {
+  const mesClave = trimValue(periodoMesClave);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mesClave)) {
+    return getMontoBaseMensualUsd(entrenador);
+  }
+
+  const ahora = new Date();
+  const mesActualClave = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  if (mesClave >= mesActualClave) {
+    return getMontoBaseMensualUsd(entrenador);
+  }
+
+  const pagoHistorico = (Array.isArray(entrenador?.pagos_nomina) ? entrenador.pagos_nomina : []).find((pago) => {
+    const periodoClave = resolvePagoPeriodoClaveForMatch({
+      pago,
+      frecuenciaPagoFallback: normalizeFrecuenciaPago(entrenador?.pago_config?.frecuencia_pago) || 'mensual'
+    });
+    const montoHistorico = Number(pago?.monto_base_mensual_usd);
+    return periodoClave.startsWith(mesClave) && Number.isFinite(montoHistorico) && montoHistorico > 0;
+  });
+
+  return pagoHistorico
+    ? round2(pagoHistorico.monto_base_mensual_usd)
+    : getMontoBaseMensualUsd(entrenador);
+}
+
 function getDivisorFrecuencia(frecuenciaPago) {
   if (frecuenciaPago === 'quincenal') return 2;
   if (frecuenciaPago === 'semanal') return 4;
@@ -914,9 +940,6 @@ exports.registrarPagoNominaEntrenador = async (req, res) => {
     }
 
     const frecuenciaPago = normalizeFrecuenciaPago(entrenador?.pago_config?.frecuencia_pago) || 'mensual';
-    const montoBaseMensualUsd = getMontoBaseMensualUsd(entrenador);
-    const divisorFrecuencia = getDivisorFrecuencia(frecuenciaPago);
-    const montoBasePeriodoUsd = round2(montoBaseMensualUsd / divisorFrecuencia);
     const monedaSeleccionada = normalizeCurrency(req.body?.moneda);
     const tasaBcv = round2(req.body?.tasa_bcv);
     const montoBaseUsdEntrada = Number(req.body?.monto_base_usd);
@@ -989,6 +1012,12 @@ exports.registrarPagoNominaEntrenador = async (req, res) => {
       || periodoClaveInferidaPorMesRevisar
       || periodoClaveInferidaPorTexto
       || resolvePeriodoClave({ frecuenciaPago, fechaPago });
+    const periodoMesClave = /^\d{4}-(0[1-9]|1[0-2])$/.test(periodoMesClaveRequest)
+      ? periodoMesClaveRequest
+      : periodoClave.slice(0, 7);
+    const montoBaseMensualUsd = getMontoBaseMensualUsdParaPeriodo(entrenador, periodoMesClave);
+    const divisorFrecuencia = getDivisorFrecuencia(frecuenciaPago);
+    const montoBasePeriodoUsd = round2(montoBaseMensualUsd / divisorFrecuencia);
     const pagoPayload = {
       fecha_pago: fechaPago,
       periodo: periodoTexto,

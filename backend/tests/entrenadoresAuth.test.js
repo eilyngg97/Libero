@@ -214,6 +214,46 @@ describe('Modulo entrenadores y auth por roles', () => {
     expect(save).toHaveBeenCalled();
   });
 
+  test('POST /api/entrenadores/:id/pagos conserva salario base historico del mes', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin' });
+    const save = jest.fn().mockResolvedValue(true);
+    const doc = {
+      _id: '507f1f77bcf86cd799439011',
+      pago_config: { monto_base_usd: 600, frecuencia_pago: 'abonos' },
+      pagos_nomina: [{
+        fecha_pago: new Date('2026-08-15T12:00:00.000Z'),
+        periodo: 'Abono 1',
+        periodo_clave: '2026-08',
+        frecuencia_pago: 'abonos',
+        monto_base_mensual_usd: 300,
+        monto_base_pago_usd: 100
+      }],
+      save
+    };
+    mockEntrenadorModel.findById.mockResolvedValue(doc);
+
+    const response = await request(app)
+      .post('/api/entrenadores/507f1f77bcf86cd799439011/pagos')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        moneda: 'USD',
+        tasa_bcv: 120,
+        monto_base: 200,
+        monto_base_usd: 200,
+        monto_base_ves: 24000,
+        monto_total_usd: 200,
+        monto_total_ves: 24000,
+        metodo_pago: 'transferencia',
+        periodo: 'Abono 2',
+        periodo_clave: '2026-08',
+        periodo_mes_clave: '2026-08'
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body?.pago?.monto_base_mensual_usd).toBe(300);
+    expect(save).toHaveBeenCalled();
+  });
+
   test('GET /api/entrenadores/actividades-pendientes-nomina solo incluye pendientes', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin' });
 

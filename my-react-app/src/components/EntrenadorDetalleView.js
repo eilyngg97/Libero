@@ -352,6 +352,24 @@ function EntrenadorDetalleView({
     );
   }, [pagosNominaOrdenados, mesReferenciaPago]);
 
+  const montoBaseMesSeleccionado = useMemo(() => {
+    const ahora = new Date();
+    const esMesAnterior = Number.isInteger(mesVistaSeleccionado?.year)
+      && Number.isInteger(mesVistaSeleccionado?.monthIndex)
+      && new Date(mesVistaSeleccionado.year, mesVistaSeleccionado.monthIndex, 1)
+        < new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    if (!esMesAnterior) return montoBaseConfigurado;
+
+    const pagoConBaseHistorica = pagosMesActual.find((pago) => {
+      const montoHistorico = Number(pago?.monto_base_mensual_usd);
+      return Number.isFinite(montoHistorico) && montoHistorico > 0;
+    });
+    const montoHistorico = Number(pagoConBaseHistorica?.monto_base_mensual_usd);
+    return Number.isFinite(montoHistorico) && montoHistorico > 0
+      ? montoHistorico
+      : montoBaseConfigurado;
+  }, [pagosMesActual, montoBaseConfigurado, mesVistaSeleccionado]);
+
   const totalAbonadoMesUsd = useMemo(() => {
     return round2(
       pagosMesActual.reduce((acc, pago) => {
@@ -376,24 +394,24 @@ function EntrenadorDetalleView({
   }, [pagosMesActual]);
 
   const saldoRestanteMesUsd = useMemo(() => {
-    if (montoBaseConfigurado <= 0) return 0;
-    return Math.max(0, round2(montoBaseConfigurado - totalAbonadoMesUsd));
-  }, [montoBaseConfigurado, totalAbonadoMesUsd]);
+    if (montoBaseMesSeleccionado <= 0) return 0;
+    return Math.max(0, round2(montoBaseMesSeleccionado - totalAbonadoMesUsd));
+  }, [montoBaseMesSeleccionado, totalAbonadoMesUsd]);
 
   const porcentajeAbonadoMes = useMemo(() => {
-    if (montoBaseConfigurado <= 0) return 100;
-    return Math.min(100, Math.round((totalAbonadoMesUsd / montoBaseConfigurado) * 100));
-  }, [montoBaseConfigurado, totalAbonadoMesUsd]);
+    if (montoBaseMesSeleccionado <= 0) return 100;
+    return Math.min(100, Math.round((totalAbonadoMesUsd / montoBaseMesSeleccionado) * 100));
+  }, [montoBaseMesSeleccionado, totalAbonadoMesUsd]);
 
   const montoBasePorPago = useMemo(() => {
     if (frecuenciaPago === 'abonos') {
       if (saldoRestanteMesUsd > 0) return Number(saldoRestanteMesUsd.toFixed(2));
-      return Number(montoBaseConfigurado.toFixed(2));
+      return Number(montoBaseMesSeleccionado.toFixed(2));
     }
     const divisor = getDivisorFrecuencia(frecuenciaPago);
-    if (divisor <= 1) return Number(montoBaseConfigurado.toFixed(2));
-    return Number((montoBaseConfigurado / divisor).toFixed(2));
-  }, [montoBaseConfigurado, frecuenciaPago, saldoRestanteMesUsd]);
+    if (divisor <= 1) return Number(montoBaseMesSeleccionado.toFixed(2));
+    return Number((montoBaseMesSeleccionado / divisor).toFixed(2));
+  }, [montoBaseMesSeleccionado, frecuenciaPago, saldoRestanteMesUsd]);
 
   const periodOptions = useMemo(() => {
     if (frecuenciaPago === 'quincenal') {
@@ -1994,7 +2012,7 @@ function EntrenadorDetalleView({
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 1, my: 1 }}>
                     <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Salario base</Typography>
-                      <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>{formatMoney(montoBaseConfigurado, 'USD')}</Typography>
+                      <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>{formatMoney(montoBaseMesSeleccionado, 'USD')}</Typography>
                     </Box>
                     <Box sx={{ p: 1, bgcolor: '#ffffff', borderRadius: 2, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Total abonado</Typography>
@@ -2107,7 +2125,7 @@ function EntrenadorDetalleView({
                   </TextField>
                 </Box>
                 <Typography sx={{ mt: 0.9, fontSize: 12, color: '#64748b', fontWeight: 600 }}>
-                  Base mensual: {formatMoney(montoBaseConfigurado, pagoForm.moneda)} · Frecuencia {getFrecuenciaLabel(frecuenciaPago)} · Monto por pago sugerido: {formatMoney(montoBasePorPago, pagoForm.moneda)}
+                  Base mensual: {formatMoney(montoBaseMesSeleccionado, pagoForm.moneda)} · Frecuencia {getFrecuenciaLabel(frecuenciaPago)} · Monto por pago sugerido: {formatMoney(montoBasePorPago, pagoForm.moneda)}
                 </Typography>
                 <Typography sx={{ mt: 0.45, fontSize: 12, color: '#0f766e', fontWeight: 700 }}>
                   Sugerido para este registro: {periodoSugeridoLabel} · {formatMoney(montoBasePorPago, pagoForm.moneda)}
