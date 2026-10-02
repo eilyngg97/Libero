@@ -88,12 +88,11 @@ async function getTenantBusinessConnection(tenant = {}) {
   const tenantId = normalizeTenantId(tenant?.tenantId || fallbackTenant.tenantId);
   const dbUri = getBusinessDbUriFromTenant(tenant, fallbackTenant);
 
-  // saneamiento defensivo y logs para depuración
+  // Saneamiento defensivo sin registrar la URI, que puede contener credenciales.
   const candidateDbUri = typeof dbUri === 'string' ? String(dbUri).replace(/^<|>|\s+$/g, '').trim() : dbUri;
-  console.log(`[TENANT-CONN] tenantId=${tenantId} fallbackTenant=${fallbackTenant && fallbackTenant.tenantId}; rawDbUri=${dbUri}; candidateDbUri=${candidateDbUri}`);
 
   if (!tenantId || !candidateDbUri) {
-    console.error(`[TENANT-CONN] No se pudo resolver un tenant seguro para la conexion de negocio - tenantId=${tenantId} candidateDbUri=${candidateDbUri}`);
+    console.error(`[TENANT-CONN] No se pudo resolver un tenant seguro para la conexion de negocio - tenantId=${tenantId}`);
     throw new Error('No se pudo resolver un tenant seguro para la conexion de negocio');
   }
 
