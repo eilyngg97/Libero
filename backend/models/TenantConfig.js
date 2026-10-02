@@ -94,6 +94,11 @@ const RetiroPersonalizadoSchema = new mongoose.Schema({
 const ConstanciasSchema = new mongoose.Schema({
   institucion_nombre: { type: String, default: '' },
   subtitulo: { type: String, default: '' },
+  tipografia: {
+    familia: { type: String, enum: ['arial', 'times_new_roman', 'courier'], default: 'arial' },
+    tamano: { type: Number, min: 8, max: 16, default: 11 },
+    cursiva: { type: Boolean, default: false }
+  },
   logos: {
     type: [{ type: String }],
     default: [],

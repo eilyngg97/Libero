@@ -53,6 +53,11 @@ const DEFAULT_TEMPLATES = {
 const DEFAULT_CONSTANCIAS_CONFIG = {
   institucion_nombre: 'ESCUELA DE VOLEIBOL',
   subtitulo: '',
+  tipografia: {
+    familia: 'arial',
+    tamano: 11,
+    cursiva: false
+  },
   logos: [],
   firmante: {
     nombre: '',
@@ -206,6 +211,13 @@ function normalizeConstanciasConfig(raw = {}) {
   return {
     institucion_nombre: String(cfg.institucion_nombre || DEFAULT_CONSTANCIAS_CONFIG.institucion_nombre).trim(),
     subtitulo: String(cfg.subtitulo || DEFAULT_CONSTANCIAS_CONFIG.subtitulo).trim(),
+    tipografia: {
+      familia: ['arial', 'times_new_roman', 'courier'].includes(cfg?.tipografia?.familia)
+        ? cfg.tipografia.familia
+        : DEFAULT_CONSTANCIAS_CONFIG.tipografia.familia,
+      tamano: Math.min(16, Math.max(8, Number(cfg?.tipografia?.tamano) || DEFAULT_CONSTANCIAS_CONFIG.tipografia.tamano)),
+      cursiva: Boolean(cfg?.tipografia?.cursiva)
+    },
     logos,
     firmante: {
       nombre: String(cfg?.firmante?.nombre || DEFAULT_CONSTANCIAS_CONFIG.firmante.nombre).trim(),
@@ -238,6 +250,24 @@ function normalizeConstanciasConfig(raw = {}) {
       pie_lema: String(retiroCfg?.pie_lema || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.pie_lema).trim(),
       template: normalizeTemplate(retiroCfg?.template, DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado.template)
     }
+  };
+}
+
+function getConstanciaTypography(constanciasCfg = {}) {
+  const typography = constanciasCfg?.tipografia || DEFAULT_CONSTANCIAS_CONFIG.tipografia;
+  const families = {
+    arial: { regular: 'Helvetica', bold: 'Helvetica-Bold', italic: 'Helvetica-Oblique', boldItalic: 'Helvetica-BoldOblique' },
+    times_new_roman: { regular: 'Times-Roman', bold: 'Times-Bold', italic: 'Times-Italic', boldItalic: 'Times-BoldItalic' },
+    courier: { regular: 'Courier', bold: 'Courier-Bold', italic: 'Courier-Oblique', boldItalic: 'Courier-BoldOblique' }
+  };
+  const family = families[typography.familia] || families.arial;
+  const italic = Boolean(typography.cursiva);
+
+  return {
+    regular: italic ? family.italic : family.regular,
+    bold: italic ? family.boldItalic : family.bold,
+    italic: family.italic,
+    size: Math.min(16, Math.max(8, Number(typography.tamano) || 11))
   };
 }
 
@@ -430,6 +460,7 @@ async function getAcademiaBranding(req) {
 }
 
 function renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName = '', options = {}) {
+  const typography = getConstanciaTypography(constanciasCfg);
   const left = doc.page.margins.left;
   const logoY = 28;
   const logoBoxSize = 70;
@@ -511,18 +542,18 @@ function renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLog
   const hasSubtitulo = !!constanciasCfg.subtitulo;
 
   const gapBetweenLines = 2;
-  const titleHeight = doc.font('Helvetica-Bold').fontSize(titleFontSize).heightOfString(tituloInstitucional, {
+  const titleHeight = doc.font(typography.bold).fontSize(titleFontSize).heightOfString(tituloInstitucional, {
     width: textWidth,
     align: 'center'
   });
   const subtitleHeight = hasSubtitulo
-    ? doc.font('Helvetica').fontSize(subtitleFontSize).heightOfString(String(constanciasCfg.subtitulo || ''), {
+    ? doc.font(typography.regular).fontSize(subtitleFontSize).heightOfString(String(constanciasCfg.subtitulo || ''), {
       width: textWidth,
       align: 'center'
     })
     : 0;
   const sedeHeight = showSedeLine
-    ? doc.font('Helvetica').fontSize(sedeFontSize).heightOfString(`SEDE "${sedeTexto}"`, {
+    ? doc.font(typography.regular).fontSize(sedeFontSize).heightOfString(`SEDE "${sedeTexto}"`, {
       width: textWidth,
       align: 'center'
     })
@@ -538,16 +569,16 @@ function renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLog
     ? logoY + Math.max(0, (logoBoxSize - textBlockHeight) / 2)
     : logoRenderTop + Math.max(0, (logoRenderHeight - textBlockHeight) / 2);
 
-  doc.font('Helvetica-Bold').fontSize(titleFontSize).text(tituloInstitucional, textX, textStartY, { width: textWidth, align: 'center' });
+  doc.font(typography.bold).fontSize(titleFontSize).text(tituloInstitucional, textX, textStartY, { width: textWidth, align: 'center' });
 
   let nextTextY = doc.y + 1;
   if (constanciasCfg.subtitulo) {
-    doc.font('Helvetica').fontSize(subtitleFontSize).text(constanciasCfg.subtitulo, textX, nextTextY, { width: textWidth, align: 'center' });
+    doc.font(typography.regular).fontSize(subtitleFontSize).text(constanciasCfg.subtitulo, textX, nextTextY, { width: textWidth, align: 'center' });
     nextTextY = doc.y + 1;
   }
 
   if (showSedeLine) {
-    doc.font('Helvetica').fontSize(sedeFontSize).text(`SEDE "${sedeTexto}"`, textX, nextTextY, { width: textWidth, align: 'center' });
+    doc.font(typography.regular).fontSize(sedeFontSize).text(`SEDE "${sedeTexto}"`, textX, nextTextY, { width: textWidth, align: 'center' });
   }
 
   const topSideLogosBottom = topSideLogoBottoms.length ? Math.max(...topSideLogoBottoms) : 0;
@@ -562,7 +593,8 @@ function ensureSpace(doc, requiredHeight = 120) {
   }
 }
 
-function drawListadoAlumnosTable(doc, alumnos = []) {
+function drawListadoAlumnosTable(doc, alumnos = [], constanciasCfg = {}) {
+  const typography = getConstanciaTypography(constanciasCfg);
   const left = doc.page.margins.left;
   const maxWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const rowHeight = 22;
@@ -575,7 +607,7 @@ function drawListadoAlumnosTable(doc, alumnos = []) {
     const y = doc.y;
     doc.save();
     doc.rect(left, y, maxWidth, rowHeight).fill('#f1f5f9').stroke('#cbd5e1');
-    doc.fillColor('#0f172a').fontSize(10).font('Helvetica-Bold');
+    doc.fillColor('#0f172a').fontSize(10).font(typography.bold);
     doc.text('NRO', left + 6, y + 6, { width: colNro - 12, align: 'left' });
     doc.text('NOMBRES', left + colNro + 6, y + 6, { width: colNombres - 12, align: 'left' });
     doc.text('APELLIDOS', left + colNro + colNombres + 6, y + 6, { width: colApellidos - 12, align: 'left' });
@@ -595,7 +627,7 @@ function drawListadoAlumnosTable(doc, alumnos = []) {
 
     const y = doc.y;
     doc.rect(left, y, maxWidth, rowHeight).stroke('#cbd5e1');
-    doc.font('Helvetica').fontSize(10).fillColor('#111827');
+    doc.font(typography.regular).fontSize(10).fillColor('#111827');
     doc.text(String(index + 1), left + 6, y + 6, { width: colNro - 12, align: 'left', ellipsis: true });
     doc.text(String(alumno.nombres || ''), left + colNro + 6, y + 6, { width: colNombres - 12, align: 'left', ellipsis: true });
     doc.text(String(alumno.apellidos || ''), left + colNro + colNombres + 6, y + 6, { width: colApellidos - 12, align: 'left', ellipsis: true });
@@ -656,6 +688,7 @@ function getFooterLogosTopY(doc, logoPaths = [], espacioInferior = 0) {
 }
 
 function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opciones = {}) {
+  const typography = getConstanciaTypography(constanciasCfg);
   const cierreTexto = String(opciones?.cierreTexto || '').trim();
   const mostrarBloqueLiga = Boolean(opciones?.mostrarBloqueLiga);
   const layoutRetiroAislado = mostrarBloqueLiga;
@@ -673,8 +706,9 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
   const alturaBloqueLiga = mostrarBloqueLiga ? 54 : 0;
   const alturaFirmaYPie = 14 + (lineasFirmante * 13) + (lineasPie > 0 ? 18 + lineasPie * 11 : 0) + alturaBloqueLiga;
 
+  const cierreFontSize = Math.max(8, typography.size - 2.5);
   const alturaCierre = cierreTexto
-    ? doc.font('Helvetica').fontSize(8.5).heightOfString(cierreTexto, {
+    ? doc.font(typography.regular).fontSize(cierreFontSize).heightOfString(cierreTexto, {
       width: anchoTexto,
       align: 'justify',
       lineGap: 2
@@ -718,7 +752,7 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
     doc.y = Math.max(doc.y, inicioObjetivoBloqueY);
   }
 
-  doc.font('Helvetica').fontSize(10.5);
+  doc.font(typography.regular).fontSize(10.5);
   doc.text('_________________________', { align: 'center' });
   doc.moveDown(layoutRetiroAislado ? 0.12 : 0.5);
   doc.text(constanciasCfg.firmante.nombre || 'Direccion de la academia', { align: 'center' });
@@ -728,11 +762,11 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
 
   if (mostrarBloqueLiga) {
     doc.moveDown(1.72);
-    doc.font('Helvetica').fontSize(10.5).text('Recibido por el personal de la liga: ______________________', {
+    doc.font(typography.regular).fontSize(10.5).text('Recibido por el personal de la liga: ______________________', {
       align: 'center'
     });
     doc.moveDown(0.35);
-    doc.font('Helvetica').fontSize(10.5).text('Fecha: ____________________________________________', {
+    doc.font(typography.regular).fontSize(10.5).text('Fecha: ____________________________________________', {
       align: 'center'
     });
   }
@@ -750,12 +784,14 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
   renderLogosInferioresCentrados(doc, logosInstitucionales, espacioReservadoInferior);
 }
 
-function renderCierreFinal(doc, cierreTexto = '') {
+function renderCierreFinal(doc, cierreTexto = '', constanciasCfg = {}) {
   const texto = String(cierreTexto || '').trim();
   if (!texto) return;
 
+  const typography = getConstanciaTypography(constanciasCfg);
+  const cierreFontSize = Math.max(8, typography.size - 2.5);
   const anchoTexto = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const alturaCierre = doc.font('Helvetica').fontSize(8.5).heightOfString(texto, {
+  const alturaCierre = doc.font(typography.regular).fontSize(cierreFontSize).heightOfString(texto, {
     width: anchoTexto,
     align: 'justify',
     lineGap: 2
@@ -768,7 +804,7 @@ function renderCierreFinal(doc, cierreTexto = '') {
   }
 
   doc.y = inicioCierreY;
-  doc.font('Helvetica').fontSize(8.5).text(texto, {
+  doc.font(typography.regular).fontSize(cierreFontSize).text(texto, {
     align: 'justify',
     lineGap: 2
   });
@@ -859,6 +895,7 @@ exports.generarConstancia = async (req, res) => {
       constanciaLayoutCfg = {
         institucion_nombre: retiroCfg.institucion_nombre,
         subtitulo: retiroCfg.subtitulo,
+        tipografia: constanciasCfg.tipografia,
         firmante: retiroCfg.firmante,
         pie_direccion: retiroCfg.pie_direccion,
         pie_lema: retiroCfg.pie_lema
@@ -932,26 +969,27 @@ exports.generarConstancia = async (req, res) => {
       };
 
       const doc = createPdfResponseDocument(res);
-    renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName);
-      doc.fontSize(14).text(template.titulo || 'CONSTANCIA', { align: 'center' });
+      const typography = getConstanciaTypography(constanciasCfg);
+      renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName);
+      doc.font(typography.bold).fontSize(typography.size + 3).text(template.titulo || 'CONSTANCIA', { align: 'center' });
       doc.moveDown(0.8);
       if (template.destinatario) {
-        doc.fontSize(11).text(template.destinatario, { align: 'center' });
+        doc.font(typography.bold).fontSize(typography.size).text(template.destinatario, { align: 'center' });
         doc.moveDown(1.2);
       }
 
-      doc.fontSize(11).text(renderTemplate(template.cuerpo, variables), {
+      doc.font(typography.regular).fontSize(typography.size).text(renderTemplate(template.cuerpo, variables), {
         align: 'justify',
         lineGap: 3,
         indent: CUERPO_PRIMERA_LINEA_SANGRIA
       });
 
       doc.moveDown(0.8);
-      drawListadoAlumnosTable(doc, alumnosOrdenados);
+      drawListadoAlumnosTable(doc, alumnosOrdenados, constanciasCfg);
 
       if (template.nota) {
         doc.moveDown(0.8);
-        doc.fontSize(10.5).text(`NOTA: ${renderTemplate(template.nota, variables)}`, {
+        doc.font(typography.regular).fontSize(Math.max(8, typography.size - 0.5)).text(`NOTA: ${renderTemplate(template.nota, variables)}`, {
           align: 'justify',
           lineGap: 3
         });
@@ -961,14 +999,14 @@ exports.generarConstancia = async (req, res) => {
       const fechaLinea = fechaTexto ? `En ${lugar}, ${fechaTexto}.` : '';
       if (fechaLinea) {
         doc.moveDown(template.nota ? 1.0 : 0.9);
-        doc.font('Helvetica-Oblique').fontSize(10).text(fechaLinea, { align: 'left' });
-        doc.font('Helvetica');
+        doc.font(typography.italic).fontSize(Math.max(8, typography.size - 1)).text(fechaLinea, { align: 'left' });
+        doc.font(typography.regular);
       }
 
       const cierreTexto = renderTemplate(template.cierre, variables);
 
       renderFirmaYPie(doc, constanciasCfg, logosInstitucionales, { cierreTexto });
-      renderCierreFinal(doc, cierreTexto);
+      renderCierreFinal(doc, cierreTexto, constanciasCfg);
       await registrarOperacion(req, {
         tipo: 'generacion_constancia',
         nombre: getNombreOperacionConstancia(tipoConstancia),
@@ -1017,6 +1055,7 @@ exports.generarConstancia = async (req, res) => {
     };
 
     const doc = createPdfResponseDocument(res);
+    const typography = getConstanciaTypography(constanciasCfg);
     const retiroAisladoSinLogoPrincipal = tipoConstancia === 'retiro'
       && constanciasCfg?.retiro_personalizado?.habilitado
       && !constanciasCfg?.retiro_personalizado?.incluir_logo_academia;
@@ -1045,10 +1084,10 @@ exports.generarConstancia = async (req, res) => {
       doc.moveDown(0.80);
     }
 
-    doc.fontSize(14).text(template.titulo || 'CONSTANCIA', { align: 'center' });
+    doc.font(typography.bold).fontSize(typography.size + 3).text(template.titulo || 'CONSTANCIA', { align: 'center' });
     doc.moveDown(0.8);
     if (template.destinatario) {
-      doc.fontSize(11).text(template.destinatario, { align: 'center' });
+      doc.font(typography.bold).fontSize(typography.size).text(template.destinatario, { align: 'center' });
       doc.moveDown(1.2);
     }
 
@@ -1057,7 +1096,7 @@ exports.generarConstancia = async (req, res) => {
       cuerpoTexto = ajustarTiempoAsistenciaEnCuerpo(cuerpoTexto, variables);
     }
 
-    doc.fontSize(11).text(cuerpoTexto, {
+    doc.font(typography.regular).fontSize(typography.size).text(cuerpoTexto, {
       align: 'justify',
       lineGap: 3,
       indent: CUERPO_PRIMERA_LINEA_SANGRIA
@@ -1065,7 +1104,7 @@ exports.generarConstancia = async (req, res) => {
 
     if (aplicaNotaYCierre && template.nota) {
       doc.moveDown(0.8);
-      doc.fontSize(10.5).text(`NOTA: ${renderTemplate(template.nota, variables)}`, {
+      doc.font(typography.regular).fontSize(Math.max(8, typography.size - 0.5)).text(`NOTA: ${renderTemplate(template.nota, variables)}`, {
         align: 'justify',
         lineGap: 3
       });
@@ -1075,8 +1114,8 @@ exports.generarConstancia = async (req, res) => {
     const fechaLinea = fechaTexto ? `En ${lugar}, ${fechaTexto}.` : '';
     if (fechaLinea) {
       doc.moveDown(aplicaNotaYCierre && template.nota ? 1.0 : 0.9);
-      doc.font('Helvetica-Oblique').fontSize(10).text(fechaLinea, { align: 'left' });
-      doc.font('Helvetica');
+      doc.font(typography.italic).fontSize(Math.max(8, typography.size - 1)).text(fechaLinea, { align: 'left' });
+      doc.font(typography.regular);
     }
 
     const cierreTexto = aplicaNotaYCierre ? renderTemplate(template.cierre, variables) : '';
@@ -1085,7 +1124,7 @@ exports.generarConstancia = async (req, res) => {
       cierreTexto,
       mostrarBloqueLiga: esRetiroAislado
     });
-    renderCierreFinal(doc, cierreTexto);
+    renderCierreFinal(doc, cierreTexto, constanciaLayoutCfg);
 
     await registrarOperacion(req, {
       tipo: 'generacion_constancia',

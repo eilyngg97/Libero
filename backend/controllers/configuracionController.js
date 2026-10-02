@@ -68,6 +68,11 @@ const DEFAULT_CONFIG = {
   constancias: {
     institucion_nombre: '',
     subtitulo: '',
+    tipografia: {
+      familia: 'arial',
+      tamano: 11,
+      cursiva: false
+    },
     logos: [],
     firmante: {
       nombre: '',
@@ -385,6 +390,13 @@ function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG
   return {
     institucion_nombre: cleanValue(root.institucion_nombre || fallback.institucion_nombre),
     subtitulo: cleanValue(root.subtitulo || fallback.subtitulo),
+    tipografia: {
+      familia: ['arial', 'times_new_roman', 'courier'].includes(root?.tipografia?.familia)
+        ? root.tipografia.familia
+        : (fallback?.tipografia?.familia || 'arial'),
+      tamano: clampInteger(root?.tipografia?.tamano, fallback?.tipografia?.tamano || 11, 8, 16),
+      cursiva: Boolean(root?.tipografia?.cursiva)
+    },
     logos: normalizeLogosList(root.logos),
     firmante: {
       nombre: cleanValue(root?.firmante?.nombre || fallback?.firmante?.nombre),

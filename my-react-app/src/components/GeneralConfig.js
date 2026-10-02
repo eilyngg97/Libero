@@ -11,6 +11,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
+  MenuItem,
   Paper,
   Snackbar,
   Switch,
@@ -28,6 +30,11 @@ const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 const EMPTY_CONSTANCIAS_CONFIG = {
   institucion_nombre: '',
   subtitulo: '',
+  tipografia: {
+    familia: 'arial',
+    tamano: 11,
+    cursiva: false
+  },
   logos: [],
   firmante: {
     nombre: '',
@@ -160,6 +167,10 @@ function buildConstanciasConfig(data = {}) {
   return {
     institucion_nombre: data?.institucion_nombre || EMPTY_CONSTANCIAS_CONFIG.institucion_nombre,
     subtitulo: data?.subtitulo || EMPTY_CONSTANCIAS_CONFIG.subtitulo,
+    tipografia: {
+      ...EMPTY_CONSTANCIAS_CONFIG.tipografia,
+      ...(data?.tipografia || {})
+    },
     logos: Array.isArray(data?.logos) ? data.logos : [],
     firmante: {
       ...EMPTY_CONSTANCIAS_CONFIG.firmante,
@@ -967,6 +978,48 @@ function GeneralConfig() {
                 InputLabelProps={{ shrink: true }}
                 sx={fieldLabelSx}
               />
+            </Box>
+
+            <Box sx={{ mb: 2.2, p: 1.6, borderRadius: 2.2, bgcolor: '#f8fafc', border: '1px solid #e7ebf3' }}>
+              <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 1.3 }}>Tipografia del documento</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) minmax(140px, 0.55fr) auto' }, gap: 1.5, alignItems: 'center' }}>
+                <TextField
+                  select
+                  label="Tipo de letra"
+                  size="small"
+                  value={constanciasConfig.tipografia.familia}
+                  onChange={(e) => updateConstanciasField('tipografia', { ...constanciasConfig.tipografia, familia: e.target.value })}
+                  InputLabelProps={{ shrink: true }}
+                  sx={fieldLabelSx}
+                >
+                  <MenuItem value="arial">Arial</MenuItem>
+                  <MenuItem value="times_new_roman">Times New Roman</MenuItem>
+                  <MenuItem value="courier">Courier New</MenuItem>
+                </TextField>
+                <TextField
+                  label="Tamano de letra"
+                  type="number"
+                  size="small"
+                  value={constanciasConfig.tipografia.tamano}
+                  onChange={(e) => updateConstanciasField('tipografia', { ...constanciasConfig.tipografia, tamano: Number(e.target.value) })}
+                  inputProps={{ min: 8, max: 16, step: 1 }}
+                  InputLabelProps={{ shrink: true }}
+                  sx={fieldLabelSx}
+                />
+                <FormControlLabel
+                  control={(
+                    <Switch
+                      checked={Boolean(constanciasConfig.tipografia.cursiva)}
+                      onChange={(e) => updateConstanciasField('tipografia', { ...constanciasConfig.tipografia, cursiva: e.target.checked })}
+                    />
+                  )}
+                  label="Cursiva"
+                  sx={{ m: 0, color: '#334155', whiteSpace: 'nowrap' }}
+                />
+              </Box>
+              <Typography sx={{ color: '#738198', fontSize: 11.5, mt: 1 }}>
+                Se aplica al titulo, destinatario, cuerpo, nota, fecha y cierre de todas las constancias.
+              </Typography>
             </Box>
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mb: 2 }}>
