@@ -1206,7 +1206,10 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
     doc.rect(left, y, width, headerHeight).fillAndStroke('#5b9be6', '#000');
     columns.forEach((col, idx) => {
       if (idx > 0) doc.moveTo(cursorX, y).lineTo(cursorX, y + headerHeight).stroke('#000');
-      doc.fillColor('#000').text(col.label, cursorX + 2, y + 3, { width: col.width - 4, height: headerHeight - 4, align: 'center' });
+      const textWidth = col.width - 4;
+      const textHeight = Math.min(headerHeight - 4, doc.heightOfString(col.label, { width: textWidth, align: 'center' }));
+      const textY = y + Math.max(2, (headerHeight - textHeight) / 2);
+      doc.fillColor('#000').text(col.label, cursorX + 2, textY, { width: textWidth, height: headerHeight - 4, align: 'center' });
       cursorX += col.width;
     });
   };
@@ -1226,7 +1229,6 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
       procedencia: jugador.procedencia || ''
     };
 
-    doc.font('Helvetica').fontSize(7);
     columns.forEach((col, idx) => {
       if (idx > 0) doc.moveTo(cursorX, y).lineTo(cursorX, y + rowHeight).stroke('#000');
       if (col.key === 'foto') {
@@ -1246,11 +1248,18 @@ function writeRosterTable(doc, jugadores = [], startY = 172) {
           }
         }
       } else {
-        doc.text(values[col.key], cursorX + 2, y + 5, {
-          width: col.width - 4,
+        const value = values[col.key];
+        const align = ['nro', 'franela', 'nombres', 'cedula', 'fecha'].includes(col.key) ? 'center' : 'left';
+        const textWidth = col.width - 4;
+        const textOptions = { width: textWidth, align };
+        doc.font(col.key === 'nombres' ? 'Helvetica-Bold' : 'Helvetica').fontSize(7);
+        const textHeight = Math.min(rowHeight - 8, doc.heightOfString(value, textOptions));
+        const textY = y + Math.max(4, (rowHeight - textHeight) / 2);
+        doc.text(value, cursorX + 2, textY, {
+          width: textWidth,
           height: rowHeight - 8,
           ellipsis: true,
-          align: ['nro', 'franela', 'nombres', 'cedula', 'fecha'].includes(col.key) ? 'center' : 'left'
+          align
         });
       }
       cursorX += col.width;
