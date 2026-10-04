@@ -50,12 +50,26 @@ const uploadLogosConstancias = multer({
 	limits: { fileSize: 5 * 1024 * 1024, files: 3 }
 });
 
+const uploadMembreteConstancias = multer({
+	storage: logoStorage,
+	fileFilter: (req, file, cb) => {
+		if (['image/png', 'image/jpeg'].includes(file.mimetype || '')) {
+			cb(null, true);
+			return;
+		}
+		cb(new Error('El membrete debe ser una imagen PNG o JPG.'));
+	},
+	limits: { fileSize: 10 * 1024 * 1024 }
+});
+
 router.get('/pagos', authMiddleware, configuracionController.getConfiguracionPagos);
 router.get('/', authMiddleware, rolMiddleware('admin'), configuracionController.getConfiguracionAdmin);
 router.put('/', authMiddleware, rolMiddleware('admin'), configuracionController.upsertConfiguracionAdmin);
 router.patch('/', authMiddleware, rolMiddleware('admin'), configuracionController.patchConfiguracionAdmin);
 router.post('/logo', authMiddleware, rolMiddleware('admin'), uploadLogo.single('logo'), configuracionController.subirLogoAcademia);
 router.post('/constancias/logos', authMiddleware, rolMiddleware('admin'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstancias);
+router.post('/constancias/membrete', authMiddleware, rolMiddleware('admin'), uploadMembreteConstancias.single('membrete'), configuracionController.subirMembreteConstancias);
+router.delete('/constancias/membrete', authMiddleware, rolMiddleware('admin'), configuracionController.eliminarMembreteConstancias);
 router.post('/constancias/retiro/logos', authMiddleware, rolMiddleware('admin'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstanciaRetiro);
 router.patch('/cambiar-clave', authMiddleware, configuracionController.cambiarClaveUsuario);
 

@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const fs = require('fs');
 const path = require('path');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantCoreConnection } = require('../config/tenantCoreConnection');
@@ -53,6 +54,10 @@ const DEFAULT_TEMPLATES = {
 const DEFAULT_CONSTANCIAS_CONFIG = {
   institucion_nombre: 'ESCUELA DE VOLEIBOL',
   subtitulo: '',
+  membrete: {
+    habilitado: false,
+    imagen_url: ''
+  },
   tipografia: {
     familia: 'arial',
     tamano: 11,
@@ -211,6 +216,10 @@ function normalizeConstanciasConfig(raw = {}) {
   return {
     institucion_nombre: String(cfg.institucion_nombre || DEFAULT_CONSTANCIAS_CONFIG.institucion_nombre).trim(),
     subtitulo: String(cfg.subtitulo || DEFAULT_CONSTANCIAS_CONFIG.subtitulo).trim(),
+    membrete: {
+      habilitado: Boolean(cfg?.membrete?.habilitado),
+      imagen_url: String(cfg?.membrete?.imagen_url || '').trim()
+    },
     tipografia: {
       familia: ['arial', 'times_new_roman', 'courier'].includes(cfg?.tipografia?.familia)
         ? cfg.tipografia.familia
@@ -422,6 +431,36 @@ function mapLogoUrlsToLocalPaths(logoUrls = []) {
       return path.join(__dirname, '..', relativePath);
     })
     .filter(Boolean);
+}
+
+function configurarMembrete(doc, constanciasCfg = {}) {
+  const membrete = constanciasCfg?.membrete || {};
+  const imagenUrl = String(membrete.imagen_url || '').trim();
+  if (!membrete.habilitado || !imagenUrl.startsWith('/uploads/')) return false;
+
+  const relativePath = imagenUrl.replace(/^\/+/, '');
+  const imagePath = path.join(__dirname, '..', relativePath);
+  if (!fs.existsSync(imagePath)) return false;
+
+  const drawBackground = () => {
+    doc.save();
+    doc.image(imagePath, 0, 0, {
+      fit: [doc.page.width, doc.page.height],
+      align: 'center',
+      valign: 'center'
+    });
+    doc.restore();
+    doc.x = doc.page.margins.left;
+    doc.y = Math.max(doc.page.margins.top, 145);
+  };
+
+  try {
+    drawBackground();
+    doc.on('pageAdded', drawBackground);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 async function getAcademiaBranding(req) {
@@ -969,8 +1008,11 @@ exports.generarConstancia = async (req, res) => {
       };
 
       const doc = createPdfResponseDocument(res);
+      const usaMembrete = configurarMembrete(doc, constanciasCfg);
       const typography = getConstanciaTypography(constanciasCfg);
-      renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName);
+      if (!usaMembrete) {
+        renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName);
+      }
       doc.font(typography.bold).fontSize(typography.size + 3).text(template.titulo || 'CONSTANCIA', { align: 'center' });
       doc.moveDown(0.8);
       if (template.destinatario) {
@@ -1005,7 +1047,7 @@ exports.generarConstancia = async (req, res) => {
 
       const cierreTexto = renderTemplate(template.cierre, variables);
 
-      renderFirmaYPie(doc, constanciasCfg, logosInstitucionales, { cierreTexto });
+      renderFirmaYPie(doc, constanciasCfg, usaMembrete ? [] : logosInstitucionales, { cierreTexto });
       renderCierreFinal(doc, cierreTexto, constanciasCfg);
       await registrarOperacion(req, {
         tipo: 'generacion_constancia',
@@ -1055,6 +1097,7 @@ exports.generarConstancia = async (req, res) => {
     };
 
     const doc = createPdfResponseDocument(res);
+    const usaMembrete = configurarMembrete(doc, constanciasCfg);
     const typography = getConstanciaTypography(constanciasCfg);
     const retiroAisladoSinLogoPrincipal = tipoConstancia === 'retiro'
       && constanciasCfg?.retiro_personalizado?.habilitado
@@ -1062,23 +1105,25 @@ exports.generarConstancia = async (req, res) => {
     const esRetiroAislado = tipoConstancia === 'retiro' && constanciasCfg?.retiro_personalizado?.habilitado;
     const aplicaNotaYCierre = !esRetiroAislado;
     const logosRetiroEncabezado = esRetiroAislado ? logosInstitucionales.slice(0, 2) : [];
-    const logosPie = esRetiroAislado ? [] : logosInstitucionales;
+    const logosPie = esRetiroAislado || usaMembrete ? [] : logosInstitucionales;
 
-    renderEncabezadoConstancia(
-      doc,
-      constanciaLayoutCfg,
-      variables.sede_nombre,
-      logoAcademiaActivo,
-      academyName,
-      {
-        useFallbackLogo: !retiroAisladoSinLogoPrincipal,
-        topSideLogos: logosRetiroEncabezado,
-        showSedeLine: !esRetiroAislado,
-        titleFontSize: esRetiroAislado ? 12.5 : 15,
-        subtitleFontSize: esRetiroAislado ? 10.5 : 12,
-        sedeFontSize: esRetiroAislado ? 10 : 11
-      }
-    );
+    if (!usaMembrete) {
+      renderEncabezadoConstancia(
+        doc,
+        constanciaLayoutCfg,
+        variables.sede_nombre,
+        logoAcademiaActivo,
+        academyName,
+        {
+          useFallbackLogo: !retiroAisladoSinLogoPrincipal,
+          topSideLogos: logosRetiroEncabezado,
+          showSedeLine: !esRetiroAislado,
+          titleFontSize: esRetiroAislado ? 12.5 : 15,
+          subtitleFontSize: esRetiroAislado ? 10.5 : 12,
+          sedeFontSize: esRetiroAislado ? 10 : 11
+        }
+      );
+    }
 
     if (esRetiroAislado) {
       doc.moveDown(0.80);

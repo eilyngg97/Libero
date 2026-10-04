@@ -68,6 +68,10 @@ const DEFAULT_CONFIG = {
   constancias: {
     institucion_nombre: '',
     subtitulo: '',
+    membrete: {
+      habilitado: false,
+      imagen_url: ''
+    },
     tipografia: {
       familia: 'arial',
       tamano: 11,
@@ -390,6 +394,10 @@ function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG
   return {
     institucion_nombre: cleanValue(root.institucion_nombre || fallback.institucion_nombre),
     subtitulo: cleanValue(root.subtitulo || fallback.subtitulo),
+    membrete: {
+      habilitado: Boolean(root?.membrete?.habilitado),
+      imagen_url: cleanValue(root?.membrete?.imagen_url || fallback?.membrete?.imagen_url)
+    },
     tipografia: {
       familia: ['arial', 'times_new_roman', 'courier'].includes(root?.tipografia?.familia)
         ? root.tipografia.familia
@@ -1161,6 +1169,84 @@ exports.subirLogosConstancias = async (req, res) => {
     });
   } catch (err) {
     return res.status(400).json({ error: 'No se pudieron subir los logos de constancias.', detalle: err.message });
+  }
+};
+
+exports.subirMembreteConstancias = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes adjuntar una imagen PNG o JPG en el campo membrete.' });
+    }
+
+    const imagenUrl = buildBrandingLogoUrl(req, req.file);
+    if (!imagenUrl) {
+      return res.status(400).json({ error: 'No se pudo procesar la imagen del membrete.' });
+    }
+
+    const TenantConfig = await getTenantConfigModel(req);
+    const config = await TenantConfig.findOne({ key: 'default' }).select('constancias.membrete').lean();
+    const imagenAnterior = config?.constancias?.membrete?.imagen_url;
+
+    await TenantConfig.findOneAndUpdate(
+      { key: 'default' },
+      {
+        $set: {
+          'constancias.membrete.imagen_url': imagenUrl,
+          'constancias.membrete.habilitado': true,
+          updated_by: req.user?.id
+        }
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true
+      }
+    ).lean();
+
+    await eliminarLogoAnteriorSiAplica(imagenAnterior);
+
+    return res.status(200).json({
+      message: 'Membrete de constancias actualizado con exito.',
+      membrete: {
+        habilitado: true,
+        imagen_url: imagenUrl
+      }
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudo subir el membrete de constancias.', detalle: err.message });
+  }
+};
+
+exports.eliminarMembreteConstancias = async (req, res) => {
+  try {
+    const TenantConfig = await getTenantConfigModel(req);
+    const config = await TenantConfig.findOne({ key: 'default' }).select('constancias.membrete').lean();
+    const imagenAnterior = config?.constancias?.membrete?.imagen_url;
+
+    await TenantConfig.findOneAndUpdate(
+      { key: 'default' },
+      {
+        $set: {
+          'constancias.membrete.habilitado': false,
+          'constancias.membrete.imagen_url': '',
+          updated_by: req.user?.id
+        }
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true
+      }
+    ).lean();
+
+    await eliminarLogoAnteriorSiAplica(imagenAnterior);
+
+    return res.status(200).json({
+      message: 'Membrete de constancias eliminado.',
+      membrete: { habilitado: false, imagen_url: '' }
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'No se pudo eliminar el membrete de constancias.', detalle: err.message });
   }
 };
 

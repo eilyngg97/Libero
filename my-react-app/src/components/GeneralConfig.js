@@ -30,6 +30,10 @@ const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 const EMPTY_CONSTANCIAS_CONFIG = {
   institucion_nombre: '',
   subtitulo: '',
+  membrete: {
+    habilitado: false,
+    imagen_url: ''
+  },
   tipografia: {
     familia: 'arial',
     tamano: 11,
@@ -167,6 +171,10 @@ function buildConstanciasConfig(data = {}) {
   return {
     institucion_nombre: data?.institucion_nombre || EMPTY_CONSTANCIAS_CONFIG.institucion_nombre,
     subtitulo: data?.subtitulo || EMPTY_CONSTANCIAS_CONFIG.subtitulo,
+    membrete: {
+      habilitado: Boolean(data?.membrete?.habilitado),
+      imagen_url: data?.membrete?.imagen_url || ''
+    },
     tipografia: {
       ...EMPTY_CONSTANCIAS_CONFIG.tipografia,
       ...(data?.tipografia || {})
@@ -228,12 +236,14 @@ function GeneralConfig() {
   const esSuperAdmin = rolActual === 'super_admin';
   const [asignandoCategorias, setAsignandoCategorias] = useState(false);
   const [subiendoLogo, setSubiendoLogo] = useState(false);
+  const [subiendoMembrete, setSubiendoMembrete] = useState(false);
   const [subiendoLogosConstancias, setSubiendoLogosConstancias] = useState(false);
   const [subiendoLogosRetiro, setSubiendoLogosRetiro] = useState(false);
   const [guardandoConstancias, setGuardandoConstancias] = useState(false);
   const [guardandoCategoriasConfig, setGuardandoCategoriasConfig] = useState(false);
   const [cargandoConfigAdmin, setCargandoConfigAdmin] = useState(true);
   const [logoFile, setLogoFile] = useState(null);
+  const [membreteFile, setMembreteFile] = useState(null);
   const [logosConstanciasFiles, setLogosConstanciasFiles] = useState([]);
   const [logosRetiroFiles, setLogosRetiroFiles] = useState([]);
   const [logoActual, setLogoActual] = useState('');
@@ -250,6 +260,7 @@ function GeneralConfig() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const logoInputRef = useRef(null);
+  const membreteInputRef = useRef(null);
   const logosConstanciasInputRef = useRef(null);
   const logosRetiroInputRef = useRef(null);
   const apiBase = useMemo(() => (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/$/, ''), []);
@@ -707,6 +718,77 @@ function GeneralConfig() {
     }
   };
 
+  const onSelectMembrete = (file) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      setError('El membrete debe ser una imagen PNG o JPG.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('La imagen del membrete no puede superar 10 MB.');
+      return;
+    }
+    setMembreteFile(file);
+    setError('');
+  };
+
+  const subirMembrete = async () => {
+    if (!membreteFile) {
+      setError('Selecciona una imagen para el membrete.');
+      return;
+    }
+
+    try {
+      setSubiendoMembrete(true);
+      setError('');
+      const formData = new FormData();
+      formData.append('membrete', membreteFile);
+
+      const res = await fetch(`${apiBase}/api/configuracion/constancias/membrete`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.detalle || 'No se pudo subir el membrete.');
+
+      setConstanciasConfig((prev) => ({
+        ...prev,
+        membrete: data?.membrete || prev.membrete
+      }));
+      setMembreteFile(null);
+      setSuccessMessage(data?.message || 'Membrete de constancias actualizado.');
+    } catch (err) {
+      setError(err.message || 'No se pudo subir el membrete.');
+    } finally {
+      setSubiendoMembrete(false);
+    }
+  };
+
+  const eliminarMembrete = async () => {
+    try {
+      setSubiendoMembrete(true);
+      setError('');
+      const res = await fetch(`${apiBase}/api/configuracion/constancias/membrete`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.detalle || 'No se pudo eliminar el membrete.');
+
+      setConstanciasConfig((prev) => ({
+        ...prev,
+        membrete: data?.membrete || EMPTY_CONSTANCIAS_CONFIG.membrete
+      }));
+      setMembreteFile(null);
+      setSuccessMessage(data?.message || 'Membrete eliminado.');
+    } catch (err) {
+      setError(err.message || 'No se pudo eliminar el membrete.');
+    } finally {
+      setSubiendoMembrete(false);
+    }
+  };
+
   const onSelectRetiroLogos = (fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
@@ -978,6 +1060,94 @@ function GeneralConfig() {
                 InputLabelProps={{ shrink: true }}
                 sx={fieldLabelSx}
               />
+            </Box>
+
+            <Box sx={{ mb: 2.2, p: 1.6, borderRadius: 2.2, bgcolor: '#f8fafc', border: '1px solid #e7ebf3' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1.5, mb: 1.3 }}>
+                <Box>
+                  <Typography sx={{ fontWeight: 800, color: '#1f2a3d', mb: 0.3 }}>Membrete personalizado</Typography>
+                  <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>
+                    Usa una imagen tamaño carta como fondo de las constancias.
+                  </Typography>
+                </Box>
+                <FormControlLabel
+                  control={(
+                    <Switch
+                      checked={Boolean(constanciasConfig.membrete.habilitado)}
+                      disabled={!constanciasConfig.membrete.imagen_url || subiendoMembrete}
+                      onChange={(e) => updateConstanciasField('membrete', {
+                        ...constanciasConfig.membrete,
+                        habilitado: e.target.checked
+                      })}
+                    />
+                  )}
+                  label="Activo"
+                  sx={{ m: 0, color: '#334155' }}
+                />
+              </Box>
+
+              {!!constanciasConfig.membrete.imagen_url && (
+                <Box
+                  component="img"
+                  src={mediaUrl(constanciasConfig.membrete.imagen_url)}
+                  alt="Vista previa del membrete"
+                  sx={{
+                    display: 'block',
+                    width: 'min(100%, 190px)',
+                    aspectRatio: '8.5 / 11',
+                    objectFit: 'contain',
+                    bgcolor: '#fff',
+                    border: '1px solid #dbe3ee',
+                    mb: 1.4
+                  }}
+                />
+              )}
+
+              <input
+                ref={membreteInputRef}
+                type="file"
+                hidden
+                accept="image/png,image/jpeg"
+                onChange={(e) => {
+                  onSelectMembrete(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+              />
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<ImageOutlinedIcon />}
+                  onClick={() => membreteInputRef.current?.click()}
+                  disabled={subiendoMembrete}
+                  sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#cbd5e1', color: '#516079' }}
+                >
+                  {constanciasConfig.membrete.imagen_url ? 'Reemplazar imagen' : 'Seleccionar imagen'}
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={subirMembrete}
+                  disabled={!membreteFile || subiendoMembrete}
+                  sx={orangeButtonSx}
+                >
+                  {subiendoMembrete ? 'Procesando...' : 'Subir membrete'}
+                </Button>
+                {!!constanciasConfig.membrete.imagen_url && (
+                  <Button
+                    color="error"
+                    onClick={eliminarMembrete}
+                    disabled={subiendoMembrete}
+                    sx={{ textTransform: 'none', fontWeight: 700 }}
+                  >
+                    Quitar
+                  </Button>
+                )}
+              </Box>
+              {!!membreteFile && (
+                <Chip label={membreteFile.name} size="small" sx={{ mt: 1 }} />
+              )}
+              <Typography sx={{ color: '#738198', fontSize: 11.5, mt: 1 }}>
+                PNG o JPG, máximo 10 MB. Recomendado: 2550 x 3300 px.
+              </Typography>
             </Box>
 
             <Box sx={{ mb: 2.2, p: 1.6, borderRadius: 2.2, bgcolor: '#f8fafc', border: '1px solid #e7ebf3' }}>
