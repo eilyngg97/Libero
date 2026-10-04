@@ -687,7 +687,7 @@ function Constancias() {
                   (tipo === 'asistencia' && (!eventoFecha || !eventoHoraDesde || !eventoHoraHasta))
                 }
                 fullWidth
-                sx={{ bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' }, fontWeight: 700, borderRadius: 2, py: 1.2 }}
+                sx={{ fontWeight: 700, borderRadius: 2, py: 1.2 }}
               >
                 {loading ? <CircularProgress size={24} color="inherit" /> : (isEsportaUserRequestMode ? 'Enviar solicitud' : 'Generar PDF')}
               </Button>
@@ -759,7 +759,20 @@ function Constancias() {
               minHeight: { xs: 420, md: 560 }
             }}
           >
-            <Button href={pdfUrl} download="constancia.pdf" variant="outlined" fullWidth sx={{ mb: 2, borderColor: '#cbd5e1', color: '#334155' }}>
+            <Button
+              href={pdfUrl}
+              download="constancia.pdf"
+              variant="contained"
+              fullWidth
+              sx={{
+                fontWeight: 700,
+                borderRadius: 2,
+                py: 1.2,
+                bgcolor: '#1e293b',
+                color: '#fff',
+                '&:hover': { bgcolor: '#334155' }
+              }}
+            >
               Descargar constancia
             </Button>
             <Box sx={{ flex: 1, minHeight: 0, mt: 1.2 }}>
