@@ -141,7 +141,7 @@ function buildCategoriasConfig(data = {}) {
 function CategoriasConfig() {
   const token = localStorage.getItem('token');
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
-  const puedeGestionarCategorias = rolActual === 'super_admin' || rolActual === 'admin';
+  const puedeGestionarCategorias = rolActual === 'super_admin' || rolActual === 'admin' || rolActual === 'admin_dos';
 
   const [categoriasConfig, setCategoriasConfig] = useState(() => buildCategoriasConfig());
   const [guardandoCategoriasConfig, setGuardandoCategoriasConfig] = useState(false);
