@@ -2,6 +2,26 @@ const jwt = require('jsonwebtoken');
 const { getJwtVerificationSecrets } = require('../config/secrets');
 const { getDefaultPermissionsByLegacyRole } = require('../config/permissions');
 
+function getRequestPermissionSet(req) {
+  const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+  const tienePermisosEnToken = Array.isArray(req.user?.permisos);
+  const esAdminLegacy = rolUsuario === 'admin' || rolUsuario === 'super_admin';
+  const permisosUsuario = tienePermisosEnToken && !esAdminLegacy
+    ? req.user.permisos
+    : [...(tienePermisosEnToken ? req.user.permisos : []), ...getDefaultPermissionsByLegacyRole(rolUsuario)];
+
+  return new Set(
+    permisosUsuario
+      .map((permiso) => String(permiso || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function hasRequestPermission(req, permiso) {
+  const permisoNormalizado = String(permiso || '').trim().toLowerCase();
+  return Boolean(permisoNormalizado) && getRequestPermissionSet(req).has(permisoNormalizado);
+}
+
 exports.authMiddleware = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ msg: 'No token, autorización denegada' });
@@ -75,21 +95,12 @@ exports.permisoMiddleware = (...permisos) => (req, res, next) => {
     return next();
   }
 
-  const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
-  const permisosToken = Array.isArray(req.user?.permisos) ? req.user.permisos : [];
-  const permisosRol = getDefaultPermissionsByLegacyRole(rolUsuario);
-  const permisosUsuario = [...permisosToken, ...permisosRol];
-
-  const usuarioSet = new Set(
-    permisosUsuario
-      .map((permiso) => String(permiso || '').trim().toLowerCase())
-      .filter(Boolean)
-  );
-
-  const autorizado = requeridos.every((permiso) => usuarioSet.has(permiso));
+  const autorizado = requeridos.every((permiso) => hasRequestPermission(req, permiso));
   if (!autorizado) {
     return res.status(403).json({ msg: 'No tienes permisos suficientes para esta acción' });
   }
 
   return next();
 };
+
+exports.hasRequestPermission = hasRequestPermission;

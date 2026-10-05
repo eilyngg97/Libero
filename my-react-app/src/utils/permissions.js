@@ -21,6 +21,8 @@ const LEGACY_DEFAULT_PERMISSIONS = {
     'alumnos.manage',
     'entrenadores.view',
     'entrenadores.manage',
+    'horarios.view',
+    'horarios.manage',
     'mensualidades.view',
     'mensualidades.insolventes.view',
     'mensualidades.manage',
@@ -28,6 +30,21 @@ const LEGACY_DEFAULT_PERMISSIONS = {
     'solicitudes_uniformes.manage',
     'sedes.view',
     'sedes.manage',
+    'torneos.view',
+    'torneos.manage',
+    'rosters.view',
+    'rosters.manage',
+    'aspirantes.view',
+    'aspirantes.manage',
+    'conciliacion.view',
+    'conciliacion.manage',
+    'operaciones.view',
+    'publicaciones.view',
+    'publicaciones.manage',
+    'configuracion.view',
+    'configuracion.manage',
+    'landing.view',
+    'landing.manage',
     'usuarios.manage',
     'roles.manage'
   ],
@@ -53,6 +70,8 @@ const LEGACY_DEFAULT_PERMISSIONS = {
     'alumnos.manage',
     'entrenadores.view',
     'entrenadores.manage',
+    'horarios.view',
+    'horarios.manage',
     'mensualidades.view',
     'mensualidades.insolventes.view',
     'mensualidades.manage',
@@ -60,6 +79,21 @@ const LEGACY_DEFAULT_PERMISSIONS = {
     'solicitudes_uniformes.manage',
     'sedes.view',
     'sedes.manage',
+    'torneos.view',
+    'torneos.manage',
+    'rosters.view',
+    'rosters.manage',
+    'aspirantes.view',
+    'aspirantes.manage',
+    'conciliacion.view',
+    'conciliacion.manage',
+    'operaciones.view',
+    'publicaciones.view',
+    'publicaciones.manage',
+    'configuracion.view',
+    'configuracion.manage',
+    'landing.view',
+    'landing.manage',
     'usuarios.manage',
     'roles.manage'
   ],
@@ -75,9 +109,13 @@ const LEGACY_DEFAULT_PERMISSIONS = {
     'solicitudes_constancias.view',
     'alumnos.view',
     'entrenadores.view',
+    'horarios.view',
     'mensualidades.view',
     'solicitudes_uniformes.view',
-    'sedes.view'
+    'sedes.view',
+    'torneos.view',
+    'rosters.view',
+    'publicaciones.view'
   ],
   usuario: ['constancias.view', 'recaudos.view', 'reglamento.view'],
   entrenador: []
@@ -112,7 +150,12 @@ export function getStoredPermissions() {
   const user = getStoredUser();
   const role = getStoredRole();
   const direct = normalizePermissionList(user?.permisos);
-  if (direct.length > 0) return direct;
+  if (Array.isArray(user?.permisos)) {
+    if (role === 'admin' || role === 'super_admin') {
+      return normalizePermissionList([...direct, ...(LEGACY_DEFAULT_PERMISSIONS[role] || [])]);
+    }
+    return direct;
+  }
   return LEGACY_DEFAULT_PERMISSIONS[role] || [];
 }
 

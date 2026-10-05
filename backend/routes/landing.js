@@ -3,7 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const landingConfigController = require('../controllers/landingConfigController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const router = express.Router();
@@ -41,10 +41,10 @@ const upload = multer({
 });
 
 router.get('/atletas-fotos', landingConfigController.getFotosAtletasPublic);
-router.get('/atletas-fotos/admin', authMiddleware, rolMiddleware('admin'), landingConfigController.getFotosAtletasAdmin);
-router.patch('/atletas-fotos/reordenar', authMiddleware, rolMiddleware('admin'), landingConfigController.reordenarFotosAtletas);
-router.post('/atletas-fotos', authMiddleware, rolMiddleware('admin'), upload.single('foto'), landingConfigController.crearFotoAtleta);
-router.patch('/atletas-fotos/:id', authMiddleware, rolMiddleware('admin'), upload.single('foto'), landingConfigController.actualizarFotoAtleta);
-router.delete('/atletas-fotos/:id', authMiddleware, rolMiddleware('admin'), landingConfigController.eliminarFotoAtleta);
+router.get('/atletas-fotos/admin', authMiddleware, permisoMiddleware('landing.view'), landingConfigController.getFotosAtletasAdmin);
+router.patch('/atletas-fotos/reordenar', authMiddleware, permisoMiddleware('landing.manage'), landingConfigController.reordenarFotosAtletas);
+router.post('/atletas-fotos', authMiddleware, permisoMiddleware('landing.manage'), upload.single('foto'), landingConfigController.crearFotoAtleta);
+router.patch('/atletas-fotos/:id', authMiddleware, permisoMiddleware('landing.manage'), upload.single('foto'), landingConfigController.actualizarFotoAtleta);
+router.delete('/atletas-fotos/:id', authMiddleware, permisoMiddleware('landing.manage'), landingConfigController.eliminarFotoAtleta);
 
 module.exports = router;

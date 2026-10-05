@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const aspiranteController = require('../controllers/aspiranteController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 
 router.post('/', aspiranteController.createAspirante);
-router.get('/', authMiddleware, rolMiddleware('admin'), aspiranteController.getAspirantes);
-router.patch('/:id/estado', authMiddleware, rolMiddleware('admin'), aspiranteController.updateEstadoAspirante);
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), aspiranteController.deleteAspirante);
+router.get('/', authMiddleware, permisoMiddleware('aspirantes.view'), aspiranteController.getAspirantes);
+router.patch('/:id/estado', authMiddleware, permisoMiddleware('aspirantes.manage'), aspiranteController.updateEstadoAspirante);
+router.delete('/:id', authMiddleware, permisoMiddleware('aspirantes.manage'), aspiranteController.deleteAspirante);
 
 module.exports = router;

@@ -5,7 +5,7 @@ const fs = require('fs');
 
 const router = express.Router();
 const configuracionController = require('../controllers/configuracionController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 function resolveTenantId(req) {
@@ -63,14 +63,14 @@ const uploadMembreteConstancias = multer({
 });
 
 router.get('/pagos', authMiddleware, configuracionController.getConfiguracionPagos);
-router.get('/', authMiddleware, rolMiddleware('admin'), configuracionController.getConfiguracionAdmin);
-router.put('/', authMiddleware, rolMiddleware('admin'), configuracionController.upsertConfiguracionAdmin);
-router.patch('/', authMiddleware, rolMiddleware('admin'), configuracionController.patchConfiguracionAdmin);
-router.post('/logo', authMiddleware, rolMiddleware('admin'), uploadLogo.single('logo'), configuracionController.subirLogoAcademia);
-router.post('/constancias/logos', authMiddleware, rolMiddleware('admin'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstancias);
-router.post('/constancias/membrete', authMiddleware, rolMiddleware('admin'), uploadMembreteConstancias.single('membrete'), configuracionController.subirMembreteConstancias);
-router.delete('/constancias/membrete', authMiddleware, rolMiddleware('admin'), configuracionController.eliminarMembreteConstancias);
-router.post('/constancias/retiro/logos', authMiddleware, rolMiddleware('admin'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstanciaRetiro);
+router.get('/', authMiddleware, permisoMiddleware('configuracion.view'), configuracionController.getConfiguracionAdmin);
+router.put('/', authMiddleware, permisoMiddleware('configuracion.manage'), configuracionController.upsertConfiguracionAdmin);
+router.patch('/', authMiddleware, permisoMiddleware('configuracion.manage'), configuracionController.patchConfiguracionAdmin);
+router.post('/logo', authMiddleware, permisoMiddleware('configuracion.manage'), uploadLogo.single('logo'), configuracionController.subirLogoAcademia);
+router.post('/constancias/logos', authMiddleware, permisoMiddleware('configuracion.manage'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstancias);
+router.post('/constancias/membrete', authMiddleware, permisoMiddleware('configuracion.manage'), uploadMembreteConstancias.single('membrete'), configuracionController.subirMembreteConstancias);
+router.delete('/constancias/membrete', authMiddleware, permisoMiddleware('configuracion.manage'), configuracionController.eliminarMembreteConstancias);
+router.post('/constancias/retiro/logos', authMiddleware, permisoMiddleware('configuracion.manage'), uploadLogosConstancias.array('logos', 3), configuracionController.subirLogosConstanciaRetiro);
 router.patch('/cambiar-clave', authMiddleware, configuracionController.cambiarClaveUsuario);
 
 module.exports = router;

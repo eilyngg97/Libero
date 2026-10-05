@@ -59,12 +59,18 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   const canViewReglamento = hasPermission('reglamento.view') || esAdminLegacy;
   const canViewTienda = hasPermission('tienda.view') || esAdminLegacy;
   const canViewSolicitudesConstancias = hasPermission('solicitudes_constancias.view') || esAdminLegacy;
-  const canManageUsers = rol === 'super_admin';
-  const canViewConfiguraciones = esAdminLegacy;
+  const canManageUsers = (hasPermission('usuarios.manage') && hasPermission('roles.manage')) || rol === 'super_admin';
+  const canViewConfiguraciones = hasAnyPermission(['configuracion.view', 'configuracion.manage']) || esAdminLegacy;
   const canViewSedes = hasAnyPermission(['sedes.view', 'sedes.manage']) || esAdminLegacy;
   const canViewEntrenadores = hasAnyPermission(['entrenadores.view', 'entrenadores.manage']) || esAdminLegacy;
   const canViewEstadisticas = hasPermission('dashboard.stats') || esAdminLegacy;
-  const canViewConciliacion = hasPermission('dashboard.finance') || esAdminLegacy;
+  const canViewFinanzas = hasPermission('dashboard.finance') || esAdminLegacy;
+  const canViewConciliacion = hasAnyPermission(['conciliacion.view', 'conciliacion.manage']) || esAdminLegacy;
+  const canViewOperaciones = hasPermission('operaciones.view') || esAdminLegacy;
+  const canViewPublicaciones = hasAnyPermission(['publicaciones.view', 'publicaciones.manage']) || esAdminLegacy;
+  const canViewTorneos = hasAnyPermission(['torneos.view', 'torneos.manage']) || esAdminLegacy;
+  const canViewAspirantes = hasAnyPermission(['aspirantes.view', 'aspirantes.manage']) || esAdminLegacy;
+  const canViewLanding = hasAnyPermission(['landing.view', 'landing.manage']) || esAdminLegacy;
 
   if (rol === 'usuario') {
     options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
@@ -99,48 +105,56 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   if (canViewEntrenadores) {
     options.push({ text: 'Entrenadores', icon: <SportsIcon />, path: '/entrenadores' });
   }
-  if (canViewEstadisticas) {
+  if (canViewEstadisticas || canViewFinanzas) {
+    const estadisticasChildren = [];
+    if (canViewEstadisticas) {
+      estadisticasChildren.push({ text: 'Resumen general', icon: <TrendingUpIcon />, path: '/estadisticas/resumen' });
+    }
+    if (canViewFinanzas) {
+      estadisticasChildren.push({ text: 'Reporte financiero', icon: <AssessmentOutlinedIcon />, path: '/estadisticas/financiero' });
+    }
     options.push({
       text: 'Estadisticas',
       icon: <QueryStatsIcon />,
-      children: [
-        { text: 'Resumen general', icon: <TrendingUpIcon />, path: '/estadisticas/resumen' },
-        { text: 'Reporte financiero', icon: <AssessmentOutlinedIcon />, path: '/estadisticas/financiero' }
-      ]
+      children: estadisticasChildren
     });
   }
   if (canViewConciliacion) {
     options.push({ text: 'Conciliacion', icon: <AccountBalanceIcon />, path: '/conciliacion-bancaria' });
   }
 
-  if (esAdminLegacy) {
+  if (canViewOperaciones) {
     options.push({ text: 'Operaciones', icon: <HistoryIcon />, path: '/operaciones' });
+  }
+  if (canViewPublicaciones) {
     options.push({ text: 'Publicaciones', icon: <CelebrationIcon />, path: '/publicaciones/cumpleanos' });
+  }
 
-    if (canViewConfiguraciones) {
-      options.push({
-        text: 'Configuraciones',
-        icon: <SettingsIcon />,
-        children: [
-          { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' },
-          { text: 'Constancias', icon: <SettingsIcon />, path: '/config-general' },
-          { text: 'Categorias', icon: <Groups2OutlinedIcon />, path: '/config-categorias' },
-          { text: 'Catalogo egresos', icon: <AttachMoneyIcon />, path: '/config-catalogo-egresos' }
-        ]
-      });
-    }
+  const configuracionesChildren = [];
+  if (canViewConfiguraciones) {
+    configuracionesChildren.push(
+      { text: 'Config. pagos', icon: <AttachMoneyIcon />, path: '/configuracion' },
+      { text: 'Constancias', icon: <SettingsIcon />, path: '/config-general' },
+      { text: 'Categorias', icon: <Groups2OutlinedIcon />, path: '/config-categorias' }
+    );
+  }
+  if (hasAnyPermission(['egresos.view', 'egresos.manage']) || esAdminLegacy) {
+    configuracionesChildren.push({ text: 'Catalogo egresos', icon: <AttachMoneyIcon />, path: '/config-catalogo-egresos' });
+  }
+  if (configuracionesChildren.length > 0) {
+    options.push({ text: 'Configuraciones', icon: <SettingsIcon />, children: configuracionesChildren });
+  }
 
+  if (canViewTorneos) {
     options.push({ text: 'Torneos', icon: <EmojiEventsIcon />, path: '/torneos' });
+  }
 
-    if (tenantId === 'villasport') {
-      options.push(
-        { text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' },
-        { text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' }
-      );
+  if (tenantId === 'villasport') {
+    if (canViewAspirantes) {
+      options.push({ text: 'Aspirantes', icon: <PeopleAltIcon />, path: '/aspirantes' });
     }
-
-    if (tenantId === 'esporta' && !options.some((item) => item.path === '/solicitudes-constancias')) {
-      options.push({ text: 'Solicitudes constancias', icon: <DescriptionIcon />, path: '/solicitudes-constancias' });
+    if (canViewLanding) {
+      options.push({ text: 'Config. Landing', icon: <PhotoLibraryIcon />, path: '/config-landing' });
     }
   }
 

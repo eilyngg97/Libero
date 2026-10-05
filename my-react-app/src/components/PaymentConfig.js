@@ -22,6 +22,7 @@ import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import { BANCOS_PAGO_MOVIL } from '../constants/pagos';
+import { hasPermission } from '../utils/permissions';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
@@ -116,6 +117,8 @@ const buildConfigFromResponse = (data = {}) => ({
 
 function PaymentConfig() {
   const token = localStorage.getItem('token');
+  const canViewUniformes = hasPermission('solicitudes_uniformes.view');
+  const canManageUniformes = hasPermission('solicitudes_uniformes.manage');
   const [config, setConfig] = useState(EMPTY_CONFIG);
   const [loading, setLoading] = useState(true);
   const [savingPagos, setSavingPagos] = useState(false);
@@ -328,13 +331,20 @@ function PaymentConfig() {
     try {
       setSavingPagos(true);
       setError('');
+      const pagosPayload = {
+        ...config.pagos,
+        por_concepto: { ...config.pagos.por_concepto }
+      };
+      if (!canManageUniformes) {
+        delete pagosPayload.por_concepto.uniformes;
+      }
       const res = await fetch(`${API_BASE}/api/configuracion`, {
         method: 'PATCH',
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ pagos: config.pagos })
+        body: JSON.stringify({ pagos: pagosPayload })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'No se pudo guardar pagos');
@@ -457,10 +467,12 @@ function PaymentConfig() {
             <CalendarMonthOutlinedIcon />
             Mensualidades
           </ToggleButton>
-          <ToggleButton value="uniformes">
-            <CheckroomOutlinedIcon />
-            Uniformes
-          </ToggleButton>
+          {canViewUniformes && (
+            <ToggleButton value="uniformes">
+              <CheckroomOutlinedIcon />
+              Uniformes
+            </ToggleButton>
+          )}
         </ToggleButtonGroup>
         {paymentScope !== 'generales' && (
           <Box sx={{

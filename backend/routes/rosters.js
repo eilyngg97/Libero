@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const rosterController = require('../controllers/rosterController');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
@@ -30,30 +30,30 @@ const uploadRosterLogo = multer({
 	limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-router.get('/', authMiddleware, rolMiddleware('admin'), rosterController.listarRosters);
-router.get('/eligible-students', authMiddleware, rolMiddleware('admin'), rosterController.obtenerEstudiantesElegibles);
-router.post('/', authMiddleware, rolMiddleware('admin'), rosterController.crearRoster);
-router.patch('/:id/status', authMiddleware, rolMiddleware('admin'), rosterController.actualizarEstatusRoster);
-router.patch('/:id/jugadores', authMiddleware, rolMiddleware('admin'), rosterController.actualizarJugadoresRoster);
-router.patch('/:id/jugadores/:alumnoId/procedencia', authMiddleware, rolMiddleware('admin'), rosterController.actualizarProcedenciaJugadorRoster);
-router.post('/:id/prestamos', authMiddleware, rolMiddleware('admin'), uploadRosterLogo.fields([
+router.get('/', authMiddleware, permisoMiddleware('rosters.view'), rosterController.listarRosters);
+router.get('/eligible-students', authMiddleware, permisoMiddleware('rosters.view'), rosterController.obtenerEstudiantesElegibles);
+router.post('/', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.crearRoster);
+router.patch('/:id/status', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.actualizarEstatusRoster);
+router.patch('/:id/jugadores', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.actualizarJugadoresRoster);
+router.patch('/:id/jugadores/:alumnoId/procedencia', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.actualizarProcedenciaJugadorRoster);
+router.post('/:id/prestamos', authMiddleware, permisoMiddleware('rosters.manage'), uploadRosterLogo.fields([
 	{ name: 'foto', maxCount: 1 },
 	{ name: 'foto_cedula', maxCount: 1 }
 ]), rosterController.agregarPrestamoRoster);
-router.patch('/:id/prestamos/:prestamoId', authMiddleware, rolMiddleware('admin'), uploadRosterLogo.fields([
+router.patch('/:id/prestamos/:prestamoId', authMiddleware, permisoMiddleware('rosters.manage'), uploadRosterLogo.fields([
 	{ name: 'foto', maxCount: 1 },
 	{ name: 'foto_cedula', maxCount: 1 }
 ]), rosterController.actualizarPrestamoRoster);
-router.delete('/:id/prestamos/:prestamoId', authMiddleware, rolMiddleware('admin'), rosterController.eliminarPrestamoRoster);
-router.patch('/:id/jugadores/:alumnoId/estado', authMiddleware, rolMiddleware('admin'), rosterController.actualizarEstadoJugadorRoster);
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), rosterController.eliminarRoster);
-router.get('/template', authMiddleware, rolMiddleware('admin'), rosterController.obtenerPlantillaRoster);
-router.patch('/template', authMiddleware, rolMiddleware('admin'), rosterController.actualizarPlantillaRoster);
-router.post('/template/logos', authMiddleware, rolMiddleware('admin'), uploadRosterLogo.single('logo'), rosterController.subirLogoPlantillaRoster);
-router.get('/:id/documento', authMiddleware, rolMiddleware('admin'), rosterController.obtenerDocumentoRoster);
-router.patch('/:id/documento', authMiddleware, rolMiddleware('admin'), rosterController.actualizarDocumentoRoster);
-router.post('/:id/documento/logos', authMiddleware, rolMiddleware('admin'), uploadRosterLogo.single('logo'), rosterController.subirLogoDocumentoRoster);
-router.get('/:id/pdf', authMiddleware, rolMiddleware('admin'), rosterController.exportarRosterPdf);
-router.get('/:id/doc', authMiddleware, rolMiddleware('admin'), rosterController.exportarRosterDoc);
+router.delete('/:id/prestamos/:prestamoId', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.eliminarPrestamoRoster);
+router.patch('/:id/jugadores/:alumnoId/estado', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.actualizarEstadoJugadorRoster);
+router.delete('/:id', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.eliminarRoster);
+router.get('/template', authMiddleware, permisoMiddleware('rosters.view'), rosterController.obtenerPlantillaRoster);
+router.patch('/template', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.actualizarPlantillaRoster);
+router.post('/template/logos', authMiddleware, permisoMiddleware('rosters.manage'), uploadRosterLogo.single('logo'), rosterController.subirLogoPlantillaRoster);
+router.get('/:id/documento', authMiddleware, permisoMiddleware('rosters.view'), rosterController.obtenerDocumentoRoster);
+router.patch('/:id/documento', authMiddleware, permisoMiddleware('rosters.manage'), rosterController.actualizarDocumentoRoster);
+router.post('/:id/documento/logos', authMiddleware, permisoMiddleware('rosters.manage'), uploadRosterLogo.single('logo'), rosterController.subirLogoDocumentoRoster);
+router.get('/:id/pdf', authMiddleware, permisoMiddleware('rosters.view'), rosterController.exportarRosterPdf);
+router.get('/:id/doc', authMiddleware, permisoMiddleware('rosters.view'), rosterController.exportarRosterDoc);
 
 module.exports = router;

@@ -26,6 +26,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { Bar, BarChart, Cell, CartesianGrid, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { mediaUrl } from '../utils/mediaUrl';
 import { useDolar } from '../context/DolarContext';
+import { hasPermission } from '../utils/permissions';
 import './Estadisticas.css';
 
 const LABELS_MESES = [
@@ -39,6 +40,7 @@ function Estadisticas() {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const currentYear = new Date().getFullYear();
   const { dolar } = useDolar();
+  const canViewUniformes = hasPermission('solicitudes_uniformes.view');
   const [anio, setAnio] = useState(currentYear);
   const [sedes, setSedes] = useState([]);
   const [sedeSeleccionada, setSedeSeleccionada] = useState('all');
@@ -186,16 +188,18 @@ function Estadisticas() {
               ...(token ? { Authorization: `Bearer ${token}` } : {})
             }
           }),
-          fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
-            headers: {
-              ...(token ? { Authorization: `Bearer ${token}` } : {})
-            }
-          })
+          canViewUniformes
+            ? fetch(`${process.env.REACT_APP_API_URL}/api/uniformes/pedidos`, {
+                headers: {
+                  ...(token ? { Authorization: `Bearer ${token}` } : {})
+                }
+              })
+            : Promise.resolve(null)
         ]);
 
         const dataMensualidades = await respMensualidades.json().catch(() => ({}));
         const dataInscripciones = await respInscripciones.json().catch(() => ({}));
-        const dataUniformes = await respUniformes.json().catch(() => ([]));
+        const dataUniformes = respUniformes ? await respUniformes.json().catch(() => ([])) : [];
 
         if (!respMensualidades.ok) {
           throw new Error(dataMensualidades?.error || 'No se pudieron cargar los ingresos de mensualidades.');
@@ -203,7 +207,7 @@ function Estadisticas() {
         if (!respInscripciones.ok) {
           throw new Error(dataInscripciones?.error || 'No se pudieron cargar los ingresos de inscripciones.');
         }
-        if (!respUniformes.ok) {
+        if (respUniformes && !respUniformes.ok) {
           throw new Error(dataUniformes?.error || 'No se pudieron cargar los ingresos de uniformes.');
         }
 
@@ -276,7 +280,7 @@ function Estadisticas() {
     };
 
     fetchIngresos();
-  }, [anio, sedeSeleccionada]);
+  }, [anio, canViewUniformes, sedeSeleccionada]);
 
   useEffect(() => {
     const fetchIngresosPorSede = async () => {
@@ -585,7 +589,9 @@ function Estadisticas() {
                   <Legend />
                   <Bar dataKey="mensualidades" stackId="ingresos" name="Mensualidades" fill="#0B0F2A" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="inscripciones" stackId="ingresos" name="Inscripciones" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="uniformes" stackId="ingresos" name="Uniformes" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  {canViewUniformes && (
+                    <Bar dataKey="uniformes" stackId="ingresos" name="Uniformes" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </Box>
@@ -603,10 +609,12 @@ function Estadisticas() {
                       <Typography className="stats-mobile-label">Inscripciones</Typography>
                       <Typography className="stats-mobile-value">{formatMoney(item.inscripciones)}</Typography>
                     </Box>
-                    <Box className="stats-mobile-row">
-                      <Typography className="stats-mobile-label">Uniformes</Typography>
-                      <Typography className="stats-mobile-value">{formatMoney(item.uniformes)}</Typography>
-                    </Box>
+                    {canViewUniformes && (
+                      <Box className="stats-mobile-row">
+                        <Typography className="stats-mobile-label">Uniformes</Typography>
+                        <Typography className="stats-mobile-value">{formatMoney(item.uniformes)}</Typography>
+                      </Box>
+                    )}
                     <Box className="stats-mobile-row total">
                       <Typography className="stats-mobile-label">Total</Typography>
                       <Typography className="stats-mobile-value">{formatMoney(item.total)}</Typography>
@@ -621,7 +629,7 @@ function Estadisticas() {
                     <TableCell>Mes</TableCell>
                     <TableCell align="right">Mensualidades</TableCell>
                     <TableCell align="right">Inscripciones</TableCell>
-                    <TableCell align="right">Uniformes</TableCell>
+                    {canViewUniformes && <TableCell align="right">Uniformes</TableCell>}
                     <TableCell align="right">Total</TableCell>
                   </TableRow>
                 </TableHead>
@@ -631,7 +639,7 @@ function Estadisticas() {
                       <TableCell>{item.mes}</TableCell>
                       <TableCell align="right">{formatMoney(item.mensualidades)}</TableCell>
                       <TableCell align="right">{formatMoney(item.inscripciones)}</TableCell>
-                      <TableCell align="right">{formatMoney(item.uniformes)}</TableCell>
+                      {canViewUniformes && <TableCell align="right">{formatMoney(item.uniformes)}</TableCell>}
                       <TableCell align="right">{formatMoney(item.total)}</TableCell>
                     </TableRow>
                   ))}

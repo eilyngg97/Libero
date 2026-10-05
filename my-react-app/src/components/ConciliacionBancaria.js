@@ -37,6 +37,7 @@ import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
 import DoneAllRoundedIcon from '@mui/icons-material/DoneAllRounded';
 import { useDolar } from '../context/DolarContext';
 import { BANCOS_PAGO_MOVIL, normalizeNombreBanco } from '../constants/pagos';
+import { hasPermission } from '../utils/permissions';
 import './ConciliacionBancaria.css';
 
 const MONTO_TOLERANCIA_BS = 100;
@@ -134,6 +135,7 @@ function estadoChip(tipo) {
 
 export default function ConciliacionBancaria() {
   const { dolar } = useDolar();
+  const canViewUniformes = hasPermission('solicitudes_uniformes.view');
   const [archivo, setArchivo] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -508,7 +510,7 @@ export default function ConciliacionBancaria() {
               }}
             >
               <MenuItem value={TIPO_CONCILIACION.MENSUALIDADES}>Mensualidades</MenuItem>
-              <MenuItem value={TIPO_CONCILIACION.UNIFORMES}>Uniformes</MenuItem>
+              {canViewUniformes && <MenuItem value={TIPO_CONCILIACION.UNIFORMES}>Uniformes</MenuItem>}
             </Select>
           </FormControl>
 

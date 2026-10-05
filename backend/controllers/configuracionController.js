@@ -6,6 +6,7 @@ const { getTenantCoreConnection } = require('../config/tenantCoreConnection');
 const { getTenantCoreModel } = require('../models/TenantCore');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
+const { hasRequestPermission } = require('../middleware/auth');
 
 const DEFAULT_CONFIG = {
   pagos: {
@@ -974,11 +975,35 @@ function serializePagosConfig(doc) {
   };
 }
 
+function ocultarConfiguracionUniformes(payload, req, { permitirUsuarioPortal = false } = {}) {
+  const rol = String(req.user?.rol || '').trim().toLowerCase();
+  const puedeVerUniformes = hasRequestPermission(req, 'solicitudes_uniformes.view')
+    || (permitirUsuarioPortal && rol === 'usuario');
+
+  if (!puedeVerUniformes && payload?.pagos?.por_concepto) {
+    const porConcepto = { ...payload.pagos.por_concepto };
+    delete porConcepto.uniformes;
+    return {
+      ...payload,
+      pagos: {
+        ...payload.pagos,
+        por_concepto: porConcepto
+      }
+    };
+  }
+
+  return payload;
+}
+
+function intentaModificarConfiguracionUniformes(body = {}) {
+  return Object.prototype.hasOwnProperty.call(body?.pagos?.por_concepto || {}, 'uniformes');
+}
+
 exports.getConfiguracionPagos = async (req, res) => {
   try {
     const TenantConfig = await getTenantConfigModel(req);
     const config = await TenantConfig.findOne({ key: 'default' }).select('pagos cobro updatedAt').lean();
-    return res.json(serializePagosConfig(config));
+    return res.json(ocultarConfiguracionUniformes(serializePagosConfig(config), req, { permitirUsuarioPortal: true }));
   } catch {
     return res.status(500).json({ error: 'Error al obtener metodos de pago.' });
   }
@@ -988,7 +1013,7 @@ exports.getConfiguracionAdmin = async (req, res) => {
   try {
     const TenantConfig = await getTenantConfigModel(req);
     const config = await TenantConfig.findOne({ key: 'default' }).lean();
-    return res.json(serializeConfig(config));
+    return res.json(ocultarConfiguracionUniformes(serializeConfig(config), req));
   } catch {
     return res.status(500).json({ error: 'Error al obtener la configuracion.' });
   }
@@ -996,6 +1021,13 @@ exports.getConfiguracionAdmin = async (req, res) => {
 
 exports.upsertConfiguracionAdmin = async (req, res) => {
   try {
+    if (
+      intentaModificarConfiguracionUniformes(req.body)
+      && !hasRequestPermission(req, 'solicitudes_uniformes.manage')
+    ) {
+      return res.status(403).json({ error: 'No tienes permiso para modificar pagos de uniformes.' });
+    }
+
     const TenantConfig = await getTenantConfigModel(req);
     const normalized = normalizeConfigPayload(req.body || {});
 
@@ -1014,7 +1046,7 @@ exports.upsertConfiguracionAdmin = async (req, res) => {
       }
     ).lean();
 
-    return res.json(serializeConfig(updated));
+    return res.json(ocultarConfiguracionUniformes(serializeConfig(updated), req));
   } catch (err) {
     return res.status(400).json({ error: 'Error al guardar la configuracion.', detalle: err.message });
   }
@@ -1022,6 +1054,13 @@ exports.upsertConfiguracionAdmin = async (req, res) => {
 
 exports.patchConfiguracionAdmin = async (req, res) => {
   try {
+    if (
+      intentaModificarConfiguracionUniformes(req.body)
+      && !hasRequestPermission(req, 'solicitudes_uniformes.manage')
+    ) {
+      return res.status(403).json({ error: 'No tienes permiso para modificar pagos de uniformes.' });
+    }
+
     const TenantConfig = await getTenantConfigModel(req);
     const currentConfig = await TenantConfig.findOne({ key: 'default' }).select('categorias constancias publicaciones').lean();
     const normalizedPatch = normalizeConfigPatchPayload(req.body || {}, currentConfig || {});
@@ -1079,7 +1118,7 @@ exports.patchConfiguracionAdmin = async (req, res) => {
       }
     ).lean();
 
-    return res.json(serializeConfig(updated));
+    return res.json(ocultarConfiguracionUniformes(serializeConfig(updated), req));
   } catch (err) {
     return res.status(400).json({ error: 'Error al actualizar parcialmente la configuracion.', detalle: err.message });
   }

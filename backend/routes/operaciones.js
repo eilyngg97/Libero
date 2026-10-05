@@ -1,9 +1,9 @@
 const express = require('express');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const operacionController = require('../controllers/operacionController');
 
 const router = express.Router();
 
-router.get('/', authMiddleware, rolMiddleware('admin'), operacionController.listarOperaciones);
+router.get('/', authMiddleware, permisoMiddleware('operaciones.view'), operacionController.listarOperaciones);
 
 module.exports = router;

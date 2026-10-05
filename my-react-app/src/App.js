@@ -360,7 +360,7 @@ function App() {
                           <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><RequireSedeSelection><Alumnos /></RequireSedeSelection></ProtectedRoute>} />
                           <Route path="entrenadores" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['entrenadores.view']}><Entrenadores /></ProtectedRoute>} />
                           <Route path="entrenadores-sede" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['entrenadores.view']}><RequireSedeSelection><EntrenadoresSedeStaff /></RequireSedeSelection></ProtectedRoute>} />
-                          <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly}><Horarios /></ProtectedRoute>} />
+                          <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['horarios.view', 'horarios.manage']} requireAllPermissions={false}><Horarios /></ProtectedRoute>} />
                           <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['solicitudes_uniformes.view']}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
                           <Route path="pagos-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={adminAndUser}><PagosAlumno /></ProtectedRoute>} />
                           <Route
@@ -386,40 +386,40 @@ function App() {
                           <Route path="alumno/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}>{React.createElement(require('./components/AlumnoDetalle').default)}</ProtectedRoute>} />
                           <Route path="alumno/editar/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}>{React.createElement(require('./components/AlumnoEditar').default)}</ProtectedRoute>} />
                           <Route path="alumno-editar/:id" element={<ProtectedRoute allowedRoles={adminAndUser}><EntrypointAlumnoEditar /></ProtectedRoute>} />
-                          <Route path="torneos" element={<ProtectedRoute allowedRoles={adminOnly}><Torneos /></ProtectedRoute>} />
-                          <Route path="torneos/crear" element={<ProtectedRoute allowedRoles={adminOnly}><TorneoCrear /></ProtectedRoute>} />
-                          <Route path="torneos/:torneoId/equipos" element={<ProtectedRoute allowedRoles={adminOnly}><TorneoEquiposView /></ProtectedRoute>} />
-                          <Route path="torneos/:torneoId/equipos/:rosterId/atletas" element={<ProtectedRoute allowedRoles={adminOnly}><RosterAtletasView /></ProtectedRoute>} />
-                          <Route path="torneos/:torneoId/equipos/:rosterId/documento" element={<ProtectedRoute allowedRoles={adminOnly}><RosterDocumentEditor /></ProtectedRoute>} />
+                          <Route path="torneos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['torneos.view', 'torneos.manage']} requireAllPermissions={false}><Torneos /></ProtectedRoute>} />
+                          <Route path="torneos/crear" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['torneos.manage']}><TorneoCrear /></ProtectedRoute>} />
+                          <Route path="torneos/:torneoId/equipos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['rosters.view', 'rosters.manage']} requireAllPermissions={false}><TorneoEquiposView /></ProtectedRoute>} />
+                          <Route path="torneos/:torneoId/equipos/:rosterId/atletas" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['rosters.manage']}><RosterAtletasView /></ProtectedRoute>} />
+                          <Route path="torneos/:torneoId/equipos/:rosterId/documento" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['rosters.manage']}><RosterDocumentEditor /></ProtectedRoute>} />
                           <Route path="dashboard-usuario" element={<ProtectedRoute allowedRoles={userOnly}><DashboardUsuario /></ProtectedRoute>} />
                           <Route path="constancias" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['constancias.view']}><Constancias /></ProtectedRoute>} />
                           <Route path="solicitudes-constancias" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['solicitudes_constancias.view']}><TenantOnlyRoute allowedTenantIds={['esporta']}><ListadoSolicitudesConstancias /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="panel-opciones-usuario/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><PanelOpcionesUsuario /></ProtectedRoute>} />
                           <Route path="solicitud-uniforme" element={<ProtectedRoute allowedRoles={userOnly}><SolicitudUniformeWrapper /></ProtectedRoute>} />
                           <Route path="uniformes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['tienda.view']}><Uniformes /></ProtectedRoute>} />
-                          <Route path="configuracion" element={<ProtectedRoute allowedRoles={adminOnly}><PaymentConfig /></ProtectedRoute>} />
-                          <Route path="config-general" element={<ProtectedRoute allowedRoles={adminOnly}><GeneralConfig /></ProtectedRoute>} />
-                          <Route path="config-categorias" element={<ProtectedRoute allowedRoles={adminOnly}><CategoriasConfig /></ProtectedRoute>} />
+                          <Route path="configuracion" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['configuracion.view', 'configuracion.manage']} requireAllPermissions={false}><PaymentConfig /></ProtectedRoute>} />
+                          <Route path="config-general" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['configuracion.view', 'configuracion.manage']} requireAllPermissions={false}><GeneralConfig /></ProtectedRoute>} />
+                          <Route path="config-categorias" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['configuracion.view', 'configuracion.manage']} requireAllPermissions={false}><CategoriasConfig /></ProtectedRoute>} />
                           <Route path="config-pagos" element={<Navigate to="/configuracion" replace />} />
-                          <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><Aspirantes /></TenantOnlyRoute></ProtectedRoute>} />
+                          <Route path="aspirantes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['aspirantes.view', 'aspirantes.manage']} requireAllPermissions={false}><TenantOnlyRoute allowedTenantIds={['villasport']}><Aspirantes /></TenantOnlyRoute></ProtectedRoute>} />
                           <Route path="estadisticas" element={<Navigate to="/estadisticas/resumen" replace />} />
-                          <Route path="estadisticas/resumen" element={<ProtectedRoute allowedRoles={adminOnly}><Estadisticas /></ProtectedRoute>} />
+                          <Route path="estadisticas/resumen" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['dashboard.stats']}><Estadisticas /></ProtectedRoute>} />
                           <Route path="estadisticas/finanzas" element={<Navigate to="/estadisticas/financiero" replace />} />
                           <Route path="estadisticas/finanzas/ingresos" element={<Navigate to="/estadisticas/financiero" replace />} />
                           <Route path="estadisticas/finanzas/egresos" element={<Navigate to="/estadisticas/financiero" replace />} />
                           <Route path="estadisticas/finanzas/balance" element={<Navigate to="/estadisticas/financiero" replace />} />
-                          <Route path="estadisticas/financiero" element={<ProtectedRoute allowedRoles={adminOnly}><EstadisticasFinanzas /></ProtectedRoute>} />
-                          <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly}><TenantOnlyRoute allowedTenantIds={['villasport']}><LandingConfig /></TenantOnlyRoute></ProtectedRoute>} />
-                          <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly}><ConciliacionBancaria /></ProtectedRoute>} />
-                          <Route path="operaciones" element={<ProtectedRoute allowedRoles={adminOnly}><Operaciones /></ProtectedRoute>} />
+                          <Route path="estadisticas/financiero" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['dashboard.finance']}><EstadisticasFinanzas /></ProtectedRoute>} />
+                          <Route path="config-landing" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['landing.view', 'landing.manage']} requireAllPermissions={false}><TenantOnlyRoute allowedTenantIds={['villasport']}><LandingConfig /></TenantOnlyRoute></ProtectedRoute>} />
+                          <Route path="conciliacion-bancaria" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['conciliacion.view', 'conciliacion.manage']} requireAllPermissions={false}><ConciliacionBancaria /></ProtectedRoute>} />
+                          <Route path="operaciones" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['operaciones.view']}><Operaciones /></ProtectedRoute>} />
                           <Route path="mi-perfil" element={<ProtectedRoute allowedRoles={adminOnly}><MiPerfil /></ProtectedRoute>} />
-                          <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly}><GestionReposos /></ProtectedRoute>} />
+                          <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><GestionReposos /></ProtectedRoute>} />
                           <Route path="recaudos" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['recaudos.view']}><Recaudos /></ProtectedRoute>} />
                           <Route path="egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><Egresos /></ProtectedRoute>} />
                           <Route path="config-catalogo-egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><CatalogoCategoriasEgresos /></ProtectedRoute>} />
-                          <Route path="publicaciones/cumpleanos" element={<ProtectedRoute allowedRoles={adminOnly}><CumpleanosPostGenerator /></ProtectedRoute>} />
+                          <Route path="publicaciones/cumpleanos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['publicaciones.view', 'publicaciones.manage']} requireAllPermissions={false}><CumpleanosPostGenerator /></ProtectedRoute>} />
                           <Route path="terminos-condiciones" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['reglamento.view']}><TerminosCondiciones /></ProtectedRoute>} />
-                          <Route path="usuarios" element={<ProtectedRoute allowedRoles={['super_admin']} requiredPermissions={['usuarios.manage']}><UsuariosAccesos /></ProtectedRoute>} />
+                          <Route path="usuarios" element={<ProtectedRoute allowedRoles={['super_admin']} requiredPermissions={['usuarios.manage', 'roles.manage']}><UsuariosAccesos /></ProtectedRoute>} />
                         </Routes>
                       </main>
                     </div>

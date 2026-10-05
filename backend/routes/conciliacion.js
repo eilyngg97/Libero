@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const conciliacionController = require('../controllers/conciliacionController');
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -39,7 +39,7 @@ const upload = multer({
 router.post(
   '/previsualizar',
   authMiddleware,
-  rolMiddleware('admin'),
+  permisoMiddleware('conciliacion.manage'),
   upload.single('archivo'),
   conciliacionController.previsualizarConciliacion
 );
@@ -47,7 +47,7 @@ router.post(
 router.post(
   '/confirmar-match-total',
   authMiddleware,
-  rolMiddleware('admin'),
+  permisoMiddleware('conciliacion.manage'),
   conciliacionController.confirmarMatchTotal
 );
 

@@ -6,6 +6,7 @@ const UniformePedido = require('../models/UniformePedido');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { registrarOperacion } = require('../services/operacionService');
+const { hasRequestPermission } = require('../middleware/auth');
 
 const MONTO_TOLERANCIA_BS = 100;
 const TIPO_CONCILIACION = {
@@ -600,6 +601,12 @@ exports.previsualizarConciliacion = async (req, res) => {
         error: `tipo_conciliacion invalido. Usa ${TIPO_CONCILIACION.MENSUALIDADES} o ${TIPO_CONCILIACION.UNIFORMES}`
       });
     }
+    if (
+      tipoConciliacion === TIPO_CONCILIACION.UNIFORMES
+      && !hasRequestPermission(req, 'solicitudes_uniformes.view')
+    ) {
+      return res.status(403).json({ error: 'No tienes permiso para conciliar pagos de uniformes.' });
+    }
 
     if (!req.file?.buffer) {
       return res.status(400).json({ error: 'Debes subir un archivo de conciliacion' });
@@ -951,6 +958,12 @@ exports.confirmarMatchTotal = async (req, res) => {
       return res.status(400).json({
         error: `tipo_conciliacion invalido. Usa ${TIPO_CONCILIACION.MENSUALIDADES} o ${TIPO_CONCILIACION.UNIFORMES}`
       });
+    }
+    if (
+      tipoConciliacion === TIPO_CONCILIACION.UNIFORMES
+      && !hasRequestPermission(req, 'solicitudes_uniformes.manage')
+    ) {
+      return res.status(403).json({ error: 'No tienes permiso para confirmar pagos de uniformes.' });
     }
 
     const pagoIds = Array.isArray(req.body?.pago_ids) ? req.body.pago_ids : [];

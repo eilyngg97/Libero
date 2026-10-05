@@ -14,6 +14,7 @@ import Avatar from '@mui/material/Avatar';
 import Pagination from '@mui/material/Pagination';
 import { exportToExcel } from '../utils/exportExcel';
 import { mediaUrl } from '../utils/mediaUrl';
+import { hasPermission } from '../utils/permissions';
 
 function Dashboard() {
   const apiBase = process.env.REACT_APP_API_URL || '';
@@ -23,6 +24,7 @@ function Dashboard() {
   const { setSedeSeleccionada } = useSede();
   const { dolar, loading: dolarLoading, error: dolarError, refreshDolar } = useDolar();
   const navigate = useNavigate();
+  const canViewUniformes = hasPermission('solicitudes_uniformes.view');
   const [sedes, setSedes] = useState([]);
   const [alumnosPorSede, setAlumnosPorSede] = useState({});
   const [cumpleaneros, setCumpleaneros] = useState([]);
@@ -315,6 +317,12 @@ function Dashboard() {
   }, [apiBase, mesActual]);
 
   useEffect(() => {
+    if (!canViewUniformes) {
+      setIngresosUniformesMes(0);
+      setUniformesLoading(false);
+      return;
+    }
+
     const fetchIngresosUniformesMes = async () => {
       setUniformesLoading(true);
       try {
@@ -348,7 +356,7 @@ function Dashboard() {
 
     fetchIngresosUniformesMes();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiBase, mesGraficaSeleccionado]);
+  }, [apiBase, canViewUniformes, mesGraficaSeleccionado]);
 
   useEffect(() => {
     const fetchIngresosMes = async () => {
@@ -814,14 +822,16 @@ function Dashboard() {
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
   const totalIngresosMensualidadesMes = Number(ingresosMensualidadesMes || 0);
   const totalIngresosInscripcionesMes = Number(ingresosInscripcionesMes || 0);
-  const totalIngresosMes = totalIngresosMensualidadesMes + totalIngresosInscripcionesMes + ingresosUniformesMes;
+  const totalIngresosMes = totalIngresosMensualidadesMes
+    + totalIngresosInscripcionesMes
+    + (canViewUniformes ? ingresosUniformesMes : 0);
   const totalEgresosMes = Number(egresosMes || 0);
   const flujoNetoMes = totalIngresosMes - totalEgresosMes;
   const flujoNetoPositivo = flujoNetoMes >= 0;
   const mesIngresosLabel = mesesAnio.find((mes) => mes.value === mesGraficaSeleccionado)?.label || 'mes';
   const ingresosDonutData = [
     { name: 'Mensualidades', value: totalIngresosMensualidadesMes },
-    { name: 'Uniformes', value: ingresosUniformesMes }
+    ...(canViewUniformes ? [{ name: 'Uniformes', value: ingresosUniformesMes }] : [])
   ];
   const variacionAlumnosReal = `+${nuevosAlumnosMes} este mes`;
   const tasaBcvHeaderTexto = (dolarLoading || !tasaMonedaSincronizada)
@@ -880,7 +890,7 @@ function Dashboard() {
                 </div>
               </div>
               <div className="dashboard-kpi-inline-label">Ingresos del mes</div>
-              {dolaresLoading || uniformesLoading || ingresosMesLoading ? (
+              {dolaresLoading || (canViewUniformes && uniformesLoading) || ingresosMesLoading ? (
                 <div className="dashboard-kpi-inline-loading">Cargando...</div>
               ) : (
                 <>
@@ -917,10 +927,12 @@ function Dashboard() {
                       <span className="dashboard-kpi-inline-dot" style={{ background: '#10b981' }} />
                       Inscripciones: {simboloMonedaActiva}{formatMoney(totalIngresosInscripcionesMes)}
                     </div>
-                    <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
-                      <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-uniformes" />
-                      Uniformes: {simboloMonedaActiva}{formatMoney(ingresosUniformesMes)}
-                    </div>
+                    {canViewUniformes && (
+                      <div className="dashboard-kpi-inline-sub dashboard-kpi-inline-sub-legend">
+                        <span className="dashboard-kpi-inline-dot dashboard-kpi-inline-dot-uniformes" />
+                        Uniformes: {simboloMonedaActiva}{formatMoney(ingresosUniformesMes)}
+                      </div>
+                    )}
                   </div>
                   <div className="dashboard-kpi-inline-sub">{monedaActiva} recaudados en {mesIngresosLabel.toLowerCase()}</div>
                 </>

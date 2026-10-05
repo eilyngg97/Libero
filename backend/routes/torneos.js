@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authMiddleware, rolMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 
@@ -16,7 +16,7 @@ async function getTenantTournamentModels(req) {
 // ...otros endpoints...
 
 // DELETE /api/torneos/:id
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
+router.delete('/:id', authMiddleware, permisoMiddleware('torneos.manage'), async (req, res) => {
   try {
     const { Torneo, Partido } = await getTenantTournamentModels(req);
     const torneo = await Torneo.findById(req.params.id);
@@ -33,7 +33,7 @@ router.delete('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) =
 
 
 // GET /api/torneos
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, permisoMiddleware('torneos.view'), async (req, res) => {
   try {
     const { Torneo } = await getTenantTournamentModels(req);
     const torneos = await Torneo.find()
@@ -74,7 +74,7 @@ router.get('/por-alumno/:alumnoId', authMiddleware, async (req, res) => {
 });
 
 // GET /api/torneos/:id
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, permisoMiddleware('torneos.view'), async (req, res) => {
   try {
     const { Torneo } = await getTenantTournamentModels(req);
     const torneo = await Torneo.findById(req.params.id)
@@ -87,7 +87,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // POST /api/torneos
-router.post('/', authMiddleware, rolMiddleware('admin'), async (req, res) => {
+router.post('/', authMiddleware, permisoMiddleware('torneos.manage'), async (req, res) => {
   try {
     const { Torneo, Alumno } = await getTenantTournamentModels(req);
     const { nombre, descripcion, fecha_limite, convocados } = req.body;
@@ -123,7 +123,7 @@ router.post('/', authMiddleware, rolMiddleware('admin'), async (req, res) => {
 });
 
 // PUT /api/torneos/:id
-router.put('/:id', authMiddleware, rolMiddleware('admin'), async (req, res) => {
+router.put('/:id', authMiddleware, permisoMiddleware('torneos.manage'), async (req, res) => {
   try {
     const { Torneo, Alumno } = await getTenantTournamentModels(req);
     const { nombre, descripcion, fecha_limite, convocados } = req.body;

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const entrenadorController = require('../controllers/entrenadorController');
-const { authMiddleware, rolMiddleware, permisoMiddleware } = require('../middleware/auth');
+const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -43,19 +43,19 @@ const upload = multer({
 	}
 });
 
-router.get('/', authMiddleware, rolMiddleware('admin'), entrenadorController.listarEntrenadores);
-router.get('/actividades-pendientes-nomina', authMiddleware, rolMiddleware('admin'), entrenadorController.listarActividadesPendientesNomina);
-router.get('/staff-por-sede/:sedeId', authMiddleware, rolMiddleware('admin'), entrenadorController.listarStaffPorSede);
-router.post('/:id/pagos', authMiddleware, rolMiddleware('admin'), upload.single('comprobante'), entrenadorController.registrarPagoNominaEntrenador);
-router.delete('/:id/pagos/:pagoId', authMiddleware, rolMiddleware('admin'), entrenadorController.eliminarPagoNominaEntrenador);
-router.patch('/:id/vincular-sede', authMiddleware, rolMiddleware('admin'), entrenadorController.vincularEntrenadorASede);
-router.patch('/:id/desvincular-sede', authMiddleware, rolMiddleware('admin'), entrenadorController.desvincularEntrenadorDeSede);
-router.patch('/:id/estado', authMiddleware, rolMiddleware('admin'), entrenadorController.actualizarEstadoEntrenador);
-router.delete('/:id', authMiddleware, rolMiddleware('admin'), entrenadorController.eliminarEntrenador);
+router.get('/', authMiddleware, permisoMiddleware('entrenadores.view'), entrenadorController.listarEntrenadores);
+router.get('/actividades-pendientes-nomina', authMiddleware, permisoMiddleware('entrenadores.view'), entrenadorController.listarActividadesPendientesNomina);
+router.get('/staff-por-sede/:sedeId', authMiddleware, permisoMiddleware('entrenadores.view'), entrenadorController.listarStaffPorSede);
+router.post('/:id/pagos', authMiddleware, permisoMiddleware('entrenadores.manage'), upload.single('comprobante'), entrenadorController.registrarPagoNominaEntrenador);
+router.delete('/:id/pagos/:pagoId', authMiddleware, permisoMiddleware('entrenadores.manage'), entrenadorController.eliminarPagoNominaEntrenador);
+router.patch('/:id/vincular-sede', authMiddleware, permisoMiddleware('entrenadores.manage'), entrenadorController.vincularEntrenadorASede);
+router.patch('/:id/desvincular-sede', authMiddleware, permisoMiddleware('entrenadores.manage'), entrenadorController.desvincularEntrenadorDeSede);
+router.patch('/:id/estado', authMiddleware, permisoMiddleware('entrenadores.manage'), entrenadorController.actualizarEstadoEntrenador);
+router.delete('/:id', authMiddleware, permisoMiddleware('entrenadores.manage'), entrenadorController.eliminarEntrenador);
 router.patch(
 	'/:id',
 	authMiddleware,
-	rolMiddleware('admin'),
+	permisoMiddleware('entrenadores.manage'),
 	upload.fields([
 		{ name: 'foto', maxCount: 1 },
 		{ name: 'certificaciones', maxCount: 10 },
@@ -66,7 +66,7 @@ router.patch(
 router.post(
 	'/',
 	authMiddleware,
-	rolMiddleware('admin'),
+	permisoMiddleware('entrenadores.manage'),
 	upload.fields([
 		{ name: 'foto', maxCount: 1 },
 		{ name: 'certificaciones', maxCount: 10 },

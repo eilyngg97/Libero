@@ -95,6 +95,17 @@ jest.mock('../models/Torneo', () => ({
 
 jest.mock('../models/TenantConfig', () => ({
   findOne: jest.fn().mockReturnValue({
+    lean: jest.fn().mockResolvedValue({
+      key: 'default',
+      pagos: {
+        por_concepto: {
+          mensualidades: { usar_generales: true },
+          uniformes: { usar_generales: false }
+        }
+      },
+      cobro: { dia_cobro: 1, dia_vencimiento: 5, dias_gracia: 0, recargo_usd: 0 },
+      constancias: {}
+    }),
     select: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         key: 'default',
@@ -963,6 +974,87 @@ describe('Backend smoke tests', () => {
     expect(pedidoDoc.pagos_historial).toHaveLength(1);
     expect(pedidoDoc.pagos_historial[0].monto_pagado).toBe(20);
     expect(pedidoDoc.monto_ultimo_pago).toBe(0);
+  });
+
+  test('GET /api/configuracion oculta pagos de uniformes sin permiso de solicitudes', async () => {
+    const token = makeToken({
+      id: 'socio1',
+      rol: 'socio',
+      nombre: 'Socio',
+      permisos: ['configuracion.view']
+    });
+
+    const response = await request(app)
+      .get('/api/configuracion')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.pagos.por_concepto.mensualidades).toBeDefined();
+    expect(response.body.pagos.por_concepto.uniformes).toBeUndefined();
+  });
+
+  test('PATCH /api/configuracion bloquea cambios de uniformes sin permiso de gestion', async () => {
+    const token = makeToken({
+      id: 'socio1',
+      rol: 'socio',
+      nombre: 'Socio',
+      permisos: ['configuracion.manage']
+    });
+
+    const response = await request(app)
+      .patch('/api/configuracion')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        pagos: {
+          por_concepto: {
+            uniformes: { usar_generales: false }
+          }
+        }
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatch(/permiso/i);
+  });
+
+  test('POST /api/conciliacion/previsualizar bloquea uniformes sin permiso de solicitudes', async () => {
+    const token = makeToken({
+      id: 'socio1',
+      rol: 'socio',
+      nombre: 'Socio',
+      permisos: ['conciliacion.manage']
+    });
+    const archivoTxt = Buffer.from('Referencia;Monto;Fecha\n123456;7075;06/03/2026\n');
+
+    const response = await request(app)
+      .post('/api/conciliacion/previsualizar?tipo_conciliacion=uniformes')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoTxt, {
+        filename: 'conciliacion_uniformes.txt',
+        contentType: 'text/plain'
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatch(/permiso/i);
+  });
+
+  test('POST /api/conciliacion/confirmar-match-total bloquea uniformes sin permiso de gestion', async () => {
+    const token = makeToken({
+      id: 'socio1',
+      rol: 'socio',
+      nombre: 'Socio',
+      permisos: ['conciliacion.manage', 'solicitudes_uniformes.view']
+    });
+
+    const response = await request(app)
+      .post('/api/conciliacion/confirmar-match-total')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        tipo_conciliacion: 'uniformes',
+        pago_ids: ['u1']
+      });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatch(/permiso/i);
   });
 
   test('POST /api/conciliacion/previsualizar?tipo_conciliacion=uniformes retorna match total en pedidos pago_en_revision', async () => {

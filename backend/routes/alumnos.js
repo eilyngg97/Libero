@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const alumnoCountController = require('../controllers/alumnoCountController');
-const { authMiddleware, rolMiddleware, superAdminMiddleware, permisoMiddleware } = require('../middleware/auth');
+const { authMiddleware, superAdminMiddleware, permisoMiddleware } = require('../middleware/auth');
 const {
 	ensureAlumnoOwnershipFromParam,
 	ensureRepresentanteOwnershipFromParam
@@ -57,7 +57,7 @@ router.get('/', authMiddleware, permisoMiddleware('alumnos.view'), alumnoControl
 router.get('/estadisticas/inscritos-retirados', authMiddleware, permisoMiddleware('alumnos.view'), alumnoController.getEstadisticasInscritosRetirados);
 router.get('/numeros-franela/disponibilidad', authMiddleware, alumnoController.getDisponibilidadNumeroFranela);
 router.get('/categoria-sugerida', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.getCategoriaSugerida);
-router.get('/asignar-categorias/preview', authMiddleware, rolMiddleware('admin'), alumnoController.previewAsignarCategoriasMasivamente);
+router.get('/asignar-categorias/preview', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.previewAsignarCategoriasMasivamente);
 router.post('/importar-excel', authMiddleware, superAdminMiddleware, importUpload.single('archivo'), alumnoController.importarAlumnosExcel);
 router.post('/', authMiddleware, permisoMiddleware('alumnos.manage'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.createAlumno);
 router.get('/por-representante/:representanteId', authMiddleware, ensureRepresentanteOwnershipFromParam('representanteId'), alumnoController.getAlumnosPorRepresentante);
@@ -69,7 +69,7 @@ router.patch('/:id/reposos/:reposoId/finalizar', authMiddleware, permisoMiddlewa
 router.delete('/:id/reposos/:reposoId', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.eliminarReposoAlumno);
 
 // Ruta para asignar categorias masivamente (debe ir antes de /:id)
-router.put('/asignar-categorias', authMiddleware, rolMiddleware('admin'), alumnoController.asignarCategoriasMasivamente);
+router.put('/asignar-categorias', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.asignarCategoriasMasivamente);
 
 router.get('/:id/ficha-tecnica', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.descargarFichaTecnica);
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
