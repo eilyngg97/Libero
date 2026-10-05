@@ -6,8 +6,11 @@ const {
   validarArgs,
   obtenerRangoDiaCaracas,
   evaluarCandidata,
-  construirReversion
+  construirReversion,
+  getTenantModels
 } = require('../scripts/revertir_recargos_fecha');
+const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
+const { getTenantModel } = require('../services/tenantModelService');
 
 function crearMensualidad(overrides = {}) {
   return {
@@ -21,6 +24,21 @@ function crearMensualidad(overrides = {}) {
 }
 
 describe('revertir_recargos_fecha', () => {
+  test('registra Alumno y los modelos operativos en la conexion tenant', async () => {
+    const connection = { name: 'tenant-test' };
+    getTenantBusinessConnection.mockResolvedValue(connection);
+    getTenantModel.mockImplementation((_connection, modelName) => ({ modelName }));
+
+    await getTenantModels({ tenantId: 'tenant-test' });
+
+    expect(getTenantModel.mock.calls).toEqual([
+      [connection, 'Alumno'],
+      [connection, 'Mensualidad'],
+      [connection, 'PagoDetalle'],
+      [connection, 'TenantConfig']
+    ]);
+  });
+
   test('calcula el dia completo usando America/Caracas', () => {
     const rango = obtenerRangoDiaCaracas('2026-10-05');
 

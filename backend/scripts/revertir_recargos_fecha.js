@@ -125,6 +125,7 @@ function construirReversion(montoBase) {
 async function getTenantModels(tenant) {
   const connection = await getTenantBusinessConnection(tenant);
   return {
+    Alumno: getTenantModel(connection, 'Alumno'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
     TenantConfig: getTenantModel(connection, 'TenantConfig')
@@ -307,5 +308,6 @@ module.exports = {
   validarArgs,
   obtenerRangoDiaCaracas,
   evaluarCandidata,
-  construirReversion
+  construirReversion,
+  getTenantModels
 };
