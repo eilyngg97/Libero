@@ -329,6 +329,25 @@ function obtenerFechaRecargoAlumnoPeriodo(mes, anio, cobroConfig, alumno) {
   return obtenerFechaRecargoPeriodo(mes, anio, cobroConfig);
 }
 
+function obtenerInicioDiaZonaCaracas(fecha) {
+  const fechaValida = fecha instanceof Date ? fecha : new Date(fecha);
+  if (Number.isNaN(fechaValida.getTime())) return null;
+
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric'
+  }).formatToParts(fechaValida);
+  const obtenerParte = (tipo) => Number(partes.find((parte) => parte.type === tipo)?.value);
+
+  return construirFechaPeriodoConDia(
+    obtenerParte('month'),
+    obtenerParte('year'),
+    obtenerParte('day')
+  );
+}
+
 function obtenerFechaCortePagoAlumnoMensualidad(mensualidad, alumno = null) {
   const diaPersonalizado = normalizarDiaMes(
     alumno?.dia_limite_personalizado ?? mensualidad?.id_alumno?.dia_limite_personalizado,
@@ -345,7 +364,7 @@ function obtenerFechaCortePagoAlumnoMensualidad(mensualidad, alumno = null) {
     Number.isInteger(anioPeriodo) &&
     anioPeriodo > 1900
   ) {
-    return construirFechaPeriodoConDia(mesPeriodo, anioPeriodo, diaPersonalizado, { finDelDia: true });
+    return construirFechaPeriodoConDia(mesPeriodo, anioPeriodo, diaPersonalizado);
   }
 
   const fechaVencimiento = mensualidad?.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) : null;
@@ -353,7 +372,7 @@ function obtenerFechaCortePagoAlumnoMensualidad(mensualidad, alumno = null) {
     return null;
   }
 
-  return fechaVencimiento;
+  return obtenerInicioDiaZonaCaracas(fechaVencimiento);
 }
 
 async function obtenerFechaCortePagoAlumnoMensualidadAsync(mensualidad, models = {}) {
@@ -371,7 +390,8 @@ async function obtenerFechaCortePagoAlumnoMensualidadAsync(mensualidad, models =
 }
 
 function obtenerEstatusPendientePorVencimiento(fechaVencimiento) {
-  return fechaVencimiento < new Date() ? 'Insolvente' : 'Pendiente';
+  const inicioDiaVencimiento = obtenerInicioDiaZonaCaracas(fechaVencimiento);
+  return inicioDiaVencimiento && inicioDiaVencimiento <= new Date() ? 'Insolvente' : 'Pendiente';
 }
 
 function esEstatusInsolvente(estatus) {
@@ -683,8 +703,17 @@ async function aplicarRecargoMensualidadSegunConfig(
   });
 
   if (Number(mensualidad.recargo_aplicado_usd || 0) > 0) {
+    const estadoActualizado = estatusActual === 'pendiente';
+    if (estadoActualizado) {
+      mensualidad.estatus = 'Insolvente';
+      if (persistir) {
+        await mensualidad.save();
+      }
+    }
+
     return {
       aplicado: false,
+      estadoActualizado,
       configCobro,
       fechaRecargo,
       snapshot
@@ -697,6 +726,7 @@ async function aplicarRecargoMensualidadSegunConfig(
   mensualidad.monto_con_recargo_usd = snapshot.montoConRecargoUsd;
   mensualidad.monto_esperado = snapshot.montoEsperado;
   mensualidad.fecha_aplicacion_recargo = new Date();
+  mensualidad.estatus = estatusActual === 'pendiente' ? 'Insolvente' : mensualidad.estatus;
 
   if (persistir) {
     await mensualidad.save();
@@ -1121,7 +1151,7 @@ async function recalcularMensualidadPorPagos(
   const requiereRevisionPagoCompleto = estatusAnterior === 'En revision' || actorRol === 'usuario';
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const fechaCortePago = await obtenerFechaCortePagoAlumnoMensualidadAsync(mensualidad, models);
-  const estaVencida = fechaCortePago ? fechaCortePago < new Date() : false;
+  const estaVencida = fechaCortePago ? fechaCortePago <= new Date() : false;
   const debePreservarPagadoManual =
     preservarPagadoSinPagos &&
     !tienePagosRegistrados &&
@@ -1763,7 +1793,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     .filter((mensualidad) => {
       if (String(mensualidad?.estatus || '').toLowerCase() !== 'pendiente') return false;
       const fechaCortePago = obtenerFechaCortePagoAlumnoMensualidad(mensualidad, mensualidad?.id_alumno);
-      return fechaCortePago ? fechaCortePago < hoy : false;
+      return fechaCortePago ? fechaCortePago <= hoy : false;
     })
     .map((mensualidad) => mensualidad._id);
 
@@ -1771,7 +1801,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     .filter((mensualidad) => {
       if (String(mensualidad?.estatus || '').toLowerCase() !== 'insolvente') return false;
       const fechaCortePago = obtenerFechaCortePagoAlumnoMensualidad(mensualidad, mensualidad?.id_alumno);
-      return fechaCortePago ? fechaCortePago >= hoy : false;
+      return fechaCortePago ? fechaCortePago > hoy : false;
     })
     .map((mensualidad) => mensualidad._id);
 
@@ -1799,7 +1829,8 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
     monto_esperado: { $gt: 0 },
     $or: [
       { recargo_aplicado_usd: { $exists: false } },
-      { recargo_aplicado_usd: { $lte: 0 } }
+      { recargo_aplicado_usd: { $lte: 0 } },
+      { estatus: 'Pendiente', recargo_aplicado_usd: { $gt: 0 } }
     ]
   }).populate({
     path: 'id_alumno',
@@ -1817,7 +1848,7 @@ async function actualizarRetrasadosCore({ force = false, models = {} } = {}) {
       fechaReferencia: hoy,
       persistir: true
     });
-    if (resultado.aplicado) {
+    if (resultado.aplicado || resultado.estadoActualizado) {
       recargosAplicados += 1;
     }
   }
@@ -2514,7 +2545,10 @@ exports.getMensualidades = async (req, res) => {
       ['pendiente', 'insolvente', 'retrasado', 'abono'].includes(String(mensualidad.estatus || '').toLowerCase()) &&
       mensualidad.bloqueo_recargo_automatico !== true &&
       Number(mensualidad.monto_esperado || 0) > 0 &&
-      Number(mensualidad.recargo_aplicado_usd || 0) <= 0
+      (
+        Number(mensualidad.recargo_aplicado_usd || 0) <= 0 ||
+        String(mensualidad.estatus || '').toLowerCase() === 'pendiente'
+      )
     ));
 
     if (candidatasRecargo.length > 0) {

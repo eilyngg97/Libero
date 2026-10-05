@@ -59,6 +59,7 @@ describe('aplicarRecargoMensualidadSegunConfig', () => {
     expect(mensualidad.recargo_aplicado_usd).toBe(5);
     expect(mensualidad.monto_con_recargo_usd).toBe(55);
     expect(mensualidad.monto_esperado).toBe(55);
+    expect(mensualidad.estatus).toBe('Insolvente');
     expect(mensualidad.save).toHaveBeenCalledTimes(1);
   });
 
@@ -210,8 +211,10 @@ describe('aplicarRecargoMensualidadSegunConfig', () => {
     const resultado = await aplicar(mensualidad);
 
     expect(resultado.aplicado).toBe(false);
+    expect(resultado.estadoActualizado).toBe(true);
     expect(mensualidad.monto_esperado).toBe(55);
-    expect(mensualidad.save).not.toHaveBeenCalled();
+    expect(mensualidad.estatus).toBe('Insolvente');
+    expect(mensualidad.save).toHaveBeenCalledTimes(1);
   });
 
   test('calcula sin guardar cuando persistir es false', async () => {
@@ -313,6 +316,34 @@ describe('actualizarRetrasadosCore', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-09-11T04:10:00.000Z'));
     const mensualidadVencida = crearMensualidad({
       fecha_vencimiento: new Date('2026-09-10T03:59:59.999Z')
+    }, { dia_limite_personalizado: 10 });
+    const updateMany = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+    const Mensualidad = {
+      find: jest.fn()
+        .mockReturnValueOnce({
+          select: jest.fn().mockReturnValue({
+            populate: jest.fn().mockResolvedValue([mensualidadVencida])
+          })
+        })
+        .mockReturnValueOnce({
+          populate: jest.fn().mockResolvedValue([])
+        }),
+      updateMany
+    };
+
+    const actualizadas = await actualizarRetrasadosCore({ models: { Mensualidad } });
+
+    expect(actualizadas).toBe(1);
+    expect(updateMany).toHaveBeenCalledWith(
+      { _id: { $in: ['m1'] } },
+      { $set: { estatus: 'Insolvente' } }
+    );
+  });
+
+  test('marca insolvente exactamente a las 00:00 del dia de vencimiento en Caracas', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-10T04:00:00.000Z'));
+    const mensualidadVencida = crearMensualidad({
+      fecha_vencimiento: new Date('2026-09-11T03:59:59.999Z')
     }, { dia_limite_personalizado: 10 });
     const updateMany = jest.fn().mockResolvedValue({ modifiedCount: 1 });
     const Mensualidad = {

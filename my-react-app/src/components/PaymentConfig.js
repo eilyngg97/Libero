@@ -143,7 +143,7 @@ function PaymentConfig() {
     const fechaInicioRecargo = new Date(
       hoy.getFullYear(),
       hoy.getMonth(),
-      diaVencimiento + diasTolerancia + 1
+      diaVencimiento + diasTolerancia
     );
 
     return fechaInicioRecargo.toLocaleDateString('es-VE', {

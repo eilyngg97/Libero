@@ -31,7 +31,7 @@ const construirFechaPeriodoConDia = (mes, anio, dia) => {
 const parseFechaSinDesfase = (value) => {
   if (!value) return null;
   const raw = String(value).trim();
-  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (matchIso) {
     const year = Number(matchIso[1]);
     const month = Number(matchIso[2]);
@@ -41,7 +41,16 @@ const parseFechaSinDesfase = (value) => {
   }
 
   const fecha = new Date(value);
-  return Number.isNaN(fecha.getTime()) ? null : fecha;
+  if (Number.isNaN(fecha.getTime())) return null;
+
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric'
+  }).formatToParts(fecha);
+  const obtenerParte = (tipo) => Number(partes.find((parte) => parte.type === tipo)?.value);
+  return new Date(obtenerParte('year'), obtenerParte('month') - 1, obtenerParte('day'));
 };
 
 function PanelOpcionesUsuario() {
