@@ -401,6 +401,144 @@ function renderTemplate(text = '', variables = {}) {
   });
 }
 
+function buildConstanciaBodyRuns(text = '', variables = {}, emphasizedKeys = []) {
+  const emphasizedValues = Array.from(new Set(
+    emphasizedKeys
+      .map((key) => String(variables[key] || '').trim())
+      .filter((value) => value.length >= 3)
+  )).sort((left, right) => right.length - left.length);
+
+  if (!emphasizedValues.length) return [{ text: String(text || ''), bold: false }];
+
+  const matcher = new RegExp(emphasizedValues.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+  const runs = [];
+  let cursor = 0;
+  let match;
+
+  while ((match = matcher.exec(String(text || ''))) !== null) {
+    if (match.index > cursor) runs.push({ text: String(text).slice(cursor, match.index), bold: false });
+    runs.push({ text: match[0], bold: true });
+    cursor = matcher.lastIndex;
+  }
+
+  if (cursor < String(text || '').length) runs.push({ text: String(text).slice(cursor), bold: false });
+  return runs.length ? runs : [{ text: String(text || ''), bold: false }];
+}
+
+function renderConstanciaBody(doc, runs, typography, options) {
+  if (typeof doc.widthOfString !== 'function' || typeof doc.currentLineHeight !== 'function') {
+    doc.font(typography.regular).fillColor('#000000').fontSize(typography.size).text(
+      runs.map((run) => run.text).join(''),
+      options
+    );
+    return;
+  }
+
+  const tokens = [];
+  let pendingSpace = false;
+
+  runs.forEach((run) => {
+    const parts = String(run.text || '').replace(/\r\n?/g, '\n').match(/\n|[^\S\n]+|[^\s\n]+/g) || [];
+    parts.forEach((part) => {
+      if (part === '\n') {
+        tokens.push({ lineBreak: true });
+        pendingSpace = false;
+      } else if (/^[^\S\n]+$/.test(part)) {
+        pendingSpace = true;
+      } else {
+        if (pendingSpace && tokens.length && !tokens[tokens.length - 1].lineBreak) {
+          tokens.push({ space: true });
+        }
+        tokens.push({
+          text: part,
+          bold: Boolean(run.bold),
+          glueLeft: /^[,.;:!?%)\]}]/.test(part)
+        });
+        pendingSpace = false;
+      }
+    });
+  });
+
+  doc.font(typography.regular).fontSize(typography.size);
+  const availableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const indent = Math.max(0, Number(options?.indent) || 0);
+  const lineGap = Math.max(0, Number(options?.lineGap) || 0);
+  const lineHeight = doc.currentLineHeight(true) + lineGap;
+  const spaceWidth = doc.widthOfString(' ');
+  const margins = doc.page.margins;
+  let y = doc.y;
+  let paragraph = [];
+
+  const drawParagraph = () => {
+    if (!paragraph.length) {
+      y += lineHeight;
+      return;
+    }
+
+    const measuredWords = paragraph.map((word) => {
+      doc.font(word.bold ? typography.bold : typography.regular).fontSize(typography.size);
+      return { ...word, width: doc.widthOfString(word.text) };
+    });
+    const lines = [];
+    let line = [];
+    let lineWidth = 0;
+
+    measuredWords.forEach((word) => {
+      const firstLineIndent = lines.length === 0 ? indent : 0;
+      const maxWidth = availableWidth - firstLineIndent;
+      const gapBeforeWord = line.length && !word.glueLeft ? spaceWidth : 0;
+      const nextWidth = lineWidth + gapBeforeWord + word.width;
+      if (line.length && nextWidth > maxWidth) {
+        lines.push(line);
+        line = [word];
+        lineWidth = word.width;
+      } else {
+        line.push(word);
+        lineWidth = nextWidth;
+      }
+    });
+    if (line.length) lines.push(line);
+
+    lines.forEach((lineWords, lineIndex) => {
+      if (y + lineHeight > doc.page.height - margins.bottom) {
+        doc.addPage();
+        y = doc.y;
+      }
+
+      const lineIndent = lineIndex === 0 ? indent : 0;
+      const lineMaxWidth = availableWidth - lineIndent;
+      const wordsWidth = lineWords.reduce((total, word) => total + word.width, 0);
+      const gapCount = lineWords.filter((word, wordIndex) => wordIndex > 0 && !word.glueLeft).length;
+      const justify = options?.align === 'justify' && lineIndex < lines.length - 1 && gapCount > 0;
+      const gapWidth = justify ? (lineMaxWidth - wordsWidth) / gapCount : spaceWidth;
+      let x = margins.left + lineIndent;
+
+      lineWords.forEach((word, wordIndex) => {
+        doc.font(word.bold ? typography.bold : typography.regular).fillColor('#000000').fontSize(typography.size);
+        doc.text(word.text, x, y, { lineBreak: false });
+        const nextWord = lineWords[wordIndex + 1];
+        x += word.width + (nextWord && !nextWord.glueLeft ? gapWidth : 0);
+      });
+
+      y += lineHeight;
+    });
+
+    paragraph = [];
+  };
+
+  tokens.forEach((token) => {
+    if (token.lineBreak) {
+      drawParagraph();
+    } else if (!token.space) {
+      paragraph.push(token);
+    }
+  });
+  if (paragraph.length) drawParagraph();
+
+  doc.x = margins.left;
+  doc.y = y;
+}
+
 function normalizarHorarioDesdeRequest(reqBody = {}, alumno = {}) {
   const diasRaw = reqBody.diasEntrenamiento;
   const dias = Array.isArray(diasRaw)
@@ -636,29 +774,40 @@ function drawListadoAlumnosTable(doc, alumnos = [], constanciasCfg = {}) {
   const typography = getConstanciaTypography(constanciasCfg);
   const left = doc.page.margins.left;
   const maxWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const rowHeight = 22;
-  const colNro = 44;
-  const colNombres = 190;
-  const colApellidos = 190;
-  const colCategoria = Math.max(70, maxWidth - colNro - colNombres - colApellidos);
+  const headerHeight = 22;
+  const colNro = 40;
+  const colCategoria = Math.min(maxWidth - colNro - 120, Math.max(130, Math.round(maxWidth * 0.32)));
+  const colNombres = Math.floor((maxWidth - colNro - colCategoria) / 2);
+  const colApellidos = maxWidth - colNro - colCategoria - colNombres;
+  const cellTextWidths = [colNro - 12, colNombres - 12, colApellidos - 12, colCategoria - 12];
 
   const drawHeader = () => {
     const y = doc.y;
     doc.save();
-    doc.rect(left, y, maxWidth, rowHeight).fill('#f1f5f9').stroke('#cbd5e1');
+    doc.rect(left, y, maxWidth, headerHeight).fill('#f1f5f9').stroke('#cbd5e1');
     doc.fillColor('#0f172a').fontSize(10).font(typography.bold);
     doc.text('NRO', left + 6, y + 6, { width: colNro - 12, align: 'left' });
     doc.text('NOMBRES', left + colNro + 6, y + 6, { width: colNombres - 12, align: 'left' });
     doc.text('APELLIDOS', left + colNro + colNombres + 6, y + 6, { width: colApellidos - 12, align: 'left' });
     doc.text('CAT', left + colNro + colNombres + colApellidos + 6, y + 6, { width: colCategoria - 12, align: 'left' });
     doc.restore();
-    doc.y = y + rowHeight;
+    doc.y = y + headerHeight;
   };
 
   drawHeader();
 
   alumnos.forEach((alumno, index) => {
-    ensureSpace(doc, rowHeight + 18);
+    const values = [
+      String(index + 1),
+      String(alumno.nombres || ''),
+      String(alumno.apellidos || ''),
+      String(alumno.categoria || '-')
+    ];
+    doc.font(typography.regular).fontSize(10);
+    const rowHeight = Math.max(22, ...values.map((value, cellIndex) => (
+      doc.heightOfString(value, { width: cellTextWidths[cellIndex] }) + 12
+    )));
+
     if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom) {
       doc.addPage();
       drawHeader();
@@ -667,10 +816,10 @@ function drawListadoAlumnosTable(doc, alumnos = [], constanciasCfg = {}) {
     const y = doc.y;
     doc.rect(left, y, maxWidth, rowHeight).stroke('#cbd5e1');
     doc.font(typography.regular).fontSize(10).fillColor('#111827');
-    doc.text(String(index + 1), left + 6, y + 6, { width: colNro - 12, align: 'left', ellipsis: true });
-    doc.text(String(alumno.nombres || ''), left + colNro + 6, y + 6, { width: colNombres - 12, align: 'left', ellipsis: true });
-    doc.text(String(alumno.apellidos || ''), left + colNro + colNombres + 6, y + 6, { width: colApellidos - 12, align: 'left', ellipsis: true });
-    doc.text(String(alumno.categoria || '-'), left + colNro + colNombres + colApellidos + 6, y + 6, { width: colCategoria - 12, align: 'left', ellipsis: true });
+    doc.text(values[0], left + 6, y + 6, { width: cellTextWidths[0], align: 'left' });
+    doc.text(values[1], left + colNro + 6, y + 6, { width: cellTextWidths[1], align: 'left' });
+    doc.text(values[2], left + colNro + colNombres + 6, y + 6, { width: cellTextWidths[2], align: 'left' });
+    doc.text(values[3], left + colNro + colNombres + colApellidos + 6, y + 6, { width: cellTextWidths[3], align: 'left' });
     doc.y = y + rowHeight;
   });
 
@@ -783,12 +932,13 @@ function renderFirmaYPie(doc, constanciasCfg, logosInstitucionales = [], opcione
     doc.y = inicioObjetivoBloqueY;
   } else {
     const bottomSafeY = doc.page.height - doc.page.margins.bottom - espacioReservadoInferior - 8;
-    let inicioObjetivoBloqueY = bottomSafeY - alturaEstimadaBloque;
-    if (doc.y > inicioObjetivoBloqueY) {
+    const separacionFirmaDesdeCuerpo = 86;
+    let inicioObjetivoBloqueY = doc.y + separacionFirmaDesdeCuerpo;
+    if (inicioObjetivoBloqueY + alturaEstimadaBloque > bottomSafeY) {
       doc.addPage();
-      inicioObjetivoBloqueY = doc.page.height - doc.page.margins.bottom - espacioReservadoInferior - 8 - alturaEstimadaBloque;
+      inicioObjetivoBloqueY = doc.y + separacionFirmaDesdeCuerpo;
     }
-    doc.y = Math.max(doc.y, inicioObjetivoBloqueY);
+    doc.y = inicioObjetivoBloqueY;
   }
 
   doc.font(typography.regular).fontSize(10.5);
@@ -850,7 +1000,7 @@ function renderCierreFinal(doc, cierreTexto = '', constanciasCfg = {}) {
 }
 
 function createPdfResponseDocument(res) {
-  const doc = new PDFDocument({ margin: 45 });
+  const doc = new PDFDocument({ margin: 60 });
 
   const chainableNoopMethods = [
     'font',
@@ -1141,7 +1291,12 @@ exports.generarConstancia = async (req, res) => {
       cuerpoTexto = ajustarTiempoAsistenciaEnCuerpo(cuerpoTexto, variables);
     }
 
-    doc.font(typography.regular).fontSize(typography.size).text(cuerpoTexto, {
+    const datosDestacados = tipoConstancia === 'asistencia'
+      ? ['asistencia_nombre', 'asistencia_cedula', 'asistencia_dia_evento', 'asistencia_hora_desde', 'asistencia_hora_hasta', 'asistencia_motivo_evento']
+      : ['alumno_nombre_completo', 'alumno_cedula', 'alumno_categoria', 'sede_nombre', 'horario_resumen'];
+    const cuerpoRuns = buildConstanciaBodyRuns(cuerpoTexto, variables, datosDestacados);
+
+    renderConstanciaBody(doc, cuerpoRuns, typography, {
       align: 'justify',
       lineGap: 3,
       indent: CUERPO_PRIMERA_LINEA_SANGRIA
