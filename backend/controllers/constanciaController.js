@@ -1240,6 +1240,7 @@ exports.generarConstancia = async (req, res) => {
       alumno_fecha_nacimiento: formatFechaAlumno(alumno?.fecha_nacimiento),
       alumno_fecha_ingreso_academia: formatFechaAlumno(alumno?.fecha_inscripcion),
       alumno_categoria: String(alumno?.categoria || '-').trim(),
+      alumno_colegio: String(alumno?.colegio_institucion || '').trim(),
       sede_nombre: String(alumno?.sede?.nombre || '-').trim(),
       fecha_emision_texto: fechaTexto || 'en fecha actual',
       horario_resumen: horarioResumen,

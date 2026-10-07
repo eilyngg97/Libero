@@ -1523,11 +1523,20 @@ describe('Backend smoke tests', () => {
 
   test('POST /api/constancias generates pdf', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const colegioConfig = {
+      constancias: { templates: { simple: { cuerpo: 'Colegio: {{alumno_colegio}}.' } } }
+    };
+    const configLean = jest.fn().mockResolvedValue(colegioConfig);
+    require('../models/TenantConfig').findOne.mockReturnValueOnce({
+      lean: configLean,
+      select: jest.fn().mockReturnValue({ lean: configLean })
+    });
 
     const alumnoDoc = {
       nombres: 'Ana',
       apellidos: 'Lopez',
       cedula: '12345678',
+      colegio_institucion: ' Colegio Central ',
       sede: { nombre: 'Centro' }
     };
 
@@ -1545,6 +1554,8 @@ describe('Backend smoke tests', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('application/pdf');
+    const pdfDoc = require('pdfkit').mock.results.slice(-1)[0].value;
+    expect(pdfDoc.text).toHaveBeenCalledWith('Colegio: Colegio Central.', expect.any(Object));
   });
 
   describe('Constancias de alumnos', () => {

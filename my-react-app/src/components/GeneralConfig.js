@@ -1448,7 +1448,7 @@ function GeneralConfig() {
                                 minRows={4}
                                 value={constanciasConfig.templates.retiro.cuerpo}
                                 onChange={(e) => updateTemplateField('retiro', 'cuerpo', e.target.value)}
-                                helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{sede_nombre}}, {{fecha_emision_texto}}"
+                                helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_colegio}}, {{sede_nombre}}, {{fecha_emision_texto}}"
                                 InputLabelProps={{ shrink: true }}
                                 sx={fieldLabelSx}
                               />
@@ -1613,7 +1613,7 @@ function GeneralConfig() {
                             </Box>
 
                             <Box sx={{ display: 'grid', gap: 1.5 }}>
-                              <TextField label="Cuerpo" size="small" multiline minRows={5} value={constanciasConfig.retiro_personalizado.template.cuerpo} onChange={(e) => updateRetiroTemplateField('cuerpo', e.target.value)} helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_fecha_nacimiento}}, {{alumno_fecha_ingreso_academia}}, {{sede_nombre}}, {{fecha_emision_texto}}" InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Cuerpo" size="small" multiline minRows={5} value={constanciasConfig.retiro_personalizado.template.cuerpo} onChange={(e) => updateRetiroTemplateField('cuerpo', e.target.value)} helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_colegio}}, {{alumno_fecha_nacimiento}}, {{alumno_fecha_ingreso_academia}}, {{sede_nombre}}, {{fecha_emision_texto}}" InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
                               <TextField label="Lugar de emision" size="small" value={constanciasConfig.retiro_personalizado.template.lugarEmision} onChange={(e) => updateRetiroTemplateField('lugarEmision', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
                             </Box>
                           </AccordionDetails>
@@ -1647,7 +1647,7 @@ function GeneralConfig() {
                             minRows={4}
                             value={constanciasConfig.templates[section.key].cuerpo}
                             onChange={(e) => updateTemplateField(section.key, 'cuerpo', e.target.value)}
-                            helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{sede_nombre}}, {{horario_resumen}}, {{cantidad_alumnos}}, {{fecha_emision_texto}}, {{asistencia_persona_label}}, {{asistencia_nombre}}, {{asistencia_cedula}}, {{asistencia_dia_evento}}, {{asistencia_hora_desde}}, {{asistencia_hora_hasta}}, {{asistencia_motivo_evento}}, {{asistencia_verbo_presencia}}"
+                            helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_colegio}}, {{sede_nombre}}, {{horario_resumen}}, {{cantidad_alumnos}}, {{fecha_emision_texto}}, {{asistencia_persona_label}}, {{asistencia_nombre}}, {{asistencia_cedula}}, {{asistencia_dia_evento}}, {{asistencia_hora_desde}}, {{asistencia_hora_hasta}}, {{asistencia_motivo_evento}}, {{asistencia_verbo_presencia}}"
                             InputLabelProps={{ shrink: true }}
                             sx={fieldLabelSx}
                           />
