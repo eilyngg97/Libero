@@ -189,6 +189,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const XLSX = require('xlsx');
 const User = require('../models/User');
 const Alumno = require('../models/Alumno');
 const Representante = require('../models/Representante');
@@ -1652,6 +1653,51 @@ describe('Backend smoke tests', () => {
       expect(response.body.error).toContain('10 MB');
       expect(Alumno).not.toHaveBeenCalled();
     });
+  });
+
+  test('POST /api/alumnos/importar-excel incluye colegio en la vista previa', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'super_admin', nombre: 'Admin' });
+    const sedeId = '507f1f77bcf86cd799439011';
+    const { getTenantModel } = require('../services/tenantModelService');
+    const originalGetTenantModel = getTenantModel.getMockImplementation();
+    getTenantModel.mockImplementation((connection, modelName) => {
+      const model = originalGetTenantModel(connection, modelName);
+      if (modelName === 'Sede') {
+        model.findById = jest.fn(() => ({
+          select: jest.fn().mockResolvedValue({ _id: sedeId, nombre: 'Sede de prueba' })
+        }));
+      }
+      return model;
+    });
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['NOMBRES', 'APELLIDOS', 'COLEGIO'],
+      ['Ana', 'Perez', 'Colegio de prueba']
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Alumnos');
+
+    try {
+      const response = await request(app)
+        .post('/api/alumnos/importar-excel')
+        .set('Authorization', `Bearer ${token}`)
+        .field('sede', sedeId)
+        .field('dryRun', '1')
+        .attach('archivo', XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), {
+          filename: 'alumnos.xlsx',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.detalle.creados[0]).toEqual(expect.objectContaining({
+        nombres: 'Ana',
+        apellidos: 'Perez',
+        colegio_institucion: 'Colegio de prueba'
+      }));
+      expect(Alumno).not.toHaveBeenCalled();
+    } finally {
+      getTenantModel.mockImplementation(originalGetTenantModel);
+    }
   });
 
   test('POST /api/alumnos allows create without numero_franela', async () => {

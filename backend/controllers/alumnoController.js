@@ -574,6 +574,7 @@ function parseAlumnoExcelRows(fileBuffer) {
 
   const idxFechaIngreso = findColumnIndexByCandidates(headerRow, ['FECHA INGRESO', 'FECHA DE INGRESO', 'INGRESO']);
   const idxClasif = findColumnIndexByCandidates(headerRow, ['CLASIF INTERNA', 'CLASIFICACION INTERNA', 'CATEGORIA']);
+  const idxColegioInstitucion = findColumnIndexByCandidates(headerRow, ['COLEGIO', 'INSTITUCION', 'INSTITUCION EDUCATIVA', 'COLEGIO INSTITUCION', 'COLEGIO / INSTITUCION', 'COLEGIO/INSTITUCION']);
   const idxNumeroFranela = findColumnIndexByCandidates(headerRow, ['NRO DE FRANELA', 'NRO FRANELA', 'NUMERO FRANELA']);
   const idxDireccion = findColumnIndexByCandidates(headerRow, ['DIRECCION', 'DOMICILIO']);
   const idxRepTelefono = findColumnIndexByCandidates(headerRow, ['NRO DE TEL DEL REPRESENTANTE', 'TELEFONO REPRESENTANTE', 'TEL REPRESENTANTE', 'TELEFONO']);
@@ -592,6 +593,7 @@ function parseAlumnoExcelRows(fileBuffer) {
     const fecha_nacimiento = idxFechaNac >= 0 ? parseExcelDateInput(row[idxFechaNac]) : null;
     const fecha_inscripcion = idxFechaIngreso >= 0 ? parseExcelDateInput(row[idxFechaIngreso]) : null;
     const categoria = idxClasif >= 0 ? String(row[idxClasif] || '').trim() : '';
+    const colegio_institucion = idxColegioInstitucion >= 0 ? String(row[idxColegioInstitucion] || '').trim() : '';
     const domicilio = idxDireccion >= 0 ? String(row[idxDireccion] || '').trim() : '';
     const numeroFranelaRaw = idxNumeroFranela >= 0 ? row[idxNumeroFranela] : '';
     const representanteRaw = idxRepresentante >= 0 ? String(row[idxRepresentante] || '').trim() : '';
@@ -619,6 +621,7 @@ function parseAlumnoExcelRows(fileBuffer) {
       fecha_nacimiento,
       fecha_inscripcion,
       categoria,
+      colegio_institucion,
       domicilio,
       numero_franela: numeroFranelaRaw,
       representante_nombre_completo: representanteRaw,
@@ -1998,6 +2001,7 @@ exports.importarAlumnosExcel = async (req, res) => {
           fecha_inscripcion: row.fecha_inscripcion || undefined,
           fecha_nacimiento: row.fecha_nacimiento || undefined,
           cedula: row.cedula || undefined,
+          colegio_institucion: row.colegio_institucion || undefined,
           domicilio: row.domicilio || undefined,
           sinRepresentante: true
         };
@@ -2151,6 +2155,7 @@ exports.importarAlumnosExcel = async (req, res) => {
             fila: row.excelRow,
             nombres: alumnoData.nombres,
             apellidos: alumnoData.apellidos,
+            colegio_institucion: alumnoData.colegio_institucion,
             preview: true,
             representanteDetectado: Boolean(tieneDatosRepresentante)
           });
