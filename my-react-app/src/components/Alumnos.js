@@ -19,6 +19,7 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import IconButton from '@mui/material/IconButton';
 import ImageCropDialog, { fileToDataUrl, prepareImageFile } from './ImageCropDialog';
+import AlumnoDocumentos from './AlumnoDocumentos';
 
 // ...existing code...
 // Opciones de parentesco para el representante
@@ -104,6 +105,7 @@ function Alumnos() {
     fecha_inicio_cobro: new Date().toISOString().split('T')[0],
     division: '',
     sexo: '',
+    colegio_institucion: '',
     tipo_mensualidad: 'monto_sede',
     numero_franela: '',
     habilitar_pago_cuotas: false,
@@ -163,6 +165,7 @@ function Alumnos() {
   }, [form.sinRepresentante]);
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoCedulaFile, setFotoCedulaFile] = useState(null);
+  const [documentosFiles, setDocumentosFiles] = useState({});
   const [fotoCrop, setFotoCrop] = useState(null);
   const [cedulaCrop, setCedulaCrop] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -658,6 +661,9 @@ function Alumnos() {
     if (fotoCedulaFile) {
       formData.append('foto_cedula', fotoCedulaFile);
     }
+    Object.entries(documentosFiles).forEach(([campo, archivo]) => {
+      if (archivo) formData.append(campo, archivo);
+    });
     return formData;
   }
 
@@ -678,6 +684,7 @@ function Alumnos() {
       setFotoFile(null);
       setPreviewCedula(null);
       setFotoCedulaFile(null);
+      setDocumentosFiles({});
       setTimeout(() => {
         navigate('/tabla-alumnos');
       }, 1200);
@@ -920,6 +927,12 @@ function Alumnos() {
                 )}
               </Box>
             </Paper>
+
+            <AlumnoDocumentos
+              files={documentosFiles}
+              onChange={(campo, archivo) => setDocumentosFiles((prev) => ({ ...prev, [campo]: archivo }))}
+              disabled={loading || loadingMensualidad}
+            />
 
             <Paper sx={{ p: 2.5, borderRadius: 3, boxShadow: '0 6px 18px rgba(15, 23, 42, 0.06)' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1203,6 +1216,9 @@ function Alumnos() {
           <div className="form-row">
             <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
             <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }}/>
+          </div>
+          <div className="form-row">
+            <TextField id="outlined-basic-colegio-institucion" label="Colegio / Institución" name="colegio_institucion" variant="outlined" value={form.colegio_institucion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
           </div>
           <div className="form-row">
             <TextField id="outlined-basic-peso" InputProps={{ endAdornment: <InputAdornment position="end">kg</InputAdornment> }} label="Peso" name="peso" variant="outlined" value={form.peso || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />

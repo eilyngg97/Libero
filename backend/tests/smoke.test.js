@@ -1546,6 +1546,114 @@ describe('Backend smoke tests', () => {
     expect(response.headers['content-type']).toContain('application/pdf');
   });
 
+  describe('Constancias de alumnos', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const campos = ['constancia_estudio', 'constancia_nino_sano'];
+
+    beforeEach(() => {
+      Alumno.findOne.mockResolvedValue(null);
+      Alumno.findById.mockReturnValue({
+        select: jest.fn().mockResolvedValue({
+          _id: 'a1', nombres: 'Ana', apellidos: 'Perez',
+          usuario: null, representante: null, tipo_mensualidad: 'monto_sede'
+        })
+      });
+      Alumno.findByIdAndUpdate.mockResolvedValue({ _id: 'a1' });
+    });
+
+    afterEach(() => {
+      const payloads = [
+        ...Alumno.mock.calls.map(([payload]) => payload),
+        ...Alumno.findByIdAndUpdate.mock.calls.map(([, payload]) => payload)
+      ];
+      for (const payload of payloads) {
+        for (const campo of campos) {
+          const url = payload?.[campo];
+          if (typeof url === 'string' && /^\/uploads\/[^/]+\/alumnos\/\d+-\d+\.[a-z]+$/.test(url)) {
+            fs.rmSync(path.join(__dirname, '..', url.slice(1)), { force: true });
+          }
+        }
+      }
+    });
+
+    test.each([
+      ['pdf', 'application/pdf', Buffer.from('%PDF-1.4\n%%EOF')],
+      ['png', 'image/png', Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])],
+      ['jpg', 'image/jpeg', Buffer.from([255, 216, 255, 217])]
+    ])('POST /api/alumnos guarda ambas constancias en formato %s', async (extension, contentType, contenido) => {
+      const token = makeToken({ id: 'admin1', rol: 'admin' });
+      const response = await request(app)
+        .post('/api/alumnos')
+        .set('Authorization', `Bearer ${token}`)
+        .field('nombres', 'Ana')
+        .field('apellidos', 'Perez')
+        .field('sede', 's1')
+        .field('fecha_inicio_cobro', '2026-03-06')
+        .attach('constancia_estudio', contenido, { filename: `estudio.${extension}`, contentType })
+        .attach('constancia_nino_sano', contenido, { filename: `salud.${extension}`, contentType });
+
+      expect(response.status).toBe(201);
+      const payload = Alumno.mock.calls[0][0];
+      const { resolveRequestTenantId } = require('../services/tenantFallbackService');
+      const prefix = `/uploads/${resolveRequestTenantId({})}/alumnos/`;
+      for (const campo of campos) {
+        expect(payload[campo].startsWith(prefix)).toBe(true);
+        expect(payload[campo].endsWith(`.${extension}`)).toBe(true);
+      }
+    });
+
+    test('PUT /api/alumnos reemplaza constancias con imagen y PDF', async () => {
+      const token = makeToken({ id: 'admin1', rol: 'admin' });
+      const response = await request(app)
+        .put('/api/alumnos/a1')
+        .set('Authorization', `Bearer ${token}`)
+        .attach('constancia_estudio', Buffer.from('%PDF-1.4\n%%EOF'), { filename: 'estudio.pdf', contentType: 'application/pdf' })
+        .attach('constancia_nino_sano', Buffer.from([255, 216, 255, 217]), { filename: 'salud.jpg', contentType: 'image/jpeg' });
+
+      expect(response.status).toBe(200);
+      const payload = Alumno.findByIdAndUpdate.mock.calls[0][1];
+      expect(payload.constancia_estudio).toMatch(/^\/uploads\/[^/]+\/alumnos\/.*\.pdf$/);
+      expect(payload.constancia_nino_sano).toMatch(/^\/uploads\/[^/]+\/alumnos\/.*\.jpg$/);
+    });
+
+    test('PUT /api/alumnos conserva constancias si no hay archivos nuevos e ignora URLs externas', async () => {
+      const token = makeToken({ id: 'admin1', rol: 'admin' });
+      const response = await request(app)
+        .put('/api/alumnos/a1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ constancia_estudio: '/uploads/otra-academia/alumnos/privado.pdf', constancia_nino_sano: '' });
+
+      expect(response.status).toBe(200);
+      const payload = Alumno.findByIdAndUpdate.mock.calls[0][1];
+      for (const campo of campos) expect(payload).not.toHaveProperty(campo);
+    });
+
+    test.each(campos)('POST /api/alumnos rechaza HTML en %s', async (campo) => {
+      const token = makeToken({ id: 'admin1', rol: 'admin' });
+      const response = await request(app)
+        .post('/api/alumnos')
+        .set('Authorization', `Bearer ${token}`)
+        .attach(campo, Buffer.from('<html></html>'), { filename: 'archivo.html', contentType: 'text/html' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('imagenes o archivos PDF');
+      expect(Alumno).not.toHaveBeenCalled();
+    });
+
+    test('POST /api/alumnos rechaza constancia mayor a 10 MB', async () => {
+      const token = makeToken({ id: 'admin1', rol: 'admin' });
+      const response = await request(app)
+        .post('/api/alumnos')
+        .set('Authorization', `Bearer ${token}`)
+        .attach('constancia_estudio', Buffer.alloc(10 * 1024 * 1024 + 1), { filename: 'estudio.pdf', contentType: 'application/pdf' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('10 MB');
+      expect(Alumno).not.toHaveBeenCalled();
+    });
+  });
+
   test('POST /api/alumnos allows create without numero_franela', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 

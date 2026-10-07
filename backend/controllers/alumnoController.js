@@ -2436,6 +2436,12 @@ exports.createAlumno = async (req, res) => {
       alumnoData.foto_cedula = buildUploadUrl(req, cedulaFile, 'alumnos');
     }
 
+    for (const campo of ['constancia_estudio', 'constancia_nino_sano']) {
+      delete alumnoData[campo];
+      const archivo = req.files?.[campo]?.[0];
+      if (archivo) alumnoData[campo] = buildUploadUrl(req, archivo, 'alumnos');
+    }
+
     const alumno = new TenantAlumno(alumnoData);
     await alumno.save();
 
@@ -3318,6 +3324,12 @@ exports.updateAlumno = async (req, res) => {
     if (req.files && req.files['foto_cedula'] && req.files['foto_cedula'][0]) {
       const cedulaFile = req.files['foto_cedula'][0];
       updateData.foto_cedula = buildUploadUrl(req, cedulaFile, 'alumnos');
+    }
+
+    for (const campo of ['constancia_estudio', 'constancia_nino_sano']) {
+      delete updateData[campo];
+      const archivo = req.files?.[campo]?.[0];
+      if (archivo) updateData[campo] = buildUploadUrl(req, archivo, 'alumnos');
     }
 
     const cedulaObjetivo = updateData.cedula !== undefined

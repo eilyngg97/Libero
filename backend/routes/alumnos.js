@@ -40,6 +40,35 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+const alumnoUpload = multer({
+	storage,
+	limits: { fileSize: 10 * 1024 * 1024 },
+	fileFilter: (req, file, cb) => {
+		if (['constancia_estudio', 'constancia_nino_sano'].includes(file.fieldname)) {
+			const ext = path.extname(file.originalname || '').toLowerCase();
+			const esPdf = file.mimetype === 'application/pdf' && ext === '.pdf';
+			const esImagen = file.mimetype.startsWith('image/')
+				&& ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp', '.tif', '.tiff', '.heic', '.heif'].includes(ext);
+			if (!esPdf && !esImagen) return cb(new Error('Las constancias deben ser imagenes o archivos PDF.'));
+		}
+		return cb(null, true);
+	}
+}).fields([
+	{ name: 'foto', maxCount: 1 },
+	{ name: 'foto_cedula', maxCount: 1 },
+	{ name: 'constancia_estudio', maxCount: 1 },
+	{ name: 'constancia_nino_sano', maxCount: 1 }
+]);
+
+function uploadAlumno(req, res, next) {
+	alumnoUpload(req, res, (error) => {
+		if (error) {
+			return res.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'Cada archivo debe pesar como maximo 10 MB.' : error.message });
+		}
+		return next();
+	});
+}
+
 const importUpload = multer({
 	storage: multer.memoryStorage(),
 	limits: { fileSize: 8 * 1024 * 1024 },
@@ -59,7 +88,7 @@ router.get('/numeros-franela/disponibilidad', authMiddleware, alumnoController.g
 router.get('/categoria-sugerida', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.getCategoriaSugerida);
 router.get('/asignar-categorias/preview', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.previewAsignarCategoriasMasivamente);
 router.post('/importar-excel', authMiddleware, superAdminMiddleware, importUpload.single('archivo'), alumnoController.importarAlumnosExcel);
-router.post('/', authMiddleware, permisoMiddleware('alumnos.manage'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.createAlumno);
+router.post('/', authMiddleware, permisoMiddleware('alumnos.manage'), uploadAlumno, alumnoController.createAlumno);
 router.get('/por-representante/:representanteId', authMiddleware, ensureRepresentanteOwnershipFromParam('representanteId'), alumnoController.getAlumnosPorRepresentante);
 router.get('/:id/historial-estados', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getHistorialEstadosAlumno);
 router.get('/:id/reposos', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.getRepososAlumno);
@@ -74,7 +103,7 @@ router.put('/asignar-categorias', authMiddleware, permisoMiddleware('alumnos.man
 router.get('/:id/ficha-tecnica', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.descargarFichaTecnica);
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
 router.patch('/:id/requisitos-recaudos', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.actualizarEstadoRequisitoRecaudoAlumno);
-router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), upload.fields([{ name: 'foto', maxCount: 1 }, { name: 'foto_cedula', maxCount: 1 }]), alumnoController.updateAlumno);
+router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), uploadAlumno, alumnoController.updateAlumno);
 router.get('/:id/baja-preview', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.previewBajaAlumno);
 router.patch('/:id/baja', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.darDeBajaAlumno);
 router.patch('/:id/anular-baja', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.anularBajaAlumno);
