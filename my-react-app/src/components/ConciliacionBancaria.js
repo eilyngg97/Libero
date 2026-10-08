@@ -294,6 +294,27 @@ export default function ConciliacionBancaria() {
     setDialogConfirmParcialesOpen(true);
   };
 
+  const rechazarPagoAgrupado = async (pagoAgrupadoId) => {
+    if (!pagoAgrupadoId || !window.confirm('¿Rechazar este pago agrupado y retirar todas sus asignaciones?')) return;
+    setConfirmando(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/conciliacion/pagos-agrupados/${pagoAgrupadoId}/rechazar`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo: 'Rechazado desde conciliación bancaria' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error al rechazar el pago agrupado');
+      setSuccess(`Pago agrupado rechazado. Se actualizaron ${data.mensualidades_actualizadas || 0} mensualidades.`);
+      if (archivo) await procesarArchivo(archivo);
+    } catch (err) {
+      setError(err.message || 'Error al rechazar el pago agrupado');
+    } finally {
+      setConfirmando(false);
+    }
+  };
+
   const ejecutarConfirmacionParciales = async () => {
     setDialogConfirmParcialesOpen(false);
 
@@ -348,6 +369,7 @@ export default function ConciliacionBancaria() {
     const total = (resultado.match_total || []).map((row) => ({
       tipo: 'match_total',
       pagoId: row.sistema?.pago_id || '',
+      pagoAgrupadoId: row.sistema?.pago_agrupado_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
@@ -371,6 +393,7 @@ export default function ConciliacionBancaria() {
     const parcial = (resultado.match_parcial || []).map((row) => ({
       tipo: 'match_parcial',
       pagoId: row.sistema?.pago_id || '',
+      pagoAgrupadoId: row.sistema?.pago_agrupado_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
@@ -394,6 +417,7 @@ export default function ConciliacionBancaria() {
     const noSistema = (resultado.sin_coincidencia_sistema || []).map((row) => ({
       tipo: 'sin_coincidencia',
       pagoId: row.sistema?.pago_id || '',
+      pagoAgrupadoId: row.sistema?.pago_agrupado_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
       referenciaSistema: row.sistema?.referencia || '-',
@@ -417,6 +441,7 @@ export default function ConciliacionBancaria() {
     const noExcel = (resultado.sin_coincidencia_excel || []).map((row) => ({
       tipo: 'sin_coincidencia',
       pagoId: '',
+      pagoAgrupadoId: '',
       alumno: '-',
       contextoSistema: '',
       referenciaSistema: '-',
@@ -749,6 +774,11 @@ export default function ConciliacionBancaria() {
                     <span className="label">Motivo</span>
                     <span className="value">{fila.motivo}</span>
                   </div>
+                  {fila.pagoAgrupadoId && (
+                    <Button color="error" variant="outlined" size="small" disabled={confirmando} onClick={() => rechazarPagoAgrupado(fila.pagoAgrupadoId)}>
+                      Rechazar pago agrupado
+                    </Button>
+                  )}
                 </article>
               ))}
 
@@ -795,6 +825,7 @@ export default function ConciliacionBancaria() {
                     <TableCell>Fecha Sistema</TableCell>
                     <TableCell>Fecha Excel</TableCell>
                     <TableCell>Motivo</TableCell>
+                    <TableCell>Acciones</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -834,11 +865,18 @@ export default function ConciliacionBancaria() {
                       <TableCell>{fila.fechaSistema || '-'}</TableCell>
                       <TableCell>{fila.fechaExcel || '-'}</TableCell>
                       <TableCell>{fila.motivo}</TableCell>
+                      <TableCell>
+                        {fila.pagoAgrupadoId ? (
+                          <Button color="error" variant="text" size="small" disabled={confirmando} onClick={() => rechazarPagoAgrupado(fila.pagoAgrupadoId)}>
+                            Rechazar
+                          </Button>
+                        ) : '-'}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {filasComparativas.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={19}>
+                      <TableCell colSpan={20}>
                         <Typography variant="body2" sx={{ py: 1.5, color: '#64748b' }}>
                           No hay filas para mostrar.
                         </Typography>

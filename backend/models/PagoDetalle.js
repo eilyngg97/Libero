@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const PagoDetalleSchema = new mongoose.Schema({
   id_mensualidad: { type: mongoose.Schema.Types.ObjectId, ref: 'Mensualidad', required: true },
+  id_pago_agrupado: { type: mongoose.Schema.Types.ObjectId, ref: 'PagoAgrupado', default: null },
   concepto: { type: String },
   origen: { type: String },
   conceptos_detalle: [{
@@ -34,5 +35,7 @@ const PagoDetalleSchema = new mongoose.Schema({
     origen: { type: String, default: '' }
   }
 }, { timestamps: true });
+
+PagoDetalleSchema.index({ id_pago_agrupado: 1 });
 
 module.exports = mongoose.model('PagoDetalle', PagoDetalleSchema);

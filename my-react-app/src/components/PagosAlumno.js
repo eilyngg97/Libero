@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, Typography, Box, Button, Chip, Snackbar, Alert, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, TextField, MenuItem, Tooltip } from '@mui/material';
 import { useLocation } from 'react-router-dom';
 import ModalPago from './ModalPago';
+import PagoAgrupadoEditor from './PagoAgrupadoEditor';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
@@ -30,6 +31,8 @@ const normalizarDiaMes = (value) => {
   if (!Number.isInteger(numero) || numero < 1 || numero > 31) return null;
   return numero;
 };
+
+const obtenerIdGrupo = (pago) => pago?.id_pago_agrupado?._id || pago?.id_pago_agrupado || '';
 
 const construirFechaPeriodoConDia = (mes, anio, dia) => {
   const ultimoDiaMes = new Date(anio, mes, 0).getDate();
@@ -87,6 +90,13 @@ function PagosAlumno(props) {
   const [detallePago, setDetallePago] = useState(null);
   const [pagosDetalle, setPagosDetalle] = useState([]);
   const [mensualidadDetalle, setMensualidadDetalle] = useState(null);
+  const creditoAplicadoDetalle = Math.max(0, Number(mensualidadDetalle?.credito_aplicado) || 0);
+  const ajusteDetalle = Number(mensualidadDetalle?.ajuste_extraordinario) || 0;
+  const baseNetaDetalle = Number(mensualidadDetalle?.monto_sin_recargo_usd ?? Math.max(0, Number(mensualidadDetalle?.monto_total || 0) - Number(mensualidadDetalle?.recargo_aplicado_usd || 0)));
+  const baseOriginalDetalle = Number(mensualidadDetalle?.monto_base ?? (baseNetaDetalle + creditoAplicadoDetalle + ajusteDetalle));
+  const [grupoDetalle, setGrupoDetalle] = useState(null);
+  const [errorGrupoDetalle, setErrorGrupoDetalle] = useState('');
+  const [pagoAgrupadoEditandoId, setPagoAgrupadoEditandoId] = useState('');
   const [editandoPago, setEditandoPago] = useState(null);
   const [modalEditarOpen, setModalEditarOpen] = useState(false);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -111,6 +121,7 @@ function PagosAlumno(props) {
   const [confirmarAdelantoOpen, setConfirmarAdelantoOpen] = useState(false);
   const [pagoSuccessDialogOpen, setPagoSuccessDialogOpen] = useState(false);
   const [pagoSuccessData, setPagoSuccessData] = useState(null);
+  const [aplicandoCreditoId, setAplicandoCreditoId] = useState('');
 
   const construirPeriodoLegible = (pagoObj) => {
     if (!pagoObj) return 'Mensualidad';
@@ -140,7 +151,12 @@ function PagosAlumno(props) {
     fecha_vencimiento: m.fecha_vencimiento,
     monto: m.saldo_pendiente ?? m.monto_esperado,
     monto_total: m.monto_total ?? m.monto_esperado,
+    monto_base: m.monto_base,
+    credito_aplicado: m.credito_aplicado || 0,
+    ajuste_extraordinario: m.ajuste_extraordinario || 0,
     total_pagado: m.total_pagado || 0,
+    credito_a_aplicar: m.credito_a_aplicar || 0,
+    saldo_a_favor_disponible: m.saldo_a_favor_disponible,
     estado: m.estatus,
     aplica_recargo: m.aplica_recargo,
     monto_sin_recargo_usd: m.monto_sin_recargo_usd,
@@ -160,7 +176,7 @@ function PagosAlumno(props) {
     if (!alumno?._id) return;
     setLoading(true);
     setError(null);
-    fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?id_alumno=${alumno._id}`, {
+    return fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?id_alumno=${alumno._id}`, {
       headers: getAuthHeaders()
     })
       .then(res => {
@@ -273,7 +289,51 @@ function PagosAlumno(props) {
 
   useEffect(() => {
     fetchMensualidades();
+    window.addEventListener('focus', fetchMensualidades);
+    return () => window.removeEventListener('focus', fetchMensualidades);
   }, [fetchMensualidades]);
+
+  const usarCreditoSinTransferencia = async (pago) => {
+    if (aplicandoCreditoId) return;
+    setAplicandoCreditoId(pago.id);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/credito`, {
+        method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_mensualidad: pago.id, credito_a_aplicar: pago.credito_a_aplicar })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo aplicar el saldo a favor.');
+      await fetchMensualidades();
+      setSuccessMessage('Mensualidad cubierta con saldo a favor, sin transferencia adicional.');
+    } catch (err) {
+      setError(err.message);
+      await fetchMensualidades();
+    } finally {
+      setAplicandoCreditoId('');
+    }
+  };
+
+  const idGrupoDetalle = obtenerIdGrupo(detallePago);
+  useEffect(() => {
+    setGrupoDetalle(null);
+    setErrorGrupoDetalle('');
+    if (!modalDetalle || !idGrupoDetalle) return;
+    const abort = new AbortController();
+    const cargarGrupo = async () => {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/agrupado/${idGrupoDetalle}`, {
+          headers: getAuthHeaders(), signal: abort.signal
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudo consultar la transferencia agrupada.');
+        if (!abort.signal.aborted) setGrupoDetalle(data);
+      } catch (err) {
+        if (!abort.signal.aborted) setErrorGrupoDetalle(err.message || 'No se pudo consultar la transferencia agrupada.');
+      }
+    };
+    cargarGrupo();
+    return () => abort.abort();
+  }, [modalDetalle, idGrupoDetalle, detallePago]);
 
   useEffect(() => {
     if (!modalEditarOpen || !fechaPago) return;
@@ -314,6 +374,8 @@ function PagosAlumno(props) {
   const bloqueaAdelantoPorBeca = esAlumnoBecado || tieneMensualidadBecado;
   const estadoMensualidadDetalle = normalizarEstado(mensualidadDetalle?.estado);
   const usuarioPuedeEditarEliminarPago = ['insolvente', 'retrasado', 'pendiente', 'en revision'].includes(estadoMensualidadDetalle);
+  const puedeEditarPago = (pago) => obtenerIdGrupo(pago) && obtenerIdGrupo(pago) === idGrupoDetalle
+    ? grupoDetalle?.pago?.estado === 'En revision' : usuarioPuedeEditarEliminarPago;
 
   const pagosFiltrados = pagosOrdenados.filter(pago => {
     const estado = normalizarEstado(pago.estado);
@@ -394,7 +456,8 @@ function PagosAlumno(props) {
       if (Number.isFinite(montoActualUsd) && montoActualUsd >= 0) {
         const montoPagoUsd = Number(pago?.monto_pagado);
         const montoPagoBs = Number(pago?.monto_pagado_bs);
-        const tasaAplicada = (Number.isFinite(montoPagoUsd) && montoPagoUsd > 0 && Number.isFinite(montoPagoBs) && montoPagoBs > 0)
+        const tasaGrupo = Number(obtenerIdGrupo(pago) && obtenerIdGrupo(pago) === idGrupoDetalle ? grupoDetalle?.pago?.tasa_aplicada : null);
+        const tasaAplicada = Number.isFinite(tasaGrupo) && tasaGrupo > 0 ? tasaGrupo : (Number.isFinite(montoPagoUsd) && montoPagoUsd > 0 && Number.isFinite(montoPagoBs) && montoPagoBs > 0)
           ? (montoPagoBs / montoPagoUsd)
           : null;
 
@@ -444,6 +507,10 @@ function PagosAlumno(props) {
   };
 
   const formatTasaAplicada = (pago) => {
+    const tasaGrupo = Number(obtenerIdGrupo(pago) && obtenerIdGrupo(pago) === idGrupoDetalle ? grupoDetalle?.pago?.tasa_aplicada : null);
+    if (Number.isFinite(tasaGrupo) && tasaGrupo > 0) {
+      return `${tasaGrupo.toLocaleString('en-US', { useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 6 })} Bs/${monedaConfigurada}`;
+    }
     const montoUsd = Number(pago?.monto_pagado);
     const montoBs = Number(pago?.monto_pagado_bs);
     if (!montoUsd || Number.isNaN(montoUsd) || !montoBs || Number.isNaN(montoBs)) {
@@ -493,6 +560,11 @@ function PagosAlumno(props) {
   };
 
   const abrirModalEditarPago = (pago) => {
+    const grupoId = obtenerIdGrupo(pago);
+    if (grupoId) {
+      setPagoAgrupadoEditandoId(grupoId);
+      return;
+    }
     setEditandoPago(pago);
     setMetodoPago(normalizeMetodoPago(pago?.metodo_pago));
     const montoPagoBsInicial = Number(pago?.monto_pagado_bs);
@@ -675,7 +747,7 @@ function PagosAlumno(props) {
   const estadosConSaldo = ['pendiente', 'retrasado', 'abono', 'insolvente'];
   const mensualidadesConSaldo = mensualidades.filter((m) => estadosConSaldo.includes(normalizarEstado(m.estado)));
   const balancePendiente = mensualidadesConSaldo.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
-  const saldoAFavorDisponible = Math.max(0, Number(alumno?.saldo_a_favor_mensualidades) || 0);
+  const saldoAFavorDisponible = Math.max(0, Number(mensualidades[0]?.saldo_a_favor_disponible ?? alumno?.saldo_a_favor_mensualidades) || 0);
   const proximaMensualidadPorVencer = mensualidadesConSaldo
     .map((item) => obtenerFechaVencimientoVisible(item))
     .filter(Boolean)
@@ -1096,6 +1168,9 @@ function PagosAlumno(props) {
                     <Typography sx={{ color: estadoUi.amountColor, fontWeight: 900, fontSize: { xs: 25, md: 27 }, lineHeight: 1 }}>
                       {simboloMonedaConfigurada}{formatMoney(montoCard)}
                     </Typography>
+                    {Number(pago.credito_a_aplicar) > 0 && <Typography sx={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
+                      Credito: -{simboloMonedaConfigurada}{formatMoney(pago.credito_a_aplicar)} {monedaConfigurada}
+                    </Typography>}
                     {mostrarMontoEsperado && (
                       <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
                         Monto esperado ({monedaConfigurada})
@@ -1121,10 +1196,14 @@ function PagosAlumno(props) {
                             size="small"
                             onClick={() => {
                               if (bloqueadoPorMesAnterior) return;
+                              if (Number(pago.monto) === 0 && pago.credito_a_aplicar > 0) {
+                                usarCreditoSinTransferencia(pago);
+                                return;
+                              }
                               setPagoSeleccionado(pago);
                               setOpenModalPago(true);
                             }}
-                            disabled={bloqueadoPorMesAnterior}
+                            disabled={bloqueadoPorMesAnterior || Boolean(aplicandoCreditoId)}
                             sx={{
                               borderRadius: 999,
                               px: 2,
@@ -1136,7 +1215,7 @@ function PagosAlumno(props) {
                               '&:hover': { bgcolor: estadoUi.actionHover }
                             }}
                           >
-                            {estadoUi.actionLabel}
+                            {aplicandoCreditoId === pago.id ? 'Aplicando...' : Number(pago.monto) === 0 && pago.credito_a_aplicar > 0 ? 'Usar saldo a favor' : estadoUi.actionLabel}
                           </Button>
                         </span>
                       </Tooltip>
@@ -1340,157 +1419,113 @@ function PagosAlumno(props) {
       <Dialog
         open={modalDetalle}
         onClose={() => setModalDetalle(false)}
-        maxWidth="lg"
+        aria-labelledby="detalle-pago-title"
+        maxWidth="md"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
+        PaperProps={{ sx: { borderRadius: 2, overflow: 'hidden', width: 'calc(100% - 24px)', maxWidth: 760, m: 1.5, maxHeight: 'calc(100% - 24px)', color: '#162647' } }}
       >
-        <DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 17, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          Detalle del Pago
-          <IconButton size="small" onClick={() => setModalDetalle(false)} sx={{ color: '#6b7280' }}>
-            &times;
+        <DialogTitle id="detalle-pago-title" sx={{ bgcolor: '#fff', px: { xs: 2, sm: 3 }, py: 1.75, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+          <Typography component="span" sx={{ fontSize: 14, fontWeight: 800 }}>Detalle del pago</Typography>
+          <Chip size="small" label={String(grupoDetalle?.pago?.estado || mensualidadDetalle?.estado || 'Sin pago').replace('revision', 'revisión')} sx={{ height: 22, fontSize: 10, fontWeight: 700, bgcolor: estadoMensualidadDetalle === 'pagado' || grupoDetalle?.pago?.estado === 'Conciliado' ? '#e8f5ef' : '#fff3df', color: estadoMensualidadDetalle === 'pagado' || grupoDetalle?.pago?.estado === 'Conciliado' ? '#187863' : '#9a600b' }} />
+          <IconButton aria-label="Cerrar detalle del pago" size="small" onClick={() => setModalDetalle(false)} sx={{ ml: 'auto', color: '#707b8e' }}>
+            <CloseIcon sx={{ fontSize: 18 }} />
           </IconButton>
         </DialogTitle>
-        <DialogContent sx={{ bgcolor: '#f3f5fb', pt: 2.5, pb: 2.5 }}>
-          {mensualidadDetalle && Number(mensualidadDetalle.recargo_aplicado_usd || 0) > 0 && (
-            <Box
-              sx={{
-                mb: 2,
-                bgcolor: '#fff7ed',
-                border: '1px solid #fed7aa',
-                borderRadius: 2,
-                p: 1.5
-              }}
-            >
-              <Typography sx={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9a3412', fontWeight: 800 }}>
-                Desglose de recargo
-              </Typography>
-              <Typography sx={{ mt: 0.6, color: '#7c2d12', fontWeight: 700, fontSize: 13 }}>
-                Monto base: {simboloMonedaConfigurada}{formatMoney(mensualidadDetalle.monto_sin_recargo_usd || 0)} {monedaConfigurada} | Recargo: {simboloMonedaConfigurada}{formatMoney(mensualidadDetalle.recargo_aplicado_usd || 0)} {monedaConfigurada} | Total: {simboloMonedaConfigurada}{formatMoney(mensualidadDetalle.monto_con_recargo_usd || mensualidadDetalle.monto_total || 0)} {monedaConfigurada}
-              </Typography>
-              {mensualidadDetalle.fecha_aplicacion_recargo && (
-                <Typography sx={{ mt: 0.4, color: '#9a3412', fontSize: 12, fontWeight: 600 }}>
-                  Aplicado: {formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)}
-                </Typography>
+        <DialogContent sx={{ bgcolor: '#fff', px: { xs: 2, sm: 3 }, pb: 0 }}>
+          {idGrupoDetalle && (
+            <Box component="section" aria-label="Transferencia agrupada" sx={{ mb: 2.5, minWidth: 0 }}>
+              {errorGrupoDetalle ? <Alert severity="error" sx={{ mt: 1 }}>{errorGrupoDetalle}</Alert> : !grupoDetalle ? (
+                <Typography role="status" sx={{ mt: 1 }}>Cargando transferencia...</Typography>
+              ) : (
+                <>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 1.5, mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 }, py: 2.5, bgcolor: '#13224a', color: '#fff' }}>
+                    <Box sx={{ minWidth: 0, flex: '1 1 260px', overflowWrap: 'anywhere' }}>
+                      <Typography sx={{ color: '#b7c4e2', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', mb: 0.6 }}>Transferencia agrupada · {grupoDetalle.pago.metodo_pago || detallePago?.metodo_pago}</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 1.25, rowGap: 0.25 }}>
+                        <Typography sx={{ fontWeight: 800, fontSize: { xs: 26, sm: 34 }, lineHeight: 1.15 }}>Bs {formatMoney(grupoDetalle.pago.monto_total_bs)}</Typography>
+                        <Typography sx={{ fontWeight: 700, fontSize: 15, color: '#ffbe57' }}>{simboloMonedaConfigurada}{formatMoney(grupoDetalle.pago.monto_total)} {monedaConfigurada}</Typography>
+                      </Box>
+                      <Typography sx={{ fontSize: 10, mt: 0.9, color: '#b7c4e2', lineHeight: 1.6 }}>{grupoDetalle.pago.codigo} · {formatFechaBonita(grupoDetalle.pago.fecha_pago)} · Tasa {formatTasaAplicada(detallePago)}</Typography>
+                    </Box>
+                    {grupoDetalle.pago.estado === 'En revision' && (
+                      <Button aria-label="Editar pago agrupado" variant="outlined" startIcon={<EditIcon sx={{ fontSize: 14 }} />} onClick={() => abrirModalEditarPago(detallePago)} sx={{ color: '#fff', borderColor: '#465476', bgcolor: '#ffffff0c', borderRadius: 1.5, fontSize: 11, textTransform: 'none', px: 1.5, py: 0.8, '&:hover': { borderColor: '#8796b9', bgcolor: '#ffffff18' } }}>
+                        Editar pago
+                      </Button>
+                    )}
+                  </Box>
+                  <Typography sx={{ fontSize: 10, textTransform: 'uppercase', fontWeight: 800, color: '#68758b', mt: 2.5, mb: 1 }}>Distribución por atleta</Typography>
+                  <Box aria-hidden="true" sx={{ display: 'flex', height: 6, borderRadius: 1, overflow: 'hidden', bgcolor: '#d3daea', mb: 1.25 }}>
+                    {grupoDetalle.asignaciones.map((item) => <Box key={item.id_pago} sx={{ width: `${grupoDetalle.pago.monto_total > 0 ? Number(item.monto_pagado) / grupoDetalle.pago.monto_total * 100 : 0}%`, bgcolor: String(item.id_mensualidad) === String(mensualidadDetalle?.id) ? '#e69a16' : '#c9d2e5' }} />)}
+                  </Box>
+                  <Box sx={{ border: '1px solid #edf0f5', borderRadius: 1.5, overflow: 'hidden' }}>
+                    {grupoDetalle.asignaciones.map((item) => {
+                      const esActual = String(item.id_mensualidad) === String(mensualidadDetalle?.id);
+                      return <Box key={item.id_pago} sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 1, px: 1.5, py: 1.1, bgcolor: esActual ? '#fffbf2' : '#fff', borderLeft: `2px solid ${esActual ? '#e69a16' : 'transparent'}`, '& + &': { borderTop: '1px solid #edf0f5' } }}>
+                        <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
+                            <Typography sx={{ fontWeight: 700, fontSize: 12 }}>{item.alumno_nombre}</Typography>
+                            {esActual && <Chip size="small" label="Este alumno" sx={{ height: 17, fontSize: 9, fontWeight: 700, bgcolor: '#e69a16', color: '#fff', '& .MuiChip-label': { px: 0.75 } }} />}
+                          </Box>
+                          <Typography sx={{ fontSize: 10, color: '#748096', mt: 0.25 }}>Mensualidad {String(item.mes).padStart(2, '0')}/{item.anio}{esActual && Number(mensualidadDetalle?.recargo_aplicado_usd) > 0 ? ' · incluye recargo' : ''}</Typography>
+                        </Box>
+                        <Box sx={{ minWidth: 0, overflowWrap: 'anywhere', textAlign: 'right', alignSelf: 'center' }}>
+                          <Typography sx={{ fontWeight: 700, fontSize: 12 }}>Bs {formatMoney(item.monto_pagado_bs)}</Typography>
+                          <Typography sx={{ fontSize: 10, color: '#748096' }}>{simboloMonedaConfigurada}{formatMoney(item.monto_pagado)} {monedaConfigurada}</Typography>
+                        </Box>
+                      </Box>;
+                    })}
+                  </Box>
+                </>
               )}
+            </Box>
+          )}
+          {mensualidadDetalle && detallePago && (
+            <Box component="section" aria-label="Resumen de la mensualidad" sx={{ mb: 2.5 }}>
+              <Typography sx={{ fontSize: 10, textTransform: 'uppercase', color: '#68758b', fontWeight: 800, mb: 1 }}>Monto de {alumno?.nombres || 'este alumno'}</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: `repeat(${creditoAplicadoDetalle > 0 ? (ajusteDetalle !== 0 ? 6 : 5) : 4}, minmax(0, 1fr))` }, border: '1px solid #edf0f5', borderRadius: 1.5, overflow: 'hidden' }}>
+                {[
+                  { label: creditoAplicadoDetalle > 0 ? 'Monto base original' : 'Monto base', value: `${simboloMonedaConfigurada}${formatMoney(creditoAplicadoDetalle > 0 ? baseOriginalDetalle : baseNetaDetalle)}` },
+                  ...(creditoAplicadoDetalle > 0 ? [{ label: 'Saldo a favor aplicado', value: `- ${simboloMonedaConfigurada}${formatMoney(creditoAplicadoDetalle)}`, detail: `Base neta: ${simboloMonedaConfigurada}${formatMoney(baseNetaDetalle)}`, color: '#16786e', bg: '#eaf6f2' }] : []),
+                  ...(creditoAplicadoDetalle > 0 && ajusteDetalle !== 0 ? [{ label: 'Ajuste de mensualidad', value: `${ajusteDetalle > 0 ? '-' : '+'} ${simboloMonedaConfigurada}${formatMoney(Math.abs(ajusteDetalle))}` }] : []),
+                  { label: `Recargo${mensualidadDetalle.fecha_aplicacion_recargo ? ` · ${formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)}` : ''}`, value: `+ ${simboloMonedaConfigurada}${formatMoney(mensualidadDetalle.recargo_aplicado_usd || 0)}`, color: '#a76809' },
+                  { label: 'Total esperado', value: formatMontoEsperado(detallePago, mensualidadDetalle.monto_total ?? mensualidadDetalle.monto, true) },
+                  { label: idGrupoDetalle ? 'Asignado a este alumno' : 'Monto pagado', value: `${simboloMonedaConfigurada}${formatMoney(detallePago.monto_pagado)}`, color: '#16786e', bg: '#eaf6f2' }
+                ].map((item) => <Box key={item.label} sx={{ p: 1.4, bgcolor: item.bg || '#f9fafc', minWidth: 0, borderRight: '1px solid #edf0f5', borderBottom: { xs: '1px solid #edf0f5', sm: 0 } }}>
+                  <Typography sx={{ fontSize: 10, color: '#748096', mb: 0.4 }}>{item.label}</Typography>
+                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: item.color || '#162647', overflowWrap: 'anywhere', lineHeight: 1.5 }}>{item.value}</Typography>
+                  {item.detail && <Typography sx={{ fontSize: 10, color: '#748096', mt: 0.4, overflowWrap: 'anywhere' }}>{item.detail}</Typography>}
+                </Box>)}
+              </Box>
             </Box>
           )}
 
           {detallePago ? (
             <>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
-                <Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
-              </Box>
+              <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#68758b', mb: 1, textTransform: 'uppercase' }}>Datos del pago</Typography>
+              <Box sx={{ pb: 2.5 }}>
+                <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }, columnGap: 2 }}>
+                  {[
+                    ['Método', detallePago.metodo_pago || '-'],
+                    ['Fecha de pago', formatFechaBonita(detallePago.fecha_pago)],
+                    ['Referencia', <Box key="referencia" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, minWidth: 0 }}>
+                      <Box component="span" sx={{ overflowWrap: 'anywhere' }}>{detallePago.referencia || '-'}</Box>
+                      {detallePago.referencia && <Tooltip title="Copiar referencia"><IconButton aria-label="Copiar referencia" size="small" onClick={() => copiarReferencia(detallePago.referencia)} sx={{ color: '#607491', p: 0.4 }}><ContentCopyIcon sx={{ fontSize: 13 }} /></IconButton></Tooltip>}
+                    </Box>],
+                    ['Tasa aplicada', formatTasaAplicada(detallePago)],
+                    ['Teléfono', formatTelefonoPago(detallePago.telefono_pago) || '-'],
+                    ['Cédula del titular', formatCedulaTitular(detallePago.cedula_titular) || '-'],
+                    ['Comprobante', detallePago.comprobante_url ? <Button key="comprobante" size="small" startIcon={<InsertDriveFileIcon sx={{ fontSize: 14 }} />} onClick={() => handleVerComprobante(detallePago.comprobante_url)} sx={{ p: 0, fontSize: 11, textTransform: 'none', color: '#246c89' }}>Ver archivo</Button> : 'Sin adjuntar'],
+                    ['Nota', String(detallePago.nota || '').trim() || '-']
+                  ].map(([label, value]) => <Box key={label} sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1, minWidth: 0, py: 1.1, borderBottom: '1px solid #f0f2f6' }}>
+                    <Typography component="dt" sx={{ fontSize: 11, color: '#748096', flexShrink: 0 }}>{label}</Typography>
+                    <Box component="dd" sx={{ m: 0, minWidth: 0, fontSize: 11, color: '#162647', fontWeight: 600, textAlign: 'right', overflowWrap: 'anywhere' }}>{value}</Box>
+                  </Box>)}
+                </Box>
+                {detallePago.solicita_revision_recargo && <Chip size="small" label="Solicitud de revisión de recargo" sx={{ mt: 1, fontSize: 10, bgcolor: '#fff3df', color: '#9a600b' }} />}
+                <Box sx={{ display: 'grid' }}>
 
-              <Box
-                sx={{
-                  position: 'relative',
-                  bgcolor: '#ffffff',
-                  borderRadius: 2.5,
-                  border: '1px solid #e7eaf2',
-                  p: { xs: 2, sm: 3 },
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 7,
-                    borderTopLeftRadius: 10,
-                    borderTopRightRadius: 10,
-                    background: 'linear-gradient(90deg, #ff8a00 0%, #8a4b00 100%)'
-                  }
-                }}
-              >
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, columnGap: 4.5, rowGap: 2.25, pt: 1.75 }}>
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Metodo de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{detallePago.metodo_pago || '-'}</Typography>
-                  </Box>
-
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 17, sm: 20 }, fontWeight: 900, color: '#9a5a00', lineHeight: 1.1 }}>{formatMontoPrincipal(detallePago)}</Typography>
-                    {formatEquivalenteUsdDesdeBs(detallePago) && (
-                      <Typography sx={{ mt: 0.45, fontSize: 13, fontWeight: 700, color: '#64748b', lineHeight: 1.2 }}>
-                        Equivalente: {formatEquivalenteUsdDesdeBs(detallePago)}
-                      </Typography>
-                    )}
-                  </Box>
-
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 14, sm: 16 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatMontoEsperado(detallePago, mensualidadDetalle?.monto_total ?? mensualidadDetalle?.monto, true)}</Typography>
-                  </Box>
-
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Fecha de pago</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatFechaBonita(detallePago.fecha_pago)}</Typography>
-                  </Box>
-
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
-                    <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>{formatTasaAplicada(detallePago)}</Typography>
-                  </Box>
-
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Referencia</Typography>
-                    <Box sx={{ mt: 0.7, display: 'flex', alignItems: 'center', gap: 0.4 }}>
-                      <Typography sx={{ fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#4c6690', lineHeight: 1.12 }}>{detallePago.referencia || '-'}</Typography>
-                      {detallePago.referencia && (
-                        <IconButton size="small" onClick={() => copiarReferencia(detallePago.referencia)} sx={{ color: '#95a2b6' }}>
-                          <ContentCopyIcon fontSize="inherit" />
-                        </IconButton>
-                      )}
-                    </Box>
-                  </Box>
-
-                  {String(detallePago.telefono_pago || '').trim() && (
-                    <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Telefono de pago</Typography>
-                      <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
-                        {formatTelefonoPago(detallePago.telefono_pago)}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {String(detallePago.cedula_titular || '').trim() && (
-                    <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Cédula del titular</Typography>
-                      <Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
-                        {formatCedulaTitular(detallePago.cedula_titular)}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  <Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Nota</Typography>
-                    <Typography sx={{ mt: 0.7, color: '#334155', fontWeight: 700, lineHeight: 1.3 }}>
-                      {String(detallePago.nota || '').trim() || '-'}
-                    </Typography>
-                    {detallePago.solicita_revision_recargo && (
-                      <Chip size="small" label="Solicitud de revision de recargo" sx={{ mt: 0.8, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }} />
-                    )}
-                  </Box>
-
-                  <Box>
-                    <Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Comprobante</Typography>
-                    {detallePago.comprobante_url ? (
-                      <Button
-                        variant="text"
-                        startIcon={<InsertDriveFileIcon fontSize="small" />}
-                        onClick={() => handleVerComprobante(detallePago.comprobante_url)}
-                        sx={{ mt: 0.35, px: 0, color: '#ff8a00', fontWeight: 900, textTransform: 'none', fontSize: { xs: 14, sm: 16 } }}
-                      >
-                        Ver Archivo Digital
-                      </Button>
-                    ) : (
-                      <Typography sx={{ mt: 0.7, color: '#9ca3af', fontWeight: 700 }}>Sin comprobante</Typography>
-                    )}
-                  </Box>
-
-                  {usuarioPuedeEditarEliminarPago && (
-                    <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { md: '2 / 3' } }}>
+                  {!idGrupoDetalle && usuarioPuedeEditarEliminarPago && (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'flex-end', gap: 1.2, gridColumn: '1 / -1' }}>
                       <Button
                         variant="contained"
                         startIcon={<EditIcon fontSize="small" />}
@@ -1518,80 +1553,29 @@ function PagosAlumno(props) {
           )}
 
           {pagosDetalle.length > 0 && (
-            <Box sx={{ mt: 3.25 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <HistoryRoundedIcon sx={{ color: '#8ea0bc', fontSize: 19 }} />
-                  <Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.15 }}>
+            <Box sx={{ mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 }, py: 2, bgcolor: '#f6f8fc', borderTop: '1px solid #edf0f5' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1.25 }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: '#68758b' }}>
                     {mensualidadDetalle?.id_alumno?.habilitar_pago_cuotas === true ? 'Historial de abonos' : 'Historial de pagos'}
                   </Typography>
-                </Box>
-                <Chip label={`${pagosDetalle.length} total`} size="small" sx={{ bgcolor: '#d9e4f7', color: '#4b6ca7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }} />
+                <Typography sx={{ color: '#748096', fontSize: 10 }}>{pagosDetalle.length} {pagosDetalle.length === 1 ? 'registro' : 'registros'}</Typography>
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {pagosDetalle.map((pago, idx) => (
-                  <Box
-                    key={pago._id || idx}
-                    sx={{
-                      bgcolor: '#ffffff',
-                      border: '1px solid #e8ebf2',
-                      borderRadius: 2,
-                      borderLeft: '4px solid #c9daf6',
-                      px: 1.7,
-                      py: 1.2,
-                      display: 'grid',
-                      gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr 1fr 1fr auto' },
-                      alignItems: 'center',
-                      gap: 1.3
-                    }}
-                  >
-                    <Box>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Pago #{idx + 1}</Typography>
-                      <Typography sx={{ fontWeight: 800, color: '#0b2a57', mt: 0.25 }}>{pago.metodo_pago || '-'}</Typography>
+                  <Box key={pago._id || idx} sx={{ bgcolor: '#fff', border: '1px solid #e9edf4', borderRadius: 1.5, p: 1.25, display: 'grid', gridTemplateColumns: { xs: '26px minmax(0, 1fr)', sm: '26px minmax(0, 1fr) auto auto' }, alignItems: 'center', gap: 1.1 }}>
+                    <Box sx={{ width: 26, height: 26, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: '#13224a', color: '#fff', fontSize: 11, fontWeight: 700 }}>{idx + 1}</Box>
+                    <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                      <Typography sx={{ fontWeight: 700, fontSize: 11 }}>{pago.metodo_pago || '-'} · Ref. {pago.referencia || '-'}</Typography>
+                      <Typography sx={{ fontSize: 10, color: '#748096', mt: 0.25 }}>{formatFechaBonita(pago.fecha_pago)} · <Box component="span">{formatTasaAplicada(pago)}</Box>{pago.cedula_titular ? ` · ${formatCedulaTitular(pago.cedula_titular)}` : ''}</Typography>
+                      {pago.telefono_pago && <Typography sx={{ fontSize: 10, color: '#748096' }}>Tel: {formatTelefonoPago(pago.telefono_pago)}</Typography>}
+                      {pago.nota && <Typography sx={{ fontSize: 10, color: '#748096' }}>{pago.nota}</Typography>}
+                      {pago.solicita_revision_recargo && <Chip size="small" label="Solicita revisión" sx={{ mt: 0.5, height: 20, fontSize: 9, bgcolor: '#fff3df', color: '#9a600b' }} />}
                     </Box>
-                    <Box>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Monto</Typography>
-                      <Typography sx={{ fontWeight: 900, color: '#0b2a57', mt: 0.25 }}>{formatMontoPrincipal(pago)}</Typography>
-                      {formatEquivalenteUsdDesdeBs(pago) && (
-                        <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
-                          Equivalente: {formatEquivalenteUsdDesdeBs(pago)}
-                        </Typography>
-                      )}
-                      {formatMontoEsperado(pago, mensualidadDetalle?.monto_total ?? mensualidadDetalle?.monto, true) !== '-' && (
-                        <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>
-                          Esperado: {formatMontoEsperado(pago, mensualidadDetalle?.monto_total ?? mensualidadDetalle?.monto, true)}
-                        </Typography>
-                      )}
-                    </Box>
-                    <Box>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Fecha</Typography>
-                      <Typography sx={{ color: '#334155', mt: 0.25 }}>{formatFechaBonita(pago.fecha_pago)}</Typography>
-                    </Box>
-                    <Box>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Tasa</Typography>
-                      <Typography sx={{ color: '#334155', mt: 0.25, fontWeight: 700 }}>{formatTasaAplicada(pago)}</Typography>
-                    </Box>
-                    <Box>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Referencia</Typography>
-                      <Typography sx={{ color: '#4c6690', fontWeight: 700, mt: 0.25 }}>{pago.referencia || '-'}</Typography>
-                      {String(pago.telefono_pago || '').trim() && (
-                        <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>
-                          Tel: {formatTelefonoPago(pago.telefono_pago)}
-                        </Typography>
-                      )}
-                      {String(pago.cedula_titular || '').trim() && (
-                        <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>
-                          Cédula: {formatCedulaTitular(pago.cedula_titular)}
-                        </Typography>
-                      )}
-                    </Box>
-                    <Box>
-                      <Typography sx={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>Nota</Typography>
-                      <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25 }}>{String(pago.nota || '').trim() || '-'}</Typography>
-                      {pago.solicita_revision_recargo && (
-                        <Chip size="small" label="Solicita revision" sx={{ mt: 0.6, bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800 }} />
-                      )}
+                    <Box sx={{ minWidth: 0, textAlign: { xs: 'left', sm: 'right' }, overflowWrap: 'anywhere', gridColumn: { xs: '2', sm: 'auto' } }}>
+                      <Typography sx={{ fontSize: 11, fontWeight: 700 }}>{formatMontoPrincipal(pago)}</Typography>
+                      <Typography sx={{ fontSize: 10, color: '#748096' }}>{formatEquivalenteUsdDesdeBs(pago)}</Typography>
+                      <Typography sx={{ fontSize: 9, color: '#748096' }}>Esperado: {formatMontoEsperado(pago, mensualidadDetalle?.monto_total ?? mensualidadDetalle?.monto, true)}</Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 0.6, justifyContent: { xs: 'flex-start', md: 'flex-end' }, alignItems: 'center', height: '100%' }}>
                       {pago.comprobante_url && (
@@ -1599,15 +1583,15 @@ function PagosAlumno(props) {
                           <InsertDriveFileIcon fontSize="small" sx={{ color: '#4b5563' }} />
                         </IconButton>
                       )}
-                      {usuarioPuedeEditarEliminarPago && (
-                        <>
-                          <IconButton size="small" onClick={() => abrirModalEditarPago(pago)} sx={{ bgcolor: '#e0f1fb', '&:hover': { bgcolor: '#d1e9f8' } }}>
-                            <EditIcon fontSize="small" sx={{ color: '#0a78b8' }} />
+                      {puedeEditarPago(pago) && (
+                        <Tooltip title={obtenerIdGrupo(pago) ? 'Editar pago agrupado' : 'Editar pago'}>
+                          <IconButton aria-label={obtenerIdGrupo(pago) ? 'Editar grupo desde historial' : 'Editar pago desde historial'} size="small" onClick={() => abrirModalEditarPago(pago)} sx={{ border: '1px solid #e9edf4', borderRadius: 1, '&:hover': { bgcolor: '#f2f5fb' } }}>
+                            <EditIcon sx={{ fontSize: 15, color: '#385581' }} />
                           </IconButton>
-                          <IconButton size="small" onClick={() => solicitarEliminarPago(pago)} disabled={eliminandoPagoId === pago._id} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
-                            <DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
-                          </IconButton>
-                        </>
+                        </Tooltip>
+                      )}
+                      {!obtenerIdGrupo(pago) && usuarioPuedeEditarEliminarPago && (
+                          <Tooltip title="Eliminar pago"><span><IconButton aria-label="Eliminar" size="small" onClick={() => solicitarEliminarPago(pago)} disabled={eliminandoPagoId === pago._id} sx={{ border: '1px solid #f1dddd', borderRadius: 1, '&:hover': { bgcolor: '#fff1f1' } }}><DeleteOutlineIcon sx={{ fontSize: 15, color: '#c44444' }} /></IconButton></span></Tooltip>
                       )}
                     </Box>
                   </Box>
@@ -1616,12 +1600,24 @@ function PagosAlumno(props) {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.25, bgcolor: '#f3f5fb', justifyContent: 'flex-end' }}>
-          <Button onClick={() => setModalDetalle(false)} variant="text" sx={{ color: '#516b94', fontWeight: 800 }}>
+        <DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #edf0f5' }}>
+          <Button onClick={() => setModalDetalle(false)} variant="contained" sx={{ bgcolor: '#13224a', borderRadius: 1.5, fontSize: 11, px: 2, py: 0.85, textTransform: 'none', boxShadow: 'none', '&:hover': { bgcolor: '#223765', boxShadow: 'none' } }}>
             Volver
           </Button>
         </DialogActions>
       </Dialog>
+      <PagoAgrupadoEditor
+        open={Boolean(pagoAgrupadoEditandoId)}
+        pagoId={pagoAgrupadoEditandoId}
+        moneda={monedaConfigurada}
+        onClose={() => setPagoAgrupadoEditandoId('')}
+        onSaved={async () => {
+          setPagoAgrupadoEditandoId('');
+          fetchMensualidades();
+          await actualizarDetalleMensualidad(mensualidadDetalle, true);
+          setSuccessMessage('Transferencia agrupada actualizada para todos los atletas.');
+        }}
+      />
       <ModalPago
         open={openModalPago}
         onClose={() => setOpenModalPago(false)}
@@ -1988,11 +1984,13 @@ function PagosAlumno(props) {
           sx: {
             borderRadius: 3.5,
             textAlign: 'center',
-            p: { xs: 2, sm: 2.5 }
+            m: { xs: 2, sm: 4 },
+            width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' },
+            p: { xs: 0, sm: 2.5 }
           }
         }}
       >
-        <DialogContent sx={{ pt: 1, pb: 1.25 }}>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 }, pt: { xs: 2, sm: 1 }, pb: 1.25, minWidth: 0, overflowWrap: 'anywhere' }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
             <CheckCircleRoundedIcon sx={{ fontSize: 64, color: '#10b981' }} />
           </Box>
@@ -2013,8 +2011,25 @@ function PagosAlumno(props) {
               backgroundColor: '#f8fafc',
               p: 1.6,
               display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr)',
               gap: 0.8,
-              mb: 1.2
+              mb: 1.2,
+              '& > .MuiBox-root': {
+                minWidth: 0,
+                gap: { xs: 0.5, sm: 2 },
+                flexDirection: { xs: 'column', sm: 'row' },
+                alignItems: { xs: 'flex-start', sm: 'center' }
+              },
+              '& > .MuiBox-root > .MuiTypography-caption': {
+                flexShrink: 0
+              },
+              '& > .MuiBox-root > :last-child': {
+                minWidth: 0,
+                maxWidth: { xs: '100%', sm: '60%' },
+                whiteSpace: 'normal',
+                overflowWrap: 'anywhere',
+                textAlign: { xs: 'left', sm: 'right' }
+              }
             }}
           >
             {pagoSuccessData?.alumnoNombre && (
@@ -2087,7 +2102,7 @@ function PagosAlumno(props) {
                 <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
                   Comprobante
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#0284c7', fontWeight: 700, maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Typography variant="body2" sx={{ color: '#0284c7', fontWeight: 700 }}>
                   {pagoSuccessData.comprobanteNombre}
                 </Typography>
               </Box>
@@ -2095,7 +2110,7 @@ function PagosAlumno(props) {
           </Box>
         </DialogContent>
 
-        <DialogActions sx={{ justifyContent: 'center', pt: 0.5, pb: 0.5 }}>
+        <DialogActions sx={{ justifyContent: 'center', pt: 0.5, pb: { xs: 2, sm: 0.5 } }}>
           <Button
             variant="contained"
             onClick={() => {

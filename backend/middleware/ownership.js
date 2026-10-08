@@ -10,12 +10,14 @@ async function getTenantOwnershipModels(req) {
   const Alumno = getTenantModel(connection, 'Alumno');
   const Mensualidad = getTenantModel(connection, 'Mensualidad');
   const PagoDetalle = getTenantModel(connection, 'PagoDetalle');
+  const PagoAgrupado = getTenantModel(connection, 'PagoAgrupado');
 
   return {
     Representante,
     Alumno,
     Mensualidad,
-    PagoDetalle
+    PagoDetalle,
+    PagoAgrupado
   };
 }
 
@@ -128,6 +130,22 @@ exports.ensureMensualidadOwnershipFromParam = (paramName = 'id_mensualidad') => 
   if (!esPropio) return res.status(403).json({ error: 'No tienes permiso para esta mensualidad' });
 
   next();
+};
+
+exports.ensurePagoAgrupadoOwnershipFromParam = (paramName = 'id') => async (req, res, next) => {
+  if (!isEndUser(req)) return next();
+  try {
+    const { PagoAgrupado, Representante } = await getTenantOwnershipModels(req);
+    const grupo = await PagoAgrupado.findById(req.params[paramName]);
+    if (!grupo) return res.status(404).json({ error: 'Pago agrupado no encontrado' });
+    const representante = await Representante.findById(grupo.representante).select('usuario');
+    if (!representante?.usuario || !req.user?.id || String(representante.usuario) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'No tienes permiso para este pago agrupado' });
+    }
+    return next();
+  } catch (error) {
+    return res.status(error.name === 'CastError' ? 400 : 500).json({ error: 'Error validando propiedad del pago agrupado' });
+  }
 };
 
 exports.ensurePagoOwnershipFromParam = (paramName = 'id_pago') => async (req, res, next) => {

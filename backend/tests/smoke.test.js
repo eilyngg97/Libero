@@ -1,6 +1,10 @@
 process.env.JWT_SECRET_CURRENT = 'test-secret';
 process.env.MONGO_URI_CURRENT = process.env.MONGO_URI_CURRENT || 'mongodb://127.0.0.1:27017/libero_test';
 
+jest.mock('../services/paymentExchangeRate', () => ({ obtenerTasaPagoPorFecha: jest.fn(async (fecha, moneda) => ({
+  tasa: 872.39, fecha_tasa: fecha, moneda
+})) }));
+
 jest.mock('../models/User', () => {
   const UserMock = jest.fn().mockImplementation((data = {}) => ({
     ...data,
@@ -53,6 +57,14 @@ jest.mock('../models/PagoDetalle', () => ({
   findByIdAndDelete: jest.fn(),
   create: jest.fn(),
   deleteMany: jest.fn()
+}));
+
+jest.mock('../models/PagoAgrupado', () => ({
+  find: jest.fn(),
+  findById: jest.fn(),
+  findOne: jest.fn(),
+  create: jest.fn(),
+  deleteOne: jest.fn()
 }));
 
 jest.mock('../models/UniformePedido', () => ({
@@ -127,6 +139,7 @@ jest.mock('../services/tenantModelService', () => ({
     const Representante = require('../models/Representante');
     const Mensualidad = require('../models/Mensualidad');
     const PagoDetalle = require('../models/PagoDetalle');
+    const PagoAgrupado = require('../models/PagoAgrupado');
     const UniformePedido = require('../models/UniformePedido');
     const Uniforme = require('../models/Uniforme');
     const Reposo = require('../models/Reposo');
@@ -142,6 +155,7 @@ jest.mock('../services/tenantModelService', () => ({
       Representante,
       Mensualidad,
       PagoDetalle,
+      PagoAgrupado,
       Reposo,
       HistorialEstadoAlumno,
       TenantConfig,
@@ -194,6 +208,7 @@ const Alumno = require('../models/Alumno');
 const Representante = require('../models/Representante');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const PagoAgrupado = require('../models/PagoAgrupado');
 const Uniforme = require('../models/Uniforme');
 const UniformePedido = require('../models/UniformePedido');
 const Reposo = require('../models/Reposo');
@@ -232,6 +247,11 @@ describe('Backend smoke tests', () => {
       })
     });
     PagoDetalle.deleteMany.mockResolvedValue({ deletedCount: 0 });
+    PagoAgrupado.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([]),
+      then: (resolve) => resolve([])
+    });
+    PagoAgrupado.deleteOne.mockResolvedValue({ deletedCount: 0 });
     UniformePedido.deleteMany.mockResolvedValue({ deletedCount: 0 });
     Reposo.deleteMany.mockResolvedValue({ deletedCount: 0 });
     HistorialEstadoAlumno.deleteMany.mockResolvedValue({ deletedCount: 0 });
@@ -367,6 +387,305 @@ describe('Backend smoke tests', () => {
       monto_esperado_usd: 100,
       monto_esperado_bs: 7075
     }));
+  });
+
+  test('POST /api/pagos/agrupado registers one transfer for two athletes', async () => {
+    const token = makeToken({ id: 'u1', rol: 'usuario', nombre: 'Representante' });
+    const mensualidades = {
+      m1: {
+        _id: 'm1', mes: 9, anio: 2026, monto_esperado: 40, estatus: 'Pendiente',
+        id_alumno: { _id: 'a1', nombres: 'Ana', usuario: 'u1', representante: 'r1' },
+        save: jest.fn().mockResolvedValue(true)
+      },
+      m2: {
+        _id: 'm2', mes: 10, anio: 2026, monto_esperado: 60, estatus: 'Pendiente',
+        id_alumno: { _id: 'a2', nombres: 'Eva', usuario: 'u1', representante: 'r1' },
+        save: jest.fn().mockResolvedValue(true)
+      }
+    };
+
+    Mensualidad.findById.mockImplementation((id) => ({
+      populate: jest.fn().mockResolvedValue(mensualidades[id])
+    }));
+    Mensualidad.find.mockImplementation((filtro) => ({
+      select: jest.fn().mockResolvedValue([mensualidades[String(filtro.id_alumno)]].filter(Boolean))
+    }));
+    PagoDetalle.find
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ monto_pagado: 40, monto_pagado_bs: 1600 }])
+      .mockResolvedValueOnce([{ monto_pagado: 60, monto_pagado_bs: 2400 }]);
+    PagoAgrupado.create.mockImplementation(async ([data]) => [{ ...data, _id: 'pa1' }]);
+    PagoDetalle.create
+      .mockImplementationOnce(async ([data]) => [{ ...data, _id: 'pd1' }])
+      .mockImplementationOnce(async ([data]) => [{ ...data, _id: 'pd2' }]);
+
+    const response = await request(app)
+      .post('/api/pagos/agrupado')
+      .set('Authorization', `Bearer ${token}`)
+      .field('asignaciones', JSON.stringify([{ id_mensualidad: 'm1' }, { id_mensualidad: 'm2' }]))
+      .field('monto_total', '100')
+      .field('monto_total_bs', '4000')
+      .field('fecha_pago', '2026-10-05')
+      .field('metodo_pago', 'Pago movil')
+      .field('referencia', '123456');
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual(expect.objectContaining({ monto_total: 100, monto_total_bs: 4000, atletas: 2, asignaciones: 2 }));
+    expect(PagoAgrupado.create).toHaveBeenCalledTimes(1);
+    expect(PagoDetalle.create).toHaveBeenCalledTimes(2);
+    expect(mensualidades.m1.estatus).toBe('En revision');
+    expect(mensualidades.m2.estatus).toBe('En revision');
+  });
+
+  test('GET mensualidades de octubre refleja credito nuevo sin consumirlo y aun con filtro de mes', async () => {
+    const token = makeToken({ id: 'u1', rol: 'usuario' });
+    const alumno = { _id: 'a1', usuario: 'u1', saldo_a_favor_mensualidades: 1.03, save: jest.fn() };
+    const octubre = { _id: 'oct1', id_alumno: alumno, mes: 10, anio: 2026, monto_base: 15,
+      monto_esperado: 19, monto_sin_recargo_usd: 15, recargo_aplicado_usd: 4,
+      estatus: 'Insolvente', bloqueo_recargo_automatico: true, save: jest.fn() };
+    const noviembre = { ...octubre, _id: 'nov1', mes: 11, estatus: 'Pendiente' };
+    Representante.find.mockReturnValue({ select: jest.fn().mockResolvedValue([]) });
+    Alumno.find.mockReturnValue({ select: jest.fn().mockResolvedValue([alumno]) });
+    Alumno.findById.mockResolvedValue(alumno);
+    Mensualidad.find.mockImplementation((filter) => ({ populate: jest.fn().mockResolvedValue(filter.mes ? [octubre] : [octubre, noviembre]) }));
+    PagoDetalle.find.mockImplementation((filter) => filter.id_pago_agrupado
+      ? { select: jest.fn().mockResolvedValue([]) } : Promise.resolve([]));
+    PagoDetalle.aggregate = jest.fn().mockResolvedValue([]);
+    const consulta = () => request(app).get('/api/mensualidades?id_alumno=a1&mes=10&anio=2026').set('Authorization', `Bearer ${token}`);
+    let res = await consulta();
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ saldo_pendiente: 17.97, credito_a_aplicar: 1.03, saldo_a_favor_disponible: 1.03 });
+    expect(alumno.saldo_a_favor_mensualidades).toBe(1.03);
+    alumno.saldo_a_favor_mensualidades = 4.03;
+    res = await consulta();
+    expect(res.body[0]).toMatchObject({ saldo_pendiente: 14.97, credito_a_aplicar: 4.03 });
+    expect(alumno.save).not.toHaveBeenCalled();
+    expect(octubre.monto_esperado).toBe(19);
+    expect(PagoDetalle.create).not.toHaveBeenCalled();
+  });
+
+  test('roles internos sin permiso de gestion no acceden ni editan pagos agrupados', async () => {
+    const token = makeToken({ id: 'u1', rol: 'entrenador', permisos: [], nombre: 'Entrenador' });
+    const consulta = await request(app).get('/api/pagos/agrupado/pa1').set('Authorization', `Bearer ${token}`);
+    const edicion = await request(app).patch('/api/pagos/agrupado/pa1').set('Authorization', `Bearer ${token}`).send({ referencia: '262626' });
+    const retiro = await request(app).patch('/api/pagos/agrupado/pa1/mensualidades/m1/retirar-recargo').set('Authorization', `Bearer ${token}`).send({ version: '0:vieja' });
+    const retiroGrupo = await request(app).patch('/api/pagos/agrupado/pa1/retirar-recargos').set('Authorization', `Bearer ${token}`).send({ version: '0:vieja' });
+    expect(consulta.status).toBe(403);
+    expect(edicion.status).toBe(403);
+    expect(retiro.status).toBe(403);
+    expect(retiroGrupo.status).toBe(403);
+    expect(PagoAgrupado.findById).not.toHaveBeenCalled();
+  });
+
+  test('el usuario no puede consultar ni subir archivos a un grupo ajeno', async () => {
+    const token = makeToken({ id: 'u1', rol: 'usuario', permisos: [] });
+    PagoAgrupado.findById.mockResolvedValue({ _id: 'pa1', representante: 'r1' });
+    Representante.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ usuario: 'otro' }) });
+    const consulta = await request(app).get('/api/pagos/agrupado/pa1').set('Authorization', `Bearer ${token}`);
+    const edicion = await request(app).patch('/api/pagos/agrupado/pa1').set('Authorization', `Bearer ${token}`)
+      .attach('comprobante', Buffer.from('test'), 'archivo.txt');
+    const tasa = await request(app).get('/api/pagos/agrupado/pa1/tasa?fecha=2026-10-07').set('Authorization', `Bearer ${token}`);
+    expect(consulta.status).toBe(403);
+    expect(tasa.status).toBe(403);
+    expect(edicion.status).toBe(403);
+    expect(edicion.body.error).toContain('No tienes permiso');
+    expect(Mensualidad.findById).not.toHaveBeenCalled();
+  });
+
+  test('HTTP permite al propietario ver el total y editar el grupo sin conceder gestion de recargos', async () => {
+    const token = makeToken({ id: 'u1', rol: 'usuario', permisos: [] });
+    const fecha = '2026-10-06T00:00:00.000Z';
+    const grupo = { _id: 'pa1', representante: 'r1', estado: 'En revision', cantidad_atletas: 2,
+      monto_total: 28, monto_total_bs: 24427, updatedAt: fecha, __v: 0, ediciones: [], increment: jest.fn(), save: jest.fn().mockResolvedValue(undefined) };
+    const detalles = ['1', '2'].map((numero) => ({ _id: `p${numero}`, id_pago_agrupado: 'pa1', id_mensualidad: `m${numero}`,
+      monto_pagado: 14, monto_pagado_bs: 12213.5, save: jest.fn().mockResolvedValue(undefined) }));
+    const mensualidades = Object.fromEntries(['1', '2'].map((numero) => [`m${numero}`, { _id: `m${numero}`,
+      id_alumno: { _id: `a${numero}`, nombres: `Atleta ${numero}`, representante: 'r1' }, monto_esperado: 14,
+      bloquear_recargo_automatico: true, estatus: 'En revision', saldo_a_favor_generado: 0, updatedAt: fecha,
+      save: jest.fn().mockResolvedValue(undefined) }]));
+    PagoAgrupado.db = { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn(async (operacion) => operacion()), endSession: jest.fn().mockResolvedValue(undefined)
+    }), db: { admin: () => ({ command: jest.fn().mockResolvedValue({ setName: 'rs0' }) }) } };
+    PagoAgrupado.findById.mockResolvedValue(grupo);
+    Representante.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ usuario: 'u1' }) });
+    Mensualidad.findById.mockImplementation((id) => ({ populate: () => Promise.resolve(mensualidades[id]) }));
+    PagoDetalle.find.mockImplementation((filter) => filter.id_pago_agrupado
+      ? { sort: () => Promise.resolve(detalles) }
+      : Promise.resolve(detalles.filter((detalle) => detalle.id_mensualidad === filter.id_mensualidad)));
+    const consulta = await request(app).get('/api/pagos/agrupado/pa1').set('Authorization', `Bearer ${token}`);
+    expect(consulta.status).toBe(200);
+    expect(consulta.body.pago.monto_total).toBe(28);
+    expect(consulta.body.asignaciones).toHaveLength(2);
+    const tasa = await request(app).get('/api/pagos/agrupado/pa1/tasa?fecha=2026-10-07').set('Authorization', `Bearer ${token}`);
+    expect(tasa.status).toBe(200);
+    expect(tasa.body).toMatchObject({ tasa: 872.39, fecha_pago: '2026-10-07', moneda: 'USD' });
+    const edicion = await request(app).patch('/api/pagos/agrupado/pa1').set('Authorization', `Bearer ${token}`)
+      .send({ version: `0:${fecha}`, fecha_pago: '2026-10-07', metodo_pago: 'Pago movil', referencia: '262626',
+        monto_total: 28, monto_total_bs: 24427, asignaciones: [{ id_pago: 'p1', monto_pagado: 14 }, { id_pago: 'p2', monto_pagado: 14 }] });
+    expect(edicion.status).toBe(200);
+    expect(grupo.ediciones[0].usuario).toBe('u1');
+    for (const detalle of detalles) expect(detalle.referencia).toBe('262626');
+    for (const ruta of ['/api/pagos/agrupado/pa1/retirar-recargos', '/api/pagos/agrupado/pa1/mensualidades/m1/retirar-recargo']) {
+      expect((await request(app).patch(ruta).set('Authorization', `Bearer ${token}`).send({})).status).toBe(403);
+    }
+    expect(grupo.save).toHaveBeenCalledTimes(1);
+  });
+
+  test('el retiro de todo el grupo exige las versiones de todas las mensualidades', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    PagoAgrupado.db = { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn(async (operacion) => operacion()), endSession: jest.fn().mockResolvedValue(undefined)
+    }) };
+    PagoAgrupado.findById.mockResolvedValue({ _id: 'pa1', estado: 'En revision', cantidad_atletas: 2,
+      monto_total: 28, monto_total_bs: 24427, updatedAt: '2026-10-06T00:00:00.000Z', __v: 0 });
+    PagoDetalle.find.mockResolvedValue([
+      { _id: 'p1', id_mensualidad: 'm1', monto_pagado: 14, monto_pagado_bs: 12213.5 },
+      { _id: 'p2', id_mensualidad: 'm2', monto_pagado: 14, monto_pagado_bs: 12213.5 }
+    ]);
+    const respuesta = await request(app).patch('/api/pagos/agrupado/pa1/retirar-recargos')
+      .set('Authorization', `Bearer ${token}`).send({ version: '0:2026-10-06T00:00:00.000Z',
+        mensualidades: [{ id_mensualidad: 'm1', version: '0:2026-10-06T00:00:00.000Z' }] });
+    expect(respuesta.status).toBe(409);
+    expect(respuesta.body.error).toContain('todas las mensualidades');
+    expect(Mensualidad.findById).not.toHaveBeenCalled();
+  });
+
+  test('no permite retirar recargo agrupado ni cambiar su monto por el endpoint individual', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const mensualidad = { _id: 'm1', monto_esperado: 14, monto_sin_recargo_usd: 10, estatus: 'En revision', save: jest.fn() };
+    Mensualidad.findById.mockResolvedValue(mensualidad);
+    PagoDetalle.find.mockReturnValue({ select: jest.fn().mockResolvedValue([{ id_pago_agrupado: 'pa1' }]) });
+    for (const bloquear of [true, false]) {
+      const res = await request(app).patch('/api/mensualidades/m1').set('Authorization', `Bearer ${token}`)
+        .send({ monto_esperado: 10, bloquear_recargo_automatico: bloquear, nota: 'Prueba de proteccion agrupada' });
+      expect(res.status).toBe(409);
+    }
+    expect(mensualidad.save).not.toHaveBeenCalled();
+    expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('edicion de pago agrupado rechaza comprobantes no permitidos o mayores de 10 MB', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const tipoInvalido = await request(app).patch('/api/pagos/agrupado/pa1')
+      .set('Authorization', `Bearer ${token}`).attach('comprobante', Buffer.from('test'), 'archivo.txt');
+    const muyGrande = await request(app).patch('/api/pagos/agrupado/pa1')
+      .set('Authorization', `Bearer ${token}`).attach('comprobante', Buffer.alloc(10 * 1024 * 1024 + 1), 'archivo.pdf');
+    expect(tipoInvalido.status).toBe(400);
+    expect(muyGrande.status).toBe(400);
+    expect(muyGrande.body.error).toContain('10 MB');
+    expect(PagoAgrupado.findById).not.toHaveBeenCalled();
+  });
+
+  test('conciliacion matches and confirms all assignments in a grouped payment', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const mensualidades = {
+      m1: { _id: 'm1', monto_esperado: 40, estatus: 'En revision', id_alumno: { nombres: 'Ana' }, save: jest.fn().mockResolvedValue(true) },
+      m2: { _id: 'm2', monto_esperado: 60, estatus: 'En revision', id_alumno: { nombres: 'Eva' }, save: jest.fn().mockResolvedValue(true) }
+    };
+    const pagoAgrupado = {
+      _id: 'pa1',
+      codigo: 'PA-TEST',
+      estado: 'En revision',
+      referencia: '123456',
+      monto_total: 100,
+      monto_total_bs: 4000,
+      fecha_pago: '2026-10-05',
+      cantidad_atletas: 2,
+      increment: jest.fn(),
+      save: jest.fn().mockResolvedValue(true)
+    };
+
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue(Object.values(mensualidades))
+      })
+    });
+    PagoDetalle.find.mockReturnValue({ select: jest.fn().mockResolvedValue([]) });
+    PagoAgrupado.find.mockReturnValue({ select: jest.fn().mockResolvedValue([pagoAgrupado]) });
+
+    const preview = await request(app)
+      .post('/api/conciliacion/previsualizar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('Referencia;Monto;Fecha\n123456;4000;05/10/2026\n'), 'banco.txt');
+
+    expect(preview.status).toBe(200);
+    expect(preview.body.match_total).toHaveLength(1);
+    expect(preview.body.match_total[0].sistema).toEqual(expect.objectContaining({
+      pago_id: 'pa1',
+      pago_agrupado_id: 'pa1',
+      monto_bs: 4000
+    }));
+
+    PagoAgrupado.db = { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn(async (operacion) => operacion()),
+      endSession: jest.fn().mockResolvedValue(undefined)
+    }) };
+    PagoAgrupado.find.mockResolvedValue([pagoAgrupado]);
+    PagoAgrupado.findById.mockResolvedValue(pagoAgrupado);
+    Mensualidad.findById.mockImplementation((id) => Promise.resolve(mensualidades[id]));
+    PagoDetalle.find.mockImplementation((filtro) => ({
+      select: jest.fn().mockResolvedValue(filtro._id ? [] : filtro.id_pago_agrupado
+        ? [
+            { _id: 'pd1', id_mensualidad: 'm1', id_pago_agrupado: 'pa1' },
+            { _id: 'pd2', id_mensualidad: 'm2', id_pago_agrupado: 'pa1' }
+          ]
+        : [{ monto_pagado: filtro.id_mensualidad === 'm1' ? 40 : 60 }])
+    }));
+
+    const confirmacion = await request(app)
+      .post('/api/conciliacion/confirmar-match-total')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tipo_conciliacion: 'mensualidades', pago_ids: ['pa1'] });
+
+    expect(confirmacion.status).toBe(200);
+    expect(confirmacion.body.mensualidades_actualizadas).toBe(2);
+    expect(mensualidades.m1.estatus).toBe('Pagado');
+    expect(mensualidades.m2.estatus).toBe('Pagado');
+    expect(pagoAgrupado.estado).toBe('Conciliado');
+  });
+
+  test('POST /api/conciliacion/pagos-agrupados/:id/rechazar removes all assignments', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const pagoAgrupado = {
+      _id: 'pa1',
+      codigo: 'PA-TEST',
+      estado: 'En revision',
+      increment: jest.fn(),
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const mensualidades = {
+      m1: { _id: 'm1', monto_esperado: 40, fecha_vencimiento: '2027-01-01', estatus: 'En revision', save: jest.fn().mockResolvedValue(true) },
+      m2: { _id: 'm2', monto_esperado: 60, fecha_vencimiento: '2027-01-01', estatus: 'En revision', save: jest.fn().mockResolvedValue(true) }
+    };
+
+    PagoAgrupado.db = { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn(async (operacion) => operacion()),
+      endSession: jest.fn().mockResolvedValue(undefined)
+    }) };
+    PagoAgrupado.findOne.mockResolvedValue(pagoAgrupado);
+    PagoAgrupado.findById.mockResolvedValue(pagoAgrupado);
+    PagoDetalle.find
+      .mockReturnValueOnce({ select: jest.fn().mockResolvedValue([
+        { _id: 'pd1', id_mensualidad: 'm1' },
+        { _id: 'pd2', id_mensualidad: 'm2' }
+      ]) })
+      .mockReturnValue({ select: jest.fn().mockResolvedValue([]) });
+    PagoDetalle.deleteMany.mockResolvedValue({ deletedCount: 2 });
+    Mensualidad.findById.mockImplementation((id) => Promise.resolve(mensualidades[id]));
+
+    const response = await request(app)
+      .post('/api/conciliacion/pagos-agrupados/pa1/rechazar')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ motivo: 'Transferencia no localizada' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.asignaciones_retiradas).toBe(2);
+    expect(PagoDetalle.deleteMany).toHaveBeenCalledWith({ id_pago_agrupado: 'pa1' });
+    expect(mensualidades.m1.estatus).toBe('Pendiente');
+    expect(mensualidades.m2.estatus).toBe('Pendiente');
+    expect(pagoAgrupado.estado).toBe('Rechazado');
+    expect(pagoAgrupado.motivo_rechazo).toBe('Transferencia no localizada');
   });
 
   test('POST /api/conciliacion/previsualizar incluye monto esperado del sistema', async () => {
@@ -1885,6 +2204,21 @@ describe('Backend smoke tests', () => {
         referencia: 'primera-mensualidad'
       })
     );
+  });
+
+  test('crear una cuota futura no consume el credito reservado a una deuda anterior', async () => {
+    const alumno = { _id: 'a1', saldo_a_favor_mensualidades: 1.03, save: jest.fn().mockResolvedValue(true) };
+    Alumno.findById.mockResolvedValue(alumno);
+    Mensualidad.findOne.mockImplementation((filter) => Promise.resolve(filter.$or
+      ? { _id: 'oct1', mes: 10, anio: 2026, monto_esperado: 19, estatus: 'Insolvente' } : null));
+    Mensualidad.create.mockResolvedValue({ _id: 'nov1', id_alumno: 'a1', estatus: 'Pendiente', monto_esperado: 15 });
+    const res = await request(app).post('/api/mensualidades/primera')
+      .set('Authorization', `Bearer ${makeToken({ id: 'admin1', rol: 'admin' })}`)
+      .send({ id_alumno: 'a1', mes: 11, anio: 2026, monto_esperado: 15, estatus: 'Pendiente' });
+    expect(res.status).toBe(200);
+    expect(Mensualidad.create).toHaveBeenCalledWith(expect.objectContaining({ credito_aplicado: 0, monto_esperado: 15 }));
+    expect(alumno.saldo_a_favor_mensualidades).toBe(1.03);
+    expect(alumno.save).not.toHaveBeenCalled();
   });
 
   test('POST /api/mensualidades/ajuste-sede generates saldo a favor', async () => {

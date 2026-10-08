@@ -4,6 +4,7 @@ const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
 const PagoDetalle = require('../models/PagoDetalle');
 const TenantConfig = require('../models/TenantConfig');
+const PagoAgrupado = require('../models/PagoAgrupado');
 const Representante = require('../models/Representante');
 const HistorialEstadoAlumno = require('../models/HistorialEstadoAlumno');
 const mongoose = require('mongoose');
@@ -12,6 +13,7 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const MONTO_TOLERANCIA_BS = 100;
+const { cotizarCreditosAlumno, proyectarCreditoMensualidades } = require('../services/monthlyCredit');
 const SALDO_A_FAVOR_CONSUMIDO_ERROR = 'El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.';
 
 function esErrorSaldoAFavorConsumido(err) {
@@ -26,6 +28,7 @@ async function getTenantMensualidadModels(req) {
   const TenantAlumno = getTenantModel(connection, 'Alumno');
   const TenantMensualidad = getTenantModel(connection, 'Mensualidad');
   const TenantPagoDetalle = getTenantModel(connection, 'PagoDetalle');
+  const TenantPagoAgrupado = getTenantModel(connection, 'PagoAgrupado');
   const TenantSede = getTenantModel(connection, 'Sede');
   const TenantReposo = getTenantModel(connection, 'Reposo');
   const TenantConfigModel = getTenantModel(connection, 'TenantConfig');
@@ -36,6 +39,7 @@ async function getTenantMensualidadModels(req) {
     Alumno: TenantAlumno,
     Mensualidad: TenantMensualidad,
     PagoDetalle: TenantPagoDetalle,
+    PagoAgrupado: TenantPagoAgrupado,
     Sede: TenantSede,
     Reposo: TenantReposo,
     TenantConfig: TenantConfigModel,
@@ -50,6 +54,7 @@ function resolveMensualidadModels(models = {}) {
     Alumno: models.Alumno || Alumno,
     Mensualidad: models.Mensualidad || Mensualidad,
     PagoDetalle: models.PagoDetalle || PagoDetalle,
+    PagoAgrupado: models.PagoAgrupado || PagoAgrupado,
     Sede: models.Sede || Sede,
     Reposo: models.Reposo || Reposo,
     TenantConfig: models.TenantConfig || TenantConfig,
@@ -158,6 +163,36 @@ function normalizarFechaOpcional(valor) {
   if (Number.isNaN(fecha.getTime())) return undefined;
   return fecha;
 }
+
+function aplicarMontoEsperadoManual(mensualidad, monto, req, nota, bloquearRecargo) {
+  const montoBase = obtenerMontoBaseMensualidad(mensualidad);
+  const credito = redondearMonto(mensualidad.credito_aplicado || 0);
+  mensualidad.monto_base = montoBase;
+  mensualidad.ajuste_extraordinario = redondearMonto(montoBase - credito - monto);
+  mensualidad.monto_esperado = monto;
+  mensualidad.monto_sin_recargo_usd = monto;
+  mensualidad.recargo_aplicado_usd = 0;
+  mensualidad.monto_con_recargo_usd = monto;
+  mensualidad.aplica_recargo = false;
+  mensualidad.fecha_aplicacion_recargo = null;
+  mensualidad.ajuste_descripcion = 'Ajuste manual individual de mensualidad';
+  mensualidad.ajuste_fecha = new Date();
+  if (bloquearRecargo) {
+    mensualidad.bloqueo_recargo_automatico = true;
+    mensualidad.bloqueo_recargo_automatico_fecha = new Date();
+    mensualidad.bloqueo_recargo_automatico_actor_id = req.user?.id || null;
+    mensualidad.bloqueo_recargo_automatico_nota = nota;
+  }
+}
+
+exports.prepararRetiroRecargoAgrupado = (mensualidad, req) => {
+  const anterior = construirSnapshotEdicionMensualidad(mensualidad);
+  const nota = normalizarNotaEdicion(req.body?.nota) || 'Retiro de recargo de mensualidad con pago agrupado';
+  aplicarMontoEsperadoManual(mensualidad, redondearMonto(mensualidad.monto_sin_recargo_usd), req, nota, true);
+  return () => registrarHistorialEdicionMensualidad(mensualidad, req, {
+    accion: 'retiro_manual_recargo', nota, anterior, nuevo: construirSnapshotEdicionMensualidad(mensualidad)
+  });
+};
 
 function resolveTenantId(req) {
   return resolveRequestTenantId(req);
@@ -760,11 +795,17 @@ async function resolverMontoBaseAlumno(alumno, models = {}) {
   return 0;
 }
 
-async function consumirSaldoAFavor(alumno, montoBase) {
+async function consumirSaldoAFavor(alumno, montoBase, periodo, models) {
   const saldoDisponible = redondearMonto(alumno?.saldo_a_favor_mensualidades || 0);
   if (saldoDisponible <= 0 || montoBase <= 0) {
     return { creditoAplicado: 0, montoEsperado: redondearMonto(montoBase) };
   }
+
+  const { Mensualidad: MensualidadModel } = resolveMensualidadModels(models);
+  const anteriorPendiente = await MensualidadModel.findOne({ id_alumno: alumno._id,
+    estatus: { $in: ['Pendiente', 'Retrasado', 'Insolvente', 'Abono'] }, monto_esperado: { $gt: 0 },
+    $or: [{ anio: { $lt: periodo.anio } }, { anio: periodo.anio, mes: { $lt: periodo.mes } }] });
+  if (anteriorPendiente) return { creditoAplicado: 0, montoEsperado: redondearMonto(montoBase) };
 
   const creditoAplicado = redondearMonto(Math.min(saldoDisponible, montoBase));
   alumno.saldo_a_favor_mensualidades = redondearMonto(saldoDisponible - creditoAplicado);
@@ -832,14 +873,14 @@ async function crearMensualidadParaPeriodo(
         ? reglaReposo.montoPersonalizado
         : montoBaseOriginal
     );
-    const credito = await consumirSaldoAFavor(alumno, montoBase);
+    const credito = await consumirSaldoAFavor(alumno, montoBase, periodo, models);
     creditoAplicado = credito.creditoAplicado;
     monto = credito.montoEsperado;
   } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
     monto = 0;
     estatus = 'Becado';
   } else {
-    const credito = await consumirSaldoAFavor(alumno, montoBase);
+    const credito = await consumirSaldoAFavor(alumno, montoBase, periodo, models);
     creditoAplicado = credito.creditoAplicado;
     monto = credito.montoEsperado;
   }
@@ -1863,6 +1904,7 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
       Alumno: TenantAlumno,
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
+      PagoAgrupado: TenantPagoAgrupado,
       Sede: TenantSede,
       Reposo: TenantReposo,
       TenantConfig: TenantConfigModel
@@ -2475,7 +2517,8 @@ exports.getMensualidades = async (req, res) => {
       Representante: TenantRepresentante,
       Alumno: TenantAlumno,
       Mensualidad: TenantMensualidad,
-      PagoDetalle: TenantPagoDetalle
+      PagoDetalle: TenantPagoDetalle,
+      PagoAgrupado: TenantPagoAgrupado
     } = tenantModels;
 
     const filtro = {};
@@ -2581,6 +2624,32 @@ exports.getMensualidades = async (req, res) => {
       pagosPorMensualidad.map((item) => [String(item._id), redondearMonto(item.total_pagado)])
     );
 
+    const detallesAgrupados = mensualidadIds.length > 0
+      ? await TenantPagoDetalle.find({
+          id_mensualidad: { $in: mensualidadIds },
+          id_pago_agrupado: { $ne: null }
+        }).select('id_mensualidad id_pago_agrupado')
+      : [];
+    const pagoAgrupadoIds = [...new Set(detallesAgrupados.map((detalle) => String(detalle.id_pago_agrupado)).filter(Boolean))];
+    const pagosAgrupados = pagoAgrupadoIds.length > 0
+      ? await TenantPagoAgrupado.find({ _id: { $in: pagoAgrupadoIds } })
+        .select('_id codigo monto_total cantidad_atletas estado')
+      : [];
+    const pagoAgrupadoMap = new Map(pagosAgrupados.map((pago) => [String(pago._id), pago]));
+    const pagoAgrupadoPorMensualidad = new Map();
+
+    for (const detalle of detallesAgrupados) {
+      const pago = pagoAgrupadoMap.get(String(detalle.id_pago_agrupado));
+      if (!pago) continue;
+      pagoAgrupadoPorMensualidad.set(String(detalle.id_mensualidad), {
+        id: String(pago._id),
+        codigo: pago.codigo,
+        monto_total: Number(pago.monto_total) || 0,
+        cantidad_atletas: Number(pago.cantidad_atletas) || 0,
+        estado: pago.estado
+      });
+    }
+
     // Compatibilidad: data histórica con "Retrasado" se expone como "Insolvente".
     const mensualidadesCompat = mensualidades.map((m) => {
       const raw = m.toObject ? m.toObject() : m;
@@ -2594,6 +2663,7 @@ exports.getMensualidades = async (req, res) => {
       raw.monto_mensualidad_visual = componentes.componenteMensualidad;
       raw.monto_inscripcion_visual = componentes.componenteInscripcion;
       raw.es_pago_mixto = componentes.esMixto;
+      raw.pago_agrupado = pagoAgrupadoPorMensualidad.get(String(raw._id)) || null;
 
       if (esEstatusInsolvente(raw.estatus)) {
         raw.estatus = 'Insolvente';
@@ -2601,7 +2671,24 @@ exports.getMensualidades = async (req, res) => {
       return raw;
     });
 
-    res.json(mensualidadesCompat);
+    const alumnosConSaldo = new Map(mensualidades.map((item) => [String(item.id_alumno?._id), item.id_alumno])
+      .filter(([, alumno]) => Number(alumno?.saldo_a_favor_mensualidades) > 0));
+    const cotizaciones = new Map();
+    for (const [id] of alumnosConSaldo) {
+      cotizaciones.set(id, await cotizarCreditosAlumno(id, tenantModels, {
+        prepararMensualidad: (mensualidad) => aplicarRecargoMensualidadSegunConfig(mensualidad, { models: tenantModels, persistir: false })
+      }));
+    }
+    const base = proyectarCreditoMensualidades(mensualidadesCompat, new Map());
+    res.json(base.map((mensualidad) => {
+      const cotizacion = cotizaciones.get(String(mensualidad.id_alumno?._id));
+      const proyeccion = cotizacion?.proyecciones.get(String(mensualidad._id));
+      return proyeccion ? { ...mensualidad, saldo_pendiente: proyeccion.saldo_pendiente,
+        saldo_pendiente_antes_credito: proyeccion.saldo_pendiente_antes_credito,
+        credito_a_aplicar: proyeccion.credito_a_aplicar, credito_disponible: proyeccion.credito_disponible,
+        saldo_a_favor_disponible: cotizacion.saldo } : { ...mensualidad,
+        saldo_a_favor_disponible: cotizacion?.saldo ?? Number(mensualidad.id_alumno?.saldo_a_favor_mensualidades || 0) };
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2781,31 +2868,19 @@ exports.editarMensualidadIndividual = async (req, res) => {
     }
 
     if (montoEsperadoNormalizado !== undefined) {
+      const consultaPagos = TenantPagoDetalle.find({ id_mensualidad: mensualidad._id });
+      const pagos = await (typeof consultaPagos?.select === 'function' ? consultaPagos.select('id_pago_agrupado') : consultaPagos);
+      if (pagos.some((pago) => pago.id_pago_agrupado)) {
+        return res.status(409).json({ error: 'El monto de una mensualidad con pago agrupado debe modificarse desde la operacion agrupada segura.' });
+      }
+    }
+
+    if (montoEsperadoNormalizado !== undefined) {
       if (montoEsperadoNormalizado < 0) {
         return res.status(400).json({ error: 'El monto_esperado no puede ser negativo' });
       }
 
-      // Politica: mantener el monto base de esta mensualidad y ajustar solo su ajuste_extraordinario.
-      const montoBaseActual = obtenerMontoBaseMensualidad(mensualidad);
-      const creditoAplicado = redondearMonto(mensualidad.credito_aplicado || 0);
-
-      mensualidad.monto_base = montoBaseActual;
-      mensualidad.ajuste_extraordinario = redondearMonto(montoBaseActual - creditoAplicado - montoEsperadoNormalizado);
-      mensualidad.monto_esperado = montoEsperadoNormalizado;
-      mensualidad.monto_sin_recargo_usd = montoEsperadoNormalizado;
-      mensualidad.recargo_aplicado_usd = 0;
-      mensualidad.monto_con_recargo_usd = montoEsperadoNormalizado;
-      mensualidad.aplica_recargo = false;
-      mensualidad.fecha_aplicacion_recargo = null;
-      mensualidad.ajuste_descripcion = 'Ajuste manual individual de mensualidad';
-      mensualidad.ajuste_fecha = new Date();
-
-      if (bloquearRecargoAutomatico) {
-        mensualidad.bloqueo_recargo_automatico = true;
-        mensualidad.bloqueo_recargo_automatico_fecha = new Date();
-        mensualidad.bloqueo_recargo_automatico_actor_id = req.user?.id || null;
-        mensualidad.bloqueo_recargo_automatico_nota = notaEdicion;
-      }
+      aplicarMontoEsperadoManual(mensualidad, montoEsperadoNormalizado, req, notaEdicion, bloquearRecargoAutomatico);
     }
 
     if (estatusNormalizado === 'exonerado') {

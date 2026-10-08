@@ -2,11 +2,19 @@ const XLSX = require('xlsx');
 const path = require('path');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const PagoAgrupado = require('../models/PagoAgrupado');
 const UniformePedido = require('../models/UniformePedido');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
 const { registrarOperacion } = require('../services/operacionService');
 const { hasRequestPermission } = require('../middleware/auth');
+const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
+
+function grupoModificado() {
+  const error = new Error('El pago agrupado cambio. Actualiza la vista antes de continuar.');
+  error.status = 409;
+  return error;
+}
 
 const MONTO_TOLERANCIA_BS = 100;
 const TIPO_CONCILIACION = {
@@ -26,6 +34,8 @@ async function getTenantConciliacionModels(req) {
     connection,
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
+    PagoAgrupado: getTenantModel(connection, 'PagoAgrupado'),
+    Alumno: getTenantModel(connection, 'Alumno'),
     UniformePedido: getTenantModel(connection, 'UniformePedido')
   };
 }
@@ -34,6 +44,8 @@ function resolveConciliacionModels(models = {}) {
   return {
     Mensualidad: models.Mensualidad || Mensualidad,
     PagoDetalle: models.PagoDetalle || PagoDetalle,
+    PagoAgrupado: models.PagoAgrupado || PagoAgrupado,
+    Alumno: models.Alumno,
     UniformePedido: models.UniformePedido || UniformePedido
   };
 }
@@ -539,6 +551,7 @@ function buildMatchRecord({ banco, sistema, tipo, motivo = [], matchPor = '', id
       registro_id: String(sistema._id),
       registro_tipo: sistema.registro_tipo || TIPO_CONCILIACION.MENSUALIDADES,
       mensualidad_id: sistema.id_mensualidad ? String(sistema.id_mensualidad) : null,
+      pago_agrupado_id: sistema.id_pago_agrupado ? String(sistema.id_pago_agrupado) : null,
       pedido_id: sistema.id_pedido ? String(sistema.id_pedido) : null,
       referencia: sistema.referencia || '-',
       telefono_pago: sistema.telefono_pago || '',
@@ -590,6 +603,7 @@ exports.previsualizarConciliacion = async (req, res) => {
     const {
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
+      PagoAgrupado: TenantPagoAgrupado,
       UniformePedido: TenantUniformePedido
     } = resolveConciliacionModels(tenantModels);
 
@@ -630,7 +644,11 @@ exports.previsualizarConciliacion = async (req, res) => {
       );
 
       const pagosSistema = await TenantPagoDetalle.find({
-        id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) }
+        id_mensualidad: { $in: mensualidadesRevision.map((m) => m._id) },
+        $or: [
+          { id_pago_agrupado: null },
+          { id_pago_agrupado: { $exists: false } }
+        ]
       }).select('_id id_mensualidad referencia telefono_pago cedula_titular monto_pagado_bs monto_esperado_bs monto_esperado_usd fecha_pago');
 
       sistemaRows = pagosSistema.map((pago) => {
@@ -658,6 +676,26 @@ exports.previsualizarConciliacion = async (req, res) => {
           contexto: ''
         };
       });
+
+      const pagosAgrupados = await TenantPagoAgrupado.find({ estado: 'En revision' })
+        .select('_id codigo referencia telefono_pago cedula_titular monto_total monto_total_bs fecha_pago cantidad_atletas');
+
+      sistemaRows.push(...pagosAgrupados.map((pago) => ({
+        _id: pago._id,
+        registro_tipo: TIPO_CONCILIACION.MENSUALIDADES,
+        id_pago_agrupado: pago._id,
+        referencia: normalizarReferencia(pago.referencia),
+        telefono_pago: String(pago.telefono_pago || '').trim(),
+        telefono_pago_cmp: telefonoComparable(pago.telefono_pago),
+        cedula_titular: String(pago.cedula_titular || '').trim(),
+        cedula_titular_cmp: cedulaComparable(pago.cedula_titular),
+        monto_pagado_bs: parseMonto(pago.monto_total_bs),
+        monto_esperado_bs: parseMonto(pago.monto_total_bs),
+        monto_esperado_usd: Number(pago.monto_total),
+        fecha_pago: parseFecha(pago.fecha_pago),
+        alumno: `${Number(pago.cantidad_atletas) || 2} atletas`,
+        contexto: `Pago agrupado ${pago.codigo || ''}`.trim()
+      })));
     } else {
       const pedidosEnRevision = await TenantUniformePedido.find({ estado: 'pago_en_revision' })
         .populate('alumno', 'nombres apellidos')
@@ -906,6 +944,7 @@ exports.previsualizarConciliacion = async (req, res) => {
           registro_id: String(row._id),
           registro_tipo: row.registro_tipo || TIPO_CONCILIACION.MENSUALIDADES,
           mensualidad_id: row.id_mensualidad ? String(row.id_mensualidad) : null,
+          pago_agrupado_id: row.id_pago_agrupado ? String(row.id_pago_agrupado) : null,
           pedido_id: row.id_pedido ? String(row.id_pedido) : null,
           referencia: row.referencia || '-',
           telefono_pago: row.telefono_pago || '',
@@ -950,6 +989,7 @@ exports.confirmarMatchTotal = async (req, res) => {
     const {
       Mensualidad: TenantMensualidad,
       PagoDetalle: TenantPagoDetalle,
+      PagoAgrupado: TenantPagoAgrupado,
       UniformePedido: TenantUniformePedido
     } = resolveConciliacionModels(tenantModels);
 
@@ -1049,40 +1089,73 @@ exports.confirmarMatchTotal = async (req, res) => {
       });
     }
 
-    const pagos = await TenantPagoDetalle.find({ _id: { $in: pagoIds } }).select('_id id_mensualidad');
-    if (!pagos.length) {
-      return res.status(404).json({ error: 'No se encontraron pagos para confirmar' });
-    }
-
-    const mensualidadIds = [...new Set(pagos.map((p) => String(p.id_mensualidad)))];
-    let actualizadas = 0;
-
-    for (const mensualidadId of mensualidadIds) {
-      const mensualidad = await TenantMensualidad.findById(mensualidadId);
-      if (!mensualidad) continue;
-
-      const pagosMensualidad = await TenantPagoDetalle.find({ id_mensualidad: mensualidad._id }).select('monto_pagado');
-      const totalPagado = pagosMensualidad.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0);
-      const montoEsperado = Number(mensualidad.monto_esperado) || 0;
-
-      if (totalPagado <= 0) {
-        mensualidad.estatus = 'Pendiente';
-      } else if (totalPagado >= montoEsperado) {
-        mensualidad.estatus = 'Pagado';
-      } else {
-        mensualidad.estatus = 'Abono';
+    const pagosAgrupados = await TenantPagoAgrupado.find({
+      _id: { $in: pagoIds },
+      estado: 'En revision'
+    });
+    const idsAgrupados = new Set(pagosAgrupados.map((pago) => String(pago._id)));
+    const idsIndividuales = pagoIds.filter((id) => !idsAgrupados.has(String(id)));
+    const confirmar = async (session) => {
+      for (const original of pagosAgrupados) {
+        const grupo = await aplicarSession(TenantPagoAgrupado.findById(original._id), session);
+        if (!grupo || grupo.estado !== 'En revision'
+          || String(grupo.updatedAt) !== String(original.updatedAt) || grupo.__v !== original.__v) {
+          throw grupoModificado();
+        }
+        grupo.estado = 'Conciliado';
+        grupo.conciliado_por = req.user?.id;
+        grupo.conciliado_en = new Date();
+        grupo.increment();
+        await grupo.save({ session });
       }
-
-      await mensualidad.save();
-      actualizadas += 1;
-    }
+      const pagosIndividuales = await aplicarSession(TenantPagoDetalle.find({
+        _id: { $in: idsIndividuales }, id_pago_agrupado: null
+      }).select('_id id_mensualidad'), session);
+      const detallesAgrupados = pagosAgrupados.length
+        ? await aplicarSession(TenantPagoDetalle.find({ id_pago_agrupado: { $in: pagosAgrupados.map((pago) => pago._id) } })
+          .select('_id id_mensualidad id_pago_agrupado'), session)
+        : [];
+      if (pagosAgrupados.some((grupo) => detallesAgrupados.filter((detalle) => String(detalle.id_pago_agrupado) === String(grupo._id)).length < grupo.cantidad_atletas)) {
+        throw grupoModificado();
+      }
+      const pagos = [...pagosIndividuales, ...detallesAgrupados];
+      if (!pagos.length) {
+        const error = new Error('No se encontraron pagos para confirmar');
+        error.status = 404;
+        throw error;
+      }
+      const mensualidadIds = [...new Set(pagos.map((pago) => String(pago.id_mensualidad)))];
+      let actualizadas = 0;
+      for (const mensualidadId of mensualidadIds) {
+        const mensualidad = await aplicarSession(TenantMensualidad.findById(mensualidadId), session);
+        if (!mensualidad) {
+          if (session) throw grupoModificado();
+          continue;
+        }
+        const pagosMensualidad = await aplicarSession(TenantPagoDetalle.find({ id_mensualidad: mensualidad._id }).select('monto_pagado'), session);
+        const totalPagado = pagosMensualidad.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0);
+        const montoEsperado = Number(mensualidad.monto_esperado) || 0;
+        mensualidad.estatus = totalPagado <= 0 ? 'Pendiente' : (totalPagado >= montoEsperado ? 'Pagado' : 'Abono');
+        await mensualidad.save(session ? { session } : undefined);
+        actualizadas += 1;
+      }
+      return actualizadas;
+    };
+    const actualizadas = pagosAgrupados.length
+      ? await ejecutarConTransaccion(TenantPagoAgrupado, confirmar)
+      : await confirmar(null);
 
     await registrarOperacion(req, {
       tipo: 'conciliacion_bancaria',
       nombre: 'Conciliacion bancaria',
-      detalle: `Se confirmaron ${actualizadas} mensualidad(es).`,
+      detalle: `Se confirmaron ${actualizadas} mensualidad(es) en ${pagosAgrupados.length} pago(s) agrupado(s).`,
       entidad_tipo: 'Mensualidad',
-      metadata: { tipo_conciliacion: tipoConciliacion, registros_actualizados: actualizadas, pagos_recibidos: pagoIds.length }
+      metadata: {
+        tipo_conciliacion: tipoConciliacion,
+        registros_actualizados: actualizadas,
+        pagos_recibidos: pagoIds.length,
+        pagos_agrupados: pagosAgrupados.length
+      }
     });
 
     return res.json({
@@ -1093,7 +1166,94 @@ exports.confirmarMatchTotal = async (req, res) => {
       pagos_recibidos: pagoIds.length
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Error al confirmar pagos' });
+    return res.status(err.status || 500).json({ error: err.message || 'Error al confirmar pagos' });
+  }
+};
+
+exports.rechazarPagoAgrupado = async (req, res) => {
+  try {
+    const tenantModels = await getTenantConciliacionModels(req);
+    const {
+      Mensualidad: TenantMensualidad,
+      PagoDetalle: TenantPagoDetalle,
+      PagoAgrupado: TenantPagoAgrupado,
+      Alumno: TenantAlumno
+    } = resolveConciliacionModels(tenantModels);
+    const pagoAgrupado = await TenantPagoAgrupado.findOne({
+      _id: req.params.id,
+      estado: 'En revision'
+    });
+    if (!pagoAgrupado) {
+      return res.status(404).json({ error: 'Pago agrupado en revisión no encontrado' });
+    }
+
+    const { actualizadas, detalles } = await ejecutarConTransaccion(TenantPagoAgrupado, async (session) => {
+      const grupo = await aplicarSession(TenantPagoAgrupado.findById(pagoAgrupado._id), session);
+      if (!grupo || grupo.estado !== 'En revision'
+        || String(grupo.updatedAt) !== String(pagoAgrupado.updatedAt) || grupo.__v !== pagoAgrupado.__v) {
+        throw grupoModificado();
+      }
+      grupo.estado = 'Rechazado';
+      grupo.rechazado_por = req.user?.id;
+      grupo.rechazado_en = new Date();
+      grupo.motivo_rechazo = String(req.body?.motivo || '').trim().slice(0, 500);
+      grupo.increment();
+      await grupo.save({ session });
+      const detalles = await aplicarSession(TenantPagoDetalle.find({ id_pago_agrupado: grupo._id })
+        .select('_id id_mensualidad'), session);
+      const mensualidadIds = [...new Set(detalles.map((detalle) => String(detalle.id_mensualidad)))];
+      await aplicarSession(TenantPagoDetalle.deleteMany({ id_pago_agrupado: grupo._id }), session);
+      let actualizadas = 0;
+      for (const mensualidadId of mensualidadIds) {
+        const mensualidad = await aplicarSession(TenantMensualidad.findById(mensualidadId), session);
+        if (!mensualidad) throw grupoModificado();
+        const pagosRestantes = await aplicarSession(TenantPagoDetalle.find({ id_mensualidad: mensualidad._id }).select('monto_pagado'), session);
+        const totalPagado = pagosRestantes.reduce((total, pago) => total + (Number(pago.monto_pagado) || 0), 0);
+        const montoEsperado = Number(mensualidad.monto_esperado) || 0;
+        const saldoNuevo = Number(Math.max(0, totalPagado - montoEsperado).toFixed(2));
+        const deltaSaldo = Number((saldoNuevo - Number(mensualidad.saldo_a_favor_generado || 0)).toFixed(2));
+        if (deltaSaldo !== 0) {
+          const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
+          const alumno = await aplicarSession(TenantAlumno.findById(alumnoId), session);
+          const saldoResultante = Number((Number(alumno?.saldo_a_favor_mensualidades || 0) + deltaSaldo).toFixed(2));
+          if (!alumno || saldoResultante < 0) {
+            const error = new Error('No se puede rechazar el grupo: el saldo a favor ya fue consumido o el alumno no existe.');
+            error.status = 409;
+            throw error;
+          }
+          alumno.saldo_a_favor_mensualidades = saldoResultante;
+          await alumno.save({ session });
+        }
+        mensualidad.saldo_a_favor_generado = saldoNuevo;
+        if (totalPagado <= 0) {
+          const vencida = mensualidad.fecha_vencimiento && new Date(mensualidad.fecha_vencimiento) < new Date();
+          mensualidad.estatus = vencida ? 'Insolvente' : 'Pendiente';
+        } else {
+          mensualidad.estatus = totalPagado >= montoEsperado ? 'Pagado' : 'Abono';
+        }
+        await mensualidad.save({ session });
+        actualizadas += 1;
+      }
+      Object.assign(pagoAgrupado, { motivo_rechazo: grupo.motivo_rechazo });
+      return { actualizadas, detalles };
+    }, { obligatoria: true });
+
+    await registrarOperacion(req, {
+      tipo: 'pago_agrupado_rechazado',
+      nombre: 'Pago agrupado rechazado',
+      detalle: `Se rechazó ${pagoAgrupado.codigo || pagoAgrupado._id} y se retiraron ${detalles.length} asignaciones.`,
+      entidad_tipo: 'PagoAgrupado',
+      entidad_id: pagoAgrupado._id,
+      metadata: { mensualidades_actualizadas: actualizadas, motivo: pagoAgrupado.motivo_rechazo }
+    });
+
+    return res.json({
+      message: 'Pago agrupado rechazado correctamente',
+      mensualidades_actualizadas: actualizadas,
+      asignaciones_retiradas: detalles.length
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || 'Error al rechazar el pago agrupado' });
   }
 };
 
