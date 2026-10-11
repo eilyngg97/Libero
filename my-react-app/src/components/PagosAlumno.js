@@ -23,6 +23,7 @@ import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
+import { mediaUrl } from '../utils/mediaUrl';
 
 // Eliminar pagosEjemplo, usaremos datos reales
 
@@ -115,6 +116,8 @@ function PagosAlumno(props) {
   const [errorRef, setErrorRef] = useState('');
   const [errorEdicion, setErrorEdicion] = useState('');
   const [comprobante, setComprobante] = useState(null);
+  const [comprobanteVisible, setComprobanteVisible] = useState('');
+  const [errorComprobante, setErrorComprobante] = useState(false);
   const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
   const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
   const [adelantandoMensualidad, setAdelantandoMensualidad] = useState(false);
@@ -395,10 +398,8 @@ function PagosAlumno(props) {
 
   const handleVerComprobante = (url) => {
     if (!url) return;
-    const finalUrl = /^https?:\/\//i.test(url)
-      ? url
-      : `${process.env.REACT_APP_API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-    window.open(finalUrl, '_blank', 'noopener,noreferrer');
+    setErrorComprobante(false);
+    setComprobanteVisible(mediaUrl(url));
   };
 
   const handleVerDetalle = async (mensualidad) => {
@@ -711,6 +712,9 @@ function PagosAlumno(props) {
 
   const referenciaNormalizada = String(referencia || '').replace(/\D/g, '');
   const telefonoPagoNormalizado = String(telefonoPago || '').replace(/\D/g, '');
+  const telefonoPagoOriginal = formatTelefonoPago(editandoPago?.telefono_pago);
+  const telefonoPagoSinCambios = telefonoPagoNormalizado === telefonoPagoOriginal;
+  const telefonoPagoValido = telefonoPagoSinCambios || telefonoPagoNormalizado.length === 10;
   const cedulaTitularNormalizada = String(cedulaTitular || '').replace(/\D/g, '');
   const montoPagoBsNumerico = Number(montoPagoBs);
   const metodoPagoNormalizado = normalizeMetodoPago(metodoPago);
@@ -727,7 +731,7 @@ function PagosAlumno(props) {
     Number.isFinite(equivalenteUsdDesdeBs) &&
     equivalenteUsdDesdeBs > 0 &&
     (!metodoRequiereReferencia(metodoPagoNormalizado) || referenciaNormalizada.length === 6) &&
-    telefonoPagoNormalizado.length === 10 &&
+    telefonoPagoValido &&
     Boolean(String(tipoCedulaTitular || '').trim()) &&
     cedulaTitularNormalizada.length > 0;
 
@@ -1606,6 +1610,31 @@ function PagosAlumno(props) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog
+        open={Boolean(comprobanteVisible)}
+        onClose={() => setComprobanteVisible('')}
+        fullWidth
+        maxWidth="md"
+        aria-labelledby="comprobante-pago-title"
+        PaperProps={{ sx: { borderRadius: 2, maxHeight: '90dvh' } }}
+      >
+        <DialogTitle id="comprobante-pago-title" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+          Comprobante del pago
+          <Tooltip title="Cerrar comprobante">
+            <IconButton aria-label="Cerrar comprobante" onClick={() => setComprobanteVisible('')}><CloseIcon /></IconButton>
+          </Tooltip>
+        </DialogTitle>
+        <DialogContent sx={{ p: { xs: 1.5, sm: 2 }, bgcolor: '#f8fafc' }}>
+          {errorComprobante ? (
+            <Alert severity="error">No se pudo cargar el comprobante. Intenta abrirlo nuevamente.</Alert>
+          ) : /\.pdf(?:[?#]|$)/i.test(comprobanteVisible) ? (
+            <Box component="iframe" title="Comprobante del pago PDF" src={comprobanteVisible} sx={{ display: 'block', border: 0, width: '100%', height: '65dvh' }} />
+          ) : comprobanteVisible ? (
+            <Box component="img" alt="Comprobante del pago" src={comprobanteVisible} onError={() => setErrorComprobante(true)} sx={{ display: 'block', width: '100%', height: 'auto', maxHeight: '70dvh', objectFit: 'contain' }} />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <PagoAgrupadoEditor
         open={Boolean(pagoAgrupadoEditandoId)}
         pagoId={pagoAgrupadoEditandoId}
@@ -1771,9 +1800,13 @@ function PagosAlumno(props) {
             size="small"
             sx={inputSx}
             inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', maxLength: 10 }}
+            error={!telefonoPagoValido}
+            helperText={!telefonoPagoValido ? 'Ingresa 10 digitos, sin el 0 inicial.' : ''}
           />
           <Typography variant="caption" sx={{ color: '#64748b', mt: -0.35, mb: 0.5, display: 'block' }}>
-            Sin el 0 adelante. Este campo es obligatorio.
+            {telefonoPagoSinCambios && telefonoPagoNormalizado.length !== 10
+              ? 'Telefono guardado anteriormente. Puedes conservarlo o corregirlo a 10 digitos.'
+              : 'Sin el 0 adelante. Al cambiarlo, ingresa 10 digitos.'}
           </Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '76px 1fr' }, gap: 1, mt: 1 }}>
             <TextField
@@ -1854,7 +1887,7 @@ function PagosAlumno(props) {
             </Box>
             <Typography variant="body2" sx={{ fontWeight: 700, color: '#0f172a' }}>Haz clic para adjuntar comprobante</Typography>
             <Typography variant="caption" sx={{ color: '#94a3b8' }}>PNG, JPG hasta 5MB</Typography>
-            <input type="file" hidden onChange={(e) => { setComprobante(e.target.files[0]); setQuitarComprobanteActual(false); }} />
+            <input type="file" aria-label="Adjuntar comprobante del pago" hidden onChange={(e) => { setComprobante(e.target.files[0]); setQuitarComprobanteActual(false); }} />
           </Box>
           {comprobante && (
             <Box sx={{ mt: 1.5, px: 1.5, py: 1, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>

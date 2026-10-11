@@ -2,6 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import PagosAlumno from './PagosAlumno';
+import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
+import * as mediaUtils from '../utils/mediaUrl';
 
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 873.87, moneda: 'USD' } }) }));
 jest.mock('../utils/dolarHistorico', () => ({ obtenerTasaOficialPorFecha: jest.fn().mockResolvedValue(873.87), obtenerTasaEuroOficialPorFecha: jest.fn().mockResolvedValue(900) }));
@@ -18,6 +20,8 @@ let conflicto;
 let credito;
 
 beforeEach(() => {
+  obtenerTasaOficialPorFecha.mockResolvedValue(873.87);
+  obtenerTasaEuroOficialPorFecha.mockResolvedValue(900);
   estadoGrupo = 'En revision';
   agrupado = true;
   consultaDenegada = false;
@@ -165,6 +169,78 @@ test('el pago individual conserva su editor y no consulta grupos', async () => {
   expect(await screen.findByText('Editar Pago')).toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Transferencia agrupada' })).not.toBeInTheDocument();
   expect(global.fetch.mock.calls.some(([url]) => url.includes('/api/pagos/agrupado/'))).toBe(false);
+});
+
+test.each(['comprobante', 'nota'])('permite guardar %s sin exigir corregir el telefono historico del pago', async (cambio) => {
+  agrupado = false;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => url.includes('/api/pagos/m1') && !options.method
+    ? { ok: true, json: async () => [{ _id: 'p1', monto_pagado: 19, monto_pagado_bs: 16603.53,
+      metodo_pago: 'Pago movil', fecha_pago: '2026-10-07', referencia: '313131',
+      telefono_pago: '748596', cedula_titular: 'V-13843872' }] }
+    : original(url, options));
+  await abrirDetalle();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  const guardar = await screen.findByRole('button', { name: 'Guardar cambios' });
+  expect(screen.getByLabelText('Teléfono de pago')).toHaveValue('748596');
+  expect(screen.getByLabelText('Cédula del titular')).toHaveValue('13843872');
+  const foto = new File(['imagen'], 'comprobante.png', { type: 'image/png' });
+  if (cambio === 'comprobante') {
+    fireEvent.change(screen.getByLabelText('Adjuntar comprobante del pago'), { target: { files: [foto] } });
+  } else {
+    fireEvent.change(screen.getByLabelText('Nota para administración (opcional)'), { target: { value: 'Foto del pago' } });
+  }
+  await waitFor(() => expect(guardar).toBeEnabled());
+  const telefono = screen.getByLabelText('Teléfono de pago');
+  fireEvent.change(telefono, { target: { value: '748597' } });
+  expect(guardar).toBeDisabled();
+  expect(screen.getByText('Ingresa 10 digitos, sin el 0 inicial.')).toBeInTheDocument();
+  fireEvent.change(telefono, { target: { value: '4127485596' } });
+  expect(guardar).toBeEnabled();
+  fireEvent.change(telefono, { target: { value: '748596' } });
+  expect(guardar).toBeEnabled();
+  fireEvent.click(guardar);
+  await waitFor(() => expect(global.fetch.mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(1));
+  const [url, options] = global.fetch.mock.calls.find(([, options]) => options?.method === 'PATCH');
+  expect(url).toContain('/api/pagos/p1');
+  expect(options.body.get('telefono_pago')).toBe('748596');
+  expect(options.body.get('comprobante')).toEqual(cambio === 'comprobante' ? foto : null);
+  expect(options.body.get('nota')).toBe(cambio === 'nota' ? 'Foto del pago' : '');
+});
+
+test.each(['png', 'pdf'])('abre comprobante %s dentro de un dialogo con URL del tenant y permite cerrarlo', async (extension) => {
+  agrupado = false;
+  const archivo = `/uploads/olympykus/comprobantes/pago.${extension}`;
+  const urlTenant = `http://olympykus.localhost:4000${archivo}`;
+  const resolver = jest.spyOn(mediaUtils, 'mediaUrl').mockReturnValue(urlTenant);
+  const abrirPestana = jest.spyOn(window, 'open').mockImplementation(() => null);
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => url.includes('/api/pagos/m1') && !options.method
+    ? { ok: true, json: async () => [{ _id: 'p1', monto_pagado: 19, monto_pagado_bs: 16603.53,
+      metodo_pago: 'Pago movil', fecha_pago: '2026-10-07', referencia: '313131', comprobante_url: archivo }] }
+    : original(url, options));
+  try {
+    await abrirDetalle();
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver archivo' }));
+    const visor = await screen.findByRole('dialog', { name: 'Comprobante del pago' });
+    const contenido = extension === 'png'
+      ? within(visor).getByRole('img', { name: 'Comprobante del pago' })
+      : within(visor).getByTitle('Comprobante del pago PDF');
+    expect(contenido).toHaveAttribute('src', urlTenant);
+    expect(resolver).toHaveBeenCalledWith(archivo);
+    expect(abrirPestana).not.toHaveBeenCalled();
+    if (extension === 'png') {
+      fireEvent.error(contenido);
+    }
+    expect(within(visor).queryByRole('alert') !== null).toBe(extension === 'png');
+    fireEvent.click(within(visor).getByRole('button', { name: 'Cerrar comprobante' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Comprobante del pago' })).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: /Detalle del pago/i })).toBeInTheDocument();
+    expect(global.fetch.mock.calls.every(([, options]) => !options?.method || options.method === 'GET')).toBe(true);
+  } finally {
+    resolver.mockRestore();
+    abrirPestana.mockRestore();
+  }
 });
 
 test('el detalle se cierra desde su control accesible sin alterar pagos', async () => {

@@ -253,7 +253,6 @@ function DashboardUsuario() {
         >
           {[
             ['Total pendiente', `$${resumenFamiliar.total.toFixed(2)}`, '#ffffff'],
-            ['Recargos', `$${resumenFamiliar.recargos.toFixed(2)}`, '#ff718d'],
             ['Vencimiento', resumenFamiliar.vencimiento, '#ffffff']
           ].map(([etiqueta, valor, color]) => (
             <Box key={etiqueta}>

@@ -438,12 +438,14 @@ exports.registrarPagoAgrupado = async (req, res) => {
 
     const montoTotal = redondearMonto(asignacionesCalculadas.reduce((total, item) => total + item.monto, 0));
     const montoTotalDeclarado = normalizarMonto(req.body?.monto_total);
-    if (!Number.isFinite(montoTotalDeclarado) || Math.abs(montoTotalDeclarado - montoTotal) > 0.01) {
-      return res.status(400).json({ error: 'El monto debe cubrir exactamente todas las mensualidades seleccionadas' });
-    }
     const montoTotalBs = normalizarMontoBs(req.body?.monto_total_bs);
     if (!montoTotalBs || montoTotalBs <= 0) {
       return res.status(400).json({ error: 'Monto total en Bs inválido' });
+    }
+    const toleranciaUsd = calcularToleranciaUsdDesdeBs(montoTotalDeclarado, montoTotalBs);
+    if (!Number.isFinite(montoTotalDeclarado) || montoTotalDeclarado <= 0
+      || redondearMonto(Math.abs(montoTotalDeclarado - montoTotal)) > toleranciaUsd) {
+      return res.status(400).json({ error: `El monto debe cubrir todas las mensualidades seleccionadas (tolerancia Bs ${MONTO_TOLERANCIA_BS})` });
     }
     const tasaAplicada = redondearMonto(montoTotalBs / montoTotal);
     const comprobanteUrl = req.file

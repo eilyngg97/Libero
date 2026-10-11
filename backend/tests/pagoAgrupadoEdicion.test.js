@@ -171,6 +171,38 @@ test('pago agrupado consume el credito de cada atleta y conserva transferencia n
   expect(pagos.map((item) => item.monto_pagado)).toEqual([17.97, 17.98]);
 });
 
+test.each([
+  [80.05, 70100, 201],
+  [80.12, 70157.12, 400],
+  [81, 8100, 201],
+  [79, 7900, 201],
+  [81.01, 8101, 400],
+  [78.99, 7899, 400]
+])('registro agrupado aplica tolerancia Bs 100 al total (%s USD, %s Bs)', async (montoTotal, montoTotalBs, status) => {
+  prepararOctubreConCredito();
+  for (const alumno of Object.values(datos.Alumno)) alumno.saldo_a_favor_mensualidades = 0;
+  for (const id of ['oct1', 'oct2']) {
+    datos.Mensualidad[id].id_alumno.saldo_a_favor_mensualidades = 0;
+    datos.Mensualidad[id].monto_esperado = 40;
+  }
+  const originales = copiar(datos);
+  const req = solicitud({ monto_total: montoTotal, monto_total_bs: montoTotalBs,
+    asignaciones: [{ id_mensualidad: 'oct1' }, { id_mensualidad: 'oct2' }] });
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.registrarPagoAgrupado(req, res);
+  expect(res.status).toHaveBeenCalledWith(status);
+  if (status === 400) {
+    expect(datos).toEqual(originales);
+    expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining('tolerancia Bs 100') });
+    return;
+  }
+  const grupo = Object.values(datos.PagoAgrupado).find((item) => item._id !== 'g1');
+  expect(grupo).toMatchObject({ monto_total: 80, monto_total_bs: montoTotalBs });
+  const pagos = Object.values(datos.PagoDetalle).filter((item) => item.id_pago_agrupado === grupo._id);
+  expect(pagos.map((item) => item.monto_pagado)).toEqual([40, 40]);
+  expect(Math.round(pagos.reduce((total, item) => total + item.monto_pagado_bs, 0) * 100)).toBe(Math.round(montoTotalBs * 100));
+});
+
 test.each([false, true])('un fallo guardando octubre revierte credito y transferencia (agrupado=%s)', async (agrupado) => {
   prepararOctubreConCredito();
   const originales = copiar(datos);

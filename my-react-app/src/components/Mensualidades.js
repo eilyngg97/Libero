@@ -2490,7 +2490,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												)}
 													{pagoAgrupadoDetalle?.estado === 'En revision' && hasPermission('mensualidades.manage') && (
 														<Button variant="contained" startIcon={<EditIcon fontSize="small" />} onClick={() => setEditorGrupoOpen(true)}
-															disabled={confirmandoMensualidad || corrigiendoRecargo} sx={{ textTransform: 'none', fontWeight: 800 }}>
+															disabled={confirmandoMensualidad || corrigiendoRecargo} sx={{ borderRadius: 999, px: 2, minWidth: 108, textTransform: 'none', fontWeight: 800, bgcolor: '#0b2a57', color: '#ffffff', borderColor: '#93a7c7', '&:hover': { bgcolor: '#103469' } }}>
 															Editar grupo
 														</Button>
 													)}
@@ -3187,7 +3187,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				<DialogContent>
 					<Alert severity="warning" sx={{ mb: 1.5 }}>
 						{retiroRecargoGrupo
-							? `Esta accion retirara los recargos de ${retiroRecargoGrupo.recargos.length} ${retiroRecargoGrupo.recargos.length === 1 ? 'mensualidad' : 'mensualidades'} de las atletas del grupo. Las mensualidades sin recargo no cambiaran.`
+							? `Esta accion retirara los recargos de ${retiroRecargoGrupo.recargos.length} ${retiroRecargoGrupo.recargos.length === 1 ? 'mensualidad' : 'mensualidades'} de las atletas del grupo.`
 							: 'Esta acción quitará el recargo aplicado y recalculará la mensualidad al monto base.'}
 					</Alert>
 					{!retiroRecargoGrupo && <Typography sx={{ color: '#334155', lineHeight: 1.6 }}>
