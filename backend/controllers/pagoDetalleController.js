@@ -154,11 +154,9 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, mod
   const totalPagado = redondearMonto(pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0));
   const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
   const tasaReferencia = obtenerTasaReferenciaDesdePagos(pagos);
-  const toleranciaUsdLiquidacion = Number.isFinite(tasaReferencia) && tasaReferencia > 0
-    ? redondearMonto(MONTO_TOLERANCIA_BS / tasaReferencia)
-    : 0;
-  const montoEsperadoConTolerancia = redondearMonto(Math.max(0, montoEsperado - toleranciaUsdLiquidacion));
-  const cubreEsperadoConTolerancia = totalPagado >= montoEsperadoConTolerancia;
+  const cubreEsperadoConTolerancia = totalPagado >= montoEsperado
+    || (tasaReferencia > 0 && totalPagado > 0
+      && redondearMonto((montoEsperado - totalPagado) * tasaReferencia) <= MONTO_TOLERANCIA_BS);
   const restante = cubreEsperadoConTolerancia
     ? 0
     : redondearMonto(Math.max(0, montoEsperado - totalPagado));
@@ -228,7 +226,7 @@ function calcularToleranciaUsdDesdeBs(monto, montoBs) {
   const tasaAplicada = montoBsNum / montoNum;
   if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) return 0;
 
-  return redondearMonto(MONTO_TOLERANCIA_BS / tasaAplicada);
+  return MONTO_TOLERANCIA_BS / tasaAplicada;
 }
 
 function obtenerTasaReferenciaDesdePagos(pagos = []) {
@@ -291,12 +289,8 @@ async function validarPago({
     return { error: { status: 400, payload: { error: 'La mensualidad ya está pagada' } } };
   }
 
-  if (!puedePagarCuotas && monto < restante && (restante - monto) > toleranciaUsd && !permiteRevisionRecargoSinCuotas) {
+  if (!puedePagarCuotas && monto < restante && (restante - monto) > toleranciaUsd + 1e-9 && !permiteRevisionRecargoSinCuotas) {
     return { error: { status: 400, payload: { error: 'Este alumno no tiene habilitado pago en cuotas' } } };
-  }
-
-  if (monto > restante && !permiteSobrepagoAdelantado && (monto - restante) > toleranciaUsd) {
-    return { error: { status: 400, payload: { error: 'El monto excede el saldo pendiente' } } };
   }
 
   const montoARegistrar = redondearMonto(monto);
@@ -444,10 +438,16 @@ exports.registrarPagoAgrupado = async (req, res) => {
     }
     const toleranciaUsd = calcularToleranciaUsdDesdeBs(montoTotalDeclarado, montoTotalBs);
     if (!Number.isFinite(montoTotalDeclarado) || montoTotalDeclarado <= 0
-      || redondearMonto(Math.abs(montoTotalDeclarado - montoTotal)) > toleranciaUsd) {
+      || montoTotal - montoTotalDeclarado > toleranciaUsd + 1e-9) {
       return res.status(400).json({ error: `El monto debe cubrir todas las mensualidades seleccionadas (tolerancia Bs ${MONTO_TOLERANCIA_BS})` });
     }
-    const tasaAplicada = redondearMonto(montoTotalBs / montoTotal);
+    const totalTransferido = redondearMonto(montoTotalDeclarado);
+    const pesos = asignacionesCalculadas.map((item) => montoEnCentavos(item.monto));
+    const totalPesos = pesos.reduce((suma, peso) => suma + peso, 0);
+    const importes = repartirBsAgrupados(pesos, montoEnCentavos(totalTransferido), totalPesos);
+    const importesBs = repartirBsAgrupados(pesos, montoEnCentavos(montoTotalBs), totalPesos);
+    const tasaAplicada = montoTotalBs / totalTransferido;
+    transaccionObligatoria = transaccionObligatoria || totalTransferido > montoTotal;
     const comprobanteUrl = req.file
       ? `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`
       : null;
@@ -479,7 +479,7 @@ exports.registrarPagoAgrupado = async (req, res) => {
       const [cabecera] = await PagoAgrupado.create([{
         codigo,
         representante: representanteIds[0],
-        monto_total: montoTotal,
+        monto_total: totalTransferido,
         monto_total_bs: redondearMonto(montoTotalBs),
         tasa_aplicada: tasaAplicada,
         fecha_pago: req.body?.fecha_pago,
@@ -494,26 +494,22 @@ exports.registrarPagoAgrupado = async (req, res) => {
       }], session ? { session } : undefined);
       cabeceraCreada = cabecera;
 
-      let bsAsignados = 0;
       const detalles = [];
       for (let index = 0; index < asignacionesCalculadas.length; index += 1) {
         const item = asignacionesCalculadas[index];
-        const esUltima = index === asignacionesCalculadas.length - 1;
-        const montoBs = esUltima
-          ? redondearMonto(montoTotalBs - bsAsignados)
-          : redondearMonto(item.monto * tasaAplicada);
-        bsAsignados = redondearMonto(bsAsignados + montoBs);
+        const montoBs = importesBs[index];
+        const montoAsignado = importes[index];
         const [detalle] = await TenantPagoDetalle.create([{
           id_mensualidad: item.mensualidad._id,
           id_pago_agrupado: cabecera._id,
-          monto_pagado: item.monto,
+          monto_pagado: montoAsignado,
           monto_pagado_bs: montoBs,
-          monto_original_usd: item.monto,
+          monto_original_usd: montoAsignado,
           monto_original_bs: montoBs,
-          monto_aplicado_usd: item.monto,
+          monto_aplicado_usd: montoAsignado,
           monto_aplicado_bs: montoBs,
           monto_esperado_usd: item.monto,
-          monto_esperado_bs: montoBs,
+          monto_esperado_bs: redondearMonto(item.monto * tasaAplicada),
           fecha_pago: req.body?.fecha_pago,
           metodo_pago: req.body?.metodo_pago,
           referencia: req.body?.referencia,
@@ -539,7 +535,7 @@ exports.registrarPagoAgrupado = async (req, res) => {
       message: 'Pago agrupado registrado y enviado a revisión',
       pago_agrupado_id: resultado.cabecera._id,
       codigo: resultado.cabecera.codigo,
-      monto_total: montoTotal,
+      monto_total: totalTransferido,
       monto_total_bs: redondearMonto(montoTotalBs),
       atletas: atletas.size,
       asignaciones: resultado.detalles.length
@@ -917,7 +913,8 @@ exports.registrarPago = async (req, res) => {
     const inicial = await obtenerMensualidadConAlumnoTenant(id_mensualidad, tenantModels);
     if (!inicial) throw errorPagoAgrupado(404, 'Mensualidad no encontrada');
     const solicitaRevisionRecargo = normalizarBooleano(solicita_revision_recargo);
-    const obligatoria = Number(inicial.id_alumno?.saldo_a_favor_mensualidades) > 0 || Number(req.body.credito_a_aplicar) > 0;
+    const obligatoria = Number(inicial.id_alumno?.saldo_a_favor_mensualidades) > 0 || Number(req.body.credito_a_aplicar) > 0
+      || monto > Number(inicial.monto_esperado);
     const resultado = await ejecutarConTransaccion(tenantModels.PagoAgrupado, async (session) => {
     const mensualidad = session ? await aplicarSession(tenantModels.Mensualidad.findById(id_mensualidad).populate('id_alumno'), session) : inicial;
     if (!mensualidad || !(await usuarioPuedePagarMensualidad(req, mensualidad, tenantModels.Representante, session))) {
@@ -939,6 +936,9 @@ exports.registrarPago = async (req, res) => {
     });
     if (validacion.error) {
       throw Object.assign(errorPagoAgrupado(validacion.error.status, validacion.error.payload.error), { payload: validacion.error.payload });
+    }
+    if (!session && validacion.montoARegistrar > validacion.restante) {
+      throw errorPagoAgrupado(503, 'Un pago con saldo a favor requiere MongoDB con transacciones. No se guardaron cambios.');
     }
 
     const datosPago = {
@@ -1104,6 +1104,62 @@ exports.editarPago = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.eliminarPagoAgrupado = async (req, res) => {
+  try {
+    const models = await getTenantFinanceModels(req);
+    const resultado = await ejecutarConTransaccion(models.PagoAgrupado, async (session) => {
+      const grupo = await aplicarSession(models.PagoAgrupado.findById(req.params.id), session);
+      if (!grupo) throw errorPagoAgrupado(404, 'Pago agrupado no encontrado.');
+      await validarPropietarioPagoAgrupado(req, grupo, models, session);
+      if (grupo.estado !== 'En revision') throw errorPagoAgrupado(409, 'Solo se pueden eliminar pagos agrupados en revision.');
+      if (req.body?.version !== versionPagoAgrupado(grupo)) {
+        throw errorPagoAgrupado(409, 'El grupo cambio. Actualiza el detalle antes de eliminarlo.');
+      }
+      const detalles = await aplicarSession(models.PagoDetalle.find({ id_pago_agrupado: grupo._id }), session);
+      const versiones = Array.isArray(req.body?.mensualidades) ? req.body.mensualidades : [];
+      const porId = new Map(versiones.map((item) => [String(item?.id_mensualidad), item?.version]));
+      if (detalles.length < grupo.cantidad_atletas || detalles.length < 2
+        || new Set(detalles.map((detalle) => String(detalle.id_mensualidad))).size !== detalles.length
+        || redondearMonto(detalles.reduce((total, detalle) => total + Number(detalle.monto_pagado || 0), 0)) !== redondearMonto(grupo.monto_total)
+        || redondearMonto(detalles.reduce((total, detalle) => total + Number(detalle.monto_pagado_bs || 0), 0)) !== redondearMonto(grupo.monto_total_bs)) {
+        throw errorPagoAgrupado(409, 'El grupo tiene asignaciones inconsistentes. No se elimino el pago.');
+      }
+      if (versiones.length !== detalles.length || porId.size !== detalles.length
+        || detalles.some((detalle) => !porId.has(String(detalle.id_mensualidad)))) {
+        throw errorPagoAgrupado(409, 'Debes confirmar todas las mensualidades del grupo con sus versiones actuales.');
+      }
+      const mensualidades = [];
+      const atletas = new Set();
+      for (const detalle of detalles) {
+        const mensualidad = await aplicarSession(models.Mensualidad.findById(detalle.id_mensualidad).populate('id_alumno'), session);
+        if (!mensualidad?.id_alumno || String(mensualidad.id_alumno.representante) !== String(grupo.representante)) {
+          throw errorPagoAgrupado(409, 'Una mensualidad ya no pertenece al representante del grupo.');
+        }
+        if (!(await usuarioPuedePagarMensualidad(req, mensualidad, models.Representante, session))) {
+          throw errorPagoAgrupado(403, 'No tienes permiso para una de las mensualidades del grupo.');
+        }
+        if (porId.get(String(mensualidad._id)) !== versionPagoAgrupado(mensualidad)) {
+          throw errorPagoAgrupado(409, 'Una mensualidad del grupo cambio. Actualiza el detalle antes de eliminarlo.');
+        }
+        atletas.add(String(mensualidad.id_alumno._id));
+        mensualidades.push(mensualidad);
+      }
+      if (atletas.size !== grupo.cantidad_atletas) throw errorPagoAgrupado(409, 'Las atletas del grupo no coinciden con sus asignaciones.');
+      await aplicarSession(models.PagoDetalle.deleteMany({ id_pago_agrupado: grupo._id }), session);
+      for (const mensualidad of mensualidades) {
+        await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, models, { session });
+      }
+      await aplicarSession(models.PagoAgrupado.deleteMany({ _id: grupo._id }), session);
+      return { mensualidades_actualizadas: mensualidades.length,
+        comprobantes: [...new Set([grupo.comprobante_url, ...detalles.map((detalle) => detalle.comprobante_url)].filter(Boolean))] };
+    }, { obligatoria: true });
+    resultado.comprobantes.forEach(eliminarArchivoComprobante);
+    return res.json({ message: 'Pago agrupado eliminado para todos los atletas', mensualidades_actualizadas: resultado.mensualidades_actualizadas });
+  } catch (error) {
+    return res.status(error.status || (error.name === 'CastError' ? 400 : 500)).json({ error: error.message || 'No se pudo eliminar el pago agrupado' });
   }
 };
 

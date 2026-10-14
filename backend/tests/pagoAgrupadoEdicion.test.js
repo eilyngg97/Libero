@@ -124,6 +124,60 @@ function solicitud(overrides = {}) {
   };
 }
 
+async function eliminarGrupo(overrides = {}, usuario) {
+  const req = solicitud({ mensualidades: [
+    { id_mensualidad: 'm1', version: `0:${fechaOriginal}` },
+    { id_mensualidad: 'm2', version: `0:${fechaOriginal}` }
+  ], ...overrides });
+  if (usuario) req.user = usuario;
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.eliminarPagoAgrupado(req, res);
+  return res;
+}
+
+test('elimina el grupo completo y recalcula ambas atletas conservando pagos ajenos', async () => {
+  datos.PagoDetalle.otro = { _id: 'otro', id_mensualidad: 'm1', monto_pagado: 2 };
+  const res = await eliminarGrupo();
+  expect(res.status).not.toHaveBeenCalled();
+  expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ mensualidades_actualizadas: 2 }));
+  expect(datos.PagoAgrupado).toEqual({});
+  expect(Object.keys(datos.PagoDetalle)).toEqual(['otro']);
+  expect(datos.Mensualidad.m1.estatus).toBe('Abono');
+  expect(datos.Mensualidad.m2.estatus).toBe('Pendiente');
+  expect((await eliminarGrupo()).status).toHaveBeenCalledWith(404);
+});
+
+test('eliminar revierte los excedentes de todas las atletas', async () => {
+  for (const id of ['m1', 'm2']) {
+    datos.Mensualidad[id].monto_esperado = 10;
+    datos.Mensualidad[id].saldo_a_favor_generado = 4;
+  }
+  datos.Alumno.a1.saldo_a_favor_mensualidades = 7;
+  datos.Alumno.a2.saldo_a_favor_mensualidades = 4;
+  expect((await eliminarGrupo()).status).not.toHaveBeenCalled();
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(3);
+  expect(datos.Alumno.a2.saldo_a_favor_mensualidades).toBe(0);
+});
+
+test.each(['fallo segunda atleta', 'saldo consumido', 'grupo conciliado', 'version grupo', 'version mensualidad', 'asignacion faltante', 'sin permiso', 'sin transacciones'])('no elimina nada ante %s', async (caso) => {
+  let body = {};
+  let usuario;
+  if (caso === 'fallo segunda atleta') falloGuardado = 'm2';
+  if (caso === 'saldo consumido') {
+    datos.Mensualidad.m2.saldo_a_favor_generado = 4;
+    datos.Alumno.a2.saldo_a_favor_mensualidades = 0;
+  }
+  if (caso === 'grupo conciliado') datos.PagoAgrupado.g1.estado = 'Conciliado';
+  if (caso === 'version grupo') body = { version: 'antigua' };
+  if (caso === 'version mensualidad') datos.Mensualidad.m2.__v = 1;
+  if (caso === 'asignacion faltante') delete datos.PagoDetalle.p2;
+  if (caso === 'sin permiso') usuario = { id: 'ajeno', rol: 'usuario' };
+  if (caso === 'sin transacciones') models.PagoAgrupado.db.startSession = undefined;
+  const originales = copiar(datos);
+  expect((await eliminarGrupo(body, usuario)).status).toHaveBeenCalled();
+  expect(datos).toEqual(originales);
+});
+
 function prepararOctubreConCredito() {
   datos.Representante.r1 = { _id: 'r1', usuario: 'u1' };
   datos.Alumno.a1.saldo_a_favor_mensualidades = 1.03;
@@ -173,12 +227,13 @@ test('pago agrupado consume el credito de cada atleta y conserva transferencia n
 
 test.each([
   [80.05, 70100, 201],
-  [80.12, 70157.12, 400],
+  [80.12, 70157.12, 201],
   [81, 8100, 201],
   [79, 7900, 201],
-  [81.01, 8101, 400],
+  [81.01, 8101, 201],
+  [91.13, 80000, 201],
   [78.99, 7899, 400]
-])('registro agrupado aplica tolerancia Bs 100 al total (%s USD, %s Bs)', async (montoTotal, montoTotalBs, status) => {
+])('registro agrupado aplica tolerancia Bs 100 solo por debajo (%s USD, %s Bs)', async (montoTotal, montoTotalBs, status) => {
   prepararOctubreConCredito();
   for (const alumno of Object.values(datos.Alumno)) alumno.saldo_a_favor_mensualidades = 0;
   for (const id of ['oct1', 'oct2']) {
@@ -188,6 +243,7 @@ test.each([
   const originales = copiar(datos);
   const req = solicitud({ monto_total: montoTotal, monto_total_bs: montoTotalBs,
     asignaciones: [{ id_mensualidad: 'oct1' }, { id_mensualidad: 'oct2' }] });
+  req.user = { id: 'u1', rol: 'usuario' };
   const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
   await controller.registrarPagoAgrupado(req, res);
   expect(res.status).toHaveBeenCalledWith(status);
@@ -197,10 +253,85 @@ test.each([
     return;
   }
   const grupo = Object.values(datos.PagoAgrupado).find((item) => item._id !== 'g1');
-  expect(grupo).toMatchObject({ monto_total: 80, monto_total_bs: montoTotalBs });
+  expect(grupo).toMatchObject({ monto_total: montoTotal, monto_total_bs: montoTotalBs });
   const pagos = Object.values(datos.PagoDetalle).filter((item) => item.id_pago_agrupado === grupo._id);
-  expect(pagos.map((item) => item.monto_pagado)).toEqual([40, 40]);
+  expect(Math.round(pagos.reduce((total, item) => total + item.monto_pagado, 0) * 100)).toBe(Math.round(montoTotal * 100));
+  for (const [index, pago] of pagos.entries()) {
+    expect(pago.monto_esperado_usd).toBe(40);
+    expect(datos.Alumno[`a${index + 1}`].saldo_a_favor_mensualidades).toBe(Number(Math.max(0, pago.monto_pagado - 40).toFixed(2)));
+    expect(datos.Mensualidad[`oct${index + 1}`].estatus).toBe('En revision');
+  }
   expect(Math.round(pagos.reduce((total, item) => total + item.monto_pagado_bs, 0) * 100)).toBe(Math.round(montoTotalBs * 100));
+});
+
+test('un excedente individual del usuario se guarda completo y genera saldo a favor', async () => {
+  prepararOctubreConCredito();
+  const req = solicitud({ id_mensualidad: 'oct1', credito_a_aplicar: 1.03,
+    monto_pagado: 25, monto_pagado_bs: 25000 });
+  req.user = { id: 'u1', rol: 'usuario' };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.registrarPago(req, res);
+  expect(res.status).not.toHaveBeenCalled();
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(7.03);
+  expect(datos.Mensualidad.oct1).toMatchObject({ estatus: 'En revision', saldo_a_favor_generado: 7.03 });
+});
+
+test('el fallo de la segunda atleta revierte el registro agrupado con excedente', async () => {
+  prepararOctubreConCredito();
+  const originales = copiar(datos);
+  const req = solicitud({ monto_total: 50, monto_total_bs: 50000,
+    asignaciones: [{ id_mensualidad: 'oct1', credito_a_aplicar: 1.03 }, { id_mensualidad: 'oct2', credito_a_aplicar: 1.02 }] });
+  falloGuardado = 'oct2';
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.registrarPagoAgrupado(req, res);
+  expect(res.status).toHaveBeenCalledWith(500);
+  expect(datos).toEqual(originales);
+});
+
+test.each([false, true])('registro con excedente sin transacciones no guarda cambios (agrupado=%s)', async (agrupado) => {
+  prepararOctubreConCredito();
+  models.PagoAgrupado.db.startSession = undefined;
+  const originales = copiar(datos);
+  const req = solicitud(agrupado ? { monto_total: 50, monto_total_bs: 50000,
+    asignaciones: [{ id_mensualidad: 'oct1' }, { id_mensualidad: 'oct2' }] }
+    : { id_mensualidad: 'oct1', monto_pagado: 25, monto_pagado_bs: 25000 });
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller[agrupado ? 'registrarPagoAgrupado' : 'registrarPago'](req, res);
+  expect(res.status).toHaveBeenCalledWith(503);
+  expect(datos).toEqual(originales);
+});
+
+test.each([[16.97, 1697, true], [16.96, 1696, false], [25, 2500, true]])('registro individual tolera solo faltantes hasta Bs 100 (%s USD)', async (monto, montoBs, aceptado) => {
+  prepararOctubreConCredito();
+  const req = solicitud({ id_mensualidad: 'oct1', monto_pagado: monto, monto_pagado_bs: montoBs });
+  req.user = { id: 'u1', rol: 'usuario' };
+  const originales = copiar(datos);
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.registrarPago(req, res);
+  if (!aceptado) {
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(datos).toEqual(originales);
+    return;
+  }
+  expect(res.status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.oct1.estatus).toBe('En revision');
+});
+
+test('registro agrupado reparte un excedente con deudas desiguales sin perder centavos', async () => {
+  prepararOctubreConCredito();
+  datos.Mensualidad.oct2.monto_esperado = 37;
+  const req = solicitud({ monto_total: 80, monto_total_bs: 70100,
+    asignaciones: [{ id_mensualidad: 'oct1' }, { id_mensualidad: 'oct2' }] });
+  req.user = { id: 'u1', rol: 'usuario' };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.registrarPagoAgrupado(req, res);
+  expect(res.status).toHaveBeenCalledWith(201);
+  const grupo = Object.values(datos.PagoAgrupado).find((item) => item._id !== 'g1');
+  const pagos = Object.values(datos.PagoDetalle).filter((item) => item.id_pago_agrupado === grupo._id);
+  expect(pagos.map((item) => item.monto_pagado)).toEqual([26.65, 53.35]);
+  expect(Math.round(pagos.reduce((suma, item) => suma + item.monto_pagado_bs, 0) * 100)).toBe(7010000);
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(8.68);
+  expect(datos.Alumno.a2.saldo_a_favor_mensualidades).toBe(17.37);
 });
 
 test.each([false, true])('un fallo guardando octubre revierte credito y transferencia (agrupado=%s)', async (agrupado) => {

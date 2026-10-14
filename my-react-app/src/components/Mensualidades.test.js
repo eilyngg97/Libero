@@ -1,10 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import Mensualidades from './Mensualidades';
+import { hasPermission } from '../utils/permissions';
 
 jest.mock('../context/SedeContext', () => ({ useSede: () => ({ sedeSeleccionada: null }) }));
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 872.39, moneda: 'USD' } }) }));
-jest.mock('../utils/permissions', () => ({ hasPermission: () => true }));
+jest.mock('../utils/permissions', () => ({ hasPermission: jest.fn(() => true) }));
 jest.mock('../utils/exportExcel', () => ({ exportToExcel: jest.fn() }));
 jest.mock('../utils/dolarHistorico', () => ({ obtenerTasaOficialPorFecha: jest.fn().mockResolvedValue(872.39), obtenerTasaEuroOficialPorFecha: jest.fn().mockResolvedValue(900) }));
 
@@ -14,21 +15,26 @@ let agrupado;
 let errorRetiro;
 let segundoRecargo;
 let segundaVersion;
+let estadoGrupo;
 
 beforeEach(() => {
+  hasPermission.mockImplementation(() => true);
   transacciones = true;
   agrupado = true;
   errorRetiro = false;
   segundoRecargo = 4;
   segundaVersion = 'mensualidad-v2';
+  estadoGrupo = 'En revision';
   localStorage.setItem('rol', 'admin');
   global.fetch = jest.fn(async (url, options = {}) => {
     const mensualidad = { _id: 'm1', id_alumno: { _id: 'a1', nombres: 'Ana', apellidos: 'Raga' },
       mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), monto_esperado: 14, monto_base: 10,
       monto_sin_recargo_usd: 10, recargo_aplicado_usd: 4, monto_con_recargo_usd: 14, aplica_recargo: true,
       fecha_aplicacion_recargo: '2026-10-01', estatus: 'En revision',
-      ...(agrupado ? { pago_agrupado: { id: 'g1', codigo: 'PA-TEST', monto_total: 28, cantidad_atletas: 2, estado: 'En revision' } } : {}) };
+      ...(agrupado ? { pago_agrupado: { id: 'g1', codigo: 'PA-TEST', monto_total: 28, cantidad_atletas: 2, estado: estadoGrupo } } : {}) };
     let data;
+    if (options.method === 'DELETE') return { ok: !errorRetiro, status: errorRetiro ? 409 : 200,
+      json: async () => errorRetiro ? { error: 'El grupo cambio. Actualiza el detalle.' } : { mensualidades_actualizadas: 2 } };
     if (options.method === 'PATCH') {
       return { ok: !errorRetiro, status: errorRetiro ? 409 : 200, json: async () => errorRetiro
         ? { error: 'La mensualidad cambio. Actualiza la vista.' }
@@ -37,7 +43,7 @@ beforeEach(() => {
           atletas_actualizadas: 2, saldo_a_favor_incrementado: 8 } };
     }
     if (url.includes('/api/pagos/agrupado/g1')) {
-      data = { pago: { _id: 'g1', codigo: 'PA-TEST', estado: 'En revision', monto_total: 28 }, version: 'grupo-v1',
+      data = { pago: { _id: 'g1', codigo: 'PA-TEST', estado: estadoGrupo, monto_total: 28, monto_total_bs: 24426.92 }, version: 'grupo-v1',
         transacciones_disponibles: transacciones,
         asignaciones: [
           { id_mensualidad: 'm1', alumno_nombre: 'Ana Raga', version_mensualidad: 'mensualidad-v1', monto_sin_recargo_usd: 10, recargo_aplicado_usd: 4 },
@@ -59,6 +65,91 @@ async function abrirRetiro() {
   fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
   fireEvent.click(await screen.findByRole('button', { name: /^Retirar recargo/ }));
 }
+
+test.each(['Eliminar pago agrupado', 'Eliminar grupo desde historial'])('admin elimina todo el grupo desde %s', async (boton) => {
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  fireEvent.click(await screen.findByRole('button', { name: boton }));
+  const confirmacion = await screen.findByRole('dialog', { name: 'Eliminar pago agrupado' });
+  expect(await within(confirmacion).findByText(/Ana Raga/)).toBeInTheDocument();
+  expect(within(confirmacion).getByText(/Eva Raga/)).toBeInTheDocument();
+  expect(within(confirmacion).getByText('Bs 24426.92 / $28.00 USD')).toBeInTheDocument();
+  expect(global.fetch.mock.calls.some(([, opciones]) => opciones?.method === 'DELETE')).toBe(false);
+  fireEvent.click(within(confirmacion).getByRole('button', { name: 'Eliminar pago agrupado' }));
+  expect(await screen.findByText('Pago agrupado eliminado para todos los atletas.')).toBeInTheDocument();
+  const solicitudes = global.fetch.mock.calls.filter(([, opciones]) => opciones?.method === 'DELETE');
+  expect(solicitudes).toHaveLength(1);
+  expect(solicitudes[0][0]).toContain('/api/pagos/agrupado/g1');
+  expect(JSON.parse(solicitudes[0][1].body)).toEqual({ version: 'grupo-v1', mensualidades: [
+    { id_mensualidad: 'm1', version: 'mensualidad-v1' }, { id_mensualidad: 'm2', version: 'mensualidad-v2' }
+  ] });
+});
+
+test('cancelar eliminacion del grupo no elimina ninguna asignacion', async () => {
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar grupo desde historial' }));
+  const confirmacion = await screen.findByRole('dialog', { name: 'Eliminar pago agrupado' });
+  await within(confirmacion).findByText(/Eva Raga/);
+  fireEvent.click(within(confirmacion).getByRole('button', { name: 'Cancelar' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Eliminar pago agrupado' })).not.toBeInTheDocument());
+  expect(global.fetch.mock.calls.some(([, opciones]) => opciones?.method === 'DELETE')).toBe(false);
+});
+
+test('el conflicto de eliminacion queda en el dialogo y no reintenta individualmente', async () => {
+  errorRetiro = true;
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar pago agrupado' }));
+  const confirmacion = await screen.findByRole('dialog', { name: 'Eliminar pago agrupado' });
+  await within(confirmacion).findByText(/Eva Raga/);
+  fireEvent.click(within(confirmacion).getByRole('button', { name: 'Eliminar pago agrupado' }));
+  expect(await within(confirmacion).findByRole('alert')).toHaveTextContent('El grupo cambio. Actualiza el detalle.');
+  expect(global.fetch.mock.calls.filter(([, opciones]) => opciones?.method === 'DELETE')).toHaveLength(1);
+});
+
+test.each(['sin transacciones', 'sin version'])('no elimina grupo %s ni ofrece ruta individual', async (caso) => {
+  if (caso === 'sin transacciones') transacciones = false;
+  else segundaVersion = undefined;
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar pago agrupado' }));
+  const confirmacion = await screen.findByRole('dialog', { name: 'Eliminar pago agrupado' });
+  await within(confirmacion).findByRole('alert');
+  expect(within(confirmacion).getByRole('button', { name: 'Eliminar pago agrupado' })).toBeDisabled();
+  expect(global.fetch.mock.calls.some(([, opciones]) => opciones?.method === 'DELETE')).toBe(false);
+});
+
+test('grupo conciliado no ofrece eliminacion ni arriba ni en historial', async () => {
+  estadoGrupo = 'Conciliado';
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText('Último Pago Registrado');
+  expect(screen.queryByRole('button', { name: 'Eliminar pago agrupado' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Eliminar grupo desde historial' })).not.toBeInTheDocument();
+});
+
+test('sin permiso de gestion no ofrece eliminacion del grupo en ninguna ubicacion', async () => {
+  hasPermission.mockImplementation((permiso) => permiso !== 'mensualidades.manage');
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText('Último Pago Registrado');
+  expect(screen.queryByRole('button', { name: 'Eliminar pago agrupado' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Eliminar grupo desde historial' })).not.toBeInTheDocument();
+});
+
+test('el pago individual ofrece eliminacion superior y conserva la ruta individual', async () => {
+  agrupado = false;
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar pago' }));
+  const confirmacion = await screen.findByRole('dialog', { name: 'Eliminar pago' });
+  fireEvent.click(within(confirmacion).getByRole('button', { name: 'Eliminar pago' }));
+  expect(await screen.findByText('Pago eliminado correctamente')).toBeInTheDocument();
+  const [url] = global.fetch.mock.calls.find(([, opciones]) => opciones?.method === 'DELETE');
+  expect(url).toContain('/api/pagos/p1');
+  expect(global.fetch.mock.calls.some(([ruta]) => ruta.includes('/api/pagos/agrupado/'))).toBe(false);
+});
 
 test('retiro agrupado consulta versiones y envia una sola operacion segura', async () => {
   await abrirRetiro();

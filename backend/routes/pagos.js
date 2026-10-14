@@ -67,6 +67,7 @@ router.get('/agrupado/:id', authMiddleware, accesoPagoAgrupado, pagoDetalleContr
 router.patch('/agrupado/:id/retirar-recargos', authMiddleware, permisoMiddleware('mensualidades.manage'), pagoDetalleController.retirarRecargoPagoAgrupado);
 router.patch('/agrupado/:id/mensualidades/:id_mensualidad/retirar-recargo', authMiddleware, permisoMiddleware('mensualidades.manage'), pagoDetalleController.retirarRecargoPagoAgrupado);
 router.patch('/agrupado/:id', authMiddleware, accesoPagoAgrupado, subirComprobanteAgrupado, pagoDetalleController.editarPagoAgrupado);
+router.delete('/agrupado/:id', authMiddleware, accesoPagoAgrupado, pagoDetalleController.eliminarPagoAgrupado);
 // Editar pago
 router.patch('/:id_pago', authMiddleware, upload.single('comprobante'), ensurePagoOwnershipFromParam('id_pago'), pagoDetalleController.editarPago);
 // Eliminar pago

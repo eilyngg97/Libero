@@ -350,6 +350,8 @@ describe('Backend smoke tests', () => {
 
   test('POST /api/pagos registers payment', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const session = { withTransaction: async (operacion) => operacion(), endSession: async () => {} };
+    PagoAgrupado.db = { startSession: async () => session };
 
     const mensualidadDoc = {
       _id: 'm1',
@@ -381,12 +383,12 @@ describe('Backend smoke tests', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.estatus).toBe('Pagado');
-    expect(PagoDetalle.create).toHaveBeenCalledWith(expect.objectContaining({
+    expect(PagoDetalle.create).toHaveBeenCalledWith([expect.objectContaining({
       monto_pagado: 100.18,
       monto_pagado_bs: 7075,
       monto_esperado_usd: 100,
       monto_esperado_bs: 7075
-    }));
+    })], { session });
   });
 
   test('POST /api/pagos/agrupado registers one transfer for two athletes', async () => {

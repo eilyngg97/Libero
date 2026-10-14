@@ -121,6 +121,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [eliminandoPagoId, setEliminandoPagoId] = useState('');
 	const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
 	const [pagoAEliminar, setPagoAEliminar] = useState(null);
+	const [cargandoGrupoEliminar, setCargandoGrupoEliminar] = useState(false);
+	const [errorEliminarPago, setErrorEliminarPago] = useState('');
 	const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
 	const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
 	const [modalAjusteSede, setModalAjusteSede] = useState(false);
@@ -1038,10 +1040,32 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		setPagina(0);
 	};
 
-	const solicitarEliminarPago = (pago) => {
-		if (!pago?._id) return;
-		setPagoAEliminar(pago);
+	const solicitarEliminarPago = async (pago) => {
+		if (!pago?._id || !hasPermission('mensualidades.manage') || cargandoGrupoEliminar || eliminandoPagoId) return;
+		const grupoId = pago.id_pago_agrupado?._id || pago.id_pago_agrupado
+			|| (String(pago._id) === String(detallePago?._id) ? mensualidadDetalle?.pago_agrupado?.id : '');
+		setErrorEliminarPago('');
+		setPagoAEliminar(grupoId ? { ...pago, id_pago_agrupado: grupoId } : pago);
 		setConfirmarEliminarOpen(true);
+		if (!grupoId) return;
+		try {
+			setCargandoGrupoEliminar(true);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/agrupado/${grupoId}`, { headers: getAuthHeaders() });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo cargar el pago agrupado.');
+			if (!data.transacciones_disponibles) throw new Error('La eliminacion agrupada requiere MongoDB con transacciones.');
+			if (data.pago?.estado !== 'En revision') throw new Error('Solo se pueden eliminar pagos agrupados en revision.');
+			if (!data.version || !data.asignaciones?.length
+				|| !data.asignaciones.some((item) => String(item.id_mensualidad) === String(mensualidadDetalle?._id))
+				|| data.asignaciones.some((item) => !item.id_mensualidad || !item.version_mensualidad)) {
+				throw new Error('Debes actualizar las versiones de todas las mensualidades del grupo.');
+			}
+			setPagoAEliminar({ ...pago, id_pago_agrupado: grupoId, grupo: data });
+		} catch (err) {
+			setErrorEliminarPago(err.message || 'No se pudo preparar la eliminacion agrupada.');
+		} finally {
+			setCargandoGrupoEliminar(false);
+		}
 	};
 
 	const solicitarEliminarMensualidad = (mensualidad) => {
@@ -1152,23 +1176,30 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const eliminarPago = async () => {
-		if (!pagoAEliminar?._id || !mensualidadDetalle?._id) return;
+		if (!pagoAEliminar?._id || !mensualidadDetalle?._id || cargandoGrupoEliminar || eliminandoPagoId
+			|| (pagoAEliminar.id_pago_agrupado && !pagoAEliminar.grupo)) return;
 
 		try {
 			setEliminandoPagoId(pagoAEliminar._id);
-			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${pagoAEliminar._id}`, {
+			setErrorEliminarPago('');
+			const grupo = pagoAEliminar.grupo;
+			const ruta = grupo ? `agrupado/${grupo.pago._id}` : pagoAEliminar._id;
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${ruta}`, {
 				method: 'DELETE',
-				headers: getAuthHeaders()
+				headers: grupo ? { ...getAuthHeaders(), 'Content-Type': 'application/json' } : getAuthHeaders(),
+				...(grupo ? { body: JSON.stringify({ version: grupo.version,
+					mensualidades: grupo.asignaciones.map((item) => ({ id_mensualidad: item.id_mensualidad, version: item.version_mensualidad })) }) } : {})
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'Error al eliminar pago');
-			await cargarMensualidades();
-			await actualizarDetalleMensualidad(mensualidadDetalle, true);
 			setConfirmarEliminarOpen(false);
 			setPagoAEliminar(null);
-			setSuccessMessage('Pago eliminado correctamente');
+			if (grupo) setModalDetalle(false);
+			await cargarMensualidades();
+			if (!grupo) await actualizarDetalleMensualidad(mensualidadDetalle, true);
+			setSuccessMessage(grupo ? 'Pago agrupado eliminado para todos los atletas.' : 'Pago eliminado correctamente');
 		} catch (err) {
-			alert(err.message || 'Error al eliminar pago');
+			setErrorEliminarPago(err.message || 'Error al eliminar pago');
 		} finally {
 			setEliminandoPagoId('');
 		}
@@ -2468,6 +2499,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 													<Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
 													<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
 												</Box>
+													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
 												{!pagoAgrupadoDetalle && (
 													<Button
 														variant={editandoUltimoPagoInline ? 'outlined' : 'contained'}
@@ -2494,6 +2526,16 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 															Editar grupo
 														</Button>
 													)}
+												{hasPermission('mensualidades.manage') && (!pagoAgrupadoDetalle || pagoAgrupadoDetalle.estado === 'En revision') && (
+													<Tooltip title={pagoAgrupadoDetalle ? 'Eliminar pago para todos los atletas' : 'Eliminar pago'}>
+														<span><IconButton aria-label={pagoAgrupadoDetalle ? 'Eliminar pago agrupado' : 'Eliminar pago'} onClick={() => solicitarEliminarPago(detallePago)}
+															disabled={cargandoGrupoEliminar || !!eliminandoPagoId || guardandoUltimoPagoInline || confirmandoMensualidad || corrigiendoRecargo}
+															sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
+															<DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
+														</IconButton></span>
+													</Tooltip>
+												)}
+													</Box>
 															</Box>
 											{	detalleEsMixto && (
 												<Alert severity="info" sx={{ mt: 1.75, mb: 1.4 }}>
@@ -2730,15 +2772,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#dcfce7', color: '#166534', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#bbf7d0', boxShadow: 'none' } }}
 										>
 											{guardandoUltimoPagoInline ? 'Guardando...' : 'Guardar cambios'}
-										</Button>
-										<Button
-											variant="contained"
-											startIcon={<DeleteOutlineIcon fontSize="small" />}
-											onClick={() => solicitarEliminarPago(detallePago)}
-											disabled={eliminandoPagoId === detallePago._id || guardandoUltimoPagoInline}
-											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
-										>
-											{eliminandoPagoId === detallePago._id ? 'Eliminando...' : 'Eliminar'}
 										</Button>
 									</Box>
 									)}
@@ -3154,9 +3187,13 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											<IconButton size="small" onClick={() => handleEditarPago(pago)} sx={{ bgcolor: '#e0f1fb', '&:hover': { bgcolor: '#d1e9f8' } }}>
 												<EditIcon fontSize="small" sx={{ color: '#0a78b8' }} />
 											</IconButton>
-											<IconButton size="small" onClick={() => solicitarEliminarPago(pago)} disabled={eliminandoPagoId === pago._id} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
-												<DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
-											</IconButton>
+											{hasPermission('mensualidades.manage') && (!pago.id_pago_agrupado || pagoAgrupadoDetalle?.estado === 'En revision') && (
+												<Tooltip title={pago.id_pago_agrupado ? 'Eliminar pago para todos los atletas' : 'Eliminar pago'}>
+													<span><IconButton aria-label={pago.id_pago_agrupado ? 'Eliminar grupo desde historial' : 'Eliminar pago desde historial'} size="small" onClick={() => solicitarEliminarPago(pago)} disabled={cargandoGrupoEliminar || !!eliminandoPagoId || confirmandoMensualidad || corrigiendoRecargo} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
+														<DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
+													</IconButton></span>
+												</Tooltip>
+											)}
 										</Box>
 									</Box>
 								))}
@@ -3376,19 +3413,32 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			<Dialog
 				open={confirmarEliminarOpen}
 				onClose={() => {
-					if (eliminandoPagoId) return;
+					if (eliminandoPagoId || cargandoGrupoEliminar) return;
 					setConfirmarEliminarOpen(false);
 					setPagoAEliminar(null);
 				}}
 				maxWidth="xs"
 				fullWidth
+				aria-labelledby="eliminar-pago-admin-titulo"
 			>
-				<DialogTitle sx={{ fontWeight: 800, color: '#b91c1c' }}>Eliminar pago</DialogTitle>
+				<DialogTitle id="eliminar-pago-admin-titulo" sx={{ fontWeight: 800, color: '#b91c1c' }}>{pagoAEliminar?.id_pago_agrupado ? 'Eliminar pago agrupado' : 'Eliminar pago'}</DialogTitle>
 				<DialogContent>
 					<Typography sx={{ color: '#334155' }}>
-						¿Seguro que deseas eliminar este pago? Esta acción recalculará el estado de la mensualidad y no se puede deshacer.
+						{pagoAEliminar?.id_pago_agrupado
+							? 'Se eliminara la transferencia completa para todos los atletas indicados. Se recalcularan sus mensualidades y saldos a favor. No se puede deshacer esta accion.'
+							: '¿Seguro que deseas eliminar este pago? Esta acción recalculará el estado de la mensualidad y no se puede deshacer.'}
 					</Typography>
-					{pagoAEliminar && (
+					{cargandoGrupoEliminar && <Typography role="status" sx={{ mt: 1.5 }}>Cargando pago agrupado...</Typography>}
+					{pagoAEliminar?.grupo && (
+						<Box sx={{ mt: 1.5 }}>
+							<Typography>Bs {formatMoney(pagoAEliminar.grupo.pago.monto_total_bs)} / {simboloMonedaCobro}{formatMoney(pagoAEliminar.grupo.pago.monto_total)} {monedaCobro}</Typography>
+							<Box component="ul" sx={{ pl: 2.5 }}>
+								{pagoAEliminar.grupo.asignaciones.map((item) => <Typography component="li" key={item.id_mensualidad} sx={{ overflowWrap: 'anywhere' }}>{item.alumno_nombre} · {item.mes}/{item.anio}</Typography>)}
+							</Box>
+						</Box>
+					)}
+					{errorEliminarPago && <Alert severity="error" sx={{ mt: 1.5 }}>{errorEliminarPago}</Alert>}
+					{pagoAEliminar && !pagoAEliminar.id_pago_agrupado && (
 						<Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
 							<Typography variant="body2"><b>Método:</b> {pagoAEliminar.metodo_pago || '-'}</Typography>
 							<Typography variant="body2">
@@ -3406,7 +3456,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							setConfirmarEliminarOpen(false);
 							setPagoAEliminar(null);
 						}}
-						disabled={!!eliminandoPagoId}
+						disabled={!!eliminandoPagoId || cargandoGrupoEliminar}
 					>
 						Cancelar
 					</Button>
@@ -3414,9 +3464,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						variant="contained"
 						color="error"
 						onClick={eliminarPago}
-						disabled={!!eliminandoPagoId}
+						disabled={!!eliminandoPagoId || cargandoGrupoEliminar || Boolean(pagoAEliminar?.id_pago_agrupado && !pagoAEliminar?.grupo)}
 					>
-						{eliminandoPagoId ? 'Eliminando...' : 'Eliminar pago'}
+						{eliminandoPagoId ? 'Eliminando...' : (pagoAEliminar?.id_pago_agrupado ? 'Eliminar pago agrupado' : 'Eliminar pago')}
 					</Button>
 				</DialogActions>
 			</Dialog>
