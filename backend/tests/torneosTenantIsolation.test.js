@@ -8,6 +8,7 @@ const mockTournamentModels = {
 
 jest.mock('../middleware/auth', () => ({
   authMiddleware: (req, res, next) => next(),
+  permisoMiddleware: () => (req, res, next) => next(),
   rolMiddleware: () => (req, res, next) => next()
 }));
 
