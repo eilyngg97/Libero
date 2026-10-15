@@ -9,6 +9,7 @@ import './Alumnos.css';
 import { Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ImageCropDialog, { fileToDataUrl, prepareImageFile } from './ImageCropDialog';
+import AlumnoDocumentos from './AlumnoDocumentos';
 
 const PARENTESCOS = ['Padre', 'Madre', 'Hermano/a', 'Tío/a', 'Abuelo/a', 'Otro'];
 const TIPOS_SANGRE = ['O+', 'A+', 'B+', 'O-', 'A-', 'AB+', 'B-', 'AB-', 'Por determinar / Desconocido'];
@@ -45,6 +46,7 @@ function AlumnoEditar({ locationState }) {
   const [previewCedula, setPreviewCedula] = useState(null);
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoCedulaFile, setFotoCedulaFile] = useState(null);
+  const [documentosFiles, setDocumentosFiles] = useState({});
   const [fotoCrop, setFotoCrop] = useState(null);
   const [cedulaCrop, setCedulaCrop] = useState(null);
   const [dragActive, setDragActive] = useState(false);
@@ -497,7 +499,7 @@ function AlumnoEditar({ locationState }) {
       const camposEditables = [
         'nombres', 'apellidos', 'fecha_nacimiento', 'fecha_inscripcion', 'fecha_inicio_cobro', 'cedula',
         'sexo', 'division',
-        'domicilio', 'telefono', 'talla', 'peso', 'alcance', 'envergadura', 'proyeccion',
+        'domicilio', 'telefono', 'colegio_institucion', 'talla', 'peso', 'alcance', 'envergadura', 'proyeccion',
         'tipo_sangre', 'alergias', 'antecedentes_patologicos', 'observaciones',
         'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
         'aplicar_recargo_mensualidad',
@@ -561,6 +563,9 @@ function AlumnoEditar({ locationState }) {
       if (fotoCedulaFile) {
         formData.append('foto_cedula', fotoCedulaFile);
       }
+      Object.entries(documentosFiles).forEach(([campo, archivo]) => {
+        if (archivo) formData.append(campo, archivo);
+      });
       const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}`, {
         method: 'PUT',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -584,6 +589,7 @@ function AlumnoEditar({ locationState }) {
       await fetchAlumnoFresco();
       setFotoFile(null);
       setFotoCedulaFile(null);
+      setDocumentosFiles({});
     } catch (err) {
       setError(err.message);
     } finally {
@@ -745,6 +751,13 @@ function AlumnoEditar({ locationState }) {
                 )}
               </Box>
             </Paper>
+
+            <AlumnoDocumentos
+              values={form}
+              files={documentosFiles}
+              onChange={(campo, archivo) => setDocumentosFiles((prev) => ({ ...prev, [campo]: archivo }))}
+              disabled={loading}
+            />
 
             {localStorage.getItem('rol') === 'usuario' && (
               <Accordion
@@ -1077,6 +1090,9 @@ function AlumnoEditar({ locationState }) {
               <div className="form-row">
                 <TextField id="outlined-basic-telefono" label="Teléfono" name="telefono" type="tel" variant="outlined" value={form.telefono || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
                 <TextField id="outlined-basic-domicilio" label="Dirección" name="domicilio" variant="outlined" value={form.domicilio || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
+              </div>
+              <div className="form-row">
+                <TextField id="outlined-basic-colegio-institucion" label="Colegio / Institución" name="colegio_institucion" variant="outlined" value={form.colegio_institucion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
               </div>
               <div className="form-row">
                 <TextField id="outlined-basic-peso" label="Peso" name="peso" variant="outlined" value={form.peso || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} disabled={locationState && locationState.alumno && localStorage.getItem('rol') === 'usuario'}

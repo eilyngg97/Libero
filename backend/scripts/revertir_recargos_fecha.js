@@ -78,10 +78,12 @@ function redondearMonto(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
-function evaluarCandidata(mensualidad, pagosPosteriores = 0) {
+function evaluarCandidata(mensualidad, pagosPosteriores = 0, diaIncidente = null) {
   const diaPersonalizado = Number(mensualidad?.id_alumno?.dia_limite_personalizado);
   if (Number.isInteger(diaPersonalizado) && diaPersonalizado >= 1 && diaPersonalizado <= 31) {
-    return { elegible: false, motivo: `dia personalizado=${diaPersonalizado}` };
+    if (!Number.isInteger(diaIncidente) || diaPersonalizado <= diaIncidente) {
+      return { elegible: false, motivo: `dia personalizado=${diaPersonalizado} no posterior al incidente` };
+    }
   }
 
   if (pagosPosteriores > 0) {
@@ -186,7 +188,8 @@ async function procesarTenant(tenant, args, rango) {
       .length;
     const evaluacion = evaluarCandidata(
       mensualidad,
-      pagosPosteriores
+      pagosPosteriores,
+      Number(args.fecha.split('-')[2])
     );
 
     if (!evaluacion.elegible) {

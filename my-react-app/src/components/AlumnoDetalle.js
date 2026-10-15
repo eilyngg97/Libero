@@ -13,6 +13,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import BadgeIcon from "@mui/icons-material/Badge";
 import PhoneAndroidIcon from "@mui/icons-material/PhoneAndroid";
 import HomeIcon from "@mui/icons-material/Home";
+import SchoolIcon from "@mui/icons-material/School";
 import SportsVolleyballIcon from "@mui/icons-material/SportsVolleyball";
 import PersonIcon from "@mui/icons-material/Person";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
@@ -26,6 +27,7 @@ import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import Grid from "@mui/material/Grid";
 import { mediaUrl } from '../utils/mediaUrl';
 import ImageCropDialog, { fileToDataUrl, prepareImageFile } from './ImageCropDialog';
+import AlumnoDocumentos from './AlumnoDocumentos';
 
 function calcularEdad(fechaNacimiento) {
   if (!fechaNacimiento) return "";
@@ -126,6 +128,12 @@ function AlumnoDetalle() {
   const [descargandoFotoCedula, setDescargandoFotoCedula] = useState(false);
   const [fotoCedulaError, setFotoCedulaError] = useState('');
   const [fotoCedulaSuccess, setFotoCedulaSuccess] = useState('');
+  const [documentoAbierto, setDocumentoAbierto] = useState(null);
+  const [documentoCrop, setDocumentoCrop] = useState(null);
+  const [savingDocumento, setSavingDocumento] = useState(false);
+  const [preparingDocumento, setPreparingDocumento] = useState(false);
+  const [documentoError, setDocumentoError] = useState('');
+  const [documentoSuccess, setDocumentoSuccess] = useState('');
   const [openHistorialEstados, setOpenHistorialEstados] = useState(false);
   const [historialEstados, setHistorialEstados] = useState([]);
   const [historialLoading, setHistorialLoading] = useState(false);
@@ -307,6 +315,86 @@ function AlumnoDetalle() {
     }
   };
 
+  const abrirDocumento = (campo, label) => {
+    setDocumentoError('');
+    setDocumentoSuccess('');
+    setDocumentoAbierto({ campo, label });
+  };
+
+  const prepararRecorteDocumento = async (file) => {
+    const preparedFile = await prepareImageFile(file);
+    const source = await fileToDataUrl(preparedFile);
+    const image = new Image();
+    image.src = source;
+    await image.decode();
+    setDocumentoCrop({
+      campo: documentoAbierto.campo,
+      label: documentoAbierto.label,
+      source,
+      fileName: `${documentoAbierto.campo}-${id}.jpg`,
+      aspect: image.naturalWidth / image.naturalHeight
+    });
+  };
+
+  const handleCropCurrentDocumento = async () => {
+    setPreparingDocumento(true);
+    setDocumentoError('');
+    setDocumentoSuccess('');
+    try {
+      const response = await fetch(mediaUrl(alumno[documentoAbierto.campo]));
+      if (!response.ok) throw new Error('No se pudo cargar la constancia actual');
+      const blob = await response.blob();
+      const fileName = alumno[documentoAbierto.campo].split('/').pop();
+      await prepararRecorteDocumento(new File([blob], fileName, { type: blob.type || 'image/jpeg' }));
+    } catch (cropError) {
+      setDocumentoError(cropError.message || 'No se pudo abrir la imagen');
+    } finally {
+      setPreparingDocumento(false);
+    }
+  };
+
+  const handleDocumentoSelection = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setPreparingDocumento(true);
+    setDocumentoError('');
+    setDocumentoSuccess('');
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('El archivo debe pesar como máximo 10 MB.');
+      await prepararRecorteDocumento(file);
+    } catch (cropError) {
+      setDocumentoError(cropError.message || 'No se pudo abrir la imagen');
+    } finally {
+      setPreparingDocumento(false);
+    }
+  };
+
+  const handleSaveCroppedDocumento = async (file) => {
+    setSavingDocumento(true);
+    setDocumentoError('');
+    setDocumentoSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append(documentoCrop.campo, file);
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'No se pudo guardar la constancia recortada');
+      setAlumno((current) => ({ ...current, ...data }));
+      setDocumentoCrop(null);
+      setDocumentoSuccess('Constancia actualizada.');
+    } catch (saveError) {
+      setDocumentoError(saveError.message || 'No se pudo guardar la constancia recortada');
+      throw saveError;
+    } finally {
+      setSavingDocumento(false);
+    }
+  };
+
   const fetchHistorialEstados = async () => {
     setHistorialLoading(true);
     setHistorialError(null);
@@ -466,6 +554,7 @@ function AlumnoDetalle() {
     { icon: <EmojiPeopleIcon sx={{ fontSize: 16 }} />, label: "Edad", value: `${calcularEdad(alumno.fecha_nacimiento)} Años` },
     { icon: <PersonIcon sx={{ fontSize: 16 }} />, label: "Sexo", value: alumno.sexo || "-" },
     { icon: <BadgeIcon sx={{ fontSize: 16 }} />, label: "Cedula", value: alumno.cedula || "-" },
+    { icon: <SchoolIcon sx={{ fontSize: 16 }} />, label: "Colegio / Institución", value: alumno.colegio_institucion || "-" },
     { icon: <SportsVolleyballIcon sx={{ fontSize: 16 }} />, label: "Nro de franela", value: alumno.numero_franela || "-" },
     { icon: <ShowChartIcon sx={{ fontSize: 16 }} />, label: "Tipo de mensualidad", value: formatTipoMensualidad(alumno.tipo_mensualidad) },
     ...(String(alumno.tipo_mensualidad || '').toLowerCase() === 'monto_personalizado'
@@ -619,6 +708,7 @@ function AlumnoDetalle() {
               >
                 Ver foto de cedula
               </Button>
+              <AlumnoDocumentos values={alumno} onView={abrirDocumento} />
               <Box sx={{ mt: 2, display: 'grid', gap: 1 }}>
                 {contactItems.map((item) => (
                   <Box key={item.label} sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#f8fafc', borderRadius: 2, px: 1.5, py: 1 }}>
@@ -1120,6 +1210,69 @@ function AlumnoDetalle() {
           )}
         </DialogContent>
       </Dialog>
+      <Dialog
+        open={Boolean(documentoAbierto)}
+        onClose={() => { if (!preparingDocumento && !savingDocumento) setDocumentoAbierto(null); }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {documentoAbierto?.label}
+          <IconButton aria-label="cerrar constancia" onClick={() => setDocumentoAbierto(null)} disabled={preparingDocumento || savingDocumento} size="small">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {documentoAbierto && (
+            <>
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <Box component="img" src={mediaUrl(alumno[documentoAbierto.campo])} alt={documentoAbierto.label} sx={{ maxWidth: '100%', maxHeight: '62vh', borderRadius: 1, objectFit: 'contain' }} />
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1, mt: 2, p: 1.25, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 2 }}>
+                <Button
+                  startIcon={preparingDocumento ? <CircularProgress size={18} color="inherit" /> : <CropIcon />}
+                  variant="contained"
+                  onClick={handleCropCurrentDocumento}
+                  disabled={preparingDocumento || savingDocumento}
+                  sx={{ minHeight: 40, borderRadius: 1.5, bgcolor: '#f97316', color: '#fff', fontWeight: 800, textTransform: 'none', boxShadow: '0 4px 10px rgba(249, 115, 22, 0.2)', '&:hover': { bgcolor: '#ea580c' } }}
+                >
+                  Recortar actual
+                </Button>
+                <Button
+                  component="label"
+                  startIcon={<PhotoCameraIcon />}
+                  variant="outlined"
+                  disabled={preparingDocumento || savingDocumento}
+                  sx={{ minHeight: 40, borderRadius: 1.5, borderColor: '#cbd5e1', bgcolor: '#fff', color: '#334155', fontWeight: 800, textTransform: 'none', '&:hover': { borderColor: '#94a3b8', bgcolor: '#f1f5f9' } }}
+                >
+                  Cambiar foto
+                  <input hidden type="file" accept="image/*,.heic,.heif" aria-label="Cambiar foto de constancia" onChange={handleDocumentoSelection} disabled={preparingDocumento || savingDocumento} />
+                </Button>
+              </Box>
+              {documentoSuccess && (
+                <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6, color: '#15803d' }}>
+                  <CheckCircleOutlineIcon sx={{ fontSize: 16 }} />
+                  <Typography sx={{ fontSize: 12, fontWeight: 700 }}>{documentoSuccess}</Typography>
+                </Box>
+              )}
+              {documentoError && <Typography color="error" sx={{ mt: 1.5, textAlign: 'center', fontSize: 12 }}>{documentoError}</Typography>}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      {documentoCrop && (
+        <ImageCropDialog
+          open
+          imageSrc={documentoCrop.source}
+          fileName={documentoCrop.fileName}
+          aspect={documentoCrop.aspect}
+          title={`Recortar ${documentoCrop.label}`}
+          imageAlt="Constancia para recortar"
+          filePrefix={documentoCrop.campo}
+          onCancel={() => setDocumentoCrop(null)}
+          onConfirm={handleSaveCroppedDocumento}
+        />
+      )}
       <ImageCropDialog
         open={Boolean(fotoAlumnoCrop)}
         imageSrc={fotoAlumnoCrop?.source}

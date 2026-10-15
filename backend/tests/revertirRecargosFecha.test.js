@@ -88,10 +88,16 @@ describe('revertir_recargos_fecha', () => {
     });
   });
 
-  test('omite montos modificados y alumnos con dia personalizado', () => {
+  test('omite montos modificados y dias personalizados ya alcanzados', () => {
     expect(evaluarCandidata(crearMensualidad({ monto_esperado: 54 })).elegible).toBe(false);
     expect(evaluarCandidata(crearMensualidad({
       id_alumno: { dia_limite_personalizado: 5 }
-    })).elegible).toBe(false);
+    }), 0, 5).elegible).toBe(false);
+  });
+
+  test('permite revertir un recargo aplicado antes del dia personalizado', () => {
+    expect(evaluarCandidata(crearMensualidad({
+      id_alumno: { dia_limite_personalizado: 6 }
+    }), 0, 5)).toEqual({ elegible: true, montoBase: 50, recargo: 5 });
   });
 });

@@ -11,6 +11,11 @@ In the project directory, you can run:
 Runs the app in the development mode.\
 Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 
+The start script keeps Webpack's development cache in the operating system's
+temporary directory, isolated by project and Node version. This avoids loading
+stale or conflicted cache packs from synced folders such as OneDrive. No manual
+cache cleanup or extra command-line flags are needed.
+
 The page will reload when you make changes.\
 You may also see any lint errors in the console.
 

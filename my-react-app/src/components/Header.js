@@ -24,7 +24,7 @@ function Header({ titulo, onMenuClick }) {
     usuario = null;
   }
   const rolActual = String(usuario?.rol || '').trim().toLowerCase();
-  const puedeVerPerfil = rolActual === 'admin' || rolActual === 'super_admin';
+  const puedeVerPerfil = rolActual === 'admin' || rolActual === 'super_admin' || rolActual === 'admin_dos';
 
   const userInitials = String(usuario?.nombre || 'Usuario')
     .trim()
