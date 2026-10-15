@@ -178,6 +178,99 @@ test.each(['fallo segunda atleta', 'saldo consumido', 'grupo conciliado', 'versi
   expect(datos).toEqual(originales);
 });
 
+async function editarSeptiembre(monto = 28.48) {
+  const req = solicitud({ monto_pagado: monto, monto_pagado_bs: monto * 1000 });
+  req.params = { id_pago: 'p1' };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.editarPago(req, res);
+  return res;
+}
+
+function prepararEdicionSeptiembre() {
+  delete datos.PagoDetalle.p1.id_pago_agrupado;
+  datos.PagoDetalle.p1.monto_pagado = 24;
+  Object.assign(datos.Mensualidad.m1, { mes: 9, anio: 2026, monto_esperado: 24 });
+  datos.Mensualidad.oct = { _id: 'oct', id_alumno: 'a1', mes: 10, anio: 2026,
+    monto_esperado: 20, estatus: 'Pendiente', saldo_a_favor_generado: 0 };
+  models.PagoDetalle.db = models.PagoAgrupado.db;
+}
+
+test('editar septiembre aplica el excedente a octubre ya generado sin duplicarlo al repetir', async () => {
+  prepararEdicionSeptiembre();
+  expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.m1).toMatchObject({ estatus: 'En revision', saldo_a_favor_generado: 4.48 });
+  expect(datos.Mensualidad.oct).toMatchObject({ monto_esperado: 15.52, credito_aplicado: 4.48, estatus: 'Pendiente' });
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(0);
+  expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.oct.credito_aplicado).toBe(4.48);
+});
+
+test('un fallo al recalcular octubre revierte tambien la edicion del pago de septiembre', async () => {
+  prepararEdicionSeptiembre();
+  falloGuardado = 'oct';
+  const originales = copiar(datos);
+  expect((await editarSeptiembre()).status).toHaveBeenCalledWith(500);
+  expect(datos).toEqual(originales);
+});
+
+test('edicion distribuye excedentes cronologicamente entre cuotas existentes y conserva el sobrante', async () => {
+  prepararEdicionSeptiembre();
+  const octubre = datos.Mensualidad.oct;
+  delete datos.Mensualidad.oct;
+  datos.Mensualidad.ene = { ...octubre, _id: 'ene', mes: 1, anio: 2027 };
+  datos.Mensualidad.nov = { ...octubre, _id: 'nov', mes: 11 };
+  datos.Mensualidad.oct = octubre;
+  expect((await editarSeptiembre(89)).status).not.toHaveBeenCalled();
+  for (const id of ['oct', 'nov', 'ene']) {
+    expect(datos.Mensualidad[id]).toMatchObject({ monto_esperado: 0, credito_aplicado: 20, estatus: 'Pagado' });
+  }
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(5);
+  expect(Object.keys(datos.PagoDetalle)).toEqual(['p1', 'p2']);
+});
+
+test.each(['Pagado', 'En revision', 'Exonerado'])('edicion no aplica credito a octubre %s', async (estatus) => {
+  prepararEdicionSeptiembre();
+  datos.Mensualidad.oct.estatus = estatus;
+  const original = copiar(datos.Mensualidad.oct);
+  expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.oct).toEqual(original);
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(4.48);
+});
+
+test('edicion respeta abonos de octubre y no genera excedentes ficticios', async () => {
+  prepararEdicionSeptiembre();
+  datos.Mensualidad.oct.estatus = 'Abono';
+  datos.PagoDetalle.abono = { _id: 'abono', id_mensualidad: 'oct', monto_pagado: 18 };
+  expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.oct).toMatchObject({ monto_esperado: 18, credito_aplicado: 2, estatus: 'Pagado', saldo_a_favor_generado: 0 });
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(2.48);
+});
+
+test('edicion no salta una deuda anterior aunque Mongo entregue octubre primero', async () => {
+  prepararEdicionSeptiembre();
+  datos.Mensualidad.ago = { ...datos.Mensualidad.oct, _id: 'ago', mes: 8 };
+  expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.oct.monto_esperado).toBe(20);
+  expect(datos.Mensualidad.ago.monto_esperado).toBe(20);
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(4.48);
+});
+
+test('edicion sin transacciones no guarda cambios', async () => {
+  prepararEdicionSeptiembre();
+  models.PagoDetalle.db.startSession = undefined;
+  const originales = copiar(datos);
+  expect((await editarSeptiembre()).status).toHaveBeenCalledWith(503);
+  expect(datos).toEqual(originales);
+});
+
+test('reducir un excedente ya consumido no guarda parcialmente el pago', async () => {
+  prepararEdicionSeptiembre();
+  await editarSeptiembre();
+  const originales = copiar(datos);
+  expect((await editarSeptiembre(24)).status).toHaveBeenCalledWith(500);
+  expect(datos).toEqual(originales);
+});
+
 function prepararOctubreConCredito() {
   datos.Representante.r1 = { _id: 'r1', usuario: 'u1' };
   datos.Alumno.a1.saldo_a_favor_mensualidades = 1.03;
@@ -412,6 +505,29 @@ test('50000 Bs se convierten con tasa de fecha, crean excedente propio y conserv
   for (const detalle of Object.values(datos.PagoDetalle)) expect(detalle).toMatchObject({ monto_pagado: 28.61, monto_pagado_bs: 25000, monto_esperado_bs: 16603.47 });
   for (const alumno of Object.values(datos.Alumno)) expect(alumno.saldo_a_favor_mensualidades).toBe(9.61);
   expect(datos.PagoAgrupado.g1.ediciones[0].despues.fecha_tasa).toBe('2026-10-07');
+});
+
+test.each([false, true])('edicion agrupada recalcula octubre de cada atleta atomicamente (fallo=%s)', async (fallo) => {
+  obtenerTasaPagoPorFecha.mockResolvedValue({ tasa: 1000, fecha_tasa: '2026-10-07', moneda: 'USD' });
+  for (const [id, alumno] of [['m1', 'a1'], ['m2', 'a2']]) {
+    Object.assign(datos.Mensualidad[id], { mes: 9, anio: 2026, monto_esperado: 24 });
+    datos.Mensualidad[`oct-${alumno}`] = { _id: `oct-${alumno}`, id_alumno: alumno,
+      mes: 10, anio: 2026, monto_esperado: 20, estatus: 'Pendiente', saldo_a_favor_generado: 0 };
+  }
+  const originales = copiar(datos);
+  if (fallo) falloGuardado = 'oct-a2';
+  const res = await editar(solicitud({ monto_total: 56.96, monto_total_bs: 56960,
+    asignaciones: [{ id_pago: 'p1', monto_pagado: 28.48 }, { id_pago: 'p2', monto_pagado: 28.48 }] }));
+  if (fallo) {
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(datos).toEqual(originales);
+  } else {
+    expect(res.status).not.toHaveBeenCalled();
+    for (const alumno of ['a1', 'a2']) {
+      expect(datos.Mensualidad[`oct-${alumno}`]).toMatchObject({ monto_esperado: 15.52, credito_aplicado: 4.48 });
+      expect(datos.Alumno[alumno].saldo_a_favor_mensualidades).toBe(0);
+    }
+  }
 });
 
 test('rechaza 50000 Bs declarados como 38 USD sin alterar registros', async () => {

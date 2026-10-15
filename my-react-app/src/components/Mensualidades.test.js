@@ -60,6 +60,88 @@ beforeEach(() => {
 
 afterEach(() => { global.fetch = fetchOriginal; localStorage.clear(); });
 
+test('filtra por codigo agrupado completo o parcial y conserva la busqueda por alumno', async () => {
+  const fetchPrevio = global.fetch;
+  global.fetch = jest.fn(async (url, options) => {
+    const respuesta = await fetchPrevio(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [original] = await respuesta.json();
+    return { ok: true, json: async () => [
+      original,
+      { ...original, _id: 'm2', id_alumno: { _id: 'a2', nombres: 'Eva', apellidos: 'Raga' } },
+      { ...original, _id: 'm3', id_alumno: { _id: 'a3', nombres: 'Luis', apellidos: 'Perez' },
+        pago_agrupado: { ...original.pago_agrupado, id: 'g2', codigo: 'PA-OTRO' } },
+      { ...original, _id: 'm4', id_alumno: { _id: 'a4', nombres: 'Maria', apellidos: 'Lopez' }, pago_agrupado: null }
+    ] };
+  });
+  render(<Mensualidades />);
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(4));
+  const buscador = screen.getByRole('textbox', { name: 'Alumno o código de pago' });
+  for (const codigo of [' PA-test ', 'test']) {
+    fireEvent.change(buscador, { target: { value: codigo } });
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(2));
+    expect(screen.getByText('Ana Raga')).toBeInTheDocument();
+    expect(screen.getByText('Eva Raga')).toBeInTheDocument();
+    expect(screen.queryByText('Luis Perez')).not.toBeInTheDocument();
+    expect(screen.queryByText('Maria Lopez')).not.toBeInTheDocument();
+  }
+  fireEvent.change(buscador, { target: { value: 'Raga Ana' } });
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(1));
+  expect(screen.getByText('Ana Raga')).toBeInTheDocument();
+  fireEvent.change(buscador, { target: { value: 'PA-INEXISTENTE' } });
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Ver detalle' })).not.toBeInTheDocument());
+  fireEvent.change(buscador, { target: { value: '' } });
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(4));
+});
+
+test('filtra alumnos activos y de baja con criterios historicos y combina los demas filtros', async () => {
+  const fetchPrevio = global.fetch;
+  global.fetch = jest.fn(async (url, options) => {
+    const respuesta = await fetchPrevio(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [original] = await respuesta.json();
+    const alumnos = [
+      { nombres: 'Activa', activo: true },
+      { nombres: 'Historica' },
+      { nombres: 'Retirada', dado_de_baja: true, activo: true },
+      { nombres: 'Inactiva', activo: false },
+      { nombres: 'Estado baja', estado: 'baja' },
+      { nombres: 'Estado inactivo', estado: ' Inactivo ' }
+    ];
+    return { ok: true, json: async () => alumnos.map((alumno, index) => ({ ...original,
+      _id: `m${index}`, id_alumno: { ...alumno, _id: `a${index}`, apellidos: 'Raga' },
+      estatus: alumno.dado_de_baja ? 'Pagado' : 'En revision'
+    })) };
+  });
+  render(<Mensualidades />);
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(6));
+  const filtro = screen.getByRole('combobox', { name: 'Estado del alumno' });
+  fireEvent.mouseDown(filtro);
+  fireEvent.click(await screen.findByRole('option', { name: 'Activos' }));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(2));
+  expect(screen.getByText('Activa Raga')).toBeInTheDocument();
+  expect(screen.getByText('Historica Raga')).toBeInTheDocument();
+  fireEvent.mouseDown(filtro);
+  fireEvent.click(await screen.findByRole('option', { name: 'De baja' }));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(4));
+  expect(screen.queryByText('Activa Raga')).not.toBeInTheDocument();
+  expect(screen.queryByText('Historica Raga')).not.toBeInTheDocument();
+  const buscador = screen.getByRole('textbox', { name: 'Alumno o código de pago' });
+  fireEvent.change(buscador, { target: { value: 'Retirada' } });
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(1));
+  expect(screen.getByText('Retirada Raga')).toBeInTheDocument();
+  fireEvent.change(buscador, { target: { value: '' } });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Estado', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Pagado' }));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(1));
+  expect(screen.getByText('Retirada Raga')).toBeInTheDocument();
+  fireEvent.mouseDown(filtro);
+  fireEvent.click(await screen.findByRole('option', { name: 'Todos' }));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Estado', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Todos' }));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(6));
+});
+
 async function abrirRetiro() {
   render(<Mensualidades />);
   fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));

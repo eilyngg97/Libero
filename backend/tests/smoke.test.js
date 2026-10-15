@@ -510,6 +510,7 @@ describe('Backend smoke tests', () => {
       withTransaction: jest.fn(async (operacion) => operacion()), endSession: jest.fn().mockResolvedValue(undefined)
     }), db: { admin: () => ({ command: jest.fn().mockResolvedValue({ setName: 'rs0' }) }) } };
     PagoAgrupado.findById.mockResolvedValue(grupo);
+    Alumno.findById.mockResolvedValue({ saldo_a_favor_mensualidades: 0 });
     Representante.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ usuario: 'u1' }) });
     Mensualidad.findById.mockImplementation((id) => ({ populate: () => Promise.resolve(mensualidades[id]) }));
     PagoDetalle.find.mockImplementation((filter) => filter.id_pago_agrupado
@@ -1511,6 +1512,10 @@ describe('Backend smoke tests', () => {
 
   test('PATCH /api/pagos/:id_pago updates payment', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    PagoDetalle.db = { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn(async (operacion) => operacion()), endSession: jest.fn().mockResolvedValue(undefined)
+    }) };
+    Alumno.findById.mockResolvedValue({ _id: 'a1', saldo_a_favor_mensualidades: 0 });
 
     const pagoDoc = {
       _id: 'p1',

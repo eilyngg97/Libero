@@ -78,6 +78,12 @@ const obtenerDiaLimitePersonalizado = (mensualidad) => {
 	return valor;
 };
 
+const esAlumnoDeBajaMensualidad = (mensualidad) => {
+	const alumno = mensualidad?.id_alumno;
+	const estado = String(alumno?.estado || '').trim().toLowerCase();
+	return alumno?.dado_de_baja === true || alumno?.activo === false || estado === 'baja' || estado === 'inactivo';
+};
+
 function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyInsolventes = false, viewMode = 'mensualidades' }) {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
@@ -92,6 +98,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
 	const [filtroAlumno, setFiltroAlumno] = useState('');
 	const [filtroEstado, setFiltroEstado] = useState(() => String(initialEstado || '').trim());
+	const [filtroEstadoAlumno, setFiltroEstadoAlumno] = useState('');
 	const [modalPago, setModalPago] = useState(false);
 	const [pagoInfo, setPagoInfo] = useState({});
 	const [comprobante, setComprobante] = useState(null);
@@ -508,10 +515,15 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				const apellidos = String(m?.id_alumno?.apellidos || '').toLowerCase().trim();
 				const formatoApellidoNombre = `${apellidos} ${nombres}`.trim();
 				const formatoNombreApellido = `${nombres} ${apellidos}`.trim();
-				return formatoApellidoNombre.includes(filtroTexto) || formatoNombreApellido.includes(filtroTexto);
+				const codigoAgrupado = String(m?.pago_agrupado?.codigo || '').toLowerCase().trim();
+				return formatoApellidoNombre.includes(filtroTexto) || formatoNombreApellido.includes(filtroTexto)
+					|| codigoAgrupado.includes(filtroTexto);
 			});
 		}
 		if (filtroEstado) filtradas = filtradas.filter(m => m.estatus && m.estatus.toLowerCase() === filtroEstado.toLowerCase());
+		if (filtroEstadoAlumno) {
+			filtradas = filtradas.filter((mensualidad) => esAlumnoDeBajaMensualidad(mensualidad) === (filtroEstadoAlumno === 'baja'));
+		}
 		if (onlyInsolventes) {
 			filtradas = filtradas.filter((m) => String(m?.estatus || '').toLowerCase() === 'insolvente');
 		}
@@ -529,7 +541,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		});
 
 		setMensualidades(filtradasOrdenadas);
-	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD, onlyInsolventes, esVistaInscripciones]);
+	}, [filtroMes, filtroAlumno, filtroEstado, filtroEstadoAlumno, mensualidadesBD, onlyInsolventes, esVistaInscripciones]);
 
 	React.useEffect(() => {
 		if (!onlyInsolventes) return;
@@ -1688,10 +1700,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const obtenerEstadoAlumnoVisual = (alumno) => {
-		const dadoDeBaja = alumno?.dado_de_baja === true;
-		const activo = alumno?.activo !== false;
-		const estadoRaw = String(alumno?.estado || '').toLowerCase();
-		const esBaja = dadoDeBaja || !activo || estadoRaw === 'baja' || estadoRaw === 'inactivo';
+		const esBaja = esAlumnoDeBajaMensualidad({ id_alumno: alumno });
 
 		return {
 			esBaja,
@@ -1766,17 +1775,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		if (!alumno) return '-';
 		const nombre = `${alumno?.nombres || ''} ${alumno?.apellidos || ''}`.trim();
 		return nombre || '-';
-	};
-
-	const esAlumnoDeBajaMensualidad = (mensualidad) => {
-		const alumno = mensualidad?.id_alumno;
-		if (!alumno) return false;
-
-		if (alumno?.dado_de_baja === true) return true;
-		if (alumno?.activo === false) return true;
-
-		const estado = String(alumno?.estado || '').trim().toLowerCase();
-		return estado === 'inactivo';
 	};
 
 	const normalizarNombreArchivo = (valor) => String(valor || '')
@@ -2047,7 +2045,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					<MenuItem value="">Todos</MenuItem>
 					{[...Array(12)].map((_, i) => <MenuItem key={i + 1} value={i + 1}>{meses[i]}</MenuItem>)}
 				</TextField>
-				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
+				<TextField label="Alumno o código de pago" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
 				<TextField
 					select
 					label="Estado"
@@ -2058,6 +2056,17 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				>
 					<MenuItem value="">Todos</MenuItem>
 					{['Pendiente', 'Pagado', 'Insolvente', 'Exonerado', 'Becado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
+				</TextField>
+				<TextField
+					select
+					label="Estado del alumno"
+					value={filtroEstadoAlumno}
+					onChange={e => { setFiltroEstadoAlumno(e.target.value); setPagina(0); }}
+					sx={{ minWidth: 150, width: '100%' }}
+				>
+					<MenuItem value="">Todos</MenuItem>
+					<MenuItem value="activo">Activos</MenuItem>
+					<MenuItem value="baja">De baja</MenuItem>
 				</TextField>
 			</Box>
 			<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', mb: 2, mt: 2 }}>

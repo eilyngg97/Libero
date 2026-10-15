@@ -344,6 +344,20 @@ async function cotizarCreditoRegistro(mensualidad, models, session) {
     prepararMensualidad: (item) => aplicarRecargoMensualidadSegunConfig(item, { models, persistir: false }) });
 }
 
+async function aplicarCreditoPosteriorEdicion(origen, models, session, actor) {
+  const cotizacion = await cotizarCreditoRegistro(origen, models, session);
+  const posteriores = [...cotizacion.proyecciones.values()].sort((primera, segunda) => Number(primera.anio) - Number(segunda.anio)
+    || Number(primera.mes) - Number(segunda.mes) || String(primera._id).localeCompare(String(segunda._id)));
+  for (const proyeccion of posteriores) {
+    if (proyeccion.credito_a_aplicar <= 0) continue;
+    if (!mensualidadEsAnterior(origen, proyeccion)) break;
+    const mensualidad = await aplicarSession(models.Mensualidad.findById(proyeccion._id).populate('id_alumno'), session);
+    await aplicarRecargoMensualidadSegunConfig(mensualidad, { models, persistir: false });
+    await aplicarCreditoMensualidad(mensualidad, cotizacion, { session, actor });
+    await recalcularMensualidad(mensualidad, actor?.rol, mensualidad.estatus, models, { session });
+  }
+}
+
 function validarCreditoDeclarado(declarado, credito) {
   if (declarado !== undefined && (!Number.isFinite(Number(declarado))
     || Math.round(Number(declarado) * 100) !== Math.round(credito * 100))) {
@@ -790,6 +804,7 @@ exports.editarPagoAgrupado = async (req, res) => {
       }
       for (const mensualidad of mensualidades) {
         await recalcularMensualidad(mensualidad, 'usuario', 'En revision', models, { session });
+        await aplicarCreditoPosteriorEdicion(mensualidad, models, session, req.user);
       }
       return { id: grupo._id, codigo: grupo.codigo, mensualidades_actualizadas: mensualidades.length };
     }, { obligatoria: true });
@@ -1007,6 +1022,7 @@ exports.aplicarCreditoSinTransferencia = async (req, res) => {
 };
 
 exports.editarPago = async (req, res) => {
+  let guardado = false;
   try {
     const tenantModels = await getTenantFinanceModels(req);
     const { PagoDetalle: TenantPagoDetalle } = tenantModels;
@@ -1030,80 +1046,65 @@ exports.editarPago = async (req, res) => {
       return res.status(409).json({ error: 'Las asignaciones de un pago agrupado no pueden editarse individualmente' });
     }
 
-    const mensualidad = await obtenerMensualidadConAlumnoTenant(pago.id_mensualidad, tenantModels);
     const monto = normalizarMonto(monto_pagado);
     const montoBs = normalizarMontoBs(monto_pagado_bs);
     const montoEsperadoUsd = normalizarMonto(monto_esperado_usd);
     const montoEsperadoBs = normalizarMontoBs(monto_esperado_bs);
-    const solicitaRevisionRecargo = solicita_revision_recargo !== undefined
-      ? normalizarBooleano(solicita_revision_recargo)
-      : normalizarBooleano(pago.solicita_revision_recargo);
-    const validacion = await validarPago({
-      mensualidad,
-      monto,
-      montoBs,
-      pagoIdExcluir: pago._id,
-      actorRol: req.user?.rol,
-      solicitaRevisionRecargo,
-      models: tenantModels
-    });
-
-    if (validacion.error) {
-      return res.status(validacion.error.status).json(validacion.error.payload);
-    }
-
     const comprobanteAnterior = pago.comprobante_url;
-    pago.monto_pagado = validacion.montoARegistrar;
-    pago.monto_pagado_bs = montoBs;
-    pago.monto_original_usd = validacion.montoARegistrar;
-    pago.monto_original_bs = montoBs;
-    pago.monto_aplicado_usd = validacion.montoARegistrar;
-    pago.monto_aplicado_bs = montoBs;
-    if (Number.isFinite(montoEsperadoUsd)) {
-      pago.monto_esperado_usd = redondearMonto(montoEsperadoUsd);
-    }
-    if (montoEsperadoBs !== null) {
-      pago.monto_esperado_bs = redondearMonto(montoEsperadoBs);
-    }
-    pago.fecha_pago = fecha_pago;
-    pago.metodo_pago = metodo_pago;
-    pago.referencia = referencia;
-    if (telefono_pago !== undefined) {
-      pago.telefono_pago = normalizarTelefonoPago(telefono_pago);
-    }
-    if (cedula_titular !== undefined) {
-      pago.cedula_titular = String(cedula_titular || '').trim();
-    }
-    if (nota !== undefined) {
-      pago.nota = normalizarNotaPago(nota);
-    }
-    if (solicita_revision_recargo !== undefined) {
-      pago.solicita_revision_recargo = solicitaRevisionRecargo;
-    }
+    const resultado = await ejecutarConTransaccion(TenantPagoDetalle, async (session) => {
+      const actual = await aplicarSession(TenantPagoDetalle.findById(req.params.id_pago), session);
+      if (!actual) throw errorPagoAgrupado(404, 'Pago no encontrado');
+      if (actual.id_pago_agrupado) throw errorPagoAgrupado(409, 'Las asignaciones de un pago agrupado no pueden editarse individualmente');
+      const mensualidad = await aplicarSession(tenantModels.Mensualidad.findById(actual.id_mensualidad).populate('id_alumno'), session);
+      const solicitaRevisionRecargo = solicita_revision_recargo !== undefined
+        ? normalizarBooleano(solicita_revision_recargo)
+        : normalizarBooleano(actual.solicita_revision_recargo);
+      const validacion = await validarPago({ mensualidad, monto, montoBs, pagoIdExcluir: actual._id,
+        actorRol: req.user?.rol, solicitaRevisionRecargo, models: tenantModels, session });
+      if (validacion.error) throw errorPagoAgrupado(validacion.error.status, validacion.error.payload.error);
 
-    if (req.file) {
-      pago.comprobante_url = `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`;
-    } else if (eliminar_comprobante === 'true') {
-      pago.comprobante_url = null;
-    }
+      actual.monto_pagado = validacion.montoARegistrar;
+      actual.monto_pagado_bs = montoBs;
+      actual.monto_original_usd = validacion.montoARegistrar;
+      actual.monto_original_bs = montoBs;
+      actual.monto_aplicado_usd = validacion.montoARegistrar;
+      actual.monto_aplicado_bs = montoBs;
+      if (Number.isFinite(montoEsperadoUsd)) actual.monto_esperado_usd = redondearMonto(montoEsperadoUsd);
+      if (montoEsperadoBs !== null) actual.monto_esperado_bs = redondearMonto(montoEsperadoBs);
+      actual.fecha_pago = fecha_pago;
+      actual.metodo_pago = metodo_pago;
+      actual.referencia = referencia;
+      if (telefono_pago !== undefined) actual.telefono_pago = normalizarTelefonoPago(telefono_pago);
+      if (cedula_titular !== undefined) actual.cedula_titular = String(cedula_titular || '').trim();
+      if (nota !== undefined) actual.nota = normalizarNotaPago(nota);
+      if (solicita_revision_recargo !== undefined) actual.solicita_revision_recargo = solicitaRevisionRecargo;
+      if (req.file) {
+        actual.comprobante_url = `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`;
+      } else if (eliminar_comprobante === 'true') {
+        actual.comprobante_url = null;
+      }
+      await actual.save(session ? { session } : undefined);
+      const resumen = await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, tenantModels, { session });
+      await aplicarCreditoPosteriorEdicion(mensualidad, tenantModels, session, req.user);
+      return { ...resumen, pago: actual };
+    }, { obligatoria: true });
+    guardado = true;
 
-    await pago.save();
-
-    if ((req.file || eliminar_comprobante === 'true') && comprobanteAnterior && comprobanteAnterior !== pago.comprobante_url) {
+    if ((req.file || eliminar_comprobante === 'true') && comprobanteAnterior && comprobanteAnterior !== resultado.pago.comprobante_url) {
       eliminarArchivoComprobante(comprobanteAnterior);
     }
 
-    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, tenantModels);
-
     res.json({
       message: 'Pago actualizado correctamente',
-      pago,
+      pago: resultado.pago,
       total_pagado: resultado.totalPagado,
       restante: resultado.restante,
       estatus: resultado.estatus
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
+  } finally {
+    if (!guardado && req.file) eliminarArchivoComprobante(`/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`);
   }
 };
 
