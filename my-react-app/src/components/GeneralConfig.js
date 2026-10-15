@@ -12,22 +12,29 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  IconButton,
   MenuItem,
   Paper,
   Snackbar,
   Switch,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { mediaUrl } from '../utils/mediaUrl';
+import ConstanciaVariables from './ConstanciaVariables';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
 const EMPTY_CONSTANCIAS_CONFIG = {
+  personalizados: [],
   institucion_nombre: '',
   subtitulo: '',
   membrete: {
@@ -115,6 +122,11 @@ const EMPTY_CONSTANCIAS_CONFIG = {
   }
 };
 
+const DEFAULT_PERSONALIZADO_TEMPLATE = {
+  ...EMPTY_CONSTANCIAS_CONFIG.templates.simple,
+  cierre: 'Esta constancia no será válida ni tendrá efecto legal alguno si carece de la firma autógrafa y el sello húmedo de la institución/academia.'
+};
+
 const EMPTY_CATEGORIAS_CONFIG = {
   disciplina: 'voleibol',
   modo_asignacion: 'anio_nacimiento',
@@ -169,6 +181,10 @@ const TEMPLATE_SECTIONS = [
 
 function buildConstanciasConfig(data = {}) {
   return {
+    personalizados: (data?.personalizados || []).map((item) => ({
+      ...item,
+      template: { ...DEFAULT_PERSONALIZADO_TEMPLATE, ...item.template }
+    })),
     institucion_nombre: data?.institucion_nombre || EMPTY_CONSTANCIAS_CONFIG.institucion_nombre,
     subtitulo: data?.subtitulo || EMPTY_CONSTANCIAS_CONFIG.subtitulo,
     membrete: {
@@ -230,6 +246,33 @@ function buildConstanciasConfig(data = {}) {
   };
 }
 
+function ConstanciaAccordionHeading({ children, className, formato, onEliminar, eliminando }) {
+  return (
+    <Box
+      component="h3"
+      className={className}
+      sx={{ m: 0, display: 'flex', alignItems: 'center', '& .MuiAccordionSummary-root': { flex: 1, minWidth: 0 } }}
+    >
+      {children}
+      {formato && (
+        <Tooltip title={`Eliminar ${formato.title}`}>
+          <span>
+            <IconButton
+              aria-label="Eliminar formato"
+              color="error"
+              disabled={eliminando}
+              sx={{ mr: 1 }}
+              onClick={() => onEliminar(formato)}
+            >
+              <DeleteOutlineRoundedIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+      )}
+    </Box>
+  );
+}
+
 function GeneralConfig() {
   const token = localStorage.getItem('token');
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
@@ -250,6 +293,8 @@ function GeneralConfig() {
   const [logoPreview, setLogoPreview] = useState('');
   const [dragLogoActive, setDragLogoActive] = useState(false);
   const [constanciasConfig, setConstanciasConfig] = useState(EMPTY_CONSTANCIAS_CONFIG);
+  const [nuevoFormatoNombre, setNuevoFormatoNombre] = useState('');
+  const [formatoAEliminar, setFormatoAEliminar] = useState(null);
   const [categoriasConfig, setCategoriasConfig] = useState(EMPTY_CATEGORIAS_CONFIG);
   const [expandedTemplate, setExpandedTemplate] = useState(TEMPLATE_SECTIONS[0].key);
   const [expandedRetiroSubAccordion, setExpandedRetiroSubAccordion] = useState('global');
@@ -484,6 +529,15 @@ function GeneralConfig() {
   };
 
   const updateTemplateField = (templateKey, field, value) => {
+    if (templateKey.startsWith('personalizado_')) {
+      setConstanciasConfig((prev) => ({
+        ...prev,
+        personalizados: prev.personalizados.map((item) => item.id === templateKey
+          ? { ...item, template: { ...item.template, [field]: value } }
+          : item)
+      }));
+      return;
+    }
     setConstanciasConfig((prev) => ({
       ...prev,
       templates: {
@@ -494,6 +548,24 @@ function GeneralConfig() {
         }
       }
     }));
+  };
+
+  const agregarFormato = () => {
+    const nombre = nuevoFormatoNombre.trim();
+    if (!nombre) {
+      setError('Indica el nombre del nuevo formato.');
+      return;
+    }
+    const id = `personalizado_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+    setConstanciasConfig((prev) => ({
+      ...prev,
+      personalizados: [
+        ...(prev.personalizados || []),
+        { id, nombre, template: { ...DEFAULT_PERSONALIZADO_TEMPLATE } }
+      ]
+    }));
+    setNuevoFormatoNombre('');
+    setExpandedTemplate(id);
   };
 
   const updateRetiroField = (field, value) => {
@@ -539,6 +611,9 @@ function GeneralConfig() {
 
   const guardarConstancias = async (nextConfig = constanciasConfig, successText = 'Configuracion de constancias actualizada.') => {
     try {
+      if (nextConfig.personalizados.some((item) => !item.nombre.trim())) {
+        throw new Error('Cada formato personalizado debe tener un nombre.');
+      }
       setGuardandoConstancias(true);
       setError('');
       const res = await fetch(`${apiBase}/api/configuracion`, {
@@ -1333,9 +1408,25 @@ function GeneralConfig() {
             </Box>
 
             <Box sx={{ display: 'grid', gap: 1.2 }}>
-              {TEMPLATE_SECTIONS.map((section) => (
+              {[
+                ...TEMPLATE_SECTIONS.map((section) => ({ ...section, template: constanciasConfig.templates[section.key] })),
+                ...(constanciasConfig.personalizados || []).map((item) => ({
+                  key: item.id, title: item.nombre, template: item.template, personalizado: true
+                }))
+              ].map((section) => (
                 <Accordion
                   key={section.key}
+                  slots={{ heading: ConstanciaAccordionHeading }}
+                  slotProps={{
+                    heading: {
+                      formato: section.personalizado ? section : null,
+                      eliminando: guardandoConstancias,
+                      onEliminar: (formato) => {
+                        setError('');
+                        setFormatoAEliminar({ id: formato.key, nombre: formato.title });
+                      }
+                    }
+                  }}
                   expanded={expandedTemplate === section.key}
                   onChange={(_, isExpanded) => setExpandedTemplate(isExpanded ? section.key : false)}
                   disableGutters
@@ -1367,6 +1458,25 @@ function GeneralConfig() {
                     </Typography>
                   </AccordionSummary>
                   <AccordionDetails sx={{ px: 2, pb: 2 }}>
+                    {section.personalizado && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
+                        <TextField
+                          label="Nombre del desplegable"
+                          size="small"
+                          fullWidth
+                          required
+                          value={section.title}
+                          onChange={(e) => {
+                            const nombre = e.target.value;
+                            setConstanciasConfig((prev) => ({
+                              ...prev,
+                              personalizados: prev.personalizados.map((item) => item.id === section.key ? { ...item, nombre } : item)
+                            }));
+                          }}
+                          sx={{ ...fieldLabelSx, flex: 1, minWidth: 220 }}
+                        />
+                      </Box>
+                    )}
                     {section.key === 'retiro' ? (
                       <Box sx={{ display: 'grid', gap: 1.2 }}>
                         <Box
@@ -1448,10 +1558,10 @@ function GeneralConfig() {
                                 minRows={4}
                                 value={constanciasConfig.templates.retiro.cuerpo}
                                 onChange={(e) => updateTemplateField('retiro', 'cuerpo', e.target.value)}
-                                helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_colegio}}, {{sede_nombre}}, {{fecha_emision_texto}}"
                                 InputLabelProps={{ shrink: true }}
                                 sx={fieldLabelSx}
                               />
+                              <ConstanciaVariables />
                               <TextField
                                 label="Nota"
                                 size="small"
@@ -1483,7 +1593,6 @@ function GeneralConfig() {
                             </Box>
                           </AccordionDetails>
                         </Accordion>
-
                         <Accordion
                           disableGutters
                           elevation={0}
@@ -1613,7 +1722,8 @@ function GeneralConfig() {
                             </Box>
 
                             <Box sx={{ display: 'grid', gap: 1.5 }}>
-                              <TextField label="Cuerpo" size="small" multiline minRows={5} value={constanciasConfig.retiro_personalizado.template.cuerpo} onChange={(e) => updateRetiroTemplateField('cuerpo', e.target.value)} helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_colegio}}, {{alumno_fecha_nacimiento}}, {{alumno_fecha_ingreso_academia}}, {{sede_nombre}}, {{fecha_emision_texto}}" InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <TextField label="Cuerpo" size="small" multiline minRows={5} value={constanciasConfig.retiro_personalizado.template.cuerpo} onChange={(e) => updateRetiroTemplateField('cuerpo', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
+                              <ConstanciaVariables />
                               <TextField label="Lugar de emision" size="small" value={constanciasConfig.retiro_personalizado.template.lugarEmision} onChange={(e) => updateRetiroTemplateField('lugarEmision', e.target.value)} InputLabelProps={{ shrink: true }} sx={fieldLabelSx} />
                             </Box>
                           </AccordionDetails>
@@ -1625,7 +1735,7 @@ function GeneralConfig() {
                           <TextField
                             label="Titulo"
                             size="small"
-                            value={constanciasConfig.templates[section.key].titulo}
+                            value={section.template.titulo}
                             onChange={(e) => updateTemplateField(section.key, 'titulo', e.target.value)}
                             InputLabelProps={{ shrink: true }}
                             sx={fieldLabelSx}
@@ -1633,7 +1743,7 @@ function GeneralConfig() {
                           <TextField
                             label="Destinatario"
                             size="small"
-                            value={constanciasConfig.templates[section.key].destinatario}
+                            value={section.template.destinatario}
                             onChange={(e) => updateTemplateField(section.key, 'destinatario', e.target.value)}
                             InputLabelProps={{ shrink: true }}
                             sx={fieldLabelSx}
@@ -1645,18 +1755,18 @@ function GeneralConfig() {
                             size="small"
                             multiline
                             minRows={4}
-                            value={constanciasConfig.templates[section.key].cuerpo}
+                            value={section.template.cuerpo}
                             onChange={(e) => updateTemplateField(section.key, 'cuerpo', e.target.value)}
-                            helperText="Variables: {{alumno_nombre_completo}}, {{alumno_cedula}}, {{alumno_categoria}}, {{alumno_colegio}}, {{sede_nombre}}, {{horario_resumen}}, {{cantidad_alumnos}}, {{fecha_emision_texto}}, {{asistencia_persona_label}}, {{asistencia_nombre}}, {{asistencia_cedula}}, {{asistencia_dia_evento}}, {{asistencia_hora_desde}}, {{asistencia_hora_hasta}}, {{asistencia_motivo_evento}}, {{asistencia_verbo_presencia}}"
                             InputLabelProps={{ shrink: true }}
                             sx={fieldLabelSx}
                           />
+                          <ConstanciaVariables />
                           <TextField
                             label="Nota"
                             size="small"
                             multiline
                             minRows={2}
-                            value={constanciasConfig.templates[section.key].nota}
+                            value={section.template.nota}
                             onChange={(e) => updateTemplateField(section.key, 'nota', e.target.value)}
                             InputLabelProps={{ shrink: true }}
                             sx={fieldLabelSx}
@@ -1664,7 +1774,7 @@ function GeneralConfig() {
                           <TextField
                             label="Lugar de emision"
                             size="small"
-                            value={constanciasConfig.templates[section.key].lugarEmision}
+                            value={section.template.lugarEmision}
                             onChange={(e) => updateTemplateField(section.key, 'lugarEmision', e.target.value)}
                             InputLabelProps={{ shrink: true }}
                             sx={fieldLabelSx}
@@ -1674,7 +1784,7 @@ function GeneralConfig() {
                             size="small"
                             multiline
                             minRows={2}
-                            value={constanciasConfig.templates[section.key].cierre}
+                            value={section.template.cierre}
                             onChange={(e) => updateTemplateField(section.key, 'cierre', e.target.value)}
                             helperText="Este texto se imprime al final de la pagina en tamano pequeño."
                             InputLabelProps={{ shrink: true }}
@@ -1688,6 +1798,50 @@ function GeneralConfig() {
               ))}
             </Box>
 
+            <Box sx={{ display: 'flex', gap: 1.5, mt: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+              <TextField
+                label="Nombre del nuevo formato"
+                placeholder="Ej.: Constancias entrenadores"
+                size="small"
+                value={nuevoFormatoNombre}
+                onChange={(e) => setNuevoFormatoNombre(e.target.value)}
+                sx={{ ...fieldLabelSx, flex: 1, minWidth: 220 }}
+              />
+              <Button
+                variant="outlined"
+                startIcon={<AddRoundedIcon />}
+                onClick={agregarFormato}
+                disabled={guardandoConstancias}
+                sx={{
+                  minHeight: 40,
+                  width: { xs: '100%', sm: 'auto' },
+                  px: 2.2,
+                  py: 1,
+                  borderRadius: 2.5,
+                  textTransform: 'none',
+                  whiteSpace: 'nowrap',
+                  fontWeight: 800,
+                  color: '#9a3412',
+                  bgcolor: '#fff7ed',
+                  borderColor: '#fed7aa',
+                  transition: 'background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease',
+                  '&:hover': {
+                    bgcolor: '#ffedd5',
+                    borderColor: '#fb923c',
+                    boxShadow: '0 3px 10px rgba(234, 88, 12, 0.12)'
+                  },
+                  '&.Mui-focusVisible': {
+                    outline: '3px solid #fdba74',
+                    outlineOffset: 2
+                  }
+                }}
+              >
+                Agregar formato
+              </Button>
+            </Box>
+            <Typography sx={{ mt: 1, fontSize: 12, color: '#738198' }}>
+              Guarda la configuracion para aplicar los cambios.
+            </Typography>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2.2 }}>
               <Button
                 variant="contained"
@@ -1702,6 +1856,80 @@ function GeneralConfig() {
         )}
       </Paper>
 
+      <Dialog
+        open={Boolean(formatoAEliminar)}
+        onClose={() => {
+          if (!guardandoConstancias) setFormatoAEliminar(null);
+        }}
+        aria-labelledby="eliminar-formato-title"
+        aria-describedby="eliminar-formato-description"
+        fullWidth
+        maxWidth="xs"
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 3,
+              border: '1px solid #e7ebf3',
+              boxShadow: '0 24px 80px rgba(15, 23, 42, 0.22)'
+            }
+          },
+          backdrop: { sx: { bgcolor: 'rgba(15, 23, 42, 0.48)', backdropFilter: 'blur(3px)' } }
+        }}
+      >
+        <DialogTitle id="eliminar-formato-title" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 3, pb: 2, color: '#0f172a', fontSize: 20, fontWeight: 800, lineHeight: 1.3 }}>
+          <Box
+            component="span"
+            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, flexShrink: 0, bgcolor: '#fef2f2', color: '#dc2626', borderRadius: 2.5 }}
+          >
+            <DeleteOutlineRoundedIcon sx={{ fontSize: 26 }} />
+          </Box>
+          Eliminar formato personalizado
+        </DialogTitle>
+        <DialogContent id="eliminar-formato-description" sx={{ px: 3, pb: 3 }}>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          <Typography sx={{ fontSize: 14, lineHeight: 1.75, color: '#475569', overflowWrap: 'anywhere' }}>
+            Se eliminará <Box component="strong" sx={{ color: '#0f172a', fontWeight: 700 }}>"{formatoAEliminar?.nombre}"</Box> y dejará de estar disponible para emitir constancias.
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2, p: 1.5, bgcolor: '#fff7ed', border: '1px solid #ffedd5', borderRadius: 2 }}>
+            <WarningAmberRoundedIcon sx={{ fontSize: 20, color: '#b45309', flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 13, color: '#9a3412', fontWeight: 600 }}>
+              Esta acción no se puede deshacer.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, gap: 1, bgcolor: '#f8fafc', borderTop: '1px solid #e7ebf3' }}>
+          <Button
+            variant="outlined"
+            onClick={() => setFormatoAEliminar(null)}
+            disabled={guardandoConstancias}
+            sx={{ borderRadius: 2, px: 2.5, py: 1, textTransform: 'none', fontWeight: 700, color: '#475569', borderColor: '#cbd5e1', '&:hover': { borderColor: '#94a3b8', bgcolor: '#f1f5f9' } }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disableElevation
+            startIcon={<DeleteOutlineRoundedIcon />}
+            sx={{ borderRadius: 2, px: 2.5, py: 1, textTransform: 'none', fontWeight: 700 }}
+            disabled={guardandoConstancias}
+            onClick={async () => {
+              if (!formatoAEliminar) return;
+              const id = formatoAEliminar.id;
+              const saved = await guardarConstancias({
+                ...constanciasConfig,
+                personalizados: constanciasConfig.personalizados.filter((item) => item.id !== id)
+              }, 'Formato personalizado eliminado.');
+              if (saved) {
+                setFormatoAEliminar(null);
+                if (expandedTemplate === id) setExpandedTemplate(false);
+              }
+            }}
+          >
+            {guardandoConstancias ? 'Eliminando...' : 'Eliminar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

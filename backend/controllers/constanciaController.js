@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
@@ -7,6 +8,7 @@ const { getTenantCoreModel } = require('../models/TenantCore');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { getTenantModel } = require('../services/tenantModelService');
 const { registrarOperacion } = require('../services/operacionService');
+const { normalizarTipoConstancia, normalizePersonalizados, getTemplateRequirements } = require('../services/constanciaTemplateService');
 
 const DEFAULT_TEMPLATES = {
   simple: {
@@ -164,19 +166,14 @@ function mensualidadCuentaComoDeuda(mensualidad = {}, ahora = new Date(), alumno
 async function getTenantConstanciaModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
   const connection = await getTenantBusinessConnection(tenantConfig);
+  getTenantModel(connection, 'Sede');
 
   return {
     Alumno: getTenantModel(connection, 'Alumno'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
+    Entrenador: getTenantModel(connection, 'Entrenador'),
     TenantConfig: getTenantModel(connection, 'TenantConfig')
   };
-}
-
-function normalizarTipoConstancia(tipo) {
-  const normalizado = String(tipo || '').trim().toLowerCase();
-  if (normalizado === 'horario') return 'horario_entrenamiento';
-  if (['simple', 'retiro', 'horario_entrenamiento', 'listado_alumnos', 'asistencia'].includes(normalizado)) return normalizado;
-  return 'simple';
 }
 
 function getNombreOperacionConstancia(tipo) {
@@ -1043,8 +1040,39 @@ function createPdfResponseDocument(res) {
   return doc;
 }
 
+exports.getFormatosPersonalizados = async (req, res) => {
+  try {
+    const { TenantConfig } = await getTenantConstanciaModels(req);
+    const config = await TenantConfig.findOne({ key: 'default' }).select('constancias.personalizados').lean();
+    return res.json(normalizePersonalizados(config?.constancias?.personalizados).map(({ id, nombre, template }) => ({
+      value: id, label: nombre, requisitos: getTemplateRequirements(template)
+    })));
+  } catch (err) {
+    console.error('[constancias.getFormatosPersonalizados]', err);
+    return res.status(500).json({ error: 'No se pudieron cargar los formatos personalizados.' });
+  }
+};
+
+exports.getEntrenadoresConstancias = async (req, res) => {
+  try {
+    const rol = String(req.user?.rol || '').trim().toLowerCase();
+    if (rol !== 'admin' && rol !== 'super_admin') {
+      return res.status(403).json({ error: 'Solo un administrador puede seleccionar entrenadores para constancias.' });
+    }
+    const { Entrenador } = await getTenantConstanciaModels(req);
+    const entrenadores = await Entrenador.find({})
+      .select('nombre apellido cedula')
+      .sort({ nombre: 1, apellido: 1 })
+      .lean();
+    return res.json(entrenadores);
+  } catch (err) {
+    console.error('[constancias.getEntrenadoresConstancias]', err);
+    return res.status(500).json({ error: 'No se pudieron cargar los entrenadores para constancias.' });
+  }
+};
+
 exports.generarConstancia = async (req, res) => {
-  const { alumnoId, alumnoIds, tipo, fechaEmision } = req.body;
+  const { alumnoId, alumnoIds, entrenadorId, tipo, fechaEmision } = req.body;
   try {
     const tenantId = String(resolveRequestTenantId(req) || '').trim().toLowerCase();
     const rol = String(req.user?.rol || '').trim().toLowerCase();
@@ -1055,10 +1083,12 @@ exports.generarConstancia = async (req, res) => {
     const {
       Alumno: TenantAlumno,
       Mensualidad: TenantMensualidad,
+      Entrenador: TenantEntrenador,
       TenantConfig: TenantConfigModel
     } = await getTenantConstanciaModels(req);
 
     const tipoConstancia = normalizarTipoConstancia(tipo);
+    if (!tipoConstancia) return res.status(400).json({ error: 'Tipo de constancia invalido.' });
     const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
     const esAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
 
@@ -1068,8 +1098,19 @@ exports.generarConstancia = async (req, res) => {
     if (tipoConstancia === 'listado_alumnos' && !esAdmin) {
       return res.status(403).json({ error: 'Solo un administrador puede generar constancia con listado de alumnos' });
     }
+    if (entrenadorId && !esAdmin) {
+      return res.status(403).json({ error: 'Solo un administrador puede usar datos de entrenadores en constancias.' });
+    }
+    if (entrenadorId && !mongoose.Types.ObjectId.isValid(entrenadorId)) {
+      return res.status(400).json({ error: 'Identificador de entrenador invalido.' });
+    }
 
     const configDoc = await TenantConfigModel.findOne({ key: 'default' }).select('constancias').lean();
+    const personalizado = normalizePersonalizados(configDoc?.constancias?.personalizados)
+      .find((item) => item.id === tipoConstancia);
+    if (tipoConstancia.startsWith('personalizado_') && !personalizado) {
+      return res.status(400).json({ error: 'El formato personalizado no existe en esta academia.' });
+    }
     const constanciasCfg = normalizeConstanciasConfig(configDoc?.constancias || {});
     const academiaBranding = await getAcademiaBranding(req);
     const academiaLogoPath = academiaBranding.logoPath;
@@ -1077,7 +1118,7 @@ exports.generarConstancia = async (req, res) => {
     let constanciaLayoutCfg = constanciasCfg;
     let logoAcademiaActivo = academiaLogoPath;
     let logosInstitucionales = mapLogoUrlsToLocalPaths(constanciasCfg.logos).filter((logoPath) => logoPath !== logoAcademiaActivo);
-    let template = constanciasCfg.templates[tipoConstancia] || DEFAULT_TEMPLATES.simple;
+    let template = personalizado?.template || constanciasCfg.templates[tipoConstancia] || DEFAULT_TEMPLATES.simple;
 
     if (tipoConstancia === 'retiro' && constanciasCfg?.retiro_personalizado?.habilitado) {
       const retiroCfg = constanciasCfg.retiro_personalizado || DEFAULT_CONSTANCIAS_CONFIG.retiro_personalizado;
@@ -1095,6 +1136,30 @@ exports.generarConstancia = async (req, res) => {
     }
 
     const fechaTexto = construirTextoFecha(fechaEmision);
+    const requisitos = getTemplateRequirements(template);
+    if (requisitos.entrenador && !entrenadorId) {
+      return res.status(400).json({ error: 'Este formato usa variables de entrenador. Selecciona un entrenador.' });
+    }
+    let entrenador = null;
+    if (entrenadorId) {
+      entrenador = await TenantEntrenador.findById(entrenadorId)
+        .select('nombre apellido cedula telefono correo direccion especialidad fecha_nacimiento fecha_ingreso sedes_staff')
+        .populate('sedes_staff', 'nombre')
+        .lean();
+      if (!entrenador) return res.status(404).json({ error: 'Entrenador no encontrado en esta academia.' });
+    }
+    const variablesEntrenador = entrenador ? {
+      entrenador_nombre: String(entrenador.nombre || '').toUpperCase(),
+      entrenador_apellido: String(entrenador.apellido || '').toUpperCase(),
+      entrenador_nombre_completo: `${entrenador.nombre || ''} ${entrenador.apellido || ''}`.trim().toUpperCase(),
+      entrenador_cedula: String(entrenador.cedula || '').trim(),
+      entrenador_telefono: String(entrenador.telefono || '').trim(),
+      entrenador_correo: String(entrenador.correo || '').trim(),
+      entrenador_direccion: String(entrenador.direccion || '').trim(),
+      entrenador_especialidad: String(entrenador.especialidad || '').trim(),
+      entrenador_fecha_nacimiento: formatFechaAlumno(entrenador.fecha_nacimiento),
+      entrenador_fecha_ingreso: formatFechaAlumno(entrenador.fecha_ingreso)
+    } : {};
 
     if (tipoConstancia === 'listado_alumnos') {
       const ids = Array.from(
@@ -1152,6 +1217,8 @@ exports.generarConstancia = async (req, res) => {
       const sedeNombre = sedes.size === 1 ? Array.from(sedes)[0] : 'Multiples sedes';
 
       const variables = {
+        ...variablesEntrenador,
+        firmante_cargo: constanciasCfg.firmante.cargo,
         sede_nombre: sedeNombre,
         cantidad_alumnos: alumnosOrdenados.length,
         fecha_emision_texto: fechaTexto || 'en fecha actual'
@@ -1163,10 +1230,10 @@ exports.generarConstancia = async (req, res) => {
       if (!usaMembrete) {
         renderEncabezadoConstancia(doc, constanciasCfg, sedeNombre, academiaLogoPath, academyName);
       }
-      doc.font(typography.bold).fontSize(typography.size + 3).text(template.titulo || 'CONSTANCIA', { align: 'center' });
+      doc.font(typography.bold).fontSize(typography.size + 3).text(renderTemplate(template.titulo, variables) || 'CONSTANCIA', { align: 'center' });
       doc.moveDown(0.8);
       if (template.destinatario) {
-        doc.font(typography.bold).fontSize(typography.size).text(template.destinatario, { align: 'center' });
+        doc.font(typography.bold).fontSize(typography.size).text(renderTemplate(template.destinatario, variables), { align: 'center' });
         doc.moveDown(1.2);
       }
 
@@ -1187,7 +1254,7 @@ exports.generarConstancia = async (req, res) => {
         });
       }
 
-      const lugar = template.lugarEmision || constanciasCfg.templates?.simple?.lugarEmision || 'Barquisimeto';
+      const lugar = renderTemplate(template.lugarEmision, variables) || constanciasCfg.templates?.simple?.lugarEmision || 'Barquisimeto';
       const fechaLinea = fechaTexto ? `En ${lugar}, ${fechaTexto}.` : '';
       if (fechaLinea) {
         doc.moveDown(template.nota ? 1.0 : 0.9);
@@ -1214,10 +1281,13 @@ exports.generarConstancia = async (req, res) => {
       return;
     }
 
-    const alumno = await TenantAlumno.findById(alumnoId).populate('representante').populate('sede');
-    if (!alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
+    if (!alumnoId && (!personalizado || !esAdmin || !entrenador || requisitos.alumno)) {
+      return res.status(400).json({ error: 'Selecciona un alumno para este formato.' });
+    }
+    const alumno = alumnoId ? await TenantAlumno.findById(alumnoId).populate('representante').populate('sede') : null;
+    if (alumnoId && !alumno) return res.status(404).json({ error: 'Alumno no encontrado' });
 
-    const mensualidadesBase = TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus fecha_vencimiento mes anio');
+    const mensualidadesBase = alumno ? TenantMensualidad.find({ id_alumno: alumnoId }).select('estatus fecha_vencimiento mes anio') : [];
     const mensualidades = typeof mensualidadesBase?.lean === 'function'
       ? await mensualidadesBase.lean()
       : await mensualidadesBase;
@@ -1228,11 +1298,17 @@ exports.generarConstancia = async (req, res) => {
     }
 
     const horarioResumen = normalizarHorarioDesdeRequest(req.body, alumno);
-    const asistenciaData = normalizarAsistenciaDesdeRequest(req.body, alumno, constanciasCfg);
-    if (tipoConstancia === 'asistencia' && !asistenciaData.ok) {
+    if (requisitos.horario && (!Array.isArray(req.body.diasEntrenamiento) || !req.body.diasEntrenamiento.length || !req.body.horaInicio || !req.body.horaFin)) {
+      return res.status(400).json({ error: 'Este formato usa horario de entrenamiento. Indica los dias y las horas de inicio y fin.' });
+    }
+    const personaAsistencia = alumno || { nombres: entrenador?.nombre, apellidos: entrenador?.apellido, cedula: entrenador?.cedula };
+    const asistenciaData = normalizarAsistenciaDesdeRequest(req.body, personaAsistencia, constanciasCfg);
+    if ((tipoConstancia === 'asistencia' || requisitos.asistencia) && !asistenciaData.ok) {
       return res.status(400).json({ error: asistenciaData.error || 'No se pudo construir la constancia de asistencia.' });
     }
     const variables = {
+      ...variablesEntrenador,
+      firmante_cargo: constanciasCfg.firmante.cargo,
       alumno_nombre: String(alumno?.nombres || '').toUpperCase(),
       alumno_apellido: String(alumno?.apellidos || '').toUpperCase(),
       alumno_nombre_completo: `${String(alumno?.nombres || '').toUpperCase()} ${String(alumno?.apellidos || '').toUpperCase()}`.trim(),
@@ -1241,11 +1317,13 @@ exports.generarConstancia = async (req, res) => {
       alumno_fecha_ingreso_academia: formatFechaAlumno(alumno?.fecha_inscripcion),
       alumno_categoria: String(alumno?.categoria || '-').trim(),
       alumno_colegio: String(alumno?.colegio_institucion || '').trim(),
-      sede_nombre: String(alumno?.sede?.nombre || '-').trim(),
+      sede_nombre: String(alumno?.sede?.nombre || entrenador?.sedes_staff?.map((sede) => sede.nombre).filter(Boolean).join(', ') || '-').trim(),
+      cantidad_alumnos: alumno ? 1 : 0,
       fecha_emision_texto: fechaTexto || 'en fecha actual',
       horario_resumen: horarioResumen,
       ...(asistenciaData?.variables || {})
     };
+    if (!alumno && asistenciaData.ok) variables.asistencia_persona_label = 'el/la entrenador(a)';
 
     const doc = createPdfResponseDocument(res);
     const usaMembrete = configurarMembrete(doc, constanciasCfg);
@@ -1280,10 +1358,10 @@ exports.generarConstancia = async (req, res) => {
       doc.moveDown(0.80);
     }
 
-    doc.font(typography.bold).fontSize(typography.size + 3).text(template.titulo || 'CONSTANCIA', { align: 'center' });
+    doc.font(typography.bold).fontSize(typography.size + 3).text(renderTemplate(template.titulo, variables) || 'CONSTANCIA', { align: 'center' });
     doc.moveDown(0.8);
     if (template.destinatario) {
-      doc.font(typography.bold).fontSize(typography.size).text(template.destinatario, { align: 'center' });
+      doc.font(typography.bold).fontSize(typography.size).text(renderTemplate(template.destinatario, variables), { align: 'center' });
       doc.moveDown(1.2);
     }
 
@@ -1294,7 +1372,7 @@ exports.generarConstancia = async (req, res) => {
 
     const datosDestacados = tipoConstancia === 'asistencia'
       ? ['asistencia_nombre', 'asistencia_cedula', 'asistencia_dia_evento', 'asistencia_hora_desde', 'asistencia_hora_hasta', 'asistencia_motivo_evento']
-      : ['alumno_nombre_completo', 'alumno_cedula', 'alumno_categoria', 'sede_nombre', 'horario_resumen'];
+      : ['alumno_nombre_completo', 'alumno_cedula', 'alumno_categoria', 'entrenador_nombre_completo', 'entrenador_cedula', 'sede_nombre', 'horario_resumen'];
     const cuerpoRuns = buildConstanciaBodyRuns(cuerpoTexto, variables, datosDestacados);
 
     renderConstanciaBody(doc, cuerpoRuns, typography, {
@@ -1311,7 +1389,7 @@ exports.generarConstancia = async (req, res) => {
       });
     }
 
-    const lugar = template.lugarEmision || DEFAULT_TEMPLATES.simple.lugarEmision || 'Barquisimeto';
+    const lugar = renderTemplate(template.lugarEmision, variables) || DEFAULT_TEMPLATES.simple.lugarEmision || 'Barquisimeto';
     const fechaLinea = fechaTexto ? `En ${lugar}, ${fechaTexto}.` : '';
     if (fechaLinea) {
       doc.moveDown(aplicaNotaYCierre && template.nota ? 1.0 : 0.9);
@@ -1329,13 +1407,14 @@ exports.generarConstancia = async (req, res) => {
 
     await registrarOperacion(req, {
       tipo: 'generacion_constancia',
-      nombre: getNombreOperacionConstancia(tipoConstancia),
-      detalle: `${template.titulo || 'Constancia'} de ${`${alumno?.nombres || ''} ${alumno?.apellidos || ''}`.trim()}.`,
-      entidad_tipo: 'Alumno',
-      entidad_id: alumno._id,
+      nombre: personalizado?.nombre || getNombreOperacionConstancia(tipoConstancia),
+      detalle: `${renderTemplate(template.titulo, variables) || 'Constancia'} de ${alumno ? `${alumno.nombres || ''} ${alumno.apellidos || ''}`.trim() : variables.entrenador_nombre_completo}.`,
+      entidad_tipo: alumno ? 'Alumno' : 'Entrenador',
+      entidad_id: alumno ? alumno._id : entrenador._id,
       metadata: {
         tipo_constancia: tipoConstancia,
-        alumno_id: String(alumno._id),
+        alumno_id: alumno ? String(alumno._id) : null,
+        entrenador_id: entrenador ? String(entrenador._id) : null,
         sede_id: alumno?.sede?._id ? String(alumno.sede._id) : null
       }
     });

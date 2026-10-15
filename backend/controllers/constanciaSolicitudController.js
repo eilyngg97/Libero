@@ -2,16 +2,9 @@ const { getTenantBusinessConnection } = require('../config/tenantBusinessConnect
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const constanciaController = require('./constanciaController');
+const { normalizarTipoConstancia, normalizePersonalizados, esTipoPersonalizado, getTemplateRequirements } = require('../services/constanciaTemplateService');
 
-const TIPOS_VALIDOS = new Set(['simple', 'retiro', 'horario_entrenamiento', 'listado_alumnos', 'asistencia']);
 const ESTADOS_VALIDOS = new Set(['pendiente', 'en_revision', 'completada', 'rechazada']);
-
-function normalizarTipoConstancia(tipo = '') {
-  const normalizado = String(tipo || '').trim().toLowerCase();
-  if (normalizado === 'horario') return 'horario_entrenamiento';
-  if (TIPOS_VALIDOS.has(normalizado)) return normalizado;
-  return 'simple';
-}
 
 function normalizarFechaISO(fechaRaw = '') {
   const value = String(fechaRaw || '').trim();
@@ -19,7 +12,7 @@ function normalizarFechaISO(fechaRaw = '') {
   return value;
 }
 
-function normalizarPayloadSolicitud(body = {}, tipo = 'simple') {
+function normalizarPayloadSolicitud(body = {}, tipo = 'simple', requisitos = {}) {
   const payload = {
     asistenciaPara: String(body?.asistenciaPara || 'atleta').trim().toLowerCase() === 'representante' ? 'representante' : 'atleta',
     eventoFecha: String(body?.eventoFecha || '').trim(),
@@ -34,13 +27,13 @@ function normalizarPayloadSolicitud(body = {}, tipo = 'simple') {
     horaFin: String(body?.horaFin || '').trim()
   };
 
-  if (tipo === 'horario_entrenamiento') {
+  if (tipo === 'horario_entrenamiento' || requisitos.horario) {
     if (!payload.diasEntrenamiento.length || !payload.horaInicio || !payload.horaFin) {
       throw new Error('Debes indicar dias y horario para la constancia de entrenamiento.');
     }
   }
 
-  if (tipo === 'asistencia') {
+  if (tipo === 'asistencia' || requisitos.asistencia) {
     if (!payload.eventoFecha || !payload.eventoHoraDesde || !payload.eventoHoraHasta) {
       throw new Error('Debes indicar fecha y horario para la constancia de asistencia.');
     }
@@ -56,7 +49,8 @@ async function getTenantSolicitudModels(req) {
   getTenantModel(connection, 'Alumno');
   getTenantModel(connection, 'User');
   return {
-    ConstanciaSolicitud: getTenantModel(connection, 'ConstanciaSolicitud')
+    ConstanciaSolicitud: getTenantModel(connection, 'ConstanciaSolicitud'),
+    TenantConfig: getTenantModel(connection, 'TenantConfig')
   };
 }
 
@@ -67,8 +61,12 @@ exports.crearSolicitudConstancia = async (req, res) => {
     if (!(tenantId === 'esporta' && rol === 'usuario')) {
       return res.status(403).json({ error: 'Este flujo de solicitudes aplica solo para usuarios del tenant Esporta.' });
     }
+    if (req.body?.entrenadorId) {
+      return res.status(403).json({ error: 'Los formatos con datos de entrenador debe emitirlos un administrador.' });
+    }
 
     const tipo = normalizarTipoConstancia(req.body?.tipo);
+    if (!tipo) return res.status(400).json({ error: 'Tipo de constancia invalido.' });
     if (tipo === 'retiro' || tipo === 'listado_alumnos') {
       return res.status(403).json({ error: 'Este tipo de constancia solo puede gestionarlo un administrador.' });
     }
@@ -83,13 +81,26 @@ exports.crearSolicitudConstancia = async (req, res) => {
       return res.status(400).json({ error: 'alumnoId requerido' });
     }
 
-    const payload = normalizarPayloadSolicitud(req.body, tipo);
-    const { ConstanciaSolicitud } = await getTenantSolicitudModels(req);
+    const { ConstanciaSolicitud, TenantConfig } = await getTenantSolicitudModels(req);
+    let tipoNombre = '';
+    let requisitos = {};
+    if (esTipoPersonalizado(tipo)) {
+      const config = await TenantConfig.findOne({ key: 'default' }).select('constancias.personalizados').lean();
+      const personalizado = normalizePersonalizados(config?.constancias?.personalizados).find((item) => item.id === tipo);
+      if (!personalizado) return res.status(400).json({ error: 'El formato personalizado no existe en esta academia.' });
+      requisitos = getTemplateRequirements(personalizado.template);
+      if (requisitos.entrenador) {
+        return res.status(403).json({ error: 'Los formatos con datos de entrenador debe emitirlos un administrador.' });
+      }
+      tipoNombre = personalizado.nombre;
+    }
+    const payload = normalizarPayloadSolicitud(req.body, tipo, requisitos);
 
     const solicitud = await ConstanciaSolicitud.create({
       alumno: alumnoId,
       solicitado_por: req.user?.id,
       tipo,
+      tipo_nombre: tipoNombre,
       fecha_emision: fechaEmision,
       payload,
       estado: 'pendiente'
@@ -180,7 +191,10 @@ exports.actualizarSolicitudConstancia = async (req, res) => {
       ...solicitud.payload,
       ...(req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {})
     };
-    solicitud.payload = normalizarPayloadSolicitud(payloadActualizado, solicitud.tipo);
+    solicitud.payload = normalizarPayloadSolicitud(payloadActualizado, solicitud.tipo, {
+      horario: Boolean(solicitud.payload?.horaInicio),
+      asistencia: Boolean(solicitud.payload?.eventoFecha)
+    });
 
     await solicitud.save();
 

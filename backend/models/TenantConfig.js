@@ -91,6 +91,12 @@ const RetiroPersonalizadoSchema = new mongoose.Schema({
   template: { type: ConstanciaTemplateSchema, default: () => ({}) }
 }, { _id: false });
 
+const ConstanciaPersonalizadaSchema = new mongoose.Schema({
+  id: { type: String, required: true, match: /^personalizado_[a-z0-9_-]+$/ },
+  nombre: { type: String, required: true, trim: true },
+  template: { type: ConstanciaTemplateSchema, default: () => ({}) }
+}, { _id: false });
+
 const ConstanciasSchema = new mongoose.Schema({
   institucion_nombre: { type: String, default: '' },
   subtitulo: { type: String, default: '' },
@@ -126,7 +132,8 @@ const ConstanciasSchema = new mongoose.Schema({
     listado_alumnos: { type: ConstanciaTemplateSchema, default: () => ({}) },
     asistencia: { type: ConstanciaTemplateSchema, default: () => ({}) }
   },
-  retiro_personalizado: { type: RetiroPersonalizadoSchema, default: () => ({}) }
+  retiro_personalizado: { type: RetiroPersonalizadoSchema, default: () => ({}) },
+  personalizados: { type: [ConstanciaPersonalizadaSchema], default: [] }
 }, { _id: false });
 
 const CumpleanosPresetSchema = new mongoose.Schema({

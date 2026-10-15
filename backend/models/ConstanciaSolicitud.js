@@ -1,13 +1,18 @@
 const mongoose = require('mongoose');
 
-const TIPOS_CONSTANCIA = ['simple', 'retiro', 'horario_entrenamiento', 'listado_alumnos', 'asistencia'];
+const { TIPOS_CONSTANCIA, esTipoPersonalizado } = require('../services/constanciaTemplateService');
 const ESTADOS_SOLICITUD = ['pendiente', 'en_revision', 'completada', 'rechazada'];
 
 const ConstanciaSolicitudSchema = new mongoose.Schema({
   alumno: { type: mongoose.Schema.Types.ObjectId, ref: 'Alumno', required: true },
   alumno_ids: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Alumno' }], default: [] },
   solicitado_por: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  tipo: { type: String, enum: TIPOS_CONSTANCIA, required: true },
+  tipo: {
+    type: String,
+    required: true,
+    validate: { validator: (value) => TIPOS_CONSTANCIA.includes(value) || esTipoPersonalizado(value), message: 'Tipo de constancia invalido.' }
+  },
+  tipo_nombre: { type: String, default: '' },
   fecha_emision: { type: String, required: true },
   payload: {
     asistenciaPara: { type: String, enum: ['atleta', 'representante'], default: 'atleta' },

@@ -329,7 +329,7 @@ function ListadoSolicitudesConstancias() {
 
   const solicitudTitulo = useMemo(() => {
     if (!editingSolicitud) return 'Editar solicitud';
-    return TIPOS_LABEL[editingSolicitud?.tipo] || 'Editar solicitud';
+    return TIPOS_LABEL[editingSolicitud?.tipo] || editingSolicitud?.tipo_nombre || 'Editar solicitud';
   }, [editingSolicitud]);
 
   const solicitudSubtitulo = useMemo(() => {
@@ -492,7 +492,7 @@ function ListadoSolicitudesConstancias() {
                   const statusStyle = buildStatusStyle(solicitud.estado);
                   const nombres = `${solicitud?.alumno?.nombres || ''} ${solicitud?.alumno?.apellidos || ''}`.trim();
                   const cedula = solicitud?.alumno?.cedula || '';
-                  const tipo = TIPOS_LABEL[solicitud.tipo] || solicitud.tipo;
+                  const tipo = TIPOS_LABEL[solicitud.tipo] || solicitud.tipo_nombre || solicitud.tipo;
                   const initials = nombres
                     ? nombres.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
                     : 'NA';
@@ -609,7 +609,7 @@ function ListadoSolicitudesConstancias() {
                       const statusStyle = buildStatusStyle(solicitud.estado);
                       const nombres = `${solicitud?.alumno?.nombres || ''} ${solicitud?.alumno?.apellidos || ''}`.trim();
                       const cedula = solicitud?.alumno?.cedula || '';
-                      const tipo = TIPOS_LABEL[solicitud.tipo] || solicitud.tipo;
+                      const tipo = TIPOS_LABEL[solicitud.tipo] || solicitud.tipo_nombre || solicitud.tipo;
                       const initials = nombres
                         ? nombres.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
                         : 'NA';
@@ -879,7 +879,7 @@ function ListadoSolicitudesConstancias() {
               sx={inputSx}
             />
 
-            {editingSolicitud?.tipo === 'horario_entrenamiento' && (
+            {(editingSolicitud?.tipo === 'horario_entrenamiento' || Boolean(editingSolicitud?.payload?.horaInicio)) && (
               <>
                 <FormControl fullWidth sx={inputSx}>
                   <Autocomplete
@@ -915,7 +915,7 @@ function ListadoSolicitudesConstancias() {
               </>
             )}
 
-            {editingSolicitud?.tipo === 'asistencia' && (
+            {(editingSolicitud?.tipo === 'asistencia' || Boolean(editingSolicitud?.payload?.eventoFecha)) && (
               <>
                 <FormControl fullWidth sx={inputSx}>
                   <InputLabel id="asistencia-para-admin">Constancia para</InputLabel>

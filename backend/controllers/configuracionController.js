@@ -7,6 +7,7 @@ const { getTenantCoreModel } = require('../models/TenantCore');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { hasRequestPermission } = require('../middleware/auth');
+const { normalizePersonalizados } = require('../services/constanciaTemplateService');
 
 const DEFAULT_CONFIG = {
   pagos: {
@@ -393,6 +394,7 @@ function normalizeConstanciasPayload(constancias = {}, fallback = DEFAULT_CONFIG
   const retiroFallback = fallback?.retiro_personalizado || DEFAULT_CONFIG.constancias.retiro_personalizado;
 
   return {
+    personalizados: normalizePersonalizados(root.personalizados ?? fallback.personalizados ?? []),
     institucion_nombre: cleanValue(root.institucion_nombre || fallback.institucion_nombre),
     subtitulo: cleanValue(root.subtitulo || fallback.subtitulo),
     membrete: {

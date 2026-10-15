@@ -5,6 +5,8 @@ const { authMiddleware, rolMiddleware, permisoMiddleware } = require('../middlew
 const { ensureAlumnoOwnershipFromBody } = require('../middleware/ownership');
 
 // POST /api/constancias
+router.get('/formatos-personalizados', authMiddleware, constanciaController.getFormatosPersonalizados);
+router.get('/entrenadores', authMiddleware, rolMiddleware('admin', 'super_admin'), constanciaController.getEntrenadoresConstancias);
 router.post('/', authMiddleware, ensureAlumnoOwnershipFromBody('alumnoId'), constanciaController.generarConstancia);
 
 // Solicitudes de constancias (usuario -> admin) para tenant Esporta.

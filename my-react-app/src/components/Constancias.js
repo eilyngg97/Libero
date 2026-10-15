@@ -134,6 +134,15 @@ function Constancias() {
   const [loadingSolicitudes, setLoadingSolicitudes] = useState(false);
   const [requestSuccess, setRequestSuccess] = useState('');
   const [requestError, setRequestError] = useState('');
+  const [formatosPersonalizados, setFormatosPersonalizados] = useState([]);
+  const [entrenadores, setEntrenadores] = useState([]);
+  const [selectedEntrenador, setSelectedEntrenador] = useState(null);
+  const [loadingEntrenadores, setLoadingEntrenadores] = useState(false);
+  const esPersonalizado = tipo.startsWith('personalizado_');
+  const requisitos = formatosPersonalizados.find((item) => item.value === tipo)?.requisitos || {};
+  const usaHorario = tipo === 'horario_entrenamiento' || Boolean(requisitos.horario);
+  const usaAsistencia = tipo === 'asistencia' || Boolean(requisitos.asistencia);
+  const todosLosTipos = React.useMemo(() => [...tipos, ...formatosPersonalizados], [formatosPersonalizados]);
   const alumnosOptions = React.useMemo(() => (Array.isArray(alumnos) ? alumnos : []), [alumnos]);
   const alumnosListadoValue = React.useMemo(
     () => (Array.isArray(selectedAlumnosListado) ? selectedAlumnosListado : []),
@@ -157,8 +166,49 @@ function Constancias() {
   }, []);
 
   const token = localStorage.getItem('token');
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const cargarFormatos = async () => {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/api/constancias/formatos-personalizados`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudieron cargar los formatos personalizados.');
+        setFormatosPersonalizados(data);
+      } catch (err) {
+        if (err.name !== 'AbortError') setRequestError(err.message);
+      }
+    };
+    cargarFormatos();
+    return () => controller.abort();
+  }, [token]);
   const esAdmin = String(rol || '').trim().toLowerCase() === 'admin' || String(rol || '').trim().toLowerCase() === 'super_admin';
   const isEsportaUserRequestMode = rol === 'usuario' && tenantId === 'esporta';
+
+  React.useEffect(() => {
+    if (!esAdmin) return undefined;
+    const controller = new AbortController();
+    const cargarEntrenadores = async () => {
+      setLoadingEntrenadores(true);
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL || window.location.origin}/api/constancias/entrenadores`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'No se pudieron cargar los entrenadores.');
+        setEntrenadores(data);
+      } catch (err) {
+        if (err.name !== 'AbortError') setRequestError(err.message);
+      } finally {
+        if (!controller.signal.aborted) setLoadingEntrenadores(false);
+      }
+    };
+    cargarEntrenadores();
+    return () => controller.abort();
+  }, [esAdmin, token]);
 
   const fetchMisSolicitudes = React.useCallback(async () => {
     if (!isEsportaUserRequestMode || !alumnoId) {
@@ -256,13 +306,13 @@ function Constancias() {
   }, [alumnoId, selectedAlumno]);
 
   const tiposDisponibles = React.useMemo(() => {
-    return tipos.filter((t) => {
+    return todosLosTipos.filter((t) => {
       if (t.value === 'retiro' && !esAdmin) return false;
       if (t.value === 'listado_alumnos' && !esAdmin) return false;
       if (!esAdmin && t.value !== 'listado_alumnos' && alumnoId && !solventeMensualidades) return false;
       return true;
     });
-  }, [esAdmin, solventeMensualidades, alumnoId]);
+  }, [esAdmin, solventeMensualidades, alumnoId, todosLosTipos]);
 
   React.useEffect(() => {
     if (!tiposDisponibles.length) {
@@ -277,12 +327,12 @@ function Constancias() {
   const selectedAlumnoEstado = React.useMemo(() => getAlumnoEstadoVisual(selectedAlumno), [selectedAlumno]);
 
   React.useEffect(() => {
-    if (tipo !== 'horario_entrenamiento') {
+    if (!usaHorario) {
       setDiasEntrenamiento([]);
       setHoraInicioEntrenamiento('');
       setHoraFinEntrenamiento('');
     }
-  }, [tipo]);
+  }, [usaHorario]);
 
   React.useEffect(() => {
     if (tipo !== 'listado_alumnos') {
@@ -291,14 +341,14 @@ function Constancias() {
   }, [tipo]);
 
   React.useEffect(() => {
-    if (tipo !== 'asistencia') {
+    if (!usaAsistencia) {
       setAsistenciaPara('atleta');
       setEventoHoraDesde('');
       setEventoHoraHasta('');
       setEventoMotivo('amistoso');
       setAsistenciaTiempo('pasado');
     }
-  }, [tipo]);
+  }, [usaAsistencia]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -310,17 +360,18 @@ function Constancias() {
       const bodyPayload = {
         alumnoId: tipo === 'listado_alumnos' ? (selectedAlumnosListado[0]?._id || '') : alumnoId,
         alumnoIds: tipo === 'listado_alumnos' ? selectedAlumnosListado.map((alumno) => alumno._id) : [],
+        entrenadorId: esAdmin ? selectedEntrenador?._id || '' : '',
         tipo,
         fechaEmision,
-        asistenciaPara: tipo === 'asistencia' ? asistenciaPara : 'atleta',
-        eventoFecha: tipo === 'asistencia' ? eventoFecha : '',
-        eventoHoraDesde: tipo === 'asistencia' ? eventoHoraDesde : '',
-        eventoHoraHasta: tipo === 'asistencia' ? eventoHoraHasta : '',
-        eventoMotivo: tipo === 'asistencia' ? eventoMotivo : '',
-        asistenciaTiempo: tipo === 'asistencia' ? asistenciaTiempo : 'pasado',
-        diasEntrenamiento: tipo === 'horario_entrenamiento' ? diasEntrenamiento : [],
-        horaInicio: tipo === 'horario_entrenamiento' ? horaInicioEntrenamiento : '',
-        horaFin: tipo === 'horario_entrenamiento' ? horaFinEntrenamiento : ''
+        asistenciaPara: usaAsistencia ? asistenciaPara : 'atleta',
+        eventoFecha: usaAsistencia ? eventoFecha : '',
+        eventoHoraDesde: usaAsistencia ? eventoHoraDesde : '',
+        eventoHoraHasta: usaAsistencia ? eventoHoraHasta : '',
+        eventoMotivo: usaAsistencia ? eventoMotivo : '',
+        asistenciaTiempo: usaAsistencia ? asistenciaTiempo : 'pasado',
+        diasEntrenamiento: usaHorario ? diasEntrenamiento : [],
+        horaInicio: usaHorario ? horaInicioEntrenamiento : '',
+        horaFin: usaHorario ? horaFinEntrenamiento : ''
       };
 
       if (isEsportaUserRequestMode) {
@@ -408,6 +459,7 @@ function Constancias() {
               </Alert>
             )}
             {esAdmin ? (
+              <>
               <FormControl fullWidth margin="normal">
                 {tipo === 'listado_alumnos' ? (
                   <Autocomplete
@@ -494,12 +546,36 @@ function Constancias() {
                       );
                     }}
                     renderInput={(params) => (
-                      <TextField {...params} label="Buscar alumno" variant="outlined" required sx={inputSx} helperText="La búsqueda incluye alumnos activos y retirados." />
+                      <TextField {...params} label="Buscar alumno" variant="outlined" required={!esPersonalizado || Boolean(requisitos.alumno) || !selectedEntrenador} sx={inputSx} helperText="La búsqueda incluye alumnos activos y retirados." />
                     )}
                   />
                 )}
               </FormControl>
+              {esAdmin && (
+                <Autocomplete
+                  options={entrenadores}
+                  value={selectedEntrenador}
+                  loading={loadingEntrenadores}
+                  isOptionEqualToValue={(option, value) => option._id === value._id}
+                  getOptionLabel={(option) => `${option.nombre || ''} ${option.apellido || ''} (C.I. ${option.cedula || 'N/A'})`}
+                  onChange={(_, value) => setSelectedEntrenador(value)}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Seleccionar entrenador"
+                      margin="normal"
+                      required={Boolean(requisitos.entrenador)}
+                      sx={inputSx}
+                      helperText="Completa las variables de entrenador. En formatos personalizados puedes seleccionar un alumno, un entrenador o ambos."
+                    />
+                  )}
+                />
+              )}
+              </>
             ) : null}
+            {!esAdmin && requisitos.entrenador && (
+              <Alert severity="info" sx={{ mt: 2 }}>Este formato requiere datos de entrenador y debe emitirlo un administrador.</Alert>
+            )}
             {selectedAlumno && tipo !== 'listado_alumnos' && (
               <Box my={2} p={2} bgcolor="#f8fafc" borderRadius={2} border="1px solid #e2e8f0">
                 <Typography variant="subtitle1"><b>Nombre:</b> {selectedAlumno.nombres} {selectedAlumno.apellidos}</Typography>
@@ -572,7 +648,7 @@ function Constancias() {
               helperText={!esAdmin ? 'Solo un administrador puede modificar la fecha de emisión.' : ''}
               sx={inputSx}
             />
-            {tipo === 'horario_entrenamiento' && (
+            {usaHorario && (
               <>
                 <FormControl fullWidth margin="normal" sx={inputSx}>
                   <Autocomplete
@@ -607,7 +683,7 @@ function Constancias() {
                 </Box>
               </>
             )}
-            {tipo === 'asistencia' && (
+            {usaAsistencia && (
               <>
                 <FormControl fullWidth margin="normal" sx={inputSx}>
                   <InputLabel id="asistencia-para-label">Constancia para</InputLabel>
@@ -617,8 +693,8 @@ function Constancias() {
                     label="Constancia para"
                     onChange={(e) => setAsistenciaPara(e.target.value)}
                   >
-                    <MenuItem value="atleta">Atleta</MenuItem>
-                    <MenuItem value="representante">Representante</MenuItem>
+                    <MenuItem value="atleta">{!alumnoId && selectedEntrenador ? 'Entrenador' : 'Atleta'}</MenuItem>
+                    <MenuItem value="representante" disabled={!alumnoId}>Representante</MenuItem>
                   </Select>
                 </FormControl>
                 <TextField
@@ -680,11 +756,12 @@ function Constancias() {
                 variant="contained"
                 disabled={
                   loading ||
-                  (tipo === 'listado_alumnos' ? selectedAlumnosListado.length === 0 : !alumnoId) ||
+                  (tipo === 'listado_alumnos' ? selectedAlumnosListado.length === 0 : (!alumnoId && (!esPersonalizado || !esAdmin || !selectedEntrenador || requisitos.alumno))) ||
+                  (requisitos.entrenador && (!esAdmin || !selectedEntrenador)) ||
                   !tipo ||
                   (!esAdmin && validandoSolvencia) ||
-                  (tipo === 'horario_entrenamiento' && (diasEntrenamiento.length === 0 || !horaInicioEntrenamiento || !horaFinEntrenamiento)) ||
-                  (tipo === 'asistencia' && (!eventoFecha || !eventoHoraDesde || !eventoHoraHasta))
+                  (usaHorario && (diasEntrenamiento.length === 0 || !horaInicioEntrenamiento || !horaFinEntrenamiento)) ||
+                  (usaAsistencia && (!eventoFecha || !eventoHoraDesde || !eventoHoraHasta))
                 }
                 fullWidth
                 sx={{ fontWeight: 700, borderRadius: 2, py: 1.2 }}
@@ -725,7 +802,7 @@ function Constancias() {
                   <Paper key={solicitud._id} elevation={0} sx={{ p: 1.2, border: '1px solid #e2e8f0', borderRadius: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                       <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 700 }}>
-                        {tipos.find((item) => item.value === solicitud.tipo)?.label || solicitud.tipo}
+                        {todosLosTipos.find((item) => item.value === solicitud.tipo)?.label || solicitud.tipo_nombre || solicitud.tipo}
                       </Typography>
                       <Chip
                         size="small"
