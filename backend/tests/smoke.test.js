@@ -714,6 +714,42 @@ describe('Backend smoke tests', () => {
   });
 
   test.each([
+    ['patch', '/api/mensualidades/pagos-agrupados/pa1/confirmar'],
+    ['post', '/api/conciliacion/confirmar-match-total']
+  ])('HTTP %s %s confirma ambas atletas con faltante total de Bs 100', async (metodo, ruta) => {
+    const token = makeToken({ id: 'admin1', rol: 'admin' });
+    const grupo = { _id: 'pa1', estado: 'En revision', cantidad_atletas: 2,
+      monto_total: 97.5, monto_total_bs: 3900, save: jest.fn().mockResolvedValue(true), increment: jest.fn() };
+    const cuotas = {
+      m1: { _id: 'm1', monto_esperado: 40, estatus: 'En revision', save: jest.fn().mockResolvedValue(true) },
+      m2: { _id: 'm2', monto_esperado: 60, estatus: 'En revision', save: jest.fn().mockResolvedValue(true) }
+    };
+    PagoAgrupado.db = { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn(async (operacion) => operacion()),
+      endSession: jest.fn().mockResolvedValue(undefined)
+    }) };
+    PagoAgrupado.find.mockResolvedValue([grupo]);
+    PagoAgrupado.findById.mockResolvedValue(grupo);
+    Mensualidad.findById.mockImplementation((id) => Promise.resolve(cuotas[id]));
+    PagoDetalle.find.mockImplementation((filtro) => ({
+      select: jest.fn().mockResolvedValue(filtro._id ? [] : filtro.id_pago_agrupado
+        ? [
+            { _id: 'pd1', id_mensualidad: 'm1', id_pago_agrupado: 'pa1' },
+            { _id: 'pd2', id_mensualidad: 'm2', id_pago_agrupado: 'pa1' }
+          ]
+        : [{ monto_pagado: filtro.id_mensualidad === 'm1' ? 39 : 58.5,
+            monto_pagado_bs: filtro.id_mensualidad === 'm1' ? 1560 : 2340 }])
+    }));
+    const response = await request(app)[metodo](ruta).set('Authorization', `Bearer ${token}`)
+      .send({ tipo_conciliacion: 'mensualidades', pago_ids: ['pa1'] });
+    expect(response.status).toBe(200);
+    expect(response.body.mensualidades_actualizadas).toBe(2);
+    expect(grupo.estado).toBe('Conciliado');
+    expect(cuotas.m1.estatus).toBe('Pagado');
+    expect(cuotas.m2.estatus).toBe('Pagado');
+  });
+
+  test.each([
     ['patch', '/api/mensualidades/pagos-agrupados/pa1/confirmar', 'sin sesiones'],
     ['patch', '/api/mensualidades/pagos-agrupados/pa1/confirmar', 'standalone'],
     ['post', '/api/conciliacion/confirmar-match-total', 'sin sesiones'],

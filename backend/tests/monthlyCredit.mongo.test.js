@@ -58,11 +58,11 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
     }
   });
 
-  async function registrar(agrupado = true, sinCredito = false) {
+  async function registrar(agrupado = true, sinCredito = false, cambios = {}) {
     const body = agrupado ? { monto_total: sinCredito ? 38 : 35.95, monto_total_bs: sinCredito ? 38000 : 31415.52,
       asignaciones: octubreIds.map((id, index) => ({ id_mensualidad: String(id), credito_a_aplicar: sinCredito ? 0 : (index ? 1.02 : 1.03) })) }
       : { id_mensualidad: String(octubreIds[0]), monto_pagado: 17.97, monto_pagado_bs: 15703.39, credito_a_aplicar: 1.03 };
-    Object.assign(body, { fecha_pago: '2026-10-07', metodo_pago: 'Pago movil', referencia: 'QA-262626' });
+    Object.assign(body, { fecha_pago: '2026-10-07', metodo_pago: 'Pago movil', referencia: 'QA-262626' }, cambios);
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await controller[agrupado ? 'registrarPagoAgrupado' : 'registrarPago']({ tenantId: 'qa-credit',
       user: { id: String(usuarioId), rol: 'usuario' }, body }, res);
@@ -74,6 +74,41 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
     await models.Mensualidad.updateMany({ id_alumno: { $in: alumnoIds }, mes: 9 }, { $set: { saldo_a_favor_generado: 0 } });
     await models.PagoDetalle.updateMany({ id_mensualidad: { $nin: octubreIds } }, { $set: { monto_pagado: 19 } });
   }
+
+  test.each([
+    [true, 99.99], [true, 100], [true, 100.01],
+    [false, 99.99], [false, 100], [false, 100.01]
+  ])('registro y confirmacion reales respetan Bs 100 por transferencia (sin credito=%s, faltante=%s Bs)', async (sinCredito, faltanteBs) => {
+    if (sinCredito) await prepararSinCredito();
+    const anteriores = await models.Mensualidad.find({ _id: { $in: octubreIds } }).sort({ _id: 1 }).lean();
+    const alumnosAnteriores = await models.Alumno.find({ _id: { $in: alumnoIds } }).sort({ _id: 1 }).lean();
+    const monto = sinCredito ? 37 : 34.95;
+    const montoBs = Number((monto * faltanteBs).toFixed(2));
+    const registro = await registrar(true, sinCredito, { monto_total: monto, monto_total_bs: montoBs });
+    if (faltanteBs > 100) {
+      expect(registro.status).toHaveBeenCalledWith(400);
+      expect(await models.PagoAgrupado.countDocuments()).toBe(0);
+      expect(await models.PagoDetalle.countDocuments({ id_mensualidad: { $in: octubreIds } })).toBe(0);
+      expect(await models.Mensualidad.find({ _id: { $in: octubreIds } }).sort({ _id: 1 }).lean()).toEqual(anteriores);
+      expect(await models.Alumno.find({ _id: { $in: alumnoIds } }).sort({ _id: 1 }).lean()).toEqual(alumnosAnteriores);
+      return;
+    }
+    expect(registro.status).toHaveBeenCalledWith(201);
+    const grupo = await models.PagoAgrupado.findOne().lean();
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await conciliacion.confirmarMatchTotal({ tenantId: 'qa-credit', user: { id: String(usuarioId), rol: 'admin' },
+      body: { tipo_conciliacion: 'mensualidades', pago_ids: [String(grupo._id)] } }, res);
+    expect(res.status).not.toHaveBeenCalled();
+    expect((await models.PagoAgrupado.findById(grupo._id)).estado).toBe('Conciliado');
+    const cuotas = await models.Mensualidad.find({ _id: { $in: octubreIds } }).lean();
+    expect(cuotas.every((cuota) => cuota.estatus === 'Pagado' && cuota.saldo_a_favor_generado === 0)).toBe(true);
+    expect(Number(cuotas.reduce((total, cuota) => total + cuota.credito_aplicado, 0).toFixed(2))).toBe(sinCredito ? 0 : 2.05);
+    const pagos = await models.PagoDetalle.find({ id_pago_agrupado: grupo._id }).lean();
+    expect(Number(pagos.reduce((total, pago) => total + pago.monto_pagado, 0).toFixed(2))).toBe(monto);
+    expect(Number(pagos.reduce((total, pago) => total + pago.monto_pagado_bs, 0).toFixed(2))).toBe(montoBs);
+    const alumnos = await models.Alumno.find({ _id: { $in: alumnoIds } }).lean();
+    expect(alumnos.every((alumno) => alumno.saldo_a_favor_mensualidades === 0)).toBe(true);
+  });
 
   test('grupo sin credito ni excedente registra cabecera, dos asignaciones y ambas mensualidades', async () => {
     await prepararSinCredito();

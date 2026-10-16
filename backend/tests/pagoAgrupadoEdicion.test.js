@@ -437,6 +437,7 @@ test.each([
   [80.05, 70100, 201],
   [80.12, 70157.12, 201],
   [81, 8100, 201],
+  [79.01, 7901, 201],
   [79, 7900, 201],
   [81.01, 8101, 201],
   [91.13, 80000, 201],
@@ -470,6 +471,9 @@ test.each([
     expect(datos.Mensualidad[`oct${index + 1}`].estatus).toBe('En revision');
   }
   expect(Math.round(pagos.reduce((total, item) => total + item.monto_pagado_bs, 0) * 100)).toBe(Math.round(montoTotalBs * 100));
+  grupo.estado = 'En revision';
+  expect((await confirmar([grupo._id])).status).not.toHaveBeenCalled();
+  for (const id of ['oct1', 'oct2']) expect(datos.Mensualidad[id].estatus).toBe('Pagado');
 });
 
 test('un excedente individual del usuario se guarda completo y genera saldo a favor', async () => {
@@ -932,6 +936,13 @@ test('confirmacion exclusivamente individual conserva compatibilidad sin transac
   expect(datos.Mensualidad.m2.estatus).toBe('En revision');
 });
 
+test('confirmacion individual tambien conserva la tolerancia aplicada al registrar', async () => {
+  agregarPagoIndividual();
+  Object.assign(datos.PagoDetalle.p3, { monto_pagado: 13, monto_pagado_bs: 1300 });
+  expect((await confirmar(['p3'])).status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.m3.estatus).toBe('Pagado');
+});
+
 test.each(['exito', 'fallo intermedio', 'sin sesiones'])('confirmacion mixta usa una sola transaccion para individuales y agrupados (%s)', async (caso) => {
   agregarPagoIndividual();
   const originales = copiar(datos);
@@ -968,6 +979,25 @@ test('confirmacion atomica del grupo y todas sus mensualidades', async () => {
   expect(datos.Mensualidad.m2.estatus).toBe('Pagado');
 });
 
+test.each([
+  [13, 1299.87, 'Pagado'],
+  [13, 1300, 'Pagado'],
+  [13, 1300.13, 'Abono'],
+  [13, undefined, 'Abono'],
+  [0, 10000, 'Pendiente']
+])('confirmacion respeta cobertura real y tolerancia sin inventar saldos (%s, %s Bs)', async (monto, montoBs, estatus) => {
+  Object.assign(datos.PagoDetalle.p1, { monto_pagado: monto, monto_pagado_bs: montoBs });
+  const saldos = copiar(datos.Alumno);
+  const pagos = copiar(datos.PagoDetalle);
+  expect((await confirmar()).status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.m1.estatus).toBe(estatus);
+  expect(datos.Mensualidad.m2.estatus).toBe('Pagado');
+  expect(datos.Alumno).toEqual(saldos);
+  expect(datos.PagoDetalle).toEqual(pagos);
+  expect(datos.Mensualidad.m1.monto_esperado).toBe(14);
+  expect(datos.Mensualidad.m1.saldo_a_favor_generado).toBe(0);
+});
+
 test('confirmacion revierte cabecera y primera mensualidad si falla la segunda', async () => {
   const originales = copiar(datos);
   falloGuardado = 'm2';
@@ -989,6 +1019,17 @@ test('rechazo revierte eliminacion de asignaciones y estado del grupo si falla u
   await conciliacion.rechazarPagoAgrupado(solicitud(), res);
   expect(res.status).toHaveBeenCalledWith(500);
   expect(datos).toEqual(originales);
+});
+
+test.each([[1300, 'Pagado'], [1300.13, 'Abono']])('rechazo recalcula pagos restantes con la misma tolerancia (%s Bs)', async (montoBs, estatus) => {
+  datos.PagoDetalle.otro = { _id: 'otro', id_mensualidad: 'm1', monto_pagado: 13, monto_pagado_bs: montoBs };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await conciliacion.rechazarPagoAgrupado(solicitud(), res);
+  expect(res.status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.m1.estatus).toBe(estatus);
+  expect(datos.Mensualidad.m1.saldo_a_favor_generado).toBe(0);
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(0);
+  expect(Object.keys(datos.PagoDetalle)).toEqual(['otro']);
 });
 
 function prepararRecargo(id = 'm1') {

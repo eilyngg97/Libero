@@ -107,6 +107,14 @@ Antes de habilitar en un entorno:
 
 La conversion de standalone a replica set no se realiza automaticamente desde la aplicacion.
 
+### Tolerancia al confirmar mensualidades
+
+- El registro agrupado conserva el limite de faltante de Bs 100 para toda la transferencia, no Bs 100 adicionales por atleta. Un faltante mayor se rechaza sin registrar pagos ni consumir credito.
+- La confirmacion manual del grupo y la conciliacion bancaria usan la misma regla de cobertura que los recalculos de mensualidades: un pago aceptado dentro de la tolerancia no pasa a `Abono` por exigir despues igualdad exacta.
+- La tasa de referencia se obtiene del ultimo pago con importes positivos y finitos en divisa y Bs, ordenado por `fecha_pago` y `createdAt`. Sin una tasa verificable desde los pagos no se perdona un faltante. No se usa la tasa del dia.
+- El faltante se compara en Bs, a precision de centavos, sin redondear primero la tolerancia a centavos de USD/EUR. Esto evita aceptar un faltante superior al limite por un segundo redondeo. Los recalculos y el rechazo del grupo aplican la misma regla a los pagos que permanecen.
+- La tolerancia solo determina cobertura y estado: no aumenta el monto recibido, no reduce el monto esperado ni genera saldo a favor ficticio. El saldo a favor sigue dependiendo exclusivamente del exceso real.
+
 ### Retiro de recargos de todo el grupo
 
 - `PATCH /api/pagos/agrupado/:id/retirar-recargos` requiere `mensualidades.manage`, `version` del grupo y `mensualidades`: todas las asignaciones del GET con `{ id_mensualidad, version }` (version tomada de `version_mensualidad`). Admite grupos `En revision` y `Conciliado`.

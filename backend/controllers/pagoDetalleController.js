@@ -12,7 +12,7 @@ const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
 const { cotizarCreditosAlumno, aplicarCreditoMensualidad } = require('../services/monthlyCredit');
 const { userRepresentsAlumno } = require('../services/paymentOwnership');
 
-const MONTO_TOLERANCIA_BS = 100;
+const { MONTO_TOLERANCIA_BS, ordenarPagos, obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
 
 function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
@@ -96,18 +96,6 @@ function enriquecerPagoConMontoEsperado(pago, mensualidad) {
   return pagoPlano;
 }
 
-function ordenarPagos(pagos = []) {
-  return [...pagos].sort((a, b) => {
-    const fechaA = new Date(a.fecha_pago || a.createdAt || 0).getTime();
-    const fechaB = new Date(b.fecha_pago || b.createdAt || 0).getTime();
-    if (fechaA !== fechaB) return fechaA - fechaB;
-
-    const creadoA = new Date(a.createdAt || 0).getTime();
-    const creadoB = new Date(b.createdAt || 0).getTime();
-    return creadoA - creadoB;
-  });
-}
-
 function eliminarArchivoComprobante(comprobanteUrl) {
   if (!comprobanteUrl) return;
 
@@ -152,12 +140,7 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, mod
   });
 
   const pagos = await aplicarSession(PagoDetalleModel.find({ id_mensualidad: mensualidad._id }), session);
-  const totalPagado = redondearMonto(pagos.reduce((acc, pago) => acc + (Number(pago.monto_pagado) || 0), 0));
-  const montoEsperado = redondearMonto(mensualidad.monto_esperado || 0);
-  const tasaReferencia = obtenerTasaReferenciaDesdePagos(pagos);
-  const cubreEsperadoConTolerancia = totalPagado >= montoEsperado
-    || (tasaReferencia > 0 && totalPagado > 0
-      && redondearMonto((montoEsperado - totalPagado) * tasaReferencia) <= MONTO_TOLERANCIA_BS);
+  const { totalPagado, montoEsperado, cubreEsperadoConTolerancia } = obtenerCoberturaMensualidad(mensualidad.monto_esperado, pagos);
   const restante = cubreEsperadoConTolerancia
     ? 0
     : redondearMonto(Math.max(0, montoEsperado - totalPagado));
@@ -228,22 +211,6 @@ function calcularToleranciaUsdDesdeBs(monto, montoBs) {
   if (!Number.isFinite(tasaAplicada) || tasaAplicada <= 0) return 0;
 
   return MONTO_TOLERANCIA_BS / tasaAplicada;
-}
-
-function obtenerTasaReferenciaDesdePagos(pagos = []) {
-  if (!Array.isArray(pagos) || pagos.length === 0) return 0;
-
-  const pagosOrdenados = ordenarPagos(pagos);
-  const pagoRecienteConTasa = [...pagosOrdenados].reverse().find((pago) => {
-    const montoUsd = Number(pago?.monto_pagado);
-    const montoBs = Number(pago?.monto_pagado_bs);
-    return Number.isFinite(montoUsd) && montoUsd > 0 && Number.isFinite(montoBs) && montoBs > 0;
-  });
-
-  if (!pagoRecienteConTasa) return 0;
-
-  const tasa = Number(pagoRecienteConTasa.monto_pagado_bs) / Number(pagoRecienteConTasa.monto_pagado);
-  return Number.isFinite(tasa) && tasa > 0 ? tasa : 0;
 }
 
 async function validarPago({
