@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import Mensualidades from './Mensualidades';
 import { hasPermission } from '../utils/permissions';
+import { exportToExcel } from '../utils/exportExcel';
 
 jest.mock('../context/SedeContext', () => ({ useSede: () => ({ sedeSeleccionada: null }) }));
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 872.39, moneda: 'USD' } }) }));
@@ -59,6 +60,36 @@ beforeEach(() => {
 });
 
 afterEach(() => { global.fetch = fetchOriginal; localStorage.clear(); });
+
+test('ordena credito y recargos antes del monto total y conserva los importes de cada columna', async () => {
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  expect(screen.getAllByRole('columnheader').map((celda) => celda.textContent)).toEqual([
+    'ALUMNO', 'CATEGORIA', 'MES', 'CREDITO APLICADO', 'RECARGO USD',
+    'FECHA RECARGO', 'MONTO TOTAL', 'SALDO A FAVOR', 'ESTADO', 'ACCIONES'
+  ]);
+  const fila = screen.getByText('Ana Raga').closest('tr');
+  const celdas = within(fila).getAllByRole('cell');
+  expect(celdas[3]).toHaveTextContent('$0.00');
+  expect(celdas[4]).toHaveTextContent('$4.00');
+  expect(celdas[6]).toHaveTextContent('$14.00');
+  expect(celdas[7]).toHaveTextContent('$0.00');
+});
+
+test('exporta el monto total despues del recargo sin cambiar su valor', async () => {
+  exportToExcel.mockClear();
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Aplicar' }));
+  await waitFor(() => expect(exportToExcel).toHaveBeenCalledTimes(1));
+  const [filas, , encabezados, opciones] = exportToExcel.mock.calls[0];
+  expect(encabezados).toEqual([
+    'Alumno', 'Representante', 'Categoria', 'Sede', 'Mes', 'Anio', 'Recargo', 'Monto total', 'Estado'
+  ]);
+  expect(filas[0]).toMatchObject({ Recargo: 4, 'Monto total': 14 });
+  expect(opciones.numberColumns).toEqual(['Recargo', 'Monto total']);
+});
 
 test('filtra por codigo agrupado completo o parcial y conserva la busqueda por alumno', async () => {
   const fetchPrevio = global.fetch;

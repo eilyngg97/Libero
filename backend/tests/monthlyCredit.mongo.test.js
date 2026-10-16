@@ -105,4 +105,13 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
     expect((await models.Alumno.findById(alumnoIds[0]).lean()).saldo_a_favor_mensualidades).toBe(0);
     expect((await models.Mensualidad.findById(octubreIds[0]).lean()).credito_aplicado).toBe(1.03);
   });
+
+  test('solicitudes agrupadas concurrentes solo crean una transferencia y consumen el credito una vez', async () => {
+    const resultados = await Promise.all([registrar(), registrar()]);
+    expect(resultados.filter((res) => res.status.mock.calls.some(([status]) => status === 201))).toHaveLength(1);
+    expect(await models.PagoAgrupado.countDocuments()).toBe(1);
+    expect(await models.PagoDetalle.countDocuments({ id_mensualidad: { $in: octubreIds } })).toBe(2);
+    const alumnos = await models.Alumno.find({ _id: { $in: alumnoIds } }).lean();
+    expect(alumnos.every((alumno) => alumno.saldo_a_favor_mensualidades === 0)).toBe(true);
+  });
 });

@@ -63,6 +63,59 @@ test('el pago agrupado transfiere el neto y confirma el credito de cada atleta',
   ]);
 });
 
+test('agrupa julio de una atleta y agosto de otra tomando la deuda mas antigua de cada una', async () => {
+  const fetchPrevio = global.fetch.getMockImplementation();
+  global.fetch = jest.fn(async (url, options) => {
+    if (url.includes('/api/mensualidades')) {
+      const primera = url.includes('id_alumno=a1');
+      const mes = primera ? 7 : 8;
+      const cuota = { anio: 2026, estatus: 'Insolvente', monto_esperado: primera ? 20 : 25,
+        monto_sin_recargo_usd: 20, recargo_aplicado_usd: primera ? 0 : 5 };
+      return { ok: true, json: async () => [
+        { ...cuota, _id: `oct-${primera ? 'a1' : 'a2'}`, mes: 10 },
+        { ...cuota, _id: `antigua-${primera ? 'a1' : 'a2'}`, mes },
+        { ...cuota, _id: `pagada-${primera ? 'a1' : 'a2'}`, mes: 6, estatus: 'Pagado' }
+      ] };
+    }
+    return fetchPrevio(url, options);
+  });
+
+  render(<PagoAgrupado />);
+  expect(await screen.findByText('2 de 2 seleccionadas')).toBeInTheDocument();
+  expect(screen.getByText('julio 2026 · Sin categoría')).toBeInTheDocument();
+  expect(screen.getByText('agosto 2026 · Sin categoría')).toBeInTheDocument();
+  expect(screen.getByText('$45.00')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Continuar con el pago' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+  await waitFor(() => expect(global.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true));
+  const [, options] = global.fetch.mock.calls.find(([, options]) => options?.method === 'POST');
+  expect(JSON.parse(options.body.get('asignaciones'))).toEqual([
+    { id_mensualidad: 'antigua-a1', credito_a_aplicar: 0 },
+    { id_mensualidad: 'antigua-a2', credito_a_aplicar: 0 }
+  ]);
+  expect(await screen.findByText('Pago enviado correctamente')).toBeInTheDocument();
+});
+
+test('no incluye atletas de otro representante aunque esten asociadas directamente al usuario', async () => {
+  const fetchPrevio = global.fetch.getMockImplementation();
+  global.fetch = jest.fn(async (url, options) => {
+    if (url.includes('/api/alumnos/por-representante/null')) {
+      return { ok: true, json: async () => [
+        { _id: 'a3', nombres: 'Ajena', representante: 'r2', usuario: 'u1' },
+        { _id: 'a4', nombres: 'Sin representante', usuario: 'u1' }
+      ] };
+    }
+    return fetchPrevio(url, options);
+  });
+
+  render(<PagoAgrupado />);
+  expect(await screen.findByText('2 de 2 seleccionadas')).toBeInTheDocument();
+  expect(screen.queryByText('Ajena')).not.toBeInTheDocument();
+  expect(screen.queryByText('Sin representante')).not.toBeInTheDocument();
+  const consultas = global.fetch.mock.calls.map(([url]) => url);
+  expect(consultas.some((url) => /id_alumno=a[34]/.test(url))).toBe(false);
+});
+
 test('una cuota cubierta por credito ofrece usar saldo sin pedir una transferencia cero', async () => {
   creditoCompleto = true;
   render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);

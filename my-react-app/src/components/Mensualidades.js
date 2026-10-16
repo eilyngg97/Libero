@@ -1823,8 +1823,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				Sede: m.id_alumno?.sede?.nombre || '-',
 				Mes: meses[(m.mes || 1) - 1],
 				Anio: m.anio || '-',
-				Monto: Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2)),
 				Recargo: Number(Number(m.recargo_aplicado_usd || 0).toFixed(2)),
+				'Monto total': Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2)),
 				Estado: m.estatus || '-'
 			};
 
@@ -1844,8 +1844,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			'Sede',
 			'Mes',
 			'Anio',
-			'Monto',
 			'Recargo',
+			'Monto total',
 			'Estado'
 		];
 
@@ -1860,7 +1860,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			{
 				statusColumnName: 'Estado',
 				statusStyleMap: estilosEstadoExcel,
-				numberColumns: ['Monto', 'Recargo'],
+				numberColumns: ['Recargo', 'Monto total'],
 				numberFormat: '#,##0.00'
 			}
 		);
@@ -2162,7 +2162,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										{renderEtiquetasAlumno(m.id_alumno)}
 									</Box>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
-									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
 									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -2188,6 +2187,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											);
 										})()}
 									</Box>
+									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto total:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 								</Box>
 								<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
@@ -2269,10 +2269,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
-								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>RECARGO {monedaCobro}</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>FECHA RECARGO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO TOTAL</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO A FAVOR</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
@@ -2312,7 +2312,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 										</TableCell>
 										<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
-										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
 										<TableCell>
@@ -2324,6 +2323,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												return <Chip size="small" label={`Dia ${diaLimitePersonalizado}`} sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }} />;
 											})()}
 										</TableCell>
+										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
 										<TableCell>{renderEstadoMensualidad(m)}</TableCell>
 										<TableCell>
@@ -4095,4 +4095,3 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 }
 
 export default Mensualidades;
-
