@@ -114,4 +114,17 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
     const alumnos = await models.Alumno.find({ _id: { $in: alumnoIds } }).lean();
     expect(alumnos.every((alumno) => alumno.saldo_a_favor_mensualidades === 0)).toBe(true);
   });
+
+  test('usuario directo no registra un grupo si no es el usuario del representante real', async () => {
+    await models.Alumno.updateMany({ _id: { $in: alumnoIds } }, { $set: { usuario: usuarioId } });
+    await models.Representante.updateOne({ usuario: usuarioId }, { $set: { usuario: new mongoose.Types.ObjectId() } });
+    const res = await registrar();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(await models.PagoAgrupado.countDocuments()).toBe(0);
+    expect(await models.PagoDetalle.countDocuments({ id_mensualidad: { $in: octubreIds } })).toBe(0);
+    const alumnos = await models.Alumno.find({ _id: { $in: alumnoIds } }).sort({ _id: 1 }).lean();
+    expect(alumnos.map((alumno) => alumno.saldo_a_favor_mensualidades)).toEqual([1.03, 1.02]);
+    const cuotas = await models.Mensualidad.find({ _id: { $in: octubreIds } }).lean();
+    expect(cuotas.every((cuota) => cuota.estatus === 'Insolvente' && cuota.credito_aplicado === 0)).toBe(true);
+  });
 });

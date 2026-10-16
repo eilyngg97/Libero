@@ -394,15 +394,16 @@ describe('Backend smoke tests', () => {
 
   test('POST /api/pagos/agrupado registers one transfer for two athletes', async () => {
     const token = makeToken({ id: 'u1', rol: 'usuario', nombre: 'Representante' });
+    Representante.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'r1', usuario: 'u1' }) });
     const mensualidades = {
       m1: {
         _id: 'm1', mes: 9, anio: 2026, monto_esperado: 40, estatus: 'Pendiente',
-        id_alumno: { _id: 'a1', nombres: 'Ana', usuario: 'u1', representante: 'r1' },
+        id_alumno: { _id: 'a1', nombres: 'Ana', representante: 'r1' },
         save: jest.fn().mockResolvedValue(true)
       },
       m2: {
         _id: 'm2', mes: 10, anio: 2026, monto_esperado: 60, estatus: 'Pendiente',
-        id_alumno: { _id: 'a2', nombres: 'Eva', usuario: 'u1', representante: 'r1' },
+        id_alumno: { _id: 'a2', nombres: 'Eva', representante: 'r1' },
         save: jest.fn().mockResolvedValue(true)
       }
     };
@@ -439,6 +440,31 @@ describe('Backend smoke tests', () => {
     expect(PagoDetalle.create).toHaveBeenCalledTimes(2);
     expect(mensualidades.m1.estatus).toBe('En revision');
     expect(mensualidades.m2.estatus).toBe('En revision');
+  });
+
+  test.each([
+    ['post', '/api/pagos', { id_mensualidad: 'm1', monto_pagado: 20 }],
+    ['post', '/api/pagos/credito', { id_mensualidad: 'm1', credito_a_aplicar: 20 }],
+    ['post', '/api/pagos/agrupado', { asignaciones: [{ id_mensualidad: 'm1' }, { id_mensualidad: 'm2' }] }],
+    ['get', '/api/pagos/m1', null],
+    ['patch', '/api/pagos/p1', { monto_pagado: 20 }],
+    ['delete', '/api/pagos/p1', null]
+  ])('HTTP %s %s rechaza usuario directo que no es representante', async (metodo, ruta, body) => {
+    const token = makeToken({ id: 'u1', rol: 'usuario', permisos: [] });
+    Representante.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'r1', usuario: 'otro' }) });
+    Mensualidad.findById.mockReturnValue({ populate: jest.fn().mockResolvedValue({
+      _id: 'm1', monto_esperado: 20, estatus: 'Pendiente',
+      id_alumno: { _id: 'a1', usuario: 'u1', representante: 'r1' }
+    }) });
+    PagoDetalle.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'p1', id_mensualidad: 'm1' }) });
+    const llamada = request(app)[metodo](ruta).set('Authorization', `Bearer ${token}`);
+    if (body) llamada.send(body);
+    const response = await llamada;
+    expect(response.status).toBe(403);
+    expect(response.body.error).toContain('No tienes permiso');
+    expect(PagoDetalle.create).not.toHaveBeenCalled();
+    expect(PagoAgrupado.create).not.toHaveBeenCalled();
+    expect(PagoDetalle.findByIdAndDelete).not.toHaveBeenCalled();
   });
 
   test('GET mensualidades de octubre refleja credito nuevo sin consumirlo y aun con filtro de mes', async () => {

@@ -10,6 +10,7 @@ const { aplicarRecargoMensualidadSegunConfig, prepararRetiroRecargoAgrupado } = 
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
 const { cotizarCreditosAlumno, aplicarCreditoMensualidad } = require('../services/monthlyCredit');
+const { userRepresentsAlumno } = require('../services/paymentOwnership');
 
 const MONTO_TOLERANCIA_BS = 100;
 
@@ -322,18 +323,12 @@ function mensualidadEsAnterior(candidata, seleccionada) {
 
 async function usuarioPuedePagarMensualidad(req, mensualidad, RepresentanteModel, session) {
   if (req.user?.rol !== 'usuario') return true;
-  const alumno = mensualidad?.id_alumno;
-  if (!alumno) return false;
-  if (alumno.usuario && String(alumno.usuario) === String(req.user.id)) return true;
-  if (!alumno.representante) return false;
-  const representante = await aplicarSession(RepresentanteModel.findById(alumno.representante).select('usuario'), session);
-  return Boolean(representante && String(representante.usuario) === String(req.user.id));
+  return userRepresentsAlumno(req.user.id, mensualidad?.id_alumno, RepresentanteModel, session);
 }
 
 async function validarPropietarioPagoAgrupado(req, grupo, models, session) {
   if (req.user?.rol !== 'usuario') return;
-  const representante = await aplicarSession(models.Representante.findById(grupo.representante).select('usuario'), session);
-  if (!representante?.usuario || !req.user?.id || String(representante.usuario) !== String(req.user.id)) {
+  if (!(await userRepresentsAlumno(req.user.id, grupo, models.Representante, session))) {
     throw errorPagoAgrupado(403, 'No tienes permiso para este pago agrupado.');
   }
 }
@@ -477,12 +472,13 @@ exports.registrarPagoAgrupado = async (req, res) => {
     const resultado = await ejecutarConTransaccion(PagoAgrupado, async (session) => {
       usoFallback = !session;
       for (const item of asignacionesCalculadas) {
-        if (!session && item.credito <= 0) continue;
         const vigente = await aplicarSession(TenantMensualidad.findById(item.mensualidad._id).populate('id_alumno'), session);
         if (!vigente || versionPagoAgrupado(vigente) !== item.version
+          || String(vigente.id_alumno?.representante?._id || vigente.id_alumno?.representante || '') !== representanteIds[0]
           || !(await usuarioPuedePagarMensualidad(req, vigente, TenantRepresentante, session))) {
           throw errorPagoAgrupado(409, 'Una mensualidad cambio. Actualiza las mensualidades antes de pagar.');
         }
+        if (!session && item.credito <= 0) continue;
         await aplicarRecargoMensualidadSegunConfig(vigente, { models, persistir: false });
         const cotizacion = await cotizarCreditoRegistro(vigente, models, session);
         const credito = cotizacion.proyecciones.get(String(vigente._id))?.credito_a_aplicar || 0;
@@ -643,6 +639,10 @@ exports.getPagoAgrupado = async (req, res) => {
       if (!mensualidad?.id_alumno) throw errorPagoAgrupado(409, 'Una mensualidad del grupo ya no existe.');
       if (!(await usuarioPuedePagarMensualidad(req, mensualidad, models.Representante))) {
         throw errorPagoAgrupado(403, 'No tienes permiso para una de las mensualidades del grupo.');
+      }
+      if (String(mensualidad.id_alumno.representante?._id || mensualidad.id_alumno.representante || '')
+        !== String(grupo.representante?._id || grupo.representante || '')) {
+        throw errorPagoAgrupado(409, 'Una mensualidad ya no pertenece al representante del grupo.');
       }
       await aplicarRecargoMensualidadSegunConfig(mensualidad, { models, persistir: false });
       const pagos = await models.PagoDetalle.find({ id_mensualidad: mensualidad._id });

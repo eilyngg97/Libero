@@ -18,6 +18,7 @@ const controller = require('../controllers/pagoDetalleController');
 const conciliacion = require('../controllers/conciliacionController');
 const { ejecutarConTransaccion } = require('../services/financeTransaction');
 const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
+const ownership = require('../middleware/ownership');
 
 const copiar = (value) => JSON.parse(JSON.stringify(value));
 const fechaOriginal = '2026-10-06T12:00:00.000Z';
@@ -292,6 +293,120 @@ async function registrarConCredito(agrupado = false, credito = 1.03) {
   await controller[agrupado ? 'registrarPagoAgrupado' : 'registrarPago'](req, res);
   return res;
 }
+
+test.each([false, true])('registrar pago no acepta el usuario directo de atletas de otro representante (agrupado=%s)', async (agrupado) => {
+  prepararOctubreConCredito();
+  datos.Representante.r1.usuario = 'otro';
+  for (const mensualidad of [datos.Mensualidad.oct1, datos.Mensualidad.oct2]) mensualidad.id_alumno.usuario = 'u1';
+  const originales = copiar(datos);
+
+  expect((await registrarConCredito(agrupado)).status).toHaveBeenCalledWith(403);
+  expect(datos).toEqual(originales);
+  expect(models.PagoDetalle.create).not.toHaveBeenCalled();
+  expect(models.PagoAgrupado.create).not.toHaveBeenCalled();
+});
+
+test('aplicar credito exige ser representante aunque la atleta este vinculada directamente al usuario', async () => {
+  prepararOctubreConCredito();
+  datos.Representante.r1.usuario = 'otro';
+  datos.Mensualidad.oct1.id_alumno.usuario = 'u1';
+  const originales = copiar(datos);
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.aplicarCreditoSinTransferencia({
+    ...solicitud({ id_mensualidad: 'oct1', credito_a_aplicar: 1.03 }), user: { id: 'u1', rol: 'usuario' }
+  }, res);
+  expect(res.status).toHaveBeenCalledWith(403);
+  expect(datos).toEqual(originales);
+});
+
+test.each([
+  ['ensureMensualidadOwnershipFromBody', { body: { id_mensualidad: 'm1' } }],
+  ['ensureMensualidadOwnershipFromParam', { params: { id_mensualidad: 'm1' } }],
+  ['ensurePagoOwnershipFromParam', { params: { id_pago: 'p1' } }]
+])('%s no autoriza pagos por usuario directo de la atleta', async (metodo, datosReq) => {
+  datos.Representante.r1 = { _id: 'r1', usuario: 'otro' };
+  datos.Mensualidad.m1.id_alumno.usuario = 'u1';
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  const next = jest.fn();
+  await ownership[metodo]()({ ...datosReq, user: { id: 'u1', rol: 'usuario' } }, res, next);
+  expect(res.status).toHaveBeenCalledWith(403);
+  expect(next).not.toHaveBeenCalled();
+});
+
+test.each(['sin representante', 'representante inexistente', 'representante sin usuario', 'usuario sin id'])(
+  'el registro agrupado no autoriza por usuario directo cuando hay %s', async (caso) => {
+    prepararOctubreConCredito();
+    for (const mensualidad of [datos.Mensualidad.oct1, datos.Mensualidad.oct2]) mensualidad.id_alumno.usuario = 'u1';
+    if (caso === 'sin representante') datos.Mensualidad.oct1.id_alumno.representante = null;
+    if (caso === 'representante inexistente') delete datos.Representante.r1;
+    if (caso === 'representante sin usuario' || caso === 'usuario sin id') delete datos.Representante.r1.usuario;
+    const originales = copiar(datos);
+    const req = solicitud({ monto_total: 35.95, monto_total_bs: 31415.52,
+      asignaciones: [{ id_mensualidad: 'oct1' }, { id_mensualidad: 'oct2' }] });
+    req.user = { rol: 'usuario', ...(caso === 'usuario sin id' ? {} : { id: 'u1' }) };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await controller.registrarPagoAgrupado(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(datos).toEqual(originales);
+  }
+);
+
+test.each([
+  ['ensureMensualidadOwnershipFromBody', { body: { id_mensualidad: 'm1' } }],
+  ['ensureMensualidadOwnershipFromParam', { params: { id_mensualidad: 'm1' } }],
+  ['ensurePagoOwnershipFromParam', { params: { id_pago: 'p1' } }],
+  ['ensurePagoAgrupadoOwnershipFromParam', { params: { id: 'g1' } }]
+])('%s permite al representante real sin usuario directo en la atleta', async (metodo, datosReq) => {
+  datos.Representante.r1 = { _id: 'r1', usuario: 'u1' };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  const next = jest.fn();
+  await ownership[metodo]()({ ...datosReq, user: { id: 'u1', rol: 'usuario' } }, res, next);
+  expect(res.status).not.toHaveBeenCalled();
+  expect(next).toHaveBeenCalledTimes(1);
+});
+
+test('la validacion comprueba en base de datos incluso un representante poblado', async () => {
+  datos.Representante.r1 = { _id: 'r1', usuario: 'otro' };
+  datos.Mensualidad.m1.id_alumno.representante = { _id: 'r1', usuario: 'u1' };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  const next = jest.fn();
+  await ownership.ensureMensualidadOwnershipFromBody()({
+    body: { id_mensualidad: 'm1' }, user: { id: 'u1', rol: 'usuario' }
+  }, res, next);
+  expect(res.status).toHaveBeenCalledWith(403);
+  expect(next).not.toHaveBeenCalled();
+});
+
+test('el registro agrupado revalida al representante aunque ambas atletas tengan usuario directo', async () => {
+  prepararOctubreConCredito();
+  for (const mensualidad of [datos.Mensualidad.oct1, datos.Mensualidad.oct2]) mensualidad.id_alumno.usuario = 'u1';
+  antesDeTransaccion = () => { datos.Representante.r1.usuario = 'otro'; };
+  expect((await registrarConCredito(true)).status).toHaveBeenCalledWith(409);
+  expect(Object.keys(datos.PagoAgrupado)).toEqual(['g1']);
+  expect(Object.keys(datos.PagoDetalle)).toEqual(['p1', 'p2']);
+  expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(1.03);
+  expect(datos.Alumno.a2.saldo_a_favor_mensualidades).toBe(1.02);
+});
+
+test('el registro agrupado rechaza un cambio de representante entre validacion y guardado', async () => {
+  prepararOctubreConCredito();
+  datos.Representante.r2 = { _id: 'r2', usuario: 'u1' };
+  antesDeTransaccion = () => { datos.Mensualidad.oct2.id_alumno.representante = 'r2'; };
+  expect((await registrarConCredito(true)).status).toHaveBeenCalledWith(409);
+  expect(Object.keys(datos.PagoAgrupado)).toEqual(['g1']);
+  expect(Object.keys(datos.PagoDetalle)).toEqual(['p1', 'p2']);
+});
+
+test('el registro agrupado no mezcla fichas de representante aunque pertenezcan al mismo usuario', async () => {
+  prepararOctubreConCredito();
+  datos.Representante.r2 = { _id: 'r2', usuario: 'u1' };
+  datos.Mensualidad.oct2.id_alumno.representante = 'r2';
+  const originales = copiar(datos);
+  const res = await registrarConCredito(true);
+  expect(res.status).toHaveBeenCalledWith(400);
+  expect(res.json).toHaveBeenCalledWith({ error: 'Todas las atletas deben pertenecer al mismo representante' });
+  expect(datos).toEqual(originales);
+});
 
 test('pago de octubre consume 1.03 de credito y registra solo 17.97 de transferencia', async () => {
   prepararOctubreConCredito();
@@ -633,6 +748,25 @@ test('el usuario no recibe el desglose si una mensualidad pertenece a otra famil
   expect(res.status).toHaveBeenCalledWith(403);
   expect((await editar(req)).status).toHaveBeenCalledWith(409);
   expect(datos).toEqual(originales);
+});
+
+test('el usuario directo de una atleta no permite consultar asignaciones de otra familia', async () => {
+  datos.Representante.r1 = { _id: 'r1', usuario: 'u1' };
+  datos.Representante.r2 = { _id: 'r2', usuario: 'otro' };
+  Object.assign(datos.Mensualidad.m2.id_alumno, { representante: 'r2', usuario: 'u1' });
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.getPagoAgrupado({ ...solicitud(), user: { id: 'u1', rol: 'usuario' } }, res);
+  expect(res.status).toHaveBeenCalledWith(403);
+  expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ asignaciones: expect.anything() }));
+});
+
+test('consultar un grupo exige el mismo representante en todas sus asignaciones', async () => {
+  datos.Representante.r1 = { _id: 'r1', usuario: 'u1' };
+  datos.Representante.r2 = { _id: 'r2', usuario: 'u1' };
+  datos.Mensualidad.m2.id_alumno.representante = 'r2';
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.getPagoAgrupado({ ...solicitud(), user: { id: 'u1', rol: 'usuario' } }, res);
+  expect(res.status).toHaveBeenCalledWith(409);
 });
 
 test('el propietario no puede editar un grupo conciliado', async () => {

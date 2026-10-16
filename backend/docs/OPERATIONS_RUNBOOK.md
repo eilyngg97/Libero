@@ -76,6 +76,8 @@ node scripts/mongoRestore.js ./backups/mongo-YYYYMMDD-HHMMSS
 
 ## 4) Edicion segura de pagos agrupados
 
+- Para registrar pagos de mensualidades (individuales, agrupados o con saldo a favor), el rol `usuario` debe ser el usuario vinculado al representante de cada atleta. El campo `alumno.usuario` no sustituye esa relacion ni autoriza el pago. Un representante inexistente, sin usuario o de otra cuenta devuelve `403`, sin registrar pagos ni consumir credito. Los roles internos conservan sus controles de permisos.
+- Un pago agrupado exige el mismo registro de representante en todas las atletas; no basta con que distintas fichas de representante tengan el mismo usuario. El registro revalida ese vinculo antes de crear la transferencia, y la consulta y edicion conservan la pertenencia al representante original del grupo. No se reasignan atletas ni representantes automaticamente.
 - Consulta y edicion admiten al rol `usuario` solo si el representante del grupo pertenece a su cuenta, dentro del tenant de la peticion. Otros roles requieren `mensualidades.manage`. La edicion exige un grupo `En revision`; un usuario puede consultar su grupo conciliado, pero no modificarlo.
 - La propiedad se verifica antes de aceptar un comprobante y se revalida junto a todas las mensualidades dentro de la transaccion. Un grupo ajeno devuelve `403`, sin revelar el desglose ni guardar cambios.
 - En `Mis pagos`, el detalle presenta el total realmente transferido en Bs y moneda configurada, la distribucion por atleta y el importe asignado al alumno actual. `Editar pago agrupado` abre el editor completo; las asignaciones agrupadas no ofrecen eliminacion individual. El retiro de recargos sigue reservado a `mensualidades.manage`.
