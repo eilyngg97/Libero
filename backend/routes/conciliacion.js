@@ -51,4 +51,11 @@ router.post(
   conciliacionController.confirmarMatchTotal
 );
 
+router.post(
+  '/pagos-agrupados/:id/rechazar',
+  authMiddleware,
+  permisoMiddleware('conciliacion.manage'),
+  conciliacionController.rechazarPagoAgrupado
+);
+
 module.exports = router;

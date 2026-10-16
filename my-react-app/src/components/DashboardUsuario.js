@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Card, CardActions, CardContent, Typography, Avatar, Grid, Box } from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Button, Card, CardActions, CardContent, Typography, Avatar, Box, Chip, CircularProgress } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
+import { cargarAtletasPortal, cargarMensualidadesPortal } from '../utils/portalPaymentData';
 
 const normalizarDiaMes = (value) => {
   const numero = Number(value);
@@ -58,14 +60,11 @@ const buildSiguientePeriodoDesde = (mes, anio) => {
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
   const [resumenPagos, setResumenPagos] = useState({});
+  const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState('');
+  const [intentoCarga, setIntentoCarga] = useState(0);
   const navigate = useNavigate();
   const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
-
-  const formatMonto = (monto) => {
-    const montoNum = Number(monto);
-    if (Number.isNaN(montoNum)) return '--';
-    return `$${montoNum.toFixed(2)} USD`;
-  };
 
   const obtenerFechaVencimientoVisible = useCallback((mensualidad, alumno) => {
     const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado);
@@ -78,7 +77,7 @@ function DashboardUsuario() {
 
   const obtenerResumenPago = useCallback((mensualidades = [], alumno = null) => {
     if (!Array.isArray(mensualidades) || mensualidades.length === 0) {
-      return { fechaTexto: '--', monto: null, estado: 'sin datos' };
+      return { fechaTexto: '--', monto: null, estado: 'sin datos', pagable: false };
     }
 
     const normalizarEstado = (estado) => (estado || '').toLowerCase();
@@ -92,18 +91,23 @@ function DashboardUsuario() {
           fecha: fechaPeriodo,
           fechaVencimientoVisible,
           estado: normalizarEstado(m.estatus),
-          monto: m.monto_con_recargo_usd ?? m.monto_esperado,
-          recargoAplicado: Math.max(0, Number(m.recargo_aplicado_usd) || 0)
+          monto: Number(m.saldo_pendiente ?? m.monto_con_recargo_usd ?? m.monto_esperado) || 0,
+          montoBase: Number(m.monto_sin_recargo_usd) || Math.max(0, (Number(m.monto_esperado) || 0) - (Number(m.recargo_aplicado_usd) || 0)),
+          recargoAplicado: Math.max(0, Number(m.recargo_aplicado_usd) || 0),
+          creditoAUsar: Math.max(0, Number(m.credito_a_aplicar) || 0),
+          saldoAFavorDisponible: m.saldo_a_favor_disponible,
+          mensualidad: m
         };
       })
       .filter((m) => !Number.isNaN(m.fecha.getTime()))
       .sort((a, b) => a.fecha - b.fecha);
 
     if (!ordenadas.length) {
-      return { fechaTexto: '--', monto: null, estado: 'sin datos' };
+      return { fechaTexto: '--', monto: null, estado: 'sin datos', pagable: false };
     }
 
-    const pendientes = ordenadas.filter((m) => !['pagado', 'exonerado'].includes(m.estado));
+    const estadosPagables = ['pendiente', 'retrasado', 'insolvente', 'abono'];
+    const pendientes = ordenadas.filter((m) => estadosPagables.includes(m.estado));
 
     let referencia = pendientes[0] || null;
     if (!referencia) {
@@ -121,6 +125,7 @@ function DashboardUsuario() {
           ? construirFechaPeriodoConDia(siguientePeriodo.mes, siguientePeriodo.anio, diaReferencia)
           : ultimaMensualidad.fechaVencimientoVisible,
         monto: ultimaMensualidad?.monto,
+        montoBase: ultimaMensualidad?.montoBase,
         recargoAplicado: 0
       };
     }
@@ -130,253 +135,278 @@ function DashboardUsuario() {
         ? referencia.fechaVencimientoVisible.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
         : referencia.fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
       monto: referencia.monto,
+      montoBase: referencia.montoBase || 0,
       recargoAplicado: referencia.recargoAplicado || 0,
-      estado: pendientes.length ? 'pendiente' : 'al dia'
+      creditoAUsar: referencia.creditoAUsar || 0,
+      saldoAFavorDisponible: referencia.saldoAFavorDisponible,
+      mes: referencia.mes,
+      anio: referencia.anio,
+      fechaVencimiento: referencia.fechaVencimientoVisible,
+      estado: pendientes.length ? referencia.estado : 'al dia',
+      pagable: pendientes.length > 0
     };
   }, [obtenerFechaVencimientoVisible]);
 
   useEffect(() => {
-    // 1. Obtener el usuario logueado
-    const usuario = JSON.parse(localStorage.getItem('usuario'));
-    if (!usuario || !usuario.id) {
-      setAlumnos([]);
-      return;
-    }
-
-    // 2. Buscar el representante asociado a este usuario o alumnos por usuario
+    const abortController = new AbortController();
+    const { signal } = abortController;
     const fetchAlumnos = async () => {
+      setCargando(true);
+      setErrorCarga('');
+      setAlumnos([]);
+      setResumenPagos({});
       try {
-        let alumnosFinal = [];
-        // Buscar representante por usuario
-        const repRes = await fetch(`${process.env.REACT_APP_API_URL}/api/representantes/por-usuario/${usuario.id}`);
-        const repData = await repRes.json();
-        if (repRes.ok && repData && repData._id) {
-          // Buscar alumnos asociados a ese representante
-          const alumRes = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/por-representante/${repData._id}?populateSede=1`);
-          const alumData = await alumRes.json();
-          if (alumRes.ok && Array.isArray(alumData)) {
-            alumnosFinal = alumnosFinal.concat(alumData);
-          }
-        }
-        // Buscar también alumnos por usuarioId (caso usuario sin representante o representante que es alumno)
-        const alumRes2 = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/por-representante/null?usuarioId=${usuario.id}&populateSede=1`);
-        const alumData2 = await alumRes2.json();
-        if (alumRes2.ok && Array.isArray(alumData2)) {
-          alumnosFinal = alumnosFinal.concat(alumData2);
-        }
-        // Eliminar duplicados por _id
-        const alumnosUnicos = alumnosFinal.filter((al, idx, arr) => arr.findIndex(a2 => a2._id === al._id) === idx);
-        setAlumnos(alumnosUnicos);
+        const usuario = JSON.parse(localStorage.getItem('usuario') || 'null');
+        if (!usuario?.id) throw new Error('No se pudo identificar al representante.');
+        const { atletas } = await cargarAtletasPortal(apiBase, usuario.id, signal);
+        if (signal.aborted) return;
+        setAlumnos(atletas);
 
         const resumenEntries = await Promise.all(
-          alumnosUnicos.map(async (alumno) => {
-            try {
-              const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?id_alumno=${alumno._id}`);
-              const dataMens = await resMens.json();
-              return [alumno._id, obtenerResumenPago(Array.isArray(dataMens) ? dataMens : [], alumno)];
-            } catch {
-              return [alumno._id, { fechaTexto: '--', monto: null, estado: 'sin datos' }];
-            }
+          atletas.map(async (alumno) => {
+            const mensualidades = await cargarMensualidadesPortal(apiBase, alumno, signal);
+            return [alumno._id, obtenerResumenPago(mensualidades, alumno)];
           })
         );
 
-        setResumenPagos(Object.fromEntries(resumenEntries));
-      } catch {
-        setAlumnos([]);
-        setResumenPagos({});
+        if (!signal.aborted) setResumenPagos(Object.fromEntries(resumenEntries));
+      } catch (error) {
+        if (!signal.aborted) setErrorCarga(error.message || 'No se pudieron cargar los pagos de tus atletas.');
+      } finally {
+        if (!signal.aborted) setCargando(false);
       }
     };
     fetchAlumnos();
-  }, [apiBase, obtenerResumenPago]);
+    return () => abortController.abort();
+  }, [apiBase, obtenerResumenPago, intentoCarga]);
+
+  const resumenFamiliar = useMemo(() => {
+    const pendientes = alumnos
+      .map((alumno) => resumenPagos[alumno._id])
+      .filter((resumen) => resumen?.pagable && Number(resumen.monto) > 0);
+    const fechas = pendientes.map((resumen) => resumen.fechaVencimiento).filter(Boolean);
+    const vencimiento = fechas.length
+      ? new Date(Math.min(...fechas.map((fecha) => fecha.getTime())))
+      : null;
+
+    return {
+      total: pendientes.reduce((suma, resumen) => suma + (Number(resumen.monto) || 0), 0),
+      recargos: pendientes.reduce((suma, resumen) => suma + (Number(resumen.recargoAplicado) || 0), 0),
+      atletas: pendientes.length,
+      vencimiento: vencimiento
+        ? vencimiento.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+        : '--'
+    };
+  }, [alumnos, resumenPagos]);
+
+  const navegarDetalle = (alumno) => {
+    navigate(`/panel-opciones-usuario/${alumno._id}`, {
+      state: { alumno, sede: { nombre: alumno.sede } }
+    });
+  };
 
 
   return (
-    <>
+    <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', pb: 5 }}>
       <TerminosPendientesAlert sx={{ mb: 2, mt: 1 }} />
 
-      <Box sx={{ mb: 2, mt: 1 }}>
-        <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a' }}>
-          Selecciona un Alumno
+      <Box sx={{ mb: 2.25, mt: 1 }}>
+        <Typography variant="h5" sx={{ fontWeight: 850, color: '#11132f' }}>
+          Mis atletas
         </Typography>
-        <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
+        <Typography variant="body2" sx={{ color: '#6b7280', mt: 0.35 }}>
           Gestiona pagos y actividades de tus representados.
         </Typography>
       </Box>
-      <Grid container spacing={3} justifyContent="center" sx={{ mt: 2 }}>
-        {alumnos.length === 0 ? (
-          <Grid item xs={12} sx={{ textAlign: 'center', mt: 6 }}>
+
+      {cargando && <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>}
+      {errorCarga && <Alert severity="error" sx={{ mb: 2 }} action={
+        <Button color="inherit" size="small" onClick={() => setIntentoCarga((actual) => actual + 1)}>Reintentar</Button>
+      }>{errorCarga}</Alert>}
+
+      {!cargando && !errorCarga && resumenFamiliar.atletas > 0 && (
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(3, minmax(120px, auto)) 1fr' },
+            alignItems: 'center',
+            gap: { xs: 2, md: 3.5 },
+            bgcolor: '#111342',
+            borderRadius: 2,
+            px: { xs: 2, sm: 2.75 },
+            py: { xs: 2, sm: 2.1 },
+            mb: 3,
+            boxShadow: '0 12px 28px rgba(17, 19, 66, 0.16)'
+          }}
+        >
+          {[
+            ['Total pendiente', `$${resumenFamiliar.total.toFixed(2)}`, '#ffffff'],
+            ['Vencimiento', resumenFamiliar.vencimiento, '#ffffff']
+          ].map(([etiqueta, valor, color]) => (
+            <Box key={etiqueta}>
+              <Typography sx={{ color: '#aeb5d8', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {etiqueta}
+              </Typography>
+              <Typography sx={{ color, fontSize: { xs: 20, sm: 24 }, fontWeight: 850, lineHeight: 1.15, textTransform: etiqueta === 'Vencimiento' ? 'lowercase' : 'none' }}>
+                {valor}
+              </Typography>
+            </Box>
+          ))}
+          {resumenFamiliar.atletas > 1 && (
+          <Button
+            variant="contained"
+            endIcon={<ArrowForwardRoundedIcon />}
+            onClick={() => navigate('/pagos-agrupados')}
+            sx={{
+              gridColumn: { xs: '1 / -1', md: 'auto' },
+              justifySelf: { xs: 'stretch', md: 'end' },
+              minHeight: 46,
+              px: 2.4,
+              bgcolor: '#f04478',
+              color: '#fff',
+              borderRadius: 1.5,
+              textTransform: 'none',
+              fontWeight: 800,
+              boxShadow: 'none',
+              '&:hover': { bgcolor: '#dc3569', boxShadow: 'none' }
+            }}
+          >
+            Pagar todo junto · {resumenFamiliar.atletas} atletas
+          </Button>
+          )}
+        </Box>
+      )}
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 2.25 }}>
+        {alumnos.length === 0 ? (!cargando && !errorCarga && (
+          <Box sx={{ textAlign: 'center', mt: 6, gridColumn: '1 / -1' }}>
             <Typography variant="h6" color="text.secondary">
               No tienes alumnos registrados.
             </Typography>
-          </Grid>
-        ) : (
+          </Box>
+        )) : (
           <>
             {alumnos.map((alumno) => {
               const resumen = resumenPagos[alumno._id] || { fechaTexto: '--', monto: null, estado: 'sin datos' };
+              const mensajePago = cargando ? 'Cargando pagos' : errorCarga ? 'Pagos no disponibles'
+                : resumen.estado === 'sin datos' ? 'Sin mensualidades' : '';
               return (
-                <Grid item xs={12} sm={6} md={4} key={alumno._id} sx={{ display: 'flex', justifyContent: 'center' }}>
+                <Box key={alumno._id} sx={{ display: 'flex', minWidth: 0 }}>
                   <Card
                     sx={{
                       width: '100%',
-                      maxWidth: 380,
-                      borderRadius: 2.5,
-                      p: 1.3,
-                      minWidth: 260,
-                      bgcolor: '#f3f4f6',
-                      border: '1px solid #e5e7eb',
-                      boxShadow: '0 8px 18px rgba(17, 24, 39, 0.07)'
+                      borderRadius: 2,
+                      bgcolor: '#fff',
+                      border: '1px solid #e7e9f2',
+                      boxShadow: '0 8px 24px rgba(34, 39, 78, 0.07)',
+                      display: 'flex',
+                      flexDirection: 'column'
                     }}
                   >
-                    <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', pb: 1.2, px: 1.3 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 1.1 }}>
+                    <CardContent sx={{ flex: 1, p: 2, '&:last-child': { pb: 1.25 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1, mb: 1.7 }}>
                         <Avatar
                           src={mediaUrl(alumno.foto) || undefined}
                           alt={alumno.nombres}
-                          sx={{ width: 58, height: 58, boxShadow: '0 4px 10px rgba(15, 23, 42, 0.16)' }}
-                        />
+                          sx={{ width: 46, height: 46, bgcolor: '#eceefe', color: '#111342', fontSize: 14, fontWeight: 850 }}
+                        >
+                          {`${String(alumno.nombres || '').charAt(0)}${String(alumno.apellidos || '').charAt(0)}`.toUpperCase()}
+                        </Avatar>
                         <Box sx={{ minWidth: 0 }}>
                           <Typography
                             variant="subtitle1"
                             sx={{
-                              fontWeight: 700,
-                              color: '#111827',
+                              fontWeight: 800,
+                              color: '#17182f',
                               lineHeight: 1.15,
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis'
+                              fontSize: 15
                             }}
                           >
                             {alumno.nombres} {alumno.apellidos}
                           </Typography>
-                          <Box sx={{ display: 'flex', gap: 0.75, mt: 0.65, flexWrap: 'wrap' }}>
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                bgcolor: '#ecedef',
-                                px: 0.85,
-                                py: 0.2,
-                                borderRadius: 999,
-                                color: '#4b5563',
-                                fontWeight: 600
-                              }}
-                            >
-                              CATEGORIA: {alumno.categoria || '-'}
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                bgcolor: '#ecedef',
-                                px: 0.85,
-                                py: 0.2,
-                                borderRadius: 999,
-                                color: '#4b5563',
-                                fontWeight: 600
-                              }}
-                            >
-                              SEDE: {alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : alumno.sede || '-'}
-                            </Typography>
+                          <Box sx={{ display: 'flex', gap: 0.55, mt: 0.6, flexWrap: 'wrap' }}>
+                            <Chip size="small" label={alumno.categoria || 'Sin categoría'} sx={{ height: 20, bgcolor: '#f1f2f7', color: '#555b74', fontSize: 10, borderRadius: 1 }} />
+                            <Chip size="small" label={alumno.sede && typeof alumno.sede === 'object' ? alumno.sede.nombre : alumno.sede || 'Sin sede'} sx={{ height: 20, bgcolor: '#f1f2f7', color: '#555b74', fontSize: 10, borderRadius: 1 }} />
                           </Box>
                         </Box>
                       </Box>
 
-                      <Box
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 1, mb: 1.6 }}>
+                        <Box>
+                          <Typography sx={{ color: '#7a8098', fontSize: 11 }}>
+                            {resumen.pagable && resumen.mes
+                              ? `Por pagar · ${new Intl.DateTimeFormat('es-VE', { month: 'long' }).format(new Date(2026, resumen.mes - 1, 1))} ${resumen.anio}`
+                              : 'Estado de cuenta'}
+                          </Typography>
+                          <Typography sx={{ color: '#11132f', fontWeight: 850, fontSize: 24, lineHeight: 1.15 }}>
+                            {resumen.monto != null ? `$${Number(resumen.monto).toFixed(2)}` : '--'}
+                          </Typography>
+                        </Box>
+                        <Chip
+                          size="small"
+                          label={mensajePago || (resumen.pagable ? `Vence · ${resumen.fechaTexto}` : 'Al día')}
+                          sx={{ height: 22, bgcolor: mensajePago ? '#f1f2f7' : resumen.pagable ? '#fff0f3' : '#e9f8ef', color: mensajePago ? '#555b74' : resumen.pagable ? '#c52d55' : '#16794a', fontSize: 10, fontWeight: 750, borderRadius: 1 }}
+                        />
+                      </Box>
+
+                      {!cargando && !errorCarga && resumen.monto != null && <Box sx={{ borderTop: '1px solid #eceef4', pt: 1.25, display: 'grid', gap: 0.55 }}>
+                        {[
+                          ['Mensualidad', resumen.montoBase],
+                          ['Recargo por mora', resumen.recargoAplicado],
+                          ['Credito para esta cuota', -resumen.creditoAUsar],
+                          ['Saldo a favor', Number(resumen.saldoAFavorDisponible ?? alumno?.saldo_a_favor_mensualidades ?? 0)]
+                        ].map(([etiqueta, valor]) => (
+                          <Box key={etiqueta} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                            <Typography sx={{ color: etiqueta === 'Recargo por mora' && valor > 0 ? '#c52d55' : '#5f657c', fontSize: 11.5 }}>{etiqueta}</Typography>
+                            <Typography sx={{ color: etiqueta === 'Recargo por mora' && valor > 0 ? '#c52d55' : '#33384f', fontSize: 11.5, fontWeight: 650 }}>
+                              {valor < 0 ? '-' : etiqueta === 'Recargo por mora' && valor > 0 ? '+' : ''}${Math.abs(Number(valor || 0)).toFixed(2)}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>}
+                    </CardContent>
+                    <CardActions sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.8, px: 2, pb: 2, pt: 1 }}>
+                      <Button
+                        variant="outlined"
+                        onClick={() => navegarDetalle(alumno)}
                         sx={{
-                          borderRadius: 1.5,
-                          p: 1.25,
-                          bgcolor: '#ecedef',
+                          color: '#25283e',
+                          borderColor: '#d9dce7',
+                          fontWeight: 700,
+                          borderRadius: 1.25,
+                          textTransform: 'none',
+                          fontSize: 12,
+                          minHeight: 38
                         }}
                       >
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            display: 'block',
-                            color: '#4b5563',
-                            fontWeight: 800,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            mb: 0.7
-                          }}
-                        >
-                          Resumen de cuenta
-                        </Typography>
-
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
-                          <Typography variant="body2" sx={{ color: '#374151', lineHeight: 1.25 }}>
-                            Proximo pago:
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: '#111827', lineHeight: 1.25, textAlign: 'right' }}>
-                            {resumen.fechaTexto}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ borderTop: '1px solid #cfd4dc', my: 0.2 }} />
-
-                        {resumen.recargoAplicado > 0 && (
-                          <>
-                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
-                              <Typography variant="body2" sx={{ color: '#b91c1c', fontWeight: 700, lineHeight: 1.25 }}>
-                                Recargo aplicado:
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: '#b91c1c', fontWeight: 800, lineHeight: 1.25, textAlign: 'right' }}>
-                                +{formatMonto(resumen.recargoAplicado).replace(' USD', '')}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ borderTop: '1px solid #cfd4dc', my: 0.2 }} />
-                          </>
-                        )}
-
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
-                          <Typography variant="body2" sx={{ color: '#374151', lineHeight: 1.25 }}>
-                            Monto total:
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: '#111827', lineHeight: 1.25, textAlign: 'right' }}>
-                            {formatMonto(resumen.monto).replace(' USD', '')}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ borderTop: '1px solid #cfd4dc', my: 0.2 }} />
-
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 1, py: 0.35 }}>
-                          <Typography variant="body2" sx={{ color: '#111827', fontWeight: 700, lineHeight: 1.25 }}>
-                            Saldo a favor:
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: '#111827', fontWeight: 800, lineHeight: 1.25, textAlign: 'right' }}>
-                            ${Number(alumno?.saldo_a_favor_mensualidades || 0).toFixed(2)}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </CardContent>
-                    <CardActions sx={{ justifyContent: 'center', pt: 0.5, px: 1.3, pb: 1.2 }}>
+                        Ver detalle
+                      </Button>
                       <Button
                         variant="contained"
-                        fullWidth
+                        disabled={cargando || Boolean(errorCarga) || !resumen.pagable}
+                        onClick={() => navigate(`/pagos-alumno/${alumno._id}`, { state: { alumno } })}
                         sx={{
-                          bgcolor: '#020617',
-                          '&:hover': { bgcolor: '#111827' },
-                          fontWeight: 600,
-                          borderRadius: 1.4,
+                          bgcolor: '#11132f',
+                          '&:hover': { bgcolor: '#25284f' },
+                          fontWeight: 750,
+                          borderRadius: 1.25,
                           textTransform: 'none',
-                          py: 0.95,
-                          fontSize: '0.9rem'
-                        }}
-                        onClick={() => {
-                          navigate(`/panel-opciones-usuario/${alumno._id}`, {
-                            state: {
-                              alumno,
-                              sede: { nombre: alumno.sede }
-                            }
-                          });
+                          fontSize: 12,
+                          minHeight: 38,
+                          boxShadow: 'none'
                         }}
                       >
-                        Seleccionar
+                        {mensajePago || (resumen.pagable ? (Number(resumen.monto) === 0 && resumen.creditoAUsar > 0 ? 'Usar saldo a favor' : `Pagar $${Number(resumen.monto || 0).toFixed(2)}`) : 'Sin deuda')}
                       </Button>
                     </CardActions>
                   </Card>
-                </Grid>
+                </Box>
               );
             })}
           </>
         )}
-      </Grid>
-    </>
+      </Box>
+    </Box>
   );
 }
 

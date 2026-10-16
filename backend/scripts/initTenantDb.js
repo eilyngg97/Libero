@@ -10,6 +10,7 @@ const Alumno = require('../models/Alumno');
 const Reposo = require('../models/Reposo');
 const Mensualidad = require('../models/Mensualidad');
 const PagoDetalle = require('../models/PagoDetalle');
+const PagoAgrupado = require('../models/PagoAgrupado');
 const Aspirante = require('../models/Aspirante');
 const Uniforme = require('../models/Uniforme');
 const UniformePedido = require('../models/UniformePedido');
@@ -41,6 +42,7 @@ const tenantModelDefinitions = [
   { modelName: 'Reposo', schema: Reposo.schema },
   { modelName: 'Mensualidad', schema: Mensualidad.schema },
   { modelName: 'PagoDetalle', schema: PagoDetalle.schema },
+  { modelName: 'PagoAgrupado', schema: PagoAgrupado.schema },
   { modelName: 'Aspirante', schema: Aspirante.schema },
   { modelName: 'Uniforme', schema: Uniforme.schema },
   { modelName: 'UniformePedido', schema: UniformePedido.schema },

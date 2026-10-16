@@ -677,6 +677,7 @@ function ModalPago({
 
       const formData = new FormData();
       formData.append('id_mensualidad', pago.id);
+      formData.append('credito_a_aplicar', Number(pago.credito_a_aplicar || 0).toFixed(2));
       formData.append('monto_pagado', montoPagadoMoneda.toFixed(2));
       formData.append('monto_pagado_bs', montoPagadoBsFinal.toFixed(2));
       if (Number.isFinite(montoEsperadoUsd)) {

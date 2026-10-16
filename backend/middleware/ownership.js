@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantModel } = require('../services/tenantModelService');
+const { userRepresentsAlumno } = require('../services/paymentOwnership');
 
 async function getTenantOwnershipModels(req) {
   const tenantConfig = req.tenant || { tenantId: req.tenantId };
@@ -10,12 +11,14 @@ async function getTenantOwnershipModels(req) {
   const Alumno = getTenantModel(connection, 'Alumno');
   const Mensualidad = getTenantModel(connection, 'Mensualidad');
   const PagoDetalle = getTenantModel(connection, 'PagoDetalle');
+  const PagoAgrupado = getTenantModel(connection, 'PagoAgrupado');
 
   return {
     Representante,
     Alumno,
     Mensualidad,
-    PagoDetalle
+    PagoDetalle,
+    PagoAgrupado
   };
 }
 
@@ -106,7 +109,7 @@ exports.ensureMensualidadOwnershipFromBody = (fieldName = 'id_mensualidad') => a
     return res.status(404).json({ error: 'Mensualidad no encontrada' });
   }
 
-  const esPropio = await userOwnsAlumno(req.user.id, mensualidad.id_alumno, Representante);
+  const esPropio = await userRepresentsAlumno(req.user.id, mensualidad.id_alumno, Representante);
   if (!esPropio) return res.status(403).json({ error: 'No tienes permiso para esta mensualidad' });
 
   next();
@@ -124,10 +127,25 @@ exports.ensureMensualidadOwnershipFromParam = (paramName = 'id_mensualidad') => 
     return res.status(404).json({ error: 'Mensualidad no encontrada' });
   }
 
-  const esPropio = await userOwnsAlumno(req.user.id, mensualidad.id_alumno, Representante);
+  const esPropio = await userRepresentsAlumno(req.user.id, mensualidad.id_alumno, Representante);
   if (!esPropio) return res.status(403).json({ error: 'No tienes permiso para esta mensualidad' });
 
   next();
+};
+
+exports.ensurePagoAgrupadoOwnershipFromParam = (paramName = 'id') => async (req, res, next) => {
+  if (!isEndUser(req)) return next();
+  try {
+    const { PagoAgrupado, Representante } = await getTenantOwnershipModels(req);
+    const grupo = await PagoAgrupado.findById(req.params[paramName]);
+    if (!grupo) return res.status(404).json({ error: 'Pago agrupado no encontrado' });
+    if (!(await userRepresentsAlumno(req.user.id, grupo, Representante))) {
+      return res.status(403).json({ error: 'No tienes permiso para este pago agrupado' });
+    }
+    return next();
+  } catch (error) {
+    return res.status(error.name === 'CastError' ? 400 : 500).json({ error: 'Error validando propiedad del pago agrupado' });
+  }
 };
 
 exports.ensurePagoOwnershipFromParam = (paramName = 'id_pago') => async (req, res, next) => {
@@ -145,7 +163,7 @@ exports.ensurePagoOwnershipFromParam = (paramName = 'id_pago') => async (req, re
     return res.status(404).json({ error: 'Mensualidad no encontrada' });
   }
 
-  const esPropio = await userOwnsAlumno(req.user.id, mensualidad.id_alumno, Representante);
+  const esPropio = await userRepresentsAlumno(req.user.id, mensualidad.id_alumno, Representante);
   if (!esPropio) return res.status(403).json({ error: 'No tienes permiso para este pago' });
 
   next();

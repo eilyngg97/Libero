@@ -19,6 +19,8 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
 import { mediaUrl } from '../utils/mediaUrl';
+import { hasPermission } from '../utils/permissions';
+import PagoAgrupadoEditor from './PagoAgrupadoEditor';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -76,6 +78,12 @@ const obtenerDiaLimitePersonalizado = (mensualidad) => {
 	return valor;
 };
 
+const esAlumnoDeBajaMensualidad = (mensualidad) => {
+	const alumno = mensualidad?.id_alumno;
+	const estado = String(alumno?.estado || '').trim().toLowerCase();
+	return alumno?.dado_de_baja === true || alumno?.activo === false || estado === 'baja' || estado === 'inactivo';
+};
+
 function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyInsolventes = false, viewMode = 'mensualidades' }) {
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
@@ -90,6 +98,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
 	const [filtroAlumno, setFiltroAlumno] = useState('');
 	const [filtroEstado, setFiltroEstado] = useState(() => String(initialEstado || '').trim());
+	const [filtroEstadoAlumno, setFiltroEstadoAlumno] = useState('');
 	const [modalPago, setModalPago] = useState(false);
 	const [pagoInfo, setPagoInfo] = useState({});
 	const [comprobante, setComprobante] = useState(null);
@@ -105,6 +114,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [pagosLoading, setPagosLoading] = useState(false);
 	const [fechaPago, setFechaPago] = useState(() => getLocalInputDate());
 	const [modalDetalle, setModalDetalle] = useState(false);
+	const [editorGrupoOpen, setEditorGrupoOpen] = useState(false);
 	const [detallePago, setDetallePago] = useState(null);
 	const [pagosDetalle, setPagosDetalle] = useState([]);
 	const [mensualidadDetalle, setMensualidadDetalle] = useState(null);
@@ -118,6 +128,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [eliminandoPagoId, setEliminandoPagoId] = useState('');
 	const [confirmarEliminarOpen, setConfirmarEliminarOpen] = useState(false);
 	const [pagoAEliminar, setPagoAEliminar] = useState(null);
+	const [cargandoGrupoEliminar, setCargandoGrupoEliminar] = useState(false);
+	const [errorEliminarPago, setErrorEliminarPago] = useState('');
 	const [quitarComprobanteActual, setQuitarComprobanteActual] = useState(false);
 	const [tasaPagoHistorica, setTasaPagoHistorica] = useState(null);
 	const [modalAjusteSede, setModalAjusteSede] = useState(false);
@@ -138,6 +150,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [confirmarPagoOpen, setConfirmarPagoOpen] = useState(false);
 	const [confirmandoMensualidad, setConfirmandoMensualidad] = useState(false);
 	const [confirmarRetiroRecargoOpen, setConfirmarRetiroRecargoOpen] = useState(false);
+	const [retiroRecargoGrupo, setRetiroRecargoGrupo] = useState(null);
 	const [corrigiendoRecargo, setCorrigiendoRecargo] = useState(false);
 	const [ultimoPagoDraft, setUltimoPagoDraft] = useState({
 		metodo_pago: metodosPago[0],
@@ -502,10 +515,15 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				const apellidos = String(m?.id_alumno?.apellidos || '').toLowerCase().trim();
 				const formatoApellidoNombre = `${apellidos} ${nombres}`.trim();
 				const formatoNombreApellido = `${nombres} ${apellidos}`.trim();
-				return formatoApellidoNombre.includes(filtroTexto) || formatoNombreApellido.includes(filtroTexto);
+				const codigoAgrupado = String(m?.pago_agrupado?.codigo || '').toLowerCase().trim();
+				return formatoApellidoNombre.includes(filtroTexto) || formatoNombreApellido.includes(filtroTexto)
+					|| codigoAgrupado.includes(filtroTexto);
 			});
 		}
 		if (filtroEstado) filtradas = filtradas.filter(m => m.estatus && m.estatus.toLowerCase() === filtroEstado.toLowerCase());
+		if (filtroEstadoAlumno) {
+			filtradas = filtradas.filter((mensualidad) => esAlumnoDeBajaMensualidad(mensualidad) === (filtroEstadoAlumno === 'baja'));
+		}
 		if (onlyInsolventes) {
 			filtradas = filtradas.filter((m) => String(m?.estatus || '').toLowerCase() === 'insolvente');
 		}
@@ -523,7 +541,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		});
 
 		setMensualidades(filtradasOrdenadas);
-	}, [filtroMes, filtroAlumno, filtroEstado, mensualidadesBD, onlyInsolventes, esVistaInscripciones]);
+	}, [filtroMes, filtroAlumno, filtroEstado, filtroEstadoAlumno, mensualidadesBD, onlyInsolventes, esVistaInscripciones]);
 
 	React.useEffect(() => {
 		if (!onlyInsolventes) return;
@@ -587,18 +605,27 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		if (!mensualidadDetalle?._id) return;
 		try {
 			setConfirmandoMensualidad(true);
-			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}/confirmar`, {
+			const esPagoAgrupado = Boolean(mensualidadDetalle?.pago_agrupado?.id);
+			const endpoint = esPagoAgrupado
+				? `${process.env.REACT_APP_API_URL}/api/mensualidades/pagos-agrupados/${mensualidadDetalle.pago_agrupado.id}/confirmar`
+				: `${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}/confirmar`;
+			const res = await fetch(endpoint, {
 				method: 'PATCH',
-				headers: getAuthHeaders()
+				headers: {
+					...getAuthHeaders(),
+					'Content-Type': 'application/json'
+				}
 			});
 			const data = await res.json();
-			if (!res.ok) throw new Error(data?.error || 'Error al confirmar mensualidad');
+			if (!res.ok) throw new Error(data?.error || 'Error al confirmar el pago');
 			setConfirmarPagoOpen(false);
 			setModalDetalle(false);
 			await cargarMensualidades();
-			setSuccessMessage('Pago confirmado con exito');
+			setSuccessMessage(esPagoAgrupado
+				? `Pago agrupado confirmado. Se actualizaron ${data?.mensualidades_actualizadas || mensualidadDetalle.pago_agrupado.cantidad_atletas} mensualidades.`
+				: 'Pago confirmado con exito');
 		} catch (err) {
-			setErrorMessage(err.message || 'Error al confirmar mensualidad');
+			setErrorMessage(err.message || 'Error al confirmar el pago');
 		} finally {
 			setConfirmandoMensualidad(false);
 		}
@@ -899,8 +926,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		}
 	};
 
-	const solicitarRetiroRecargo = () => {
-		if (!mensualidadDetalle?._id || corrigiendoRecargo) return;
+	const solicitarRetiroRecargo = async () => {
+		if (!mensualidadDetalle?._id || corrigiendoRecargo || confirmandoMensualidad || editorGrupoOpen) return;
 
 		const montoBaseSinRecargo = Number(mensualidadDetalle?.monto_sin_recargo_usd);
 		if (!Number.isFinite(montoBaseSinRecargo) || montoBaseSinRecargo < 0) {
@@ -908,7 +935,35 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			return;
 		}
 
-		setConfirmarRetiroRecargoOpen(true);
+		setRetiroRecargoGrupo(null);
+		const grupoId = mensualidadDetalle?.pago_agrupado?.id || pagosDetalle.find((pago) => pago.id_pago_agrupado)?.id_pago_agrupado;
+		if (!grupoId) {
+			setConfirmarRetiroRecargoOpen(true);
+			return;
+		}
+		try {
+			setCorrigiendoRecargo(true);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/agrupado/${grupoId}`, { headers: getAuthHeaders() });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo cargar el grupo');
+			if (!data.transacciones_disponibles) throw new Error('El retiro seguro requiere MongoDB con transacciones.');
+			if (!['En revision', 'Conciliado'].includes(data.pago?.estado)) throw new Error('El grupo ya no admite retiro de recargo.');
+			const asignacion = data.asignaciones?.find((item) => String(item.id_mensualidad) === String(mensualidadDetalle._id));
+			if (!asignacion) {
+				throw new Error('La mensualidad ya no pertenece al grupo. Actualiza la vista.');
+			}
+			if (data.asignaciones.some((item) => !item.id_mensualidad || !item.version_mensualidad)) {
+				throw new Error('Debes actualizar las versiones de todas las mensualidades del grupo.');
+			}
+			const recargos = data.asignaciones.filter((item) => Number(item.recargo_aplicado_usd) > 0);
+			if (!recargos.length) throw new Error('El grupo ya no tiene recargos para retirar.');
+			setRetiroRecargoGrupo({ ...data.pago, version: data.version, asignaciones: data.asignaciones, recargos });
+			setConfirmarRetiroRecargoOpen(true);
+		} catch (err) {
+			setErrorMessage(err.message || 'No se pudo preparar el retiro del recargo');
+		} finally {
+			setCorrigiendoRecargo(false);
+		}
 	};
 
 	const corregirRecargoDesdeDetalle = async () => {
@@ -922,13 +977,24 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 
 		try {
 			setCorrigiendoRecargo(true);
-			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}`, {
+			const grupoId = mensualidadDetalle?.pago_agrupado?.id || pagosDetalle.find((pago) => pago.id_pago_agrupado)?.id_pago_agrupado;
+			if (grupoId && (!retiroRecargoGrupo || String(retiroRecargoGrupo._id) !== String(grupoId))) {
+				throw new Error('Debes actualizar la confirmacion del retiro agrupado.');
+			}
+			const endpoint = grupoId
+				? `${process.env.REACT_APP_API_URL}/api/pagos/agrupado/${grupoId}/retirar-recargos`
+				: `${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadDetalle._id}`;
+			const res = await fetch(endpoint, {
 				method: 'PATCH',
 				headers: {
 					...getAuthHeaders(),
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({
+				body: JSON.stringify(grupoId ? {
+					version: retiroRecargoGrupo.version,
+					mensualidades: retiroRecargoGrupo.asignaciones.map((item) => ({ id_mensualidad: item.id_mensualidad, version: item.version_mensualidad })),
+					nota: 'Retiro administrativo de recargos de todas las atletas conservando la transferencia agrupada'
+				} : {
 					monto_esperado: Number(montoBaseSinRecargo.toFixed(2)),
 					bloquear_recargo_automatico: true,
 					nota: 'Correccion administrativa de recargo desde pago detalle'
@@ -938,12 +1004,18 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			if (!res.ok) throw new Error(data?.error || 'No se pudo retirar el recargo');
 
 			await cargarMensualidades();
+			const mensualidadActualizada = grupoId
+				? data.mensualidades?.find((item) => String(item._id) === String(mensualidadDetalle._id))
+				: data.mensualidad;
 			await actualizarDetalleMensualidad({
 				...mensualidadDetalle,
-				...data?.mensualidad,
-				monto_esperado: Number(montoBaseSinRecargo.toFixed(2))
+				...mensualidadActualizada,
+				...(!grupoId ? { monto_esperado: Number(montoBaseSinRecargo.toFixed(2)) } : {})
 			}, true);
-			setSuccessMessage('Recargo retirado y mensualidad recalculada correctamente');
+			setSuccessMessage(grupoId
+				? `Recargos retirados de ${data.atletas_actualizadas} atletas sin modificar la transferencia. Saldo a favor adicional total: ${simboloMonedaCobro}${formatMoney(data.saldo_a_favor_incrementado || 0)} ${monedaCobro}.`
+				: 'Recargo retirado y mensualidad recalculada correctamente');
+			setRetiroRecargoGrupo(null);
 		} catch (err) {
 			setErrorMessage(err.message || 'No se pudo retirar el recargo');
 		} finally {
@@ -980,10 +1052,32 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		setPagina(0);
 	};
 
-	const solicitarEliminarPago = (pago) => {
-		if (!pago?._id) return;
-		setPagoAEliminar(pago);
+	const solicitarEliminarPago = async (pago) => {
+		if (!pago?._id || !hasPermission('mensualidades.manage') || cargandoGrupoEliminar || eliminandoPagoId) return;
+		const grupoId = pago.id_pago_agrupado?._id || pago.id_pago_agrupado
+			|| (String(pago._id) === String(detallePago?._id) ? mensualidadDetalle?.pago_agrupado?.id : '');
+		setErrorEliminarPago('');
+		setPagoAEliminar(grupoId ? { ...pago, id_pago_agrupado: grupoId } : pago);
 		setConfirmarEliminarOpen(true);
+		if (!grupoId) return;
+		try {
+			setCargandoGrupoEliminar(true);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/agrupado/${grupoId}`, { headers: getAuthHeaders() });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo cargar el pago agrupado.');
+			if (!data.transacciones_disponibles) throw new Error('La eliminacion agrupada requiere MongoDB con transacciones.');
+			if (data.pago?.estado !== 'En revision') throw new Error('Solo se pueden eliminar pagos agrupados en revision.');
+			if (!data.version || !data.asignaciones?.length
+				|| !data.asignaciones.some((item) => String(item.id_mensualidad) === String(mensualidadDetalle?._id))
+				|| data.asignaciones.some((item) => !item.id_mensualidad || !item.version_mensualidad)) {
+				throw new Error('Debes actualizar las versiones de todas las mensualidades del grupo.');
+			}
+			setPagoAEliminar({ ...pago, id_pago_agrupado: grupoId, grupo: data });
+		} catch (err) {
+			setErrorEliminarPago(err.message || 'No se pudo preparar la eliminacion agrupada.');
+		} finally {
+			setCargandoGrupoEliminar(false);
+		}
 	};
 
 	const solicitarEliminarMensualidad = (mensualidad) => {
@@ -1094,23 +1188,30 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const eliminarPago = async () => {
-		if (!pagoAEliminar?._id || !mensualidadDetalle?._id) return;
+		if (!pagoAEliminar?._id || !mensualidadDetalle?._id || cargandoGrupoEliminar || eliminandoPagoId
+			|| (pagoAEliminar.id_pago_agrupado && !pagoAEliminar.grupo)) return;
 
 		try {
 			setEliminandoPagoId(pagoAEliminar._id);
-			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${pagoAEliminar._id}`, {
+			setErrorEliminarPago('');
+			const grupo = pagoAEliminar.grupo;
+			const ruta = grupo ? `agrupado/${grupo.pago._id}` : pagoAEliminar._id;
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${ruta}`, {
 				method: 'DELETE',
-				headers: getAuthHeaders()
+				headers: grupo ? { ...getAuthHeaders(), 'Content-Type': 'application/json' } : getAuthHeaders(),
+				...(grupo ? { body: JSON.stringify({ version: grupo.version,
+					mensualidades: grupo.asignaciones.map((item) => ({ id_mensualidad: item.id_mensualidad, version: item.version_mensualidad })) }) } : {})
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'Error al eliminar pago');
-			await cargarMensualidades();
-			await actualizarDetalleMensualidad(mensualidadDetalle, true);
 			setConfirmarEliminarOpen(false);
 			setPagoAEliminar(null);
-			setSuccessMessage('Pago eliminado correctamente');
+			if (grupo) setModalDetalle(false);
+			await cargarMensualidades();
+			if (!grupo) await actualizarDetalleMensualidad(mensualidadDetalle, true);
+			setSuccessMessage(grupo ? 'Pago agrupado eliminado para todos los atletas.' : 'Pago eliminado correctamente');
 		} catch (err) {
-			alert(err.message || 'Error al eliminar pago');
+			setErrorEliminarPago(err.message || 'Error al eliminar pago');
 		} finally {
 			setEliminandoPagoId('');
 		}
@@ -1566,11 +1667,40 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		return <Chip label={estatusRaw || '-'} variant="outlined" />;
 	};
 
+	const renderEstadoMensualidad = (mensualidad) => {
+		const pagoAgrupado = mensualidad?.pago_agrupado;
+		if (!pagoAgrupado?.codigo) return renderEstatusChip(mensualidad?.estatus);
+
+		const cantidadAtletas = Number(pagoAgrupado.cantidad_atletas) || 0;
+		const total = Number(pagoAgrupado.monto_total) || 0;
+		const resumen = `Pago agrupado de ${cantidadAtletas} atletas por ${simboloMonedaCobro}${formatMoney(total)}. Código ${pagoAgrupado.codigo}.`;
+
+		return (
+			<Box sx={{ display: 'grid', justifyItems: 'start', gap: 0.65 }}>
+				{renderEstatusChip(mensualidad?.estatus)}
+				<Tooltip title={resumen} arrow>
+					<Chip
+						size="small"
+						icon={<PaymentsIcon />}
+						label="Pago agrupado"
+						variant="outlined"
+						sx={{
+							height: 23,
+							borderColor: '#c7d2fe',
+							bgcolor: '#f5f7ff',
+							color: '#3730a3',
+							fontSize: 10.5,
+							fontWeight: 800,
+							'& .MuiChip-icon': { color: '#4f46e5', fontSize: 15 }
+						}}
+					/>
+				</Tooltip>
+			</Box>
+		);
+	};
+
 	const obtenerEstadoAlumnoVisual = (alumno) => {
-		const dadoDeBaja = alumno?.dado_de_baja === true;
-		const activo = alumno?.activo !== false;
-		const estadoRaw = String(alumno?.estado || '').toLowerCase();
-		const esBaja = dadoDeBaja || !activo || estadoRaw === 'baja' || estadoRaw === 'inactivo';
+		const esBaja = esAlumnoDeBajaMensualidad({ id_alumno: alumno });
 
 		return {
 			esBaja,
@@ -1647,17 +1777,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		return nombre || '-';
 	};
 
-	const esAlumnoDeBajaMensualidad = (mensualidad) => {
-		const alumno = mensualidad?.id_alumno;
-		if (!alumno) return false;
-
-		if (alumno?.dado_de_baja === true) return true;
-		if (alumno?.activo === false) return true;
-
-		const estado = String(alumno?.estado || '').trim().toLowerCase();
-		return estado === 'inactivo';
-	};
-
 	const normalizarNombreArchivo = (valor) => String(valor || '')
 		.toLowerCase()
 		.normalize('NFD')
@@ -1704,8 +1823,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				Sede: m.id_alumno?.sede?.nombre || '-',
 				Mes: meses[(m.mes || 1) - 1],
 				Anio: m.anio || '-',
-				Monto: Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2)),
 				Recargo: Number(Number(m.recargo_aplicado_usd || 0).toFixed(2)),
+				'Monto total': Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2)),
 				Estado: m.estatus || '-'
 			};
 
@@ -1725,8 +1844,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			'Sede',
 			'Mes',
 			'Anio',
-			'Monto',
 			'Recargo',
+			'Monto total',
 			'Estado'
 		];
 
@@ -1741,7 +1860,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			{
 				statusColumnName: 'Estado',
 				statusStyleMap: estilosEstadoExcel,
-				numberColumns: ['Monto', 'Recargo'],
+				numberColumns: ['Recargo', 'Monto total'],
 				numberFormat: '#,##0.00'
 			}
 		);
@@ -1828,6 +1947,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const mensualidadesPaginadas = mensualidades.slice(pagina * filasPorPagina, pagina * filasPorPagina + filasPorPagina);
 	const tituloVerDetalle = esVistaInscripciones ? 'Ver detalle mixto' : 'Ver detalle';
 	const desgloseRecargoDetalle = obtenerDesgloseRecargo(mensualidadDetalle);
+	const pagoAgrupadoDetalle = mensualidadDetalle?.pago_agrupado || null;
 	const ajusteExtraordinarioDetalle = Number(mensualidadDetalle?.ajuste_extraordinario) || 0;
 	const ajusteDescripcionDetalle = String(mensualidadDetalle?.ajuste_descripcion || '').trim();
 	const tieneAjusteMontoDetalle = Math.abs(ajusteExtraordinarioDetalle) >= 0.005 || !!ajusteDescripcionDetalle;
@@ -1925,7 +2045,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					<MenuItem value="">Todos</MenuItem>
 					{[...Array(12)].map((_, i) => <MenuItem key={i + 1} value={i + 1}>{meses[i]}</MenuItem>)}
 				</TextField>
-				<TextField label="Alumno" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
+				<TextField label="Alumno o código de pago" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
 				<TextField
 					select
 					label="Estado"
@@ -1936,6 +2056,17 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				>
 					<MenuItem value="">Todos</MenuItem>
 					{['Pendiente', 'Pagado', 'Insolvente', 'Exonerado', 'Becado', 'En revision', 'Abono'].map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
+				</TextField>
+				<TextField
+					select
+					label="Estado del alumno"
+					value={filtroEstadoAlumno}
+					onChange={e => { setFiltroEstadoAlumno(e.target.value); setPagina(0); }}
+					sx={{ minWidth: 150, width: '100%' }}
+				>
+					<MenuItem value="">Todos</MenuItem>
+					<MenuItem value="activo">Activos</MenuItem>
+					<MenuItem value="baja">De baja</MenuItem>
 				</TextField>
 			</Box>
 			<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', mb: 2, mt: 2 }}>
@@ -2021,7 +2152,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										</Typography>
 									</Box>
 									<Box sx={{ flexShrink: 0, maxWidth: '42%' }}>
-										{renderEstatusChip(m.estatus)}
+										{renderEstadoMensualidad(m)}
 									</Box>
 								</Box>
 								<Box sx={{ display: 'grid', gap: 0.4, mb: 1.1 }}>
@@ -2031,7 +2162,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										{renderEtiquetasAlumno(m.id_alumno)}
 									</Box>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
-									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
 									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -2057,6 +2187,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											);
 										})()}
 									</Box>
+									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto total:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
 								</Box>
 								<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
@@ -2138,10 +2269,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ALUMNO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CATEGORIA</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MES</TableCell>
-								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>CREDITO APLICADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>RECARGO {monedaCobro}</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>FECHA RECARGO</TableCell>
+								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>MONTO TOTAL</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>SALDO A FAVOR</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ESTADO</TableCell>
 								<TableCell sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em' }}>ACCIONES</TableCell>
@@ -2181,7 +2312,6 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 										</TableCell>
 										<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
-										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
 										<TableCell>
@@ -2193,8 +2323,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												return <Chip size="small" label={`Dia ${diaLimitePersonalizado}`} sx={{ bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: 11 }} />;
 											})()}
 										</TableCell>
+										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
-										<TableCell>{renderEstatusChip(m.estatus)}</TableCell>
+										<TableCell>{renderEstadoMensualidad(m)}</TableCell>
 										<TableCell>
 											<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
 												<Tooltip title={tituloVerDetalle}>
@@ -2269,6 +2400,18 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					</Table>
 				</TableContainer>
 			)}
+			<PagoAgrupadoEditor
+				open={editorGrupoOpen}
+				pagoId={pagoAgrupadoDetalle?.id}
+				moneda={monedaCobro}
+				onClose={() => setEditorGrupoOpen(false)}
+				onSaved={async () => {
+					setEditorGrupoOpen(false);
+					setModalDetalle(false);
+					await cargarMensualidades();
+					setSuccessMessage('Pago agrupado actualizado correctamente');
+				}}
+			/>
 			<Dialog
 				open={modalDetalle}
 				onClose={() => setModalDetalle(false)}
@@ -2308,46 +2451,37 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							alignItems: 'start'
 						}}
 					>
+						{detallePago && pagoAgrupadoDetalle && (
+							<Box
+								role="status"
+								sx={{
+									gridColumn: '1 / -1',
+									p: { xs: 1.5, sm: 1.75 },
+									bgcolor: '#eef4ff',
+									border: '1px solid #c7d7f5',
+									borderLeft: '4px solid #315ea8',
+									borderRadius: 2
+								}}
+							>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, mb: 0.65, flexWrap: 'wrap' }}>
+									<PaymentsIcon sx={{ color: '#315ea8', fontSize: 20 }} />
+									<Typography sx={{ color: '#183b70', fontSize: 14, fontWeight: 900 }}>
+										Parte de un pago agrupado
+									</Typography>
+									<Chip
+										size="small"
+										label={pagoAgrupadoDetalle.codigo}
+										sx={{ height: 22, bgcolor: '#fff', color: '#274f8c', border: '1px solid #bdceea', fontSize: 10.5, fontWeight: 850 }}
+									/>
+								</Box>
+								<Typography sx={{ color: '#405a7c', fontSize: 12.5, lineHeight: 1.55 }}>
+									Esta ficha muestra la asignación de {simboloMonedaCobro}{formatMoney(detallePago.monto_pagado)} para esta atleta. La transferencia fue de {simboloMonedaCobro}{formatMoney(pagoAgrupadoDetalle.monto_total)} para {pagoAgrupadoDetalle.cantidad_atletas} atletas y se concilia como una sola operación.
+								</Typography>
+							</Box>
+						)}
 						<Box>
 							{detallePago ? (
 								<>
-									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-											<Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
-											<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
-										</Box>
-										<Button
-											variant={editandoUltimoPagoInline ? 'outlined' : 'contained'}
-											startIcon={<EditIcon fontSize="small" />}
-											onClick={() => {
-												if (editandoUltimoPagoInline) {
-													cargarUltimoPagoDraft();
-													setEditandoUltimoPagoInline(false);
-														setUltimoPagoEsperadoBsManual(false);
-													setUltimoPagoComprobante(null);
-													return;
-												}
-												setEditandoUltimoPagoInline(true);
-											}}
-											disabled={guardandoUltimoPagoInline}
-											sx={{
-												borderRadius: 999,
-												px: 2,
-												minWidth: 108,
-												textTransform: 'none',
-												fontWeight: 800,
-												bgcolor: editandoUltimoPagoInline ? 'transparent' : '#0b2a57',
-												color: editandoUltimoPagoInline ? '#0b2a57' : '#ffffff',
-												borderColor: '#93a7c7',
-												'&:hover': {
-													bgcolor: editandoUltimoPagoInline ? '#eff6ff' : '#103469'
-												}
-											}}
-										>
-											{editandoUltimoPagoInline ? 'Cancelar' : 'Editar'}
-										</Button>
-									</Box>
-
 									<Box
 										sx={{
 											position: 'relative',
@@ -2369,6 +2503,49 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											}
 										}}
 									>
+											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+												<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+													<Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
+													<Typography sx={{ fontSize: { xs: 16, sm: 19 }, fontWeight: 900, color: '#0b2a57', lineHeight: 1.1 }}>Último Pago Registrado</Typography>
+												</Box>
+													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+												{!pagoAgrupadoDetalle && (
+													<Button
+														variant={editandoUltimoPagoInline ? 'outlined' : 'contained'}
+														startIcon={<EditIcon fontSize="small" />}
+														onClick={() => {
+															if (editandoUltimoPagoInline) {
+																cargarUltimoPagoDraft();
+																setEditandoUltimoPagoInline(false);
+																setUltimoPagoEsperadoBsManual(false);
+																setUltimoPagoComprobante(null);
+																return;
+															}
+															setEditandoUltimoPagoInline(true);
+														}}
+														disabled={guardandoUltimoPagoInline}
+														sx={{ borderRadius: 999, px: 2, minWidth: 108, textTransform: 'none', fontWeight: 800, bgcolor: editandoUltimoPagoInline ? 'transparent' : '#0b2a57', color: editandoUltimoPagoInline ? '#0b2a57' : '#ffffff', borderColor: '#93a7c7', '&:hover': { bgcolor: editandoUltimoPagoInline ? '#eff6ff' : '#103469' } }}
+													>
+														{editandoUltimoPagoInline ? 'Cancelar' : 'Editar'}
+													</Button>
+												)}
+													{pagoAgrupadoDetalle?.estado === 'En revision' && hasPermission('mensualidades.manage') && (
+														<Button variant="contained" startIcon={<EditIcon fontSize="small" />} onClick={() => setEditorGrupoOpen(true)}
+															disabled={confirmandoMensualidad || corrigiendoRecargo} sx={{ borderRadius: 999, px: 2, minWidth: 108, textTransform: 'none', fontWeight: 800, bgcolor: '#0b2a57', color: '#ffffff', borderColor: '#93a7c7', '&:hover': { bgcolor: '#103469' } }}>
+															Editar grupo
+														</Button>
+													)}
+												{hasPermission('mensualidades.manage') && (!pagoAgrupadoDetalle || pagoAgrupadoDetalle.estado === 'En revision') && (
+													<Tooltip title={pagoAgrupadoDetalle ? 'Eliminar pago para todos los atletas' : 'Eliminar pago'}>
+														<span><IconButton aria-label={pagoAgrupadoDetalle ? 'Eliminar pago agrupado' : 'Eliminar pago'} onClick={() => solicitarEliminarPago(detallePago)}
+															disabled={cargandoGrupoEliminar || !!eliminandoPagoId || guardandoUltimoPagoInline || confirmandoMensualidad || corrigiendoRecargo}
+															sx={{ width: 36, height: 36, borderRadius: 1, bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
+															<DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
+														</IconButton></span>
+													</Tooltip>
+												)}
+													</Box>
+															</Box>
 											{	detalleEsMixto && (
 												<Alert severity="info" sx={{ mt: 1.75, mb: 1.4 }}>
 													Este es un pago mixto: se registra en una sola transacción que combina mensualidad e inscripción. Es decir, es un pago de mensualidad que incluye inscripción y viceversa.
@@ -2595,6 +2772,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										)}
 									</Box>
 
+									{!pagoAgrupadoDetalle && (
 									<Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', lg: 'flex-end' }, alignItems: 'flex-end', gap: 1.2, gridColumn: { lg: '2 / 3' }, justifySelf: { lg: 'end' } }}>
 										<Button
 											variant="contained"
@@ -2604,16 +2782,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										>
 											{guardandoUltimoPagoInline ? 'Guardando...' : 'Guardar cambios'}
 										</Button>
-										<Button
-											variant="contained"
-											startIcon={<DeleteOutlineIcon fontSize="small" />}
-											onClick={() => solicitarEliminarPago(detallePago)}
-											disabled={eliminandoPagoId === detallePago._id || guardandoUltimoPagoInline}
-											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#f9e9e9', color: '#d32727', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#f6dddd', boxShadow: 'none' } }}
-										>
-											{eliminandoPagoId === detallePago._id ? 'Eliminando...' : 'Eliminar'}
-										</Button>
 									</Box>
+									)}
 									</Box>
 									</Box>
 								</>
@@ -2623,7 +2793,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						</Box>
 
 						{(tieneAjusteMontoDetalle || desgloseRecargoDetalle || historialNotasDetalle.length > 0) && (
-							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: { xs: 0, md: '56px' } }}>
+							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 								{tieneAjusteMontoDetalle && (
 									<Box
 										sx={{
@@ -2744,14 +2914,15 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											</Box>
 										</Box>
 										{esAdmin && Number(desgloseRecargoDetalle.recargoAplicado || 0) > 0 && (
-											<Box sx={{ mt: 1.4, display: 'flex', justifyContent: 'flex-end' }}>
+											<Box sx={{ mt: 1.4, width: '100%' }}>
 												<Button
 													variant="outlined"
 													onClick={solicitarRetiroRecargo}
-													disabled={corrigiendoRecargo}
+													disabled={corrigiendoRecargo || confirmandoMensualidad || editorGrupoOpen}
+													fullWidth
 													sx={{ borderRadius: 999, fontWeight: 800 }}
 												>
-													{corrigiendoRecargo ? 'Corrigiendo...' : 'Retirar recargo'}
+													{corrigiendoRecargo ? 'Corrigiendo...' : (pagoAgrupadoDetalle || pagosDetalle.some((pago) => pago.id_pago_agrupado) ? 'Retirar recargos del grupo' : 'Retirar recargo')}
 												</Button>
 											</Box>
 										)}
@@ -3025,9 +3196,13 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											<IconButton size="small" onClick={() => handleEditarPago(pago)} sx={{ bgcolor: '#e0f1fb', '&:hover': { bgcolor: '#d1e9f8' } }}>
 												<EditIcon fontSize="small" sx={{ color: '#0a78b8' }} />
 											</IconButton>
-											<IconButton size="small" onClick={() => solicitarEliminarPago(pago)} disabled={eliminandoPagoId === pago._id} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
-												<DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
-											</IconButton>
+											{hasPermission('mensualidades.manage') && (!pago.id_pago_agrupado || pagoAgrupadoDetalle?.estado === 'En revision') && (
+												<Tooltip title={pago.id_pago_agrupado ? 'Eliminar pago para todos los atletas' : 'Eliminar pago'}>
+													<span><IconButton aria-label={pago.id_pago_agrupado ? 'Eliminar grupo desde historial' : 'Eliminar pago desde historial'} size="small" onClick={() => solicitarEliminarPago(pago)} disabled={cargandoGrupoEliminar || !!eliminandoPagoId || confirmandoMensualidad || corrigiendoRecargo} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' } }}>
+														<DeleteOutlineIcon fontSize="small" sx={{ color: '#d32727' }} />
+													</IconButton></span>
+												</Tooltip>
+											)}
 										</Box>
 									</Box>
 								))}
@@ -3043,7 +3218,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							disabled={editandoUltimoPagoInline}
 							sx={{ bgcolor: '#0e1334', color: '#fff', boxShadow: 'none', '&:hover': { bgcolor: '#0b102b', boxShadow: 'none' }, borderRadius: 999, px: 2.2, fontWeight: 800 }}
 						>
-							Confirmar
+							{pagoAgrupadoDetalle ? 'Confirmar pago agrupado' : 'Confirmar'}
 						</Button>
 					)}
 				</DialogActions>
@@ -3054,15 +3229,33 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				maxWidth="sm"
 				fullWidth
 			>
-				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Advertencia</DialogTitle>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>{retiroRecargoGrupo ? 'Retirar recargos del grupo' : 'Advertencia'}</DialogTitle>
 				<DialogContent>
 					<Alert severity="warning" sx={{ mb: 1.5 }}>
-						Esta acción quitará el recargo aplicado y recalculará la mensualidad al monto base.
+						{retiroRecargoGrupo
+							? `Esta accion retirara los recargos de ${retiroRecargoGrupo.recargos.length} ${retiroRecargoGrupo.recargos.length === 1 ? 'mensualidad' : 'mensualidades'} de las atletas del grupo.`
+							: 'Esta acción quitará el recargo aplicado y recalculará la mensualidad al monto base.'}
 					</Alert>
-					<Typography sx={{ color: '#334155', lineHeight: 1.6 }}>
-						Se dejará el pago con el monto base sin recargo ({simboloMonedaCobro}
-						{formatMoney(Number(mensualidadDetalle?.monto_sin_recargo_usd || 0))} {monedaCobro}). ¿Deseas continuar?
-					</Typography>
+					{!retiroRecargoGrupo && <Typography sx={{ color: '#334155', lineHeight: 1.6 }}>
+						La mensualidad quedará con el monto base sin recargo ({simboloMonedaCobro}
+						{formatMoney(Number(mensualidadDetalle?.monto_sin_recargo_usd ?? 0))} {monedaCobro}). ¿Deseas continuar?
+					</Typography>}
+					{retiroRecargoGrupo && (
+						<>
+						{retiroRecargoGrupo.recargos.map((item) => (
+							<Box key={item.id_mensualidad} sx={{ py: 1, borderBottom: '1px solid #e2e8f0', minWidth: 0, overflowWrap: 'anywhere' }}>
+								<Typography sx={{ fontWeight: 700 }}>{item.alumno_nombre}</Typography>
+								<Typography variant="body2" sx={{ color: '#475569' }}>
+									Recargo a retirar: {simboloMonedaCobro}{formatMoney(item.recargo_aplicado_usd)} {monedaCobro}. Monto base: {simboloMonedaCobro}{formatMoney(item.monto_sin_recargo_usd)} {monedaCobro}.
+								</Typography>
+							</Box>
+						))}
+						<Alert severity="info" sx={{ mt: 1.5 }}>
+							La transferencia {retiroRecargoGrupo.codigo} se conserva en {simboloMonedaCobro}{formatMoney(retiroRecargoGrupo.monto_total)} {monedaCobro}.
+							Los importes pagados no se reducen. El excedente de cada atleta se registra en su propio saldo a favor.
+						</Alert>
+						</>
+					)}
 				</DialogContent>
 				<DialogActions>
 					<Button onClick={() => setConfirmarRetiroRecargoOpen(false)} disabled={corrigiendoRecargo}>
@@ -3074,7 +3267,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						disabled={corrigiendoRecargo}
 						sx={{ bgcolor: '#f59e0b', color: '#fff', '&:hover': { bgcolor: '#d97706' }, boxShadow: 'none' }}
 					>
-						{corrigiendoRecargo ? 'Retirando...' : 'Sí, retirar recargo'}
+						{corrigiendoRecargo ? 'Retirando...' : (retiroRecargoGrupo ? 'Retirar todos los recargos' : 'Sí, retirar recargo')}
 					</Button>
 				</DialogActions>
 			</Dialog>
@@ -3084,11 +3277,19 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				maxWidth="xs"
 				fullWidth
 			>
-				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Confirmar pago</DialogTitle>
+				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>
+					{pagoAgrupadoDetalle ? 'Confirmar pago agrupado' : 'Confirmar pago'}
+				</DialogTitle>
 				<DialogContent>
-					<Typography sx={{ color: '#334155' }}>
-						¿Estas seguro de confirmar este pago?
-					</Typography>
+					{pagoAgrupadoDetalle ? (
+						<Alert severity="warning" sx={{ mt: 0.5 }}>
+							Confirmarás manualmente la transferencia completa de {simboloMonedaCobro}{formatMoney(pagoAgrupadoDetalle.monto_total)}. Las {pagoAgrupadoDetalle.cantidad_atletas} mensualidades vinculadas pasarán juntas a Pagado, aunque la operación no haya coincidido en Conciliación.
+						</Alert>
+					) : (
+						<Typography sx={{ color: '#334155' }}>
+							¿Estas seguro de confirmar este pago?
+						</Typography>
+					)}
 				</DialogContent>
 				<DialogActions>
 					<Button onClick={() => setConfirmarPagoOpen(false)} disabled={confirmandoMensualidad}>
@@ -3221,19 +3422,32 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			<Dialog
 				open={confirmarEliminarOpen}
 				onClose={() => {
-					if (eliminandoPagoId) return;
+					if (eliminandoPagoId || cargandoGrupoEliminar) return;
 					setConfirmarEliminarOpen(false);
 					setPagoAEliminar(null);
 				}}
 				maxWidth="xs"
 				fullWidth
+				aria-labelledby="eliminar-pago-admin-titulo"
 			>
-				<DialogTitle sx={{ fontWeight: 800, color: '#b91c1c' }}>Eliminar pago</DialogTitle>
+				<DialogTitle id="eliminar-pago-admin-titulo" sx={{ fontWeight: 800, color: '#b91c1c' }}>{pagoAEliminar?.id_pago_agrupado ? 'Eliminar pago agrupado' : 'Eliminar pago'}</DialogTitle>
 				<DialogContent>
 					<Typography sx={{ color: '#334155' }}>
-						¿Seguro que deseas eliminar este pago? Esta acción recalculará el estado de la mensualidad y no se puede deshacer.
+						{pagoAEliminar?.id_pago_agrupado
+							? 'Se eliminara la transferencia completa para todos los atletas indicados. Se recalcularan sus mensualidades y saldos a favor. No se puede deshacer esta accion.'
+							: '¿Seguro que deseas eliminar este pago? Esta acción recalculará el estado de la mensualidad y no se puede deshacer.'}
 					</Typography>
-					{pagoAEliminar && (
+					{cargandoGrupoEliminar && <Typography role="status" sx={{ mt: 1.5 }}>Cargando pago agrupado...</Typography>}
+					{pagoAEliminar?.grupo && (
+						<Box sx={{ mt: 1.5 }}>
+							<Typography>Bs {formatMoney(pagoAEliminar.grupo.pago.monto_total_bs)} / {simboloMonedaCobro}{formatMoney(pagoAEliminar.grupo.pago.monto_total)} {monedaCobro}</Typography>
+							<Box component="ul" sx={{ pl: 2.5 }}>
+								{pagoAEliminar.grupo.asignaciones.map((item) => <Typography component="li" key={item.id_mensualidad} sx={{ overflowWrap: 'anywhere' }}>{item.alumno_nombre} · {item.mes}/{item.anio}</Typography>)}
+							</Box>
+						</Box>
+					)}
+					{errorEliminarPago && <Alert severity="error" sx={{ mt: 1.5 }}>{errorEliminarPago}</Alert>}
+					{pagoAEliminar && !pagoAEliminar.id_pago_agrupado && (
 						<Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
 							<Typography variant="body2"><b>Método:</b> {pagoAEliminar.metodo_pago || '-'}</Typography>
 							<Typography variant="body2">
@@ -3251,7 +3465,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							setConfirmarEliminarOpen(false);
 							setPagoAEliminar(null);
 						}}
-						disabled={!!eliminandoPagoId}
+						disabled={!!eliminandoPagoId || cargandoGrupoEliminar}
 					>
 						Cancelar
 					</Button>
@@ -3259,9 +3473,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						variant="contained"
 						color="error"
 						onClick={eliminarPago}
-						disabled={!!eliminandoPagoId}
+						disabled={!!eliminandoPagoId || cargandoGrupoEliminar || Boolean(pagoAEliminar?.id_pago_agrupado && !pagoAEliminar?.grupo)}
 					>
-						{eliminandoPagoId ? 'Eliminando...' : 'Eliminar pago'}
+						{eliminandoPagoId ? 'Eliminando...' : (pagoAEliminar?.id_pago_agrupado ? 'Eliminar pago agrupado' : 'Eliminar pago')}
 					</Button>
 				</DialogActions>
 			</Dialog>
@@ -3881,4 +4095,3 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 }
 
 export default Mensualidades;
-

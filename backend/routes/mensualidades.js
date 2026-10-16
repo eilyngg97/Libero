@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mensualidadController = require('../controllers/mensualidadController');
+const conciliacionController = require('../controllers/conciliacionController');
 const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const { ensureAlumnoOwnershipFromBody } = require('../middleware/ownership');
 const multer = require('multer');
@@ -60,6 +61,20 @@ router.post('/ajuste-sede', authMiddleware, permisoMiddleware('mensualidades.man
 router.post('/recargo-sede/preview', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.previewRecargoExtraordinarioSede);
 // Aplicar recargo por sede y periodo
 router.post('/recargo-sede', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.aplicarRecargoExtraordinarioSede);
+// Confirmar manualmente todas las mensualidades de un pago agrupado.
+router.patch(
+	'/pagos-agrupados/:id/confirmar',
+	authMiddleware,
+	permisoMiddleware('mensualidades.manage'),
+	(req, res) => {
+		req.body = {
+			...(req.body || {}),
+			tipo_conciliacion: 'mensualidades',
+			pago_ids: [req.params.id]
+		};
+		return conciliacionController.confirmarMatchTotal(req, res);
+	}
+);
 // Confirmar mensualidad
 router.patch('/:id/confirmar', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.confirmarMensualidad);
 // Editar mensualidad individual (monto y/o estatus)
