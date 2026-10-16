@@ -361,17 +361,11 @@ function validarCreditoDeclarado(declarado, credito) {
 }
 
 exports.registrarPagoAgrupado = async (req, res) => {
-  let cabeceraCreada = null;
-  let detallesCreados = [];
-  let mensualidadesValidadas = [];
-  let models = null;
-  const estadosOriginales = new Map();
-  let transaccionObligatoria = false;
-  let usoFallback = false;
   let completado = false;
 
   try {
-    models = await getTenantFinanceModels(req);
+    const models = await getTenantFinanceModels(req);
+    const mensualidadesValidadas = [];
     const { PagoAgrupado, PagoDetalle: TenantPagoDetalle, Mensualidad: TenantMensualidad, Representante: TenantRepresentante } = models;
     const asignaciones = parseAsignacionesAgrupadas(req.body?.asignaciones);
     const ids = asignaciones.map((item) => String(item?.id_mensualidad || '')).filter(Boolean);
@@ -391,14 +385,6 @@ exports.registrarPagoAgrupado = async (req, res) => {
         return res.status(403).json({ error: 'No tienes permiso para una de las mensualidades seleccionadas' });
       }
 
-      estadosOriginales.set(String(mensualidad._id), {
-        estatus: mensualidad.estatus,
-        monto_esperado: mensualidad.monto_esperado,
-        recargo_aplicado_usd: mensualidad.recargo_aplicado_usd,
-        monto_con_recargo_usd: mensualidad.monto_con_recargo_usd,
-        fecha_aplicacion_recargo: mensualidad.fecha_aplicacion_recargo,
-        saldo_a_favor_generado: mensualidad.saldo_a_favor_generado
-      });
       await aplicarRecargoMensualidadSegunConfig(mensualidad, { models, persistir: false });
       mensualidadesValidadas.push(mensualidad);
     }
@@ -435,7 +421,6 @@ exports.registrarPagoAgrupado = async (req, res) => {
       if (restante <= 0) {
         return res.status(409).json({ error: 'Una mensualidad se cubre con saldo a favor. Aplica ese credito desde su detalle antes de agrupar.' });
       }
-      transaccionObligatoria = transaccionObligatoria || credito > 0;
       asignacionesCalculadas.push({ mensualidad, monto: restante, credito, version: versionPagoAgrupado(mensualidad) });
     }
 
@@ -456,7 +441,6 @@ exports.registrarPagoAgrupado = async (req, res) => {
     const importes = repartirBsAgrupados(pesos, montoEnCentavos(totalTransferido), totalPesos);
     const importesBs = repartirBsAgrupados(pesos, montoEnCentavos(montoTotalBs), totalPesos);
     const tasaAplicada = montoTotalBs / totalTransferido;
-    transaccionObligatoria = transaccionObligatoria || totalTransferido > montoTotal;
     const comprobanteUrl = req.file
       ? `/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`
       : null;
@@ -470,7 +454,6 @@ exports.registrarPagoAgrupado = async (req, res) => {
     const codigo = `PA-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
 
     const resultado = await ejecutarConTransaccion(PagoAgrupado, async (session) => {
-      usoFallback = !session;
       for (const item of asignacionesCalculadas) {
         const vigente = await aplicarSession(TenantMensualidad.findById(item.mensualidad._id).populate('id_alumno'), session);
         if (!vigente || versionPagoAgrupado(vigente) !== item.version
@@ -478,7 +461,6 @@ exports.registrarPagoAgrupado = async (req, res) => {
           || !(await usuarioPuedePagarMensualidad(req, vigente, TenantRepresentante, session))) {
           throw errorPagoAgrupado(409, 'Una mensualidad cambio. Actualiza las mensualidades antes de pagar.');
         }
-        if (!session && item.credito <= 0) continue;
         await aplicarRecargoMensualidadSegunConfig(vigente, { models, persistir: false });
         const cotizacion = await cotizarCreditoRegistro(vigente, models, session);
         const credito = cotizacion.proyecciones.get(String(vigente._id))?.credito_a_aplicar || 0;
@@ -501,8 +483,7 @@ exports.registrarPagoAgrupado = async (req, res) => {
         nota: normalizarNotaPago(req.body?.nota),
         cantidad_atletas: atletas.size,
         registrado_por: construirRegistradoPor(req)
-      }], session ? { session } : undefined);
-      cabeceraCreada = cabecera;
+      }], { session });
 
       const detalles = [];
       for (let index = 0; index < asignacionesCalculadas.length; index += 1) {
@@ -528,17 +509,16 @@ exports.registrarPagoAgrupado = async (req, res) => {
           comprobante_url: comprobanteUrl,
           nota: normalizarNotaPago(req.body?.nota),
           registrado_por: construirRegistradoPor(req)
-        }], session ? { session } : undefined);
+        }], { session });
         detalles.push(detalle);
       }
-      detallesCreados = detalles;
 
       for (const item of asignacionesCalculadas) {
         await recalcularMensualidad(item.mensualidad, req.user?.rol, item.mensualidad.estatus, models, { session });
       }
 
       return { cabecera, detalles };
-    }, { obligatoria: transaccionObligatoria });
+    }, { obligatoria: true });
 
     completado = true;
     return res.status(201).json({
@@ -551,20 +531,6 @@ exports.registrarPagoAgrupado = async (req, res) => {
       asignaciones: resultado.detalles.length
     });
   } catch (error) {
-    if (models && usoFallback) {
-      if (detallesCreados.length) {
-        await models.PagoDetalle.deleteMany({ _id: { $in: detallesCreados.map((item) => item._id) } }).catch(() => {});
-      }
-      if (cabeceraCreada) {
-        await models.PagoAgrupado.deleteOne({ _id: cabeceraCreada._id }).catch(() => {});
-      }
-      for (const mensualidad of mensualidadesValidadas) {
-        const original = estadosOriginales.get(String(mensualidad._id));
-        if (!original) continue;
-        Object.assign(mensualidad, original);
-        await mensualidad.save().catch(() => {});
-      }
-    }
     return res.status(error.status || 500).json({ error: error.message || 'Error al registrar el pago agrupado' });
   } finally {
     if (!completado && req.file) eliminarArchivoComprobante(`/uploads/${resolveTenantId(req)}/comprobantes/${req.file.filename}`);

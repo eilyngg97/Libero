@@ -509,6 +509,28 @@ test.each([false, true])('registro con excedente sin transacciones no guarda cam
   expect(datos).toEqual(originales);
 });
 
+test.each(['sin sesiones', 'standalone'])('registro agrupado sin credito ni excedente exige transacciones (%s)', async (caso) => {
+  prepararOctubreConCredito();
+  for (const alumno of Object.values(datos.Alumno)) alumno.saldo_a_favor_mensualidades = 0;
+  for (const id of ['oct1', 'oct2']) datos.Mensualidad[id].id_alumno.saldo_a_favor_mensualidades = 0;
+  if (caso === 'sin sesiones') models.PagoAgrupado.db.startSession = undefined;
+  else models.PagoAgrupado.db.startSession.mockResolvedValue({
+    withTransaction: jest.fn().mockRejectedValue(new Error('Transaction numbers are only allowed on a replica set member or mongos')),
+    endSession: jest.fn().mockResolvedValue(undefined)
+  });
+  const originales = copiar(datos);
+  const req = solicitud({ monto_total: 38, monto_total_bs: 38000,
+    asignaciones: [{ id_mensualidad: 'oct1', credito_a_aplicar: 0 }, { id_mensualidad: 'oct2', credito_a_aplicar: 0 }] });
+  req.user = { id: 'u1', rol: 'usuario' };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await controller.registrarPagoAgrupado(req, res);
+  expect(res.status).toHaveBeenCalledWith(503);
+  expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining('No se guardaron cambios') });
+  expect(datos).toEqual(originales);
+  expect(models.PagoAgrupado.create).not.toHaveBeenCalled();
+  expect(models.PagoDetalle.create).not.toHaveBeenCalled();
+});
+
 test.each([[16.97, 1697, true], [16.96, 1696, false], [25, 2500, true]])('registro individual tolera solo faltantes hasta Bs 100 (%s USD)', async (monto, montoBs, aceptado) => {
   prepararOctubreConCredito();
   const req = solicitud({ id_mensualidad: 'oct1', monto_pagado: monto, monto_pagado_bs: montoBs });
@@ -887,11 +909,57 @@ test('una segunda edicion con la version anterior no sobrescribe la primera', as
   expect(datos).toEqual(guardados);
 });
 
-async function confirmar() {
+async function confirmar(pagoIds = ['g1']) {
   const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-  await conciliacion.confirmarMatchTotal({ ...solicitud(), body: { pago_ids: ['g1'], tipo_conciliacion: 'mensualidades' } }, res);
+  await conciliacion.confirmarMatchTotal({ ...solicitud(), body: { pago_ids: pagoIds, tipo_conciliacion: 'mensualidades' } }, res);
   return res;
 }
+
+function agregarPagoIndividual() {
+  datos.Mensualidad.m3 = { ...copiar(datos.Mensualidad.m2), _id: 'm3' };
+  datos.PagoDetalle.p3 = { _id: 'p3', id_mensualidad: 'm3', id_pago_agrupado: null, monto_pagado: 14 };
+}
+
+test('confirmacion exclusivamente individual conserva compatibilidad sin transacciones', async () => {
+  agregarPagoIndividual();
+  models.PagoAgrupado.db.startSession = undefined;
+  const grupo = copiar(datos.PagoAgrupado.g1);
+  const res = await confirmar(['p3']);
+  expect(res.status).not.toHaveBeenCalled();
+  expect(datos.Mensualidad.m3.estatus).toBe('Pagado');
+  expect(datos.PagoAgrupado.g1).toEqual(grupo);
+  expect(datos.Mensualidad.m1.estatus).toBe('En revision');
+  expect(datos.Mensualidad.m2.estatus).toBe('En revision');
+});
+
+test.each(['exito', 'fallo intermedio', 'sin sesiones'])('confirmacion mixta usa una sola transaccion para individuales y agrupados (%s)', async (caso) => {
+  agregarPagoIndividual();
+  const originales = copiar(datos);
+  if (caso === 'sin sesiones') models.PagoAgrupado.db.startSession = undefined;
+  if (caso === 'fallo intermedio') falloGuardado = 'm2';
+  const res = await confirmar(['p3', 'g1']);
+  if (caso === 'exito') {
+    expect(res.status).not.toHaveBeenCalled();
+    expect(datos.PagoAgrupado.g1.estado).toBe('Conciliado');
+    expect(['m1', 'm2', 'm3'].every((id) => datos.Mensualidad[id].estatus === 'Pagado')).toBe(true);
+    expect(models.PagoAgrupado.db.startSession).toHaveBeenCalledTimes(1);
+  } else {
+    expect(res.status).toHaveBeenCalledWith(caso === 'sin sesiones' ? 503 : 500);
+    expect(datos).toEqual(originales);
+  }
+});
+
+test.each(['sin sesiones', 'standalone'])('confirmacion agrupada exige transacciones (%s)', async (caso) => {
+  if (caso === 'sin sesiones') models.PagoAgrupado.db.startSession = undefined;
+  else models.PagoAgrupado.db.startSession.mockResolvedValue({
+    withTransaction: jest.fn().mockRejectedValue(new Error('Transaction numbers are only allowed on a replica set member or mongos')),
+    endSession: jest.fn().mockResolvedValue(undefined)
+  });
+  const originales = copiar(datos);
+  const res = await confirmar();
+  expect(res.status).toHaveBeenCalledWith(503);
+  expect(datos).toEqual(originales);
+});
 
 test('confirmacion atomica del grupo y todas sus mensualidades', async () => {
   expect((await confirmar()).status).not.toHaveBeenCalled();

@@ -393,6 +393,11 @@ describe('Backend smoke tests', () => {
   });
 
   test('POST /api/pagos/agrupado registers one transfer for two athletes', async () => {
+    const session = {
+      withTransaction: jest.fn(async (operacion) => operacion()),
+      endSession: jest.fn().mockResolvedValue(undefined)
+    };
+    PagoAgrupado.db = { startSession: jest.fn().mockResolvedValue(session) };
     const token = makeToken({ id: 'u1', rol: 'usuario', nombre: 'Representante' });
     Representante.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'r1', usuario: 'u1' }) });
     const mensualidades = {
@@ -437,9 +442,42 @@ describe('Backend smoke tests', () => {
     expect(response.status).toBe(201);
     expect(response.body).toEqual(expect.objectContaining({ monto_total: 100, monto_total_bs: 4000, atletas: 2, asignaciones: 2 }));
     expect(PagoAgrupado.create).toHaveBeenCalledTimes(1);
+    expect(PagoAgrupado.create).toHaveBeenCalledWith(expect.any(Array), { session });
     expect(PagoDetalle.create).toHaveBeenCalledTimes(2);
+    expect(PagoDetalle.create).toHaveBeenCalledWith(expect.any(Array), { session });
     expect(mensualidades.m1.estatus).toBe('En revision');
     expect(mensualidades.m2.estatus).toBe('En revision');
+  });
+
+  test.each(['sin sesiones', 'standalone'])('POST agrupado sin credito ni excedente devuelve 503 (%s)', async (caso) => {
+    const token = makeToken({ id: 'u1', rol: 'usuario' });
+    const originales = PagoAgrupado.db;
+    PagoAgrupado.db = caso === 'sin sesiones' ? {} : { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn().mockRejectedValue(new Error('Standalone servers do not support transactions')),
+      endSession: jest.fn().mockResolvedValue(undefined)
+    }) };
+    Representante.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: 'r1', usuario: 'u1' }) });
+    const mensualidades = {
+      m1: { _id: 'm1', mes: 7, anio: 2026, monto_esperado: 40, estatus: 'Pendiente',
+        id_alumno: { _id: 'a1', representante: 'r1', saldo_a_favor_mensualidades: 0 }, save: jest.fn() },
+      m2: { _id: 'm2', mes: 8, anio: 2026, monto_esperado: 60, estatus: 'Pendiente',
+        id_alumno: { _id: 'a2', representante: 'r1', saldo_a_favor_mensualidades: 0 }, save: jest.fn() }
+    };
+    Mensualidad.findById.mockImplementation((id) => ({ populate: jest.fn().mockResolvedValue(mensualidades[id]) }));
+    Mensualidad.find.mockReturnValue({ select: jest.fn().mockResolvedValue([]) });
+    PagoDetalle.find.mockResolvedValue([]);
+    try {
+      const response = await request(app).post('/api/pagos/agrupado')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ asignaciones: [{ id_mensualidad: 'm1' }, { id_mensualidad: 'm2' }],
+          monto_total: 100, monto_total_bs: 4000, fecha_pago: '2026-10-05', metodo_pago: 'Pago movil', referencia: '123456' });
+      expect(response.status).toBe(503);
+      expect(response.body.error).toContain('No se guardaron cambios');
+      expect(PagoAgrupado.create).not.toHaveBeenCalled();
+      expect(PagoDetalle.create).not.toHaveBeenCalled();
+      expect(mensualidades.m1.save).not.toHaveBeenCalled();
+      expect(mensualidades.m2.save).not.toHaveBeenCalled();
+    } finally { PagoAgrupado.db = originales; }
   });
 
   test.each([
@@ -673,6 +711,33 @@ describe('Backend smoke tests', () => {
     expect(mensualidades.m1.estatus).toBe('Pagado');
     expect(mensualidades.m2.estatus).toBe('Pagado');
     expect(pagoAgrupado.estado).toBe('Conciliado');
+  });
+
+  test.each([
+    ['patch', '/api/mensualidades/pagos-agrupados/pa1/confirmar', 'sin sesiones'],
+    ['patch', '/api/mensualidades/pagos-agrupados/pa1/confirmar', 'standalone'],
+    ['post', '/api/conciliacion/confirmar-match-total', 'sin sesiones'],
+    ['post', '/api/conciliacion/confirmar-match-total', 'standalone']
+  ])('HTTP %s %s exige transacciones para confirmar el grupo (%s)', async (metodo, ruta, caso) => {
+    const token = makeToken({ id: 'admin1', rol: 'admin' });
+    const grupo = { _id: 'pa1', estado: 'En revision', cantidad_atletas: 2, save: jest.fn(), increment: jest.fn() };
+    const originales = PagoAgrupado.db;
+    PagoAgrupado.db = caso === 'sin sesiones' ? {} : { startSession: jest.fn().mockResolvedValue({
+      withTransaction: jest.fn().mockRejectedValue(new Error('Standalone servers do not support transactions')),
+      endSession: jest.fn().mockResolvedValue(undefined)
+    }) };
+    PagoAgrupado.find.mockResolvedValue([grupo]);
+    PagoAgrupado.findById.mockResolvedValue(grupo);
+    try {
+      const response = await request(app)[metodo](ruta).set('Authorization', `Bearer ${token}`)
+        .send({ tipo_conciliacion: 'mensualidades', pago_ids: ['pa1'] });
+      expect(response.status).toBe(503);
+      expect(response.body.error).toContain('No se guardaron cambios');
+      expect(grupo.estado).toBe('En revision');
+      expect(grupo.save).not.toHaveBeenCalled();
+      expect(Mensualidad.findById).not.toHaveBeenCalled();
+      expect(PagoDetalle.find).not.toHaveBeenCalled();
+    } finally { PagoAgrupado.db = originales; }
   });
 
   test('POST /api/conciliacion/pagos-agrupados/:id/rechazar removes all assignments', async () => {

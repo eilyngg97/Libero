@@ -1142,7 +1142,7 @@ exports.confirmarMatchTotal = async (req, res) => {
       return actualizadas;
     };
     const actualizadas = pagosAgrupados.length
-      ? await ejecutarConTransaccion(TenantPagoAgrupado, confirmar)
+      ? await ejecutarConTransaccion(TenantPagoAgrupado, confirmar, { obligatoria: true })
       : await confirmar(null);
 
     await registrarOperacion(req, {

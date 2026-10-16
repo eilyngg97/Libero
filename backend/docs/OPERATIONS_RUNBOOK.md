@@ -92,7 +92,9 @@ node scripts/mongoRestore.js ./backups/mongo-YYYYMMDD-HHMMSS
 
 ### Requisito de MongoDB
 
-La edicion, el retiro de recargo agrupado y el rechazo del grupo no usan fallback sin transacciones: necesitan un replica set (incluso de un solo nodo) o un cluster sharded. En standalone devuelven `503`, sin modificar pagos. La confirmacion conserva su compatibilidad anterior con standalone; con replica set usa transacciones y detecta cambios concurrentes.
+El registro, la confirmacion, la edicion, la eliminacion, el retiro de recargo y el rechazo de pagos agrupados no usan fallback sin transacciones: necesitan un replica set (incluso de un solo nodo) o un cluster sharded. Esto incluye registros sin credito ni excedente. En standalone o sin soporte de sesiones devuelven `503`, sin modificar pagos, mensualidades ni saldos. Si una confirmacion mezcla pagos individuales con agrupados, todo el lote usa la misma transaccion obligatoria. Las confirmaciones exclusivamente individuales conservan su comportamiento anterior.
+
+El registro guarda cabecera, detalles, consumo de credito y estados de las mensualidades en una sola transaccion. No intenta compensar errores borrando o restaurando documentos por separado. Un fallo intermedio revierte todos los cambios; si el comprobante era nuevo, se elimina el archivo de la solicitud fallida. La confirmacion tambien revierte la cabecera y todas las mensualidades si falla cualquiera de ellas.
 
 Antes de habilitar en un entorno:
 
@@ -100,7 +102,8 @@ Antes de habilitar en un entorno:
 2. Configurar e inicializar el replica set segun la instalacion del servidor, conservando autenticacion y aislamiento de red. No exponer MongoDB publicamente.
 3. Ajustar las URI de las bases de cada tenant con el replica set correspondiente y reiniciar el backend.
 4. Comprobar que `db.adminCommand({ hello: 1 })` informa `setName` y que el GET del grupo devuelve `transacciones_disponibles: true`.
-5. En staging, editar un grupo de prueba y verificar el total de la cabecera contra la suma de sus detalles, estados `En revision`, historial y conciliacion como una sola transferencia. Probar tambien una version desactualizada y un fallo de guardado.
+5. En staging, registrar un grupo sin credito ni excedente, confirmarlo y editar otro grupo de prueba. Verificar el total de cada cabecera contra la suma de sus detalles, estados, historial y conciliacion como una sola transferencia.
+6. Probar una version desactualizada y fallos intermedios en la segunda asignacion y la segunda mensualidad; no debe quedar ninguna escritura parcial. En un entorno de prueba sin transacciones, registro y confirmacion deben devolver `503`.
 
 La conversion de standalone a replica set no se realiza automaticamente desde la aplicacion.
 
