@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Card, CardActions, CardContent, Typography, Avatar, Box, Chip } from '@mui/material';
+import { Alert, Button, Card, CardActions, CardContent, Typography, Avatar, Box, Chip, CircularProgress } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
+import { cargarAtletasPortal, cargarMensualidadesPortal } from '../utils/portalPaymentData';
 
 const normalizarDiaMes = (value) => {
   const numero = Number(value);
@@ -59,6 +60,9 @@ const buildSiguientePeriodoDesde = (mes, anio) => {
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
   const [resumenPagos, setResumenPagos] = useState({});
+  const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState('');
+  const [intentoCarga, setIntentoCarga] = useState(0);
   const navigate = useNavigate();
   const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
 
@@ -144,58 +148,37 @@ function DashboardUsuario() {
   }, [obtenerFechaVencimientoVisible]);
 
   useEffect(() => {
-    // 1. Obtener el usuario logueado
-    const usuario = JSON.parse(localStorage.getItem('usuario'));
-    if (!usuario || !usuario.id) {
-      setAlumnos([]);
-      return;
-    }
-
-    // 2. Buscar el representante asociado a este usuario o alumnos por usuario
+    const abortController = new AbortController();
+    const { signal } = abortController;
     const fetchAlumnos = async () => {
+      setCargando(true);
+      setErrorCarga('');
+      setAlumnos([]);
+      setResumenPagos({});
       try {
-        let alumnosFinal = [];
-        // Buscar representante por usuario
-        const repRes = await fetch(`${process.env.REACT_APP_API_URL}/api/representantes/por-usuario/${usuario.id}`);
-        const repData = await repRes.json();
-        if (repRes.ok && repData && repData._id) {
-          // Buscar alumnos asociados a ese representante
-          const alumRes = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/por-representante/${repData._id}?populateSede=1`);
-          const alumData = await alumRes.json();
-          if (alumRes.ok && Array.isArray(alumData)) {
-            alumnosFinal = alumnosFinal.concat(alumData);
-          }
-        }
-        // Buscar también alumnos por usuarioId (caso usuario sin representante o representante que es alumno)
-        const alumRes2 = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/por-representante/null?usuarioId=${usuario.id}&populateSede=1`);
-        const alumData2 = await alumRes2.json();
-        if (alumRes2.ok && Array.isArray(alumData2)) {
-          alumnosFinal = alumnosFinal.concat(alumData2);
-        }
-        // Eliminar duplicados por _id
-        const alumnosUnicos = alumnosFinal.filter((al, idx, arr) => arr.findIndex(a2 => a2._id === al._id) === idx);
-        setAlumnos(alumnosUnicos);
+        const usuario = JSON.parse(localStorage.getItem('usuario') || 'null');
+        if (!usuario?.id) throw new Error('No se pudo identificar al representante.');
+        const { atletas } = await cargarAtletasPortal(apiBase, usuario.id, signal);
+        if (signal.aborted) return;
+        setAlumnos(atletas);
 
         const resumenEntries = await Promise.all(
-          alumnosUnicos.map(async (alumno) => {
-            try {
-              const resMens = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades?id_alumno=${alumno._id}`);
-              const dataMens = await resMens.json();
-              return [alumno._id, obtenerResumenPago(Array.isArray(dataMens) ? dataMens : [], alumno)];
-            } catch {
-              return [alumno._id, { fechaTexto: '--', monto: null, estado: 'sin datos' }];
-            }
+          atletas.map(async (alumno) => {
+            const mensualidades = await cargarMensualidadesPortal(apiBase, alumno, signal);
+            return [alumno._id, obtenerResumenPago(mensualidades, alumno)];
           })
         );
 
-        setResumenPagos(Object.fromEntries(resumenEntries));
-      } catch {
-        setAlumnos([]);
-        setResumenPagos({});
+        if (!signal.aborted) setResumenPagos(Object.fromEntries(resumenEntries));
+      } catch (error) {
+        if (!signal.aborted) setErrorCarga(error.message || 'No se pudieron cargar los pagos de tus atletas.');
+      } finally {
+        if (!signal.aborted) setCargando(false);
       }
     };
     fetchAlumnos();
-  }, [apiBase, obtenerResumenPago]);
+    return () => abortController.abort();
+  }, [apiBase, obtenerResumenPago, intentoCarga]);
 
   const resumenFamiliar = useMemo(() => {
     const pendientes = alumnos
@@ -236,7 +219,12 @@ function DashboardUsuario() {
         </Typography>
       </Box>
 
-      {resumenFamiliar.atletas > 0 && (
+      {cargando && <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>}
+      {errorCarga && <Alert severity="error" sx={{ mb: 2 }} action={
+        <Button color="inherit" size="small" onClick={() => setIntentoCarga((actual) => actual + 1)}>Reintentar</Button>
+      }>{errorCarga}</Alert>}
+
+      {!cargando && !errorCarga && resumenFamiliar.atletas > 0 && (
         <Box
           sx={{
             display: 'grid',
@@ -290,16 +278,18 @@ function DashboardUsuario() {
       )}
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 2.25 }}>
-        {alumnos.length === 0 ? (
+        {alumnos.length === 0 ? (!cargando && !errorCarga && (
           <Box sx={{ textAlign: 'center', mt: 6, gridColumn: '1 / -1' }}>
             <Typography variant="h6" color="text.secondary">
               No tienes alumnos registrados.
             </Typography>
           </Box>
-        ) : (
+        )) : (
           <>
             {alumnos.map((alumno) => {
               const resumen = resumenPagos[alumno._id] || { fechaTexto: '--', monto: null, estado: 'sin datos' };
+              const mensajePago = cargando ? 'Cargando pagos' : errorCarga ? 'Pagos no disponibles'
+                : resumen.estado === 'sin datos' ? 'Sin mensualidades' : '';
               return (
                 <Box key={alumno._id} sx={{ display: 'flex', minWidth: 0 }}>
                   <Card
@@ -354,12 +344,12 @@ function DashboardUsuario() {
                         </Box>
                         <Chip
                           size="small"
-                          label={resumen.pagable ? `Vence · ${resumen.fechaTexto}` : 'Al día'}
-                          sx={{ height: 22, bgcolor: resumen.pagable ? '#fff0f3' : '#e9f8ef', color: resumen.pagable ? '#c52d55' : '#16794a', fontSize: 10, fontWeight: 750, borderRadius: 1 }}
+                          label={mensajePago || (resumen.pagable ? `Vence · ${resumen.fechaTexto}` : 'Al día')}
+                          sx={{ height: 22, bgcolor: mensajePago ? '#f1f2f7' : resumen.pagable ? '#fff0f3' : '#e9f8ef', color: mensajePago ? '#555b74' : resumen.pagable ? '#c52d55' : '#16794a', fontSize: 10, fontWeight: 750, borderRadius: 1 }}
                         />
                       </Box>
 
-                      <Box sx={{ borderTop: '1px solid #eceef4', pt: 1.25, display: 'grid', gap: 0.55 }}>
+                      {!cargando && !errorCarga && resumen.monto != null && <Box sx={{ borderTop: '1px solid #eceef4', pt: 1.25, display: 'grid', gap: 0.55 }}>
                         {[
                           ['Mensualidad', resumen.montoBase],
                           ['Recargo por mora', resumen.recargoAplicado],
@@ -373,7 +363,7 @@ function DashboardUsuario() {
                             </Typography>
                           </Box>
                         ))}
-                      </Box>
+                      </Box>}
                     </CardContent>
                     <CardActions sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.8, px: 2, pb: 2, pt: 1 }}>
                       <Button
@@ -393,7 +383,7 @@ function DashboardUsuario() {
                       </Button>
                       <Button
                         variant="contained"
-                        disabled={!resumen.pagable}
+                        disabled={cargando || Boolean(errorCarga) || !resumen.pagable}
                         onClick={() => navigate(`/pagos-alumno/${alumno._id}`, { state: { alumno } })}
                         sx={{
                           bgcolor: '#11132f',
@@ -406,7 +396,7 @@ function DashboardUsuario() {
                           boxShadow: 'none'
                         }}
                       >
-                        {resumen.pagable ? (Number(resumen.monto) === 0 && resumen.creditoAUsar > 0 ? 'Usar saldo a favor' : `Pagar $${Number(resumen.monto || 0).toFixed(2)}`) : 'Sin deuda'}
+                        {mensajePago || (resumen.pagable ? (Number(resumen.monto) === 0 && resumen.creditoAUsar > 0 ? 'Usar saldo a favor' : `Pagar $${Number(resumen.monto || 0).toFixed(2)}`) : 'Sin deuda')}
                       </Button>
                     </CardActions>
                   </Card>

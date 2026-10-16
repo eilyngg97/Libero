@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import DashboardUsuario from './DashboardUsuario';
 import PagoAgrupado from './PagoAgrupado';
@@ -122,4 +122,152 @@ test('una cuota cubierta por credito ofrece usar saldo sin pedir una transferenc
   expect(await screen.findAllByRole('button', { name: 'Usar saldo a favor' })).toHaveLength(2);
   expect(screen.queryByRole('button', { name: /Pagar todo junto/ })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Pagar $0.00' })).not.toBeInTheDocument();
+});
+
+function prepararCargaConFallo(etapa, fallo) {
+  const fetchPrevio = global.fetch.getMockImplementation();
+  global.fetch = jest.fn(async (url, options) => {
+    const coincide = etapa === 'representante' ? url.includes('/api/representantes/por-usuario')
+      : etapa === 'atletas' ? url.includes('/api/alumnos/por-representante/r1')
+        : etapa === 'directas' ? url.includes('/api/alumnos/por-representante/null')
+          : url.includes('/api/mensualidades?id_alumno=a3');
+    if (coincide && fallo.actual) {
+      if (fallo.tipo === 'red') throw new Error('Failed to fetch');
+      if (fallo.tipo === 'json') return { ok: true, json: async () => { throw new SyntaxError('Invalid JSON'); } };
+      return { ok: fallo.tipo === 'formato', status: fallo.tipo === 'formato' ? 200 : fallo.status || 503,
+        json: async () => ({ error: 'Servicio no disponible' }) };
+    }
+    if (url.includes('/api/alumnos/por-representante/r1')) {
+      const response = await fetchPrevio(url, options);
+      return { ok: true, json: async () => [...await response.json(), { _id: 'a3', nombres: 'Luz', representante: 'r1' }] };
+    }
+    if (url.includes('/api/mensualidades?id_alumno=a3')) {
+      return { ok: true, json: async () => [{ _id: 'oct3', mes: 10, anio: 2026,
+        estatus: 'Pendiente', monto_esperado: 19, monto_sin_recargo_usd: 19, saldo_pendiente: 19 }] };
+    }
+    return fetchPrevio(url, options);
+  });
+}
+
+const casosCarga = ['dashboard', 'agrupado'].flatMap((vista) =>
+  ['representante', 'atletas', 'directas', 'mensualidades'].flatMap((etapa) =>
+    ['http', 'red', 'formato'].map((tipo) => [vista, etapa, tipo])));
+
+test.each(casosCarga)('%s muestra error y no permite pagar informacion parcial si falla %s (%s)', async (vista, etapa, tipo) => {
+  prepararCargaConFallo(etapa, { actual: true, tipo });
+  render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/No se pud/);
+  expect(screen.getByRole('button', { name: 'Reintentar' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: /Pagar todo junto|Continuar con el pago/ })).not.toBeInTheDocument();
+  expect(screen.queryByText('No tienes alumnos registrados.')).not.toBeInTheDocument();
+  expect(screen.queryByText('No hay atletas con mensualidades pendientes elegibles.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Al día')).not.toBeInTheDocument();
+  expect(screen.queryByText('Total pendiente')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^Pagar \$/ })).not.toBeInTheDocument();
+  expect(global.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  if (etapa === 'mensualidades') {
+    expect(screen.getByRole('alert')).toHaveTextContent('Luz');
+    if (vista === 'dashboard') expect(screen.getByText('Luz')).toBeInTheDocument();
+  }
+});
+
+test.each(['dashboard', 'agrupado'])('%s permite reintentar y recuperar las tres atletas sin conservar una seleccion parcial', async (vista) => {
+  const fallo = { actual: true, tipo: 'http' };
+  prepararCargaConFallo('mensualidades', fallo);
+  render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  await screen.findByRole('alert');
+  fallo.actual = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByText('$54.95')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  if (vista === 'dashboard') {
+    expect(screen.getByRole('button', { name: 'Pagar todo junto · 3 atletas' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Pagar $19.00' })).toBeEnabled();
+  } else {
+    expect(screen.getByText('3 de 3 seleccionadas')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con el pago' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await screen.findByText('Pago enviado correctamente');
+    const [, options] = global.fetch.mock.calls.find(([, config]) => config?.method === 'POST');
+    expect(JSON.parse(options.body.get('asignaciones')).map((item) => item.id_mensualidad)).toEqual(['oct1', 'oct2', 'oct3']);
+    expect(options.body.get('monto_total')).toBe('54.95');
+  }
+});
+
+test.each(['dashboard', 'agrupado'])('%s distingue JSON invalido de una respuesta sin mensualidades', async (vista) => {
+  prepararCargaConFallo('mensualidades', { actual: true, tipo: 'json' });
+  render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Luz');
+  expect(screen.queryByRole('button', { name: /Pagar todo junto|Continuar con el pago/ })).not.toBeInTheDocument();
+});
+
+test.each([
+  ['dashboard', 401], ['dashboard', 403], ['agrupado', 401], ['agrupado', 403]
+])('%s no interpreta el rechazo de acceso %s como ausencia de deuda', async (vista, status) => {
+  prepararCargaConFallo('mensualidades', { actual: true, tipo: 'http', status });
+  render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Luz');
+  expect(screen.queryByText('Al día')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Pagar todo junto|Continuar con el pago/ })).not.toBeInTheDocument();
+});
+
+test.each(['dashboard', 'agrupado'])('%s espera todas las mensualidades, autentica las consultas y cancela al salir', async (vista) => {
+  localStorage.setItem('token', 'qa-token');
+  prepararCargaConFallo('mensualidades', { actual: false });
+  const fetchPrevio = global.fetch.getMockImplementation();
+  let liberar;
+  global.fetch = jest.fn(async (url, options) => {
+    const response = await fetchPrevio(url, options);
+    if (url.includes('/api/mensualidades?id_alumno=a3')) {
+      return new Promise((resolve) => { liberar = () => resolve(response); });
+    }
+    return response;
+  });
+  const { unmount } = render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  await waitFor(() => expect(liberar).toEqual(expect.any(Function)));
+  expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Pagar todo junto|Continuar con el pago/ })).not.toBeInTheDocument();
+  expect(screen.queryByText('Al día')).not.toBeInTheDocument();
+  expect(screen.queryByText('Total pendiente')).not.toBeInTheDocument();
+  await act(async () => liberar());
+  expect(await screen.findByText('$54.95')).toBeInTheDocument();
+  for (const [, options] of global.fetch.mock.calls) expect(options.headers.Authorization).toBe('Bearer qa-token');
+  const signal = global.fetch.mock.calls[0][1].signal;
+  expect(signal.aborted).toBe(false);
+  unmount();
+  expect(signal.aborted).toBe(true);
+});
+
+test.each(['dashboard', 'agrupado'])('%s conserva el estado vacio cuando no existe representante y ambas listas estan vacias', async (vista) => {
+  global.fetch = jest.fn(async (url) => ({ ok: true,
+    json: async () => url.includes('/api/representantes/por-usuario') ? null : [] }));
+  render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  expect(await screen.findByText(vista === 'dashboard'
+    ? 'No tienes alumnos registrados.' : 'No hay atletas con mensualidades pendientes elegibles.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+  expect(global.fetch.mock.calls.some(([url]) => url.includes('/api/mensualidades'))).toBe(false);
+});
+
+test.each(['dashboard', 'agrupado'])('%s distingue una lista de mensualidades vacia de un error de carga', async (vista) => {
+  const fetchPrevio = global.fetch.getMockImplementation();
+  global.fetch = jest.fn(async (url, options) => url.includes('/api/mensualidades')
+    ? { ok: true, json: async () => [] } : fetchPrevio(url, options));
+  render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  if (vista === 'dashboard') expect(await screen.findAllByRole('button', { name: 'Sin mensualidades' })).toHaveLength(2);
+  else expect(await screen.findByText('No hay atletas con mensualidades pendientes elegibles.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Al día')).not.toBeInTheDocument();
+});
+
+test.each([
+  ['dashboard', { mes: 13 }], ['agrupado', { mes: 13 }],
+  ['dashboard', { saldo_pendiente: 'invalido' }], ['agrupado', { saldo_pendiente: 'invalido' }]
+])('%s no omite silenciosamente mensualidades mal formadas (%j)', async (vista, invalido) => {
+  const fetchPrevio = global.fetch.getMockImplementation();
+  global.fetch = jest.fn(async (url, options) => url.includes('/api/mensualidades?id_alumno=a2')
+    ? { ok: true, json: async () => [{ _id: 'erronea', mes: 10, anio: 2026, estatus: 'Pendiente', monto_esperado: 19, ...invalido }] }
+    : fetchPrevio(url, options));
+  render(<MemoryRouter>{vista === 'dashboard' ? <DashboardUsuario /> : <PagoAgrupado />}</MemoryRouter>);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Eva');
+  expect(screen.queryByRole('button', { name: /Pagar todo junto|Continuar con el pago/ })).not.toBeInTheDocument();
 });

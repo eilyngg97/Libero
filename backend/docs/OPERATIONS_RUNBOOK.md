@@ -115,6 +115,15 @@ La conversion de standalone a replica set no se realiza automaticamente desde la
 - El faltante se compara en Bs, a precision de centavos, sin redondear primero la tolerancia a centavos de USD/EUR. Esto evita aceptar un faltante superior al limite por un segundo redondeo. Los recalculos y el rechazo del grupo aplican la misma regla a los pagos que permanecen.
 - La tolerancia solo determina cobertura y estado: no aumenta el monto recibido, no reduce el monto esperado ni genera saldo a favor ficticio. El saldo a favor sigue dependiendo exclusivamente del exceso real.
 
+### Carga completa del portal antes de pagar
+
+- El dashboard y el registro agrupado comprueban las respuestas HTTP y el formato de los datos de representante, ambas listas de atletas y mensualidades. Un error de red, acceso, JSON o datos invalidos no se interpreta como una lista vacia ni como ausencia de deuda.
+- Mientras falta una consulta o existe un error, no se muestra un total familiar parcial ni se ofrece continuar con el pago agrupado. En el dashboard, las fichas ya identificadas se mantienen con `Pagos no disponibles`, sin indicar `Al dia` ni habilitar pagos con informacion incompleta.
+- El aviso identifica la consulta afectada, incluyendo el nombre de la atleta cuando falla su mensualidad. `Reintentar` recarga todas las fuentes; no conserva una seleccion parcial. Las consultas anteriores se cancelan al salir o volver a intentar.
+- Una respuesta correcta sin representante (`200` con `null`) o con listas vacias sigue siendo un estado valido, no un error. Una lista de mensualidades vacia se muestra como `Sin mensualidades`, no como deuda pagada.
+- La carga compartida no modifica la regla de propiedad: el grupo solo incluye atletas del mismo representante; las asociaciones directas al usuario no sustituyen ese vinculo.
+- En staging, simular un fallo de mensualidades en la tercera atleta teniendo otras dos con deuda: no debe permitirse pagar solo las dos cargadas como si fueran toda la familia. Restaurar el servicio, reintentar y comprobar que el total y las asignaciones incluyen las tres.
+
 ### Retiro de recargos de todo el grupo
 
 - `PATCH /api/pagos/agrupado/:id/retirar-recargos` requiere `mensualidades.manage`, `version` del grupo y `mensualidades`: todas las asignaciones del GET con `{ id_mensualidad, version }` (version tomada de `version_mensualidad`). Admite grupos `En revision` y `Conciliado`.

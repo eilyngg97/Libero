@@ -14,6 +14,7 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import ModalPago from './ModalPago';
 import { mediaUrl } from '../utils/mediaUrl';
+import { cargarAtletasPortal, cargarMensualidadesPortal } from '../utils/portalPaymentData';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 const ESTADOS_PENDIENTES = ['pendiente', 'retrasado', 'insolvente', 'abono'];
@@ -36,45 +37,29 @@ function PagoAgrupado() {
   const [error, setError] = useState('');
   const [exito, setExito] = useState(null);
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [intentoCarga, setIntentoCarga] = useState(0);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    const { signal } = abortController;
     const cargar = async () => {
-      const usuario = JSON.parse(localStorage.getItem('usuario') || 'null');
-      const token = localStorage.getItem('token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-
-      if (!usuario?.id) {
-        setError('No se pudo identificar al representante.');
-        setCargando(false);
-        return;
-      }
+      setCargando(true);
+      setError('');
+      setDeudas([]);
+      setSeleccionadas([]);
+      setModalAbierto(false);
 
       try {
-        let atletas = [];
-        let representanteId = '';
-        const representanteRes = await fetch(`${API_BASE}/api/representantes/por-usuario/${usuario.id}`, { headers });
-        const representante = await representanteRes.json();
-        if (representanteRes.ok && representante?._id) {
-          representanteId = String(representante._id);
-          const atletasRes = await fetch(`${API_BASE}/api/alumnos/por-representante/${representante._id}?populateSede=1`, { headers });
-          const atletasData = await atletasRes.json();
-          if (atletasRes.ok && Array.isArray(atletasData)) atletas = atletasData;
-        }
-
-        const directosRes = await fetch(`${API_BASE}/api/alumnos/por-representante/null?usuarioId=${usuario.id}&populateSede=1`, { headers });
-        const directos = await directosRes.json();
-        if (directosRes.ok && Array.isArray(directos)) atletas = [...atletas, ...directos];
-        atletas = atletas.filter((atleta, index, lista) => lista.findIndex((item) => item._id === atleta._id) === index);
-        atletas = representanteId
+        const usuario = JSON.parse(localStorage.getItem('usuario') || 'null');
+        if (!usuario?.id) throw new Error('No se pudo identificar al representante.');
+        const { atletas, representanteId } = await cargarAtletasPortal(API_BASE, usuario.id, signal);
+        const representadas = representanteId
           ? atletas.filter((atleta) => String(atleta.representante?._id || atleta.representante || '') === representanteId)
           : [];
 
-        const resultados = await Promise.all(atletas.map(async (atleta) => {
-          const mensualidadesRes = await fetch(`${API_BASE}/api/mensualidades?id_alumno=${atleta._id}`, { headers });
-          const mensualidades = await mensualidadesRes.json();
-          const mensualidad = mensualidadesRes.ok && Array.isArray(mensualidades)
-            ? obtenerMensualidadMasAntigua(mensualidades)
-            : null;
+        const resultados = await Promise.all(representadas.map(async (atleta) => {
+          const mensualidades = await cargarMensualidadesPortal(API_BASE, atleta, signal);
+          const mensualidad = obtenerMensualidadMasAntigua(mensualidades);
           if (!mensualidad) return null;
           return {
             atleta,
@@ -86,18 +71,20 @@ function PagoAgrupado() {
           };
         }));
 
+        if (signal.aborted) return;
         const elegibles = resultados.filter((item) => item && item.saldo > 0);
         setDeudas(elegibles);
         setSeleccionadas(elegibles.map((item) => item.mensualidad._id));
       } catch (err) {
-        setError(err.message || 'No se pudieron cargar las mensualidades.');
+        if (!signal.aborted) setError(err.message || 'No se pudieron cargar las mensualidades.');
       } finally {
-        setCargando(false);
+        if (!signal.aborted) setCargando(false);
       }
     };
 
     cargar();
-  }, []);
+    return () => abortController.abort();
+  }, [intentoCarga]);
 
   const deudasSeleccionadas = useMemo(
     () => deudas.filter((item) => seleccionadas.includes(item.mensualidad._id)),
@@ -107,7 +94,7 @@ function PagoAgrupado() {
   const totalMensualidades = deudasSeleccionadas.reduce((suma, item) => suma + item.montoBase, 0);
   const totalRecargos = deudasSeleccionadas.reduce((suma, item) => suma + item.recargo, 0);
   const totalCreditos = deudasSeleccionadas.reduce((suma, item) => suma + Number(item.mensualidad.credito_a_aplicar || 0), 0);
-  const puedePagar = deudasSeleccionadas.length >= 2;
+  const puedePagar = !cargando && !error && deudasSeleccionadas.length >= 2;
   const todasSeleccionadas = deudas.length > 0 && seleccionadas.length === deudas.length;
   const pagoModal = useMemo(() => ({
     id: 'pago-agrupado',
@@ -165,7 +152,9 @@ function PagoAgrupado() {
         </Typography>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 2 }} action={
+        <Button color="inherit" size="small" onClick={() => setIntentoCarga((actual) => actual + 1)}>Reintentar</Button>
+      }>{error}</Alert>}
       {exito && (
         <Paper
           role="status"
@@ -204,7 +193,7 @@ function PagoAgrupado() {
           </Box>
         </Paper>
       )}
-      {!deudas.length && !exito && <Alert severity="info">No hay atletas con mensualidades pendientes elegibles.</Alert>}
+      {!deudas.length && !exito && !error && <Alert severity="info">No hay atletas con mensualidades pendientes elegibles.</Alert>}
 
       {deudas.length > 0 && (
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(270px, 0.9fr)' }, gap: { xs: 2.25, md: 2.75 }, alignItems: 'start' }}>
