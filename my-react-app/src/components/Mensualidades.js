@@ -72,6 +72,13 @@ const esMensualidadEditable = (mensualidad) => {
 	return ['pendiente', 'insolvente', 'exonerado', 'retrasado'].includes(estatus);
 };
 
+const puedeRegistrarPagoMensualidad = (mensualidad) => {
+	const estatus = String(mensualidad?.estatus || '').toLowerCase();
+	return ['pendiente', 'retrasado', 'insolvente', 'abono'].includes(estatus)
+		|| (estatus === 'en revision' && mensualidad.credito_en_revision > 0
+			&& Number(mensualidad.saldo_pendiente_antes_credito ?? mensualidad.saldo_pendiente) > 0);
+};
+
 const obtenerDiaLimitePersonalizado = (mensualidad) => {
 	const valor = Number(mensualidad?.id_alumno?.dia_limite_personalizado);
 	if (!Number.isInteger(valor) || valor < 1 || valor > 31) return null;
@@ -1259,6 +1266,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			const montoEsperadoBs = montoEsperadoUsd * (tasaPagoHistorica || tasaBCV);
 			if (!pagoEnEdicion) {
 				formData.append('id_mensualidad', pagoInfo._id);
+				if (esAdmin) formData.append('credito_a_aplicar', '0');
 			}
 			formData.append('monto_pagado', montoToPay);
 			formData.append('monto_pagado_bs', ((Number(montoToPay) || 0) * (tasaPagoHistorica || tasaBCV)).toFixed(2));
@@ -2188,7 +2196,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										})()}
 									</Box>
 									<Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Monto total:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</Typography>
-									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_generado || 0)}</Typography>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Saldo a favor:</b> {formatMontoCorto(m.saldo_a_favor_restante ?? m.saldo_a_favor_generado ?? 0)}</Typography>
+									{m.saldo_a_favor_provisional > 0 && <Typography sx={{ fontSize: 12, color: '#92400e' }}>En revision: {formatMontoCorto(m.saldo_a_favor_provisional)}</Typography>}
 								</Box>
 								<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 0.5 }}>
 									<Tooltip title={tituloVerDetalle}>
@@ -2203,7 +2212,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											</IconButton>
 										</Tooltip>
 									)}
-									{!esVistaInscripciones && ['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+									{!esVistaInscripciones && puedeRegistrarPagoMensualidad(m) && (
 										<Tooltip title="Registrar pago">
 											<IconButton onClick={(e) => { e.stopPropagation(); handlePago(m); }} sx={actionIconButtonSx}>
 												<PaidIcon fontSize="small" />
@@ -2324,7 +2333,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											})()}
 										</TableCell>
 										<TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(m))}</TableCell>
-										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.saldo_a_favor_generado || 0)}</TableCell>
+										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>
+											{formatMontoCorto(m.saldo_a_favor_restante ?? m.saldo_a_favor_generado ?? 0)}
+											{m.saldo_a_favor_provisional > 0 && <Typography sx={{ fontSize: 12, color: '#92400e' }}>En revision: {formatMontoCorto(m.saldo_a_favor_provisional)}</Typography>}
+										</TableCell>
 										<TableCell>{renderEstadoMensualidad(m)}</TableCell>
 										<TableCell>
 											<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 0.5 }}>
@@ -2340,7 +2352,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 														</IconButton>
 													</Tooltip>
 												)}
-												{!esVistaInscripciones && ['pendiente', 'retrasado', 'insolvente', 'abono'].includes((m.estatus || '').toLowerCase()) && (
+												{!esVistaInscripciones && puedeRegistrarPagoMensualidad(m) && (
 													<Tooltip title="Registrar pago">
 														<IconButton size="small" onClick={(e) => { e.stopPropagation(); handlePago(m); }} sx={actionIconButtonSx}>
 															<PaidIcon fontSize="small" />

@@ -9,7 +9,7 @@ const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { aplicarRecargoMensualidadSegunConfig, prepararRetiroRecargoAgrupado } = require('./mensualidadController');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
-const { cotizarCreditosAlumno, aplicarCreditoMensualidad } = require('../services/monthlyCredit');
+const { cotizarCreditosAlumno, aplicarCreditoMensualidad, actualizarRevisionCredito, liberarCreditoOrigen } = require('../services/monthlyCredit');
 const { userRepresentsAlumno } = require('../services/paymentOwnership');
 
 const { MONTO_TOLERANCIA_BS, ordenarPagos, obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
@@ -147,10 +147,15 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, mod
   const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
   const saldoGeneradoNuevo = redondearMonto(Math.max(0, totalPagado - montoEsperado));
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
-  const requiereRevisionPagoCompleto = estatusAnterior === 'En revision' || actorRol === 'usuario';
+  const requiereRevisionPagoCompleto = (mensualidad.pago_en_revision
+    ?? (estatusAnterior === 'En revision')) || actorRol === 'usuario';
+  mensualidad.pago_en_revision = totalPagado > 0 && (requiereRevisionPagoCompleto || actorRol === 'usuario');
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
 
+  if (deltaSaldo < 0 && options.revertirCreditoConsumido) {
+    await liberarCreditoOrigen(mensualidad, saldoGeneradoNuevo, models, { session });
+  }
   if (deltaSaldo !== 0) {
     const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
     if (alumnoId) {
@@ -179,6 +184,8 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, mod
     mensualidad.estatus = 'Abono';
   }
 
+  await actualizarRevisionCredito(mensualidad, models, { session });
+  if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
   await mensualidad.save(session ? { session } : undefined);
 
   return {
@@ -869,7 +876,9 @@ exports.registrarPago = async (req, res) => {
       throw errorPagoAgrupado(403, 'No tienes permiso para esta mensualidad');
     }
     await aplicarRecargoMensualidadSegunConfig(mensualidad, { models: tenantModels, persistir: false });
-    const cotizacion = await cotizarCreditoRegistro(mensualidad, tenantModels, session);
+    const pagoSinCredito = esRolAdmin(req.user?.rol) && [0, '0'].includes(req.body.credito_a_aplicar);
+    const cotizacion = pagoSinCredito ? { proyecciones: new Map() }
+      : await cotizarCreditoRegistro(mensualidad, tenantModels, session);
     const credito = cotizacion.proyecciones.get(String(mensualidad._id))?.credito_a_aplicar || 0;
     validarCreditoDeclarado(req.body.credito_a_aplicar, credito);
     await aplicarCreditoMensualidad(mensualidad, cotizacion, { session, actor: req.user });
@@ -1084,7 +1093,7 @@ exports.eliminarPagoAgrupado = async (req, res) => {
       if (atletas.size !== grupo.cantidad_atletas) throw errorPagoAgrupado(409, 'Las atletas del grupo no coinciden con sus asignaciones.');
       await aplicarSession(models.PagoDetalle.deleteMany({ id_pago_agrupado: grupo._id }), session);
       for (const mensualidad of mensualidades) {
-        await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, models, { session });
+        await recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, models, { session, revertirCreditoConsumido: true });
       }
       await aplicarSession(models.PagoAgrupado.deleteMany({ _id: grupo._id }), session);
       return { mensualidades_actualizadas: mensualidades.length,
@@ -1107,19 +1116,17 @@ exports.eliminarPago = async (req, res) => {
       return res.status(409).json({ error: 'Las asignaciones de un pago agrupado no pueden eliminarse individualmente' });
     }
 
-    const mensualidad = await obtenerMensualidadConAlumnoTenant(pago.id_mensualidad, tenantModels);
     const comprobanteAnterior = pago.comprobante_url;
-    const estatusAnterior = mensualidad?.estatus;
-
-    if (typeof pago.deleteOne === 'function') {
-      await pago.deleteOne();
-    } else {
-      await TenantPagoDetalle.findByIdAndDelete(req.params.id_pago);
-    }
-
+    const resultado = await ejecutarConTransaccion(TenantPagoDetalle, async (session) => {
+      const actual = await aplicarSession(TenantPagoDetalle.findById(req.params.id_pago), session);
+      if (!actual) throw errorPagoAgrupado(404, 'Pago no encontrado');
+      if (actual.id_pago_agrupado) throw errorPagoAgrupado(409, 'Las asignaciones de un pago agrupado no pueden eliminarse individualmente');
+      const mensualidad = await aplicarSession(tenantModels.Mensualidad.findById(actual.id_mensualidad).populate('id_alumno'), session);
+      await actual.deleteOne({ session });
+      return recalcularMensualidad(mensualidad, req.user?.rol, mensualidad.estatus, tenantModels,
+        { session, revertirCreditoConsumido: true });
+    }, { obligatoria: true });
     eliminarArchivoComprobante(comprobanteAnterior);
-
-    const resultado = await recalcularMensualidad(mensualidad, req.user?.rol, estatusAnterior, tenantModels);
 
     res.json({
       message: 'Pago eliminado correctamente',
@@ -1128,7 +1135,7 @@ exports.eliminarPago = async (req, res) => {
       estatus: resultado.estatus
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 };
 

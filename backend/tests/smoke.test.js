@@ -515,7 +515,11 @@ describe('Backend smoke tests', () => {
     Representante.find.mockReturnValue({ select: jest.fn().mockResolvedValue([]) });
     Alumno.find.mockReturnValue({ select: jest.fn().mockResolvedValue([alumno]) });
     Alumno.findById.mockResolvedValue(alumno);
-    Mensualidad.find.mockImplementation((filter) => ({ populate: jest.fn().mockResolvedValue(filter.mes ? [octubre] : [octubre, noviembre]) }));
+    Mensualidad.find.mockImplementation((filter) => {
+      const resultado = filter.mes ? [octubre] : [octubre, noviembre];
+      return { populate: jest.fn().mockResolvedValue(resultado),
+        then: (resolve, reject) => Promise.resolve(resultado).then(resolve, reject) };
+    });
     PagoDetalle.find.mockImplementation((filter) => filter.id_pago_agrupado
       ? { select: jest.fn().mockResolvedValue([]) } : Promise.resolve([]));
     PagoDetalle.aggregate = jest.fn().mockResolvedValue([]);
@@ -2506,16 +2510,22 @@ describe('Backend smoke tests', () => {
   });
 
   test('crear una cuota futura no consume el credito reservado a una deuda anterior', async () => {
+    const sesion = { withTransaction: async (callback) => callback(), endSession: jest.fn().mockResolvedValue(undefined) };
+    const dbAnterior = Mensualidad.db;
+    Mensualidad.db = { startSession: jest.fn().mockResolvedValue(sesion) };
     const alumno = { _id: 'a1', saldo_a_favor_mensualidades: 1.03, save: jest.fn().mockResolvedValue(true) };
     Alumno.findById.mockResolvedValue(alumno);
     Mensualidad.findOne.mockImplementation((filter) => Promise.resolve(filter.$or
       ? { _id: 'oct1', mes: 10, anio: 2026, monto_esperado: 19, estatus: 'Insolvente' } : null));
     Mensualidad.create.mockResolvedValue({ _id: 'nov1', id_alumno: 'a1', estatus: 'Pendiente', monto_esperado: 15 });
-    const res = await request(app).post('/api/mensualidades/primera')
+    let res;
+    try {
+      res = await request(app).post('/api/mensualidades/primera')
       .set('Authorization', `Bearer ${makeToken({ id: 'admin1', rol: 'admin' })}`)
       .send({ id_alumno: 'a1', mes: 11, anio: 2026, monto_esperado: 15, estatus: 'Pendiente' });
+    } finally { Mensualidad.db = dbAnterior; }
     expect(res.status).toBe(200);
-    expect(Mensualidad.create).toHaveBeenCalledWith(expect.objectContaining({ credito_aplicado: 0, monto_esperado: 15 }));
+    expect(Mensualidad.create).toHaveBeenCalledWith([expect.objectContaining({ credito_aplicado: 0, monto_esperado: 15 })], { session: sesion });
     expect(alumno.saldo_a_favor_mensualidades).toBe(1.03);
     expect(alumno.save).not.toHaveBeenCalled();
   });

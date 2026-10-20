@@ -10,6 +10,7 @@ const { registrarOperacion } = require('../services/operacionService');
 const { hasRequestPermission } = require('../middleware/auth');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const { MONTO_TOLERANCIA_BS, obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
+const { actualizarRevisionCredito, sincronizarCreditoAlumno, liberarCreditoOrigen } = require('../services/monthlyCredit');
 
 function grupoModificado() {
   const error = new Error('El pago agrupado cambio. Actualiza la vista antes de continuar.');
@@ -1132,18 +1133,22 @@ exports.confirmarMatchTotal = async (req, res) => {
           if (session) throw grupoModificado();
           continue;
         }
+        const tieneCredito = mensualidad.credito_aplicado > 0 || mensualidad.saldo_a_favor_generado > 0;
+        if (tieneCredito && !session) throw Object.assign(new Error('Confirmar saldo a favor requiere una transaccion.'), { status: 503 });
         const pagosMensualidad = await aplicarSession(TenantPagoDetalle.find({ id_mensualidad: mensualidad._id })
           .select('monto_pagado monto_pagado_bs fecha_pago createdAt'), session);
         const { totalPagado, cubreEsperadoConTolerancia } = obtenerCoberturaMensualidad(mensualidad.monto_esperado, pagosMensualidad);
+        mensualidad.pago_en_revision = false;
         mensualidad.estatus = totalPagado <= 0 ? 'Pendiente' : (cubreEsperadoConTolerancia ? 'Pagado' : 'Abono');
+        await actualizarRevisionCredito(mensualidad, tenantModels, { session });
+        if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
         await mensualidad.save(session ? { session } : undefined);
+        if (tieneCredito) await sincronizarCreditoAlumno(mensualidad.id_alumno?._id || mensualidad.id_alumno, tenantModels, { session });
         actualizadas += 1;
       }
       return actualizadas;
     };
-    const actualizadas = pagosAgrupados.length
-      ? await ejecutarConTransaccion(TenantPagoAgrupado, confirmar, { obligatoria: true })
-      : await confirmar(null);
+    const actualizadas = await ejecutarConTransaccion(TenantPagoAgrupado, confirmar, { obligatoria: pagosAgrupados.length > 0 });
 
     await registrarOperacion(req, {
       tipo: 'conciliacion_bancaria',
@@ -1212,6 +1217,7 @@ exports.rechazarPagoAgrupado = async (req, res) => {
         const { totalPagado, montoEsperado, cubreEsperadoConTolerancia } = obtenerCoberturaMensualidad(mensualidad.monto_esperado, pagosRestantes);
         const saldoNuevo = Number(Math.max(0, totalPagado - montoEsperado).toFixed(2));
         const deltaSaldo = Number((saldoNuevo - Number(mensualidad.saldo_a_favor_generado || 0)).toFixed(2));
+        if (deltaSaldo < 0) await liberarCreditoOrigen(mensualidad, saldoNuevo, tenantModels, { session });
         if (deltaSaldo !== 0) {
           const alumnoId = mensualidad.id_alumno?._id || mensualidad.id_alumno;
           const alumno = await aplicarSession(TenantAlumno.findById(alumnoId), session);
@@ -1225,12 +1231,15 @@ exports.rechazarPagoAgrupado = async (req, res) => {
           await alumno.save({ session });
         }
         mensualidad.saldo_a_favor_generado = saldoNuevo;
+        mensualidad.pago_en_revision = false;
         if (totalPagado <= 0) {
           const vencida = mensualidad.fecha_vencimiento && new Date(mensualidad.fecha_vencimiento) < new Date();
           mensualidad.estatus = vencida ? 'Insolvente' : 'Pendiente';
         } else {
           mensualidad.estatus = cubreEsperadoConTolerancia ? 'Pagado' : 'Abono';
         }
+        await actualizarRevisionCredito(mensualidad, tenantModels, { session });
+        if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
         await mensualidad.save({ session });
         actualizadas += 1;
       }

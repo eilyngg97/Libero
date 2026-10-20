@@ -91,6 +91,32 @@ test('exporta el monto total despues del recargo sin cambiar su valor', async ()
   expect(opciones.numberColumns).toEqual(['Recargo', 'Monto total']);
 });
 
+test('registro administrativo envia pago completo sin aplicar el saldo a favor disponible', async () => {
+  agrupado = false;
+  const fetchPrevio = global.fetch;
+  global.fetch = jest.fn(async (url, options = {}) => {
+    if (options.method === 'POST') return { ok: true, json: async () => ({ estatus: 'Pagado', credito_aplicado: 0 }) };
+    if (url.includes('/api/pagos/m1')) return { ok: true, json: async () => [] };
+    const respuesta = await fetchPrevio(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [mensualidad] = await respuesta.json();
+    return { ok: true, json: async () => [{ ...mensualidad, estatus: 'Pendiente',
+      credito_a_aplicar: 1.03, saldo_a_favor_disponible: 1.03, saldo_pendiente: 12.97 }] };
+  });
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Registrar pago' }));
+  await waitFor(() => expect(screen.getByRole('spinbutton', { name: 'Monto a pagar' })).toBeEnabled());
+  expect(screen.getByRole('spinbutton', { name: 'Monto a pagar' })).toHaveValue(14);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: /todo de pago$/ }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Efectivo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar', exact: true }));
+  await waitFor(() => expect(global.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true));
+  const [, options] = global.fetch.mock.calls.find(([, request]) => request?.method === 'POST');
+  expect(options.body.get('credito_a_aplicar')).toBe('0');
+  expect(options.body.get('monto_pagado')).toBe('14');
+  expect(options.body.get('id_mensualidad')).toBe('m1');
+});
+
 test('filtra por codigo agrupado completo o parcial y conserva la busqueda por alumno', async () => {
   const fetchPrevio = global.fetch;
   global.fetch = jest.fn(async (url, options) => {
@@ -326,4 +352,36 @@ test('pago individual conserva su ruta de retiro actual', async () => {
   const [url, options] = global.fetch.mock.calls.find(([, options]) => options?.method === 'PATCH');
   expect(url).toContain('/api/mensualidades/m1');
   expect(JSON.parse(options.body)).toMatchObject({ monto_esperado: 10, bloquear_recargo_automatico: true });
+});
+
+test('muestra el remanente heredado de noviembre y distingue el saldo provisional del generado', async () => {
+  const fetchPrevio = global.fetch;
+  global.fetch = jest.fn(async (url, options) => {
+    const respuesta = await fetchPrevio(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [original] = await respuesta.json();
+    return { ok: true, json: async () => [{ ...original, credito_aplicado: 20,
+      saldo_a_favor_generado: 0, saldo_a_favor_restante: 16, saldo_a_favor_provisional: 16 }] };
+  });
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  const celdas = within(screen.getByText('Ana Raga').closest('tr')).getAllByRole('cell');
+  expect(celdas[3]).toHaveTextContent('$20.00');
+  expect(celdas[7]).toHaveTextContent('$16.00');
+  expect(within(celdas[7]).getByText('En revision: $16.00')).toBeInTheDocument();
+});
+
+test.each([0, 4])('solo permite registrar la diferencia pendiente de una cuota con credito provisional (%s)', async (pendiente) => {
+  const fetchPrevio = global.fetch;
+  global.fetch = jest.fn(async (url, options) => {
+    const respuesta = await fetchPrevio(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [original] = await respuesta.json();
+    return { ok: true, json: async () => [{ ...original, credito_aplicado: 16,
+      credito_en_revision: 16, saldo_pendiente: pendiente, saldo_pendiente_antes_credito: pendiente }] };
+  });
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  if (pendiente > 0) expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeInTheDocument();
+  else expect(screen.queryByRole('button', { name: 'Registrar pago' })).not.toBeInTheDocument();
 });

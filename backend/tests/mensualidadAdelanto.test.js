@@ -73,14 +73,15 @@ describe('adelantarMensualidadSiguiente', () => {
     jest.clearAllMocks();
   });
 
-  test('adelanta desde la ultima mensualidad liquidada del alumno', async () => {
+  test.each([0, 136])('adelanta desde la ultima mensualidad y conserva revision con saldo provisional %s', async (saldo) => {
     const alumnoDoc = {
       _id: 'a1',
       activo: true,
       dado_de_baja: false,
-      tipo_mensualidad: 'monto_sede',
+      tipo_mensualidad: 'monto_personalizado',
+      monto_personalizado_valor: 100,
       sede: 's1',
-      saldo_a_favor_mensualidades: 0,
+      saldo_a_favor_mensualidades: saldo,
       save: jest.fn().mockResolvedValue(true)
     };
 
@@ -99,7 +100,12 @@ describe('adelantarMensualidadSiguiente', () => {
     };
 
     const TenantMensualidad = {
+      db: { startSession: jest.fn().mockResolvedValue({ withTransaction: async (callback) => callback(),
+        endSession: jest.fn().mockResolvedValue(undefined) }) },
+      find: jest.fn().mockResolvedValue(saldo > 0 ? [{ _id: 'm-origen', mes: 5, anio: 2026,
+        estatus: 'En revision', saldo_a_favor_generado: saldo, credito_aplicado: 0 }] : []),
       findOne: jest.fn().mockImplementation((filtro) => {
+        if (filtro?.monto_esperado) return Promise.resolve(null);
         if (filtro?.estatus) {
           return querySelectSort({ mes: 5, anio: 2026 });
         }
@@ -168,13 +174,14 @@ describe('adelantarMensualidadSiguiente', () => {
       })
     );
 
-    expect(TenantMensualidad.create).toHaveBeenCalledWith(
-      expect.objectContaining({
+    const esperado = expect.objectContaining({
         id_alumno: 'a1',
         mes: 6,
-        anio: 2026
-      })
-    );
+        anio: 2026,
+        ...(saldo > 0 ? { estatus: 'En revision', credito_aplicado: 100, saldo_a_favor_restante: 36 } : {})
+      });
+    if (saldo > 0) expect(TenantMensualidad.create).toHaveBeenCalledWith([esperado], { session: expect.any(Object) });
+    else expect(TenantMensualidad.create).toHaveBeenCalledWith(esperado);
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({

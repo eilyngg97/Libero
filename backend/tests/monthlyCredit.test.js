@@ -1,4 +1,4 @@
-const { proyectarCreditoMensualidades, aplicarCreditoMensualidad } = require('../services/monthlyCredit');
+const { proyectarCreditoMensualidades, aplicarCreditoMensualidad, reconstruirCredito } = require('../services/monthlyCredit');
 
 test('credito de septiembre descuenta octubre ya creada sin mutar ni consumir el saldo', () => {
   const mensualidades = [
@@ -55,4 +55,54 @@ test('no consume saldo sin transaccion', async () => {
     proyecciones: new Map([['oct', { credito_a_aplicar: 1.03 }]]) })).rejects.toMatchObject({ status: 503 });
   expect(alumno.save).not.toHaveBeenCalled();
   expect(mensualidad.monto_esperado).toBe(19);
+});
+
+test.each(['Pagado', 'En revision'])('reconstruye octubre, noviembre y diciembre sin perder el remanente historico (%s)', (estatus) => {
+  const mensualidades = [
+    { _id: 'oct', mes: 10, anio: 2026, saldo_a_favor_generado: 36, estatus },
+    { _id: 'nov', mes: 11, anio: 2026, credito_aplicado: 20, estatus: 'Pagado' },
+    { _id: 'dic', mes: 12, anio: 2026, credito_aplicado: 16, estatus: 'Abono' }
+  ];
+  const antes = JSON.stringify(mensualidades);
+  const historial = reconstruirCredito(mensualidades);
+  expect(historial.movimientos.get('oct').saldo_a_favor_restante).toBe(36);
+  expect(historial.movimientos.get('nov')).toMatchObject({ saldo_a_favor_restante: 16,
+    credito_en_revision: estatus === 'En revision' ? 20 : 0 });
+  expect(historial.movimientos.get('dic')).toMatchObject({ saldo_a_favor_restante: 0,
+    credito_origenes: [{ id_mensualidad: 'oct', monto: 16 }] });
+  expect(JSON.stringify(mensualidades)).toBe(antes);
+});
+
+test('mezcla saldo confirmado y provisional sin perder origenes ni reutilizar dinero', () => {
+  const historial = reconstruirCredito([
+    { _id: 'sep', mes: 9, anio: 2026, saldo_a_favor_generado: 10, estatus: 'Pagado' },
+    { _id: 'oct', mes: 10, anio: 2026, saldo_a_favor_generado: 26, estatus: 'En revision' },
+    { _id: 'nov', mes: 11, anio: 2026, credito_aplicado: 20 }
+  ], 16);
+  expect(historial.movimientos.get('nov')).toMatchObject({ credito_en_revision: 10,
+    saldo_a_favor_restante: 16, saldo_a_favor_provisional: 16,
+    credito_origenes: [{ id_mensualidad: 'sep', monto: 10 }, { id_mensualidad: 'oct', monto: 10 }] });
+  expect(historial.disponibles.reduce((total, fuente) => total + fuente.disponible, 0)).toBe(1600);
+});
+
+test('reconstruye centavos y saldos iniciales sin inventar una transferencia', () => {
+  const historial = reconstruirCredito([{ _id: 'oct', mes: 10, anio: 2026, credito_aplicado: 1.03 },
+    { _id: 'nov', mes: 11, anio: 2026, credito_aplicado: 1.02 }], 0.01);
+  expect(historial.movimientos.get('oct').saldo_a_favor_restante).toBe(1.03);
+  expect(historial.movimientos.get('nov').saldo_a_favor_restante).toBe(0.01);
+});
+
+test('puede cubrir la diferencia de una cuota parcialmente cubierta con credito provisional', () => {
+  const resultado = proyectarCreditoMensualidades([
+    { _id: 'nov', id_alumno: 'a1', mes: 11, anio: 2026, estatus: 'En revision', credito_en_revision: 20, saldo_pendiente: 0 },
+    { _id: 'dic', id_alumno: 'a1', mes: 12, anio: 2026, estatus: 'En revision', credito_en_revision: 16, saldo_pendiente: 4 }
+  ], new Map([['a1', 10]]));
+  expect(resultado.map((item) => item.credito_a_aplicar)).toEqual([0, 4]);
+});
+
+test('un origen de credito ausente nunca se considera confirmado', () => {
+  const historial = reconstruirCredito([{ _id: 'nov', mes: 11, anio: 2026, credito_aplicado: 20,
+    credito_origenes: [{ id_mensualidad: 'origen-ausente', monto: 20 }] }]);
+  expect(historial.movimientos.get('nov').credito_en_revision).toBe(20);
+  expect(historial.movimientos.get('nov').saldo_a_favor_restante).toBe(0);
 });

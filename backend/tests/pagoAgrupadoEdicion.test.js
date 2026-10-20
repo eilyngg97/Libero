@@ -200,7 +200,8 @@ test('editar septiembre aplica el excedente a octubre ya generado sin duplicarlo
   prepararEdicionSeptiembre();
   expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
   expect(datos.Mensualidad.m1).toMatchObject({ estatus: 'En revision', saldo_a_favor_generado: 4.48 });
-  expect(datos.Mensualidad.oct).toMatchObject({ monto_esperado: 15.52, credito_aplicado: 4.48, estatus: 'Pendiente' });
+  expect(datos.Mensualidad.oct).toMatchObject({ monto_esperado: 15.52, credito_aplicado: 4.48, estatus: 'En revision',
+    credito_en_revision: 4.48, credito_origenes: [{ id_mensualidad: 'm1', monto: 4.48 }] });
   expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(0);
   expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
   expect(datos.Mensualidad.oct.credito_aplicado).toBe(4.48);
@@ -223,7 +224,7 @@ test('edicion distribuye excedentes cronologicamente entre cuotas existentes y c
   datos.Mensualidad.oct = octubre;
   expect((await editarSeptiembre(89)).status).not.toHaveBeenCalled();
   for (const id of ['oct', 'nov', 'ene']) {
-    expect(datos.Mensualidad[id]).toMatchObject({ monto_esperado: 0, credito_aplicado: 20, estatus: 'Pagado' });
+    expect(datos.Mensualidad[id]).toMatchObject({ monto_esperado: 0, credito_aplicado: 20, estatus: 'En revision' });
   }
   expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(5);
   expect(Object.keys(datos.PagoDetalle)).toEqual(['p1', 'p2']);
@@ -243,7 +244,7 @@ test('edicion respeta abonos de octubre y no genera excedentes ficticios', async
   datos.Mensualidad.oct.estatus = 'Abono';
   datos.PagoDetalle.abono = { _id: 'abono', id_mensualidad: 'oct', monto_pagado: 18 };
   expect((await editarSeptiembre()).status).not.toHaveBeenCalled();
-  expect(datos.Mensualidad.oct).toMatchObject({ monto_esperado: 18, credito_aplicado: 2, estatus: 'Pagado', saldo_a_favor_generado: 0 });
+  expect(datos.Mensualidad.oct).toMatchObject({ monto_esperado: 18, credito_aplicado: 2, estatus: 'En revision', saldo_a_favor_generado: 0 });
   expect(datos.Alumno.a1.saldo_a_favor_mensualidades).toBe(2.48);
 });
 

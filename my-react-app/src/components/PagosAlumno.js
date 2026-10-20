@@ -157,6 +157,9 @@ function PagosAlumno(props) {
     monto_total: m.monto_total ?? m.monto_esperado,
     monto_base: m.monto_base,
     credito_aplicado: m.credito_aplicado || 0,
+    credito_origenes: m.credito_origenes || [],
+    credito_en_revision: m.credito_en_revision,
+    saldo_a_favor_restante: m.saldo_a_favor_restante,
     ajuste_extraordinario: m.ajuste_extraordinario || 0,
     total_pagado: m.total_pagado || 0,
     credito_a_aplicar: m.credito_a_aplicar || 0,
@@ -202,10 +205,7 @@ function PagosAlumno(props) {
       return;
     }
 
-    const tieneMensualidadesBloqueantes = mensualidades.some((m) => {
-      const estado = normalizarEstado(m?.estado);
-      return estado === 'pendiente' || estado === 'retrasado' || estado === 'insolvente' || estado === 'abono';
-    });
+    const tieneMensualidadesBloqueantes = mensualidades.some(esMensualidadPagable);
 
     if (tieneMensualidadesBloqueantes) {
       setError('No puedes adelantar mensualidades mientras tengas cuotas pendientes, insolventes o con abonos.');
@@ -370,9 +370,12 @@ function PagosAlumno(props) {
     (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
   );
 
-  const estadosBloqueantesOrdenPago = ['pendiente', 'retrasado', 'insolvente', 'abono'];
-
   const normalizarEstado = (value) => String(value || '').trim().toLowerCase();
+  const tieneCreditoEnRevisionConDeuda = (mensualidad) => normalizarEstado(mensualidad?.estado) === 'en revision'
+    && Number(mensualidad.credito_en_revision) > 0
+    && (Number(mensualidad.monto) > 0 || Number(mensualidad.credito_a_aplicar) > 0);
+  const esMensualidadPagable = (mensualidad) => ['pendiente', 'retrasado', 'insolvente', 'abono'].includes(normalizarEstado(mensualidad?.estado))
+    || tieneCreditoEnRevisionConDeuda(mensualidad);
   const esAlumnoBecado = String(alumno?.tipo_mensualidad || '').toLowerCase() === 'beca_completa';
   const tieneMensualidadBecado = mensualidades.some((m) => normalizarEstado(m?.estado) === 'becado');
   const bloqueaAdelantoPorBeca = esAlumnoBecado || tieneMensualidadBecado;
@@ -760,8 +763,7 @@ function PagosAlumno(props) {
     }
   };
 
-  const estadosConSaldo = ['pendiente', 'retrasado', 'abono', 'insolvente'];
-  const mensualidadesConSaldo = mensualidades.filter((m) => estadosConSaldo.includes(normalizarEstado(m.estado)));
+  const mensualidadesConSaldo = mensualidades.filter(esMensualidadPagable);
   const balancePendiente = mensualidadesConSaldo.reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
   const saldoAFavorDisponible = Math.max(0, Number(mensualidades[0]?.saldo_a_favor_disponible ?? alumno?.saldo_a_favor_mensualidades) || 0);
   const proximaMensualidadPorVencer = mensualidadesConSaldo
@@ -797,7 +799,8 @@ function PagosAlumno(props) {
   const estadoInsolvente = estadoConteo['insolvente'] || 0;
   const estadoExonerado = estadoConteo['exonerado'] || 0;
   const estadoExentoReposo = estadoConteo['exento por reposo'] || 0;
-  const bloqueaAdelantoPorDeuda = estadoPendiente > 0 || estadoRetrasado > 0 || estadoInsolvente > 0 || estadoAbono > 0;
+  const tieneDeudaEnRevision = mensualidades.some(tieneCreditoEnRevisionConDeuda);
+  const bloqueaAdelantoPorDeuda = mensualidades.some(esMensualidadPagable);
   const tooltipBloqueoAdelanto = 'No puedes adelantar el proximo mes porque tienes mensualidades pendientes, insolventes, retrasadas o con abonos pendientes.';
   const tooltipBloqueoAdelantoBeca = 'Los alumnos con beca completa no pueden adelantar mensualidades.';
 
@@ -815,7 +818,7 @@ function PagosAlumno(props) {
       };
     }
 
-    if (estadoPendiente > 0) {
+    if (estadoPendiente > 0 || tieneDeudaEnRevision) {
       return {
         titulo: 'Pago Pendiente',
         subtitulo: 'Tienes cuotas pendientes por pagar',
@@ -984,6 +987,7 @@ function PagosAlumno(props) {
           ) : (
             pagosPagina.map((pago) => {
           const estado = normalizarEstado(pago.estado);
+          const revisionConDeuda = tieneCreditoEnRevisionConDeuda(pago);
           const dateObj = new Date(pago.fecha + 'T00:00:00');
           const mesNombre = dateObj.toLocaleString('es-ES', { month: 'long', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
           const anio = dateObj.toLocaleString('es-ES', { year: 'numeric', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
@@ -1017,7 +1021,7 @@ function PagosAlumno(props) {
                 iconBg: '#fbe6cf',
                 icon: <PendingActionsIcon sx={{ color: '#b45309', fontSize: 20 }} />,
                 amountColor: '#0f172a',
-                actionLabel: estado === 'en revision' ? 'Ver detalle' : 'Pagar Ahora',
+                actionLabel: revisionConDeuda ? 'Pagar restante' : estado === 'en revision' ? 'Ver detalle' : 'Pagar Ahora',
                 actionBg: estado === 'en revision' ? '#475569' : '#a16207',
                 actionHover: estado === 'en revision' ? '#334155' : '#854d0e',
                 infoColor: '#92400e'
@@ -1099,12 +1103,11 @@ function PagosAlumno(props) {
             : pago.monto;
           const montoPagadoCard = Number(pago.total_pagado) || 0;
 
-          const showPrimaryAction = estado === 'pendiente' || estado === 'retrasado' || estado === 'abono' || estado === 'insolvente';
+          const showPrimaryAction = esMensualidadPagable(pago);
           const fechaPeriodoActual = parseFechaSinDesfase(pago.fecha);
           const bloqueadoPorMesAnterior = showPrimaryAction && Boolean(fechaPeriodoActual) && mensualidades.some((item) => {
             if (String(item?.id || item?._id || '') === String(pago?.id || pago?._id || '')) return false;
-            const estadoItem = normalizarEstado(item?.estado);
-            if (!estadosBloqueantesOrdenPago.includes(estadoItem)) return false;
+            if (!esMensualidadPagable(item)) return false;
             const fechaPeriodoItem = parseFechaSinDesfase(item?.fecha);
             if (!fechaPeriodoItem) return false;
             return fechaPeriodoItem.getTime() < fechaPeriodoActual.getTime();
@@ -1187,6 +1190,9 @@ function PagosAlumno(props) {
                     {Number(pago.credito_a_aplicar) > 0 && <Typography sx={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
                       Credito: -{simboloMonedaConfigurada}{formatMoney(pago.credito_a_aplicar)} {monedaConfigurada}
                     </Typography>}
+                    {Number(pago.credito_aplicado) > 0 && <Typography sx={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
+                      Saldo a favor aplicado: {simboloMonedaConfigurada}{formatMoney(pago.credito_aplicado)} {monedaConfigurada}
+                    </Typography>}
                     {mostrarMontoEsperado && (
                       <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
                         Monto esperado ({monedaConfigurada})
@@ -1194,7 +1200,7 @@ function PagosAlumno(props) {
                     )}
                     {mostrarMontoEsperado && (
                       <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-                        Pagado: {simboloMonedaConfigurada}{formatMoney(montoPagadoCard)} {monedaConfigurada}
+                        {Number(pago.credito_aplicado) > 0 ? 'Pago directo' : 'Pagado'}: {simboloMonedaConfigurada}{formatMoney(montoPagadoCard)} {monedaConfigurada}
                       </Typography>
                     )}
 
@@ -1252,6 +1258,9 @@ function PagosAlumno(props) {
                         {estadoUi.actionLabel}
                       </Button>
                     )}
+                    {revisionConDeuda && <Button variant="text" endIcon={<ArrowForwardIosIcon sx={{ fontSize: 13 }} />} onClick={() => handleVerDetalle(pago)} sx={{ fontSize: 12, textTransform: 'none', color: '#8a4b08' }}>
+                      Ver detalle
+                    </Button>}
                   </Box>
                 </Box>
               </CardContent>
@@ -1317,6 +1326,8 @@ function PagosAlumno(props) {
           </Card>
 
           <Card
+            component="section"
+            aria-label="Balance pendiente"
             sx={{
               borderRadius: 4,
               background: 'linear-gradient(145deg, #cc6e00 0%, #e98300 100%)',
@@ -1500,7 +1511,7 @@ function PagosAlumno(props) {
               )}
             </Box>
           )}
-          {mensualidadDetalle && detallePago && (
+          {mensualidadDetalle && (detallePago || creditoAplicadoDetalle > 0) && (
             <Box component="section" aria-label="Resumen de la mensualidad" sx={{ mb: 2.5 }}>
               <Typography sx={{ fontSize: 10, textTransform: 'uppercase', color: '#68758b', fontWeight: 800, mb: 1 }}>Monto de {alumno?.nombres || 'este alumno'}</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: `repeat(${creditoAplicadoDetalle > 0 ? (ajusteDetalle !== 0 ? 6 : 5) : 4}, minmax(0, 1fr))` }, border: '1px solid #edf0f5', borderRadius: 1.5, overflow: 'hidden' }}>
@@ -1509,14 +1520,44 @@ function PagosAlumno(props) {
                   ...(creditoAplicadoDetalle > 0 ? [{ label: 'Saldo a favor aplicado', value: `- ${simboloMonedaConfigurada}${formatMoney(creditoAplicadoDetalle)}`, detail: `Base neta: ${simboloMonedaConfigurada}${formatMoney(baseNetaDetalle)}`, color: '#16786e', bg: '#eaf6f2' }] : []),
                   ...(creditoAplicadoDetalle > 0 && ajusteDetalle !== 0 ? [{ label: 'Ajuste de mensualidad', value: `${ajusteDetalle > 0 ? '-' : '+'} ${simboloMonedaConfigurada}${formatMoney(Math.abs(ajusteDetalle))}` }] : []),
                   { label: `Recargo${mensualidadDetalle.fecha_aplicacion_recargo ? ` · ${formatFechaBonita(mensualidadDetalle.fecha_aplicacion_recargo)}` : ''}`, value: `+ ${simboloMonedaConfigurada}${formatMoney(mensualidadDetalle.recargo_aplicado_usd || 0)}`, color: '#a76809' },
-                  { label: 'Total esperado', value: formatMontoEsperado(detallePago, mensualidadDetalle.monto_total ?? mensualidadDetalle.monto, true) },
-                  { label: idGrupoDetalle ? 'Asignado a este alumno' : 'Monto pagado', value: formatMontoPrincipal(detallePago, true), color: '#16786e', bg: '#eaf6f2' }
+                  { label: 'Total esperado', value: detallePago ? formatMontoEsperado(detallePago, mensualidadDetalle.monto_total ?? mensualidadDetalle.monto, true) : `${simboloMonedaConfigurada}${formatMoney(mensualidadDetalle.monto_total ?? mensualidadDetalle.monto)} ${monedaConfigurada}` },
+                  { label: detallePago ? (idGrupoDetalle ? 'Asignado a este alumno' : 'Monto pagado') : 'Nueva transferencia', value: detallePago ? formatMontoPrincipal(detallePago, true) : `${simboloMonedaConfigurada}0.00 ${monedaConfigurada}`, color: '#16786e', bg: '#eaf6f2' }
                 ].map((item) => <Box key={item.label} sx={{ p: 1.4, bgcolor: item.bg || '#f9fafc', minWidth: 0, borderRight: '1px solid #edf0f5', borderBottom: { xs: '1px solid #edf0f5', sm: 0 } }}>
                   <Typography sx={{ fontSize: 10, color: '#748096', mb: 0.4 }}>{item.label}</Typography>
                   <Typography sx={{ fontSize: 12, fontWeight: 800, color: item.color || '#162647', overflowWrap: 'anywhere', lineHeight: 1.5 }}>{item.value}</Typography>
                   {item.detail && <Typography sx={{ fontSize: 10, color: '#748096', mt: 0.4, overflowWrap: 'anywhere' }}>{item.detail}</Typography>}
                 </Box>)}
               </Box>
+            </Box>
+          )}
+
+          {creditoAplicadoDetalle > 0 && (
+            <Box component="section" aria-label="Aplicacion de saldo a favor" sx={{ mb: 2.5, minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+                <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 18, color: '#16786e' }} />
+                <Typography sx={{ fontSize: 12, fontWeight: 800 }}>Saldo a favor aplicado</Typography>
+                <Chip size="small" label={mensualidadDetalle.credito_en_revision == null ? 'Crédito aplicado' : mensualidadDetalle.credito_en_revision > 0 ? 'Crédito en revisión' : 'Crédito confirmado'} sx={{ height: 22, fontSize: 10, bgcolor: mensualidadDetalle.credito_en_revision > 0 ? '#fff3df' : '#e8f5ef', color: mensualidadDetalle.credito_en_revision > 0 ? '#9a600b' : '#187863' }} />
+              </Box>
+              {!detallePago && <Typography sx={{ fontSize: 12, color: '#68758b', mb: 1.5 }}>Sin transferencia adicional para esta mensualidad.</Typography>}
+              {mensualidadDetalle.credito_origenes.length > 0 ? mensualidadDetalle.credito_origenes.map((origen, index) => {
+                const idOrigen = origen.id_mensualidad?._id || origen.id_mensualidad;
+                const fuente = mensualidades.find((item) => String(item.id) === String(idOrigen));
+                const provisional = origen.provisional ?? (normalizarEstado(fuente?.estado) === 'en revision');
+                return <Box key={`${idOrigen || 'saldo'}-${index}`} sx={{ py: 1.25, borderBottom: '1px solid #edf0f5', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 1.25 }}>
+                  <Box sx={{ minWidth: 0, flex: '1 1 180px', overflowWrap: 'anywhere' }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 700 }}>{fuente ? construirPeriodoLegible(fuente) : 'Saldo anterior'}</Typography>
+                    <Typography sx={{ fontSize: 11, color: provisional ? '#9a600b' : '#68758b', mt: 0.4 }}>{provisional ? 'Pago de origen en revisión' : (fuente ? 'Pago de origen confirmado' : 'Origen histórico no disponible')}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 1.25, minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#16786e' }}>{simboloMonedaConfigurada}{formatMoney(origen.monto)} {monedaConfigurada}</Typography>
+                    {fuente && <Button size="small" startIcon={<HistoryRoundedIcon sx={{ fontSize: 15 }} />} onClick={() => actualizarDetalleMensualidad(fuente)} sx={{ fontSize: 11, textTransform: 'none', color: '#246c89' }}>Ver pago de origen</Button>}
+                  </Box>
+                </Box>;
+              }) : <Typography sx={{ fontSize: 12, color: '#68758b' }}>Origen histórico del saldo no disponible.</Typography>}
+              {mensualidadDetalle.saldo_a_favor_restante != null && <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 1, mt: 1.5 }}>
+                <Typography sx={{ fontSize: 12, color: '#68758b' }}>Saldo restante al aplicar el crédito</Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 800 }}>{simboloMonedaConfigurada}{formatMoney(mensualidadDetalle.saldo_a_favor_restante)} {monedaConfigurada}</Typography>
+              </Box>}
             </Box>
           )}
 
@@ -1569,9 +1610,9 @@ function PagosAlumno(props) {
                 </Box>
               </Box>
             </>
-          ) : (
+          ) : creditoAplicadoDetalle <= 0 ? (
             <Typography sx={{ color: '#334155' }}>No hay informacion de pago registrada.</Typography>
-          )}
+          ) : null}
 
           {pagosDetalle.length > 0 && (
             <Box sx={{ mx: { xs: -2, sm: -3 }, px: { xs: 2, sm: 3 }, py: 2, bgcolor: '#f6f8fc', borderTop: '1px solid #edf0f5' }}>

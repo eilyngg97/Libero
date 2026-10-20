@@ -7,6 +7,13 @@ const MensualidadSchema = new mongoose.Schema({
   anio: { type: Number, required: true },
   monto_base: { type: Number },
   credito_aplicado: { type: Number, default: 0 },
+  credito_origenes: { type: [{ _id: false,
+    id_mensualidad: { type: mongoose.Schema.Types.ObjectId, ref: 'Mensualidad' },
+    monto: { type: Number, required: true }
+  }], default: undefined },
+  credito_en_revision: { type: Number, default: 0 },
+  pago_en_revision: { type: Boolean },
+  saldo_a_favor_restante: { type: Number },
   ajuste_extraordinario: { type: Number, default: 0 },
   saldo_a_favor_generado: { type: Number, default: 0 },
   aplica_recargo: { type: Boolean, default: false },

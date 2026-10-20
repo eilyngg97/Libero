@@ -68,6 +68,111 @@ async function abrirDetalle() {
   fireEvent.click(await screen.findByRole('button', { name: /Ver detalle/i }));
 }
 
+test.each([0, 5])('permite pagar el restante de una cuota con credito provisional y pago directo de %s', async (totalPagado) => {
+  const restante = Number((19.96 - totalPagado).toFixed(2));
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (url.includes('/api/mensualidades')) return { ok: true, json: async () => [
+      { _id: 'm1', id_alumno: { _id: 'a1' }, mes: 12, anio: 2026, monto_base: 20,
+        monto_esperado: 19.96, saldo_pendiente: restante, total_pagado: totalPagado,
+        credito_aplicado: 0.04, credito_en_revision: 0.04, credito_a_aplicar: 0,
+        saldo_a_favor_disponible: 0, estatus: 'En revision' }
+    ] };
+    return original(url, options);
+  });
+  render(<MemoryRouter><PagosAlumno alumno={{ _id: 'a1', nombres: 'Victor', apellidos: 'Raga' }} /></MemoryRouter>);
+  const pagar = await screen.findByRole('button', { name: 'Pagar restante' });
+  expect(pagar).toBeEnabled();
+  expect(screen.getByText('Pago Pendiente')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Balance pendiente' })).getByText(`$${restante.toFixed(2)}`)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Adelantar proximo mes/i })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /Ver detalle/i })).toBeInTheDocument();
+  fireEvent.click(pagar);
+  const modal = within(await screen.findByRole('dialog', { name: 'Pago neto' }));
+  expect(modal.getByText(`Transferir ${restante.toFixed(2)}`)).toBeInTheDocument();
+  expect(modal.getByText('Credito 0.00')).toBeInTheDocument();
+  expect(global.fetch.mock.calls.every(([, options]) => !options?.method || options.method === 'GET')).toBe(true);
+});
+
+test('deuda anterior por credito provisional bloquea pagar un mes posterior', async () => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (url.includes('/api/mensualidades')) return { ok: true, json: async () => [
+      { _id: 'm1', id_alumno: { _id: 'a1' }, mes: 11, anio: 2026, monto_esperado: 19.96,
+        saldo_pendiente: 19.96, credito_aplicado: 0.04, credito_en_revision: 0.04, estatus: 'En revision' },
+      { _id: 'm2', id_alumno: { _id: 'a1' }, mes: 12, anio: 2026, monto_esperado: 20,
+        saldo_pendiente: 20, estatus: 'Pendiente' }
+    ] };
+    return original(url, options);
+  });
+  render(<MemoryRouter><PagosAlumno alumno={{ _id: 'a1', nombres: 'Victor', apellidos: 'Raga' }} /></MemoryRouter>);
+  expect(await screen.findByRole('button', { name: 'Pagar restante' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Pagar Ahora' })).toBeDisabled();
+  expect(within(screen.getByRole('region', { name: 'Balance pendiente' })).getByText('$39.96')).toBeInTheDocument();
+});
+
+test.each(['En revision', 'Pagado'])('detalle de cuota cubierta solo con credito muestra origen y remanente (%s)', async (estatus) => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (url.includes('/api/pagos/m1')) return { ok: true, json: async () => [] };
+    if (url.includes('/api/pagos/origen')) return { ok: true, json: async () => [
+      { _id: 'p-origen', monto_pagado: 60, metodo_pago: 'Efectivo', referencia: 'ORIGEN-QA' }
+    ] };
+    if (url.includes('/api/mensualidades')) return { ok: true, json: async () => [
+      { _id: 'm1', id_alumno: { _id: 'a1' }, mes: 9, anio: 2026, monto_base: 20,
+        monto_esperado: 0, monto_total: 0, monto_sin_recargo_usd: 0, saldo_pendiente: 0,
+        credito_aplicado: 20, credito_en_revision: estatus === 'En revision' ? 20 : 0,
+        credito_origenes: [{ id_mensualidad: 'origen', monto: 20, provisional: estatus === 'En revision' }],
+        saldo_a_favor_restante: 16, estatus },
+      { _id: 'origen', id_alumno: { _id: 'a1' }, mes: 8, anio: 2026, monto_esperado: 24,
+        total_pagado: 60, saldo_a_favor_generado: 36, saldo_pendiente: 0, estatus }
+    ] };
+    return original(url, options);
+  });
+  render(<MemoryRouter><PagosAlumno alumno={{ _id: 'a1', nombres: 'Victor', apellidos: 'Raga' }} /></MemoryRouter>);
+  const botones = await screen.findAllByRole('button', { name: /Ver detalle|Ver Recibo/i });
+  expect(screen.queryByRole('button', { name: 'Pagar restante' })).not.toBeInTheDocument();
+  expect(screen.getByText('Saldo a favor aplicado: $20.00 USD')).toBeInTheDocument();
+  expect(screen.getByText('Pago directo: $0.00 USD')).toBeInTheDocument();
+  fireEvent.click(botones[0]);
+  const resumen = within(await screen.findByRole('region', { name: 'Resumen de la mensualidad' }));
+  expect(resumen.getByText('Monto base original')).toBeInTheDocument();
+  expect(resumen.getByText('- $20.00')).toBeInTheDocument();
+  const creditoAplicado = within(screen.getByRole('region', { name: 'Aplicacion de saldo a favor' }));
+  expect(creditoAplicado.getByText('Mensualidad agosto 2026')).toBeInTheDocument();
+  expect(creditoAplicado.getByText('Sin transferencia adicional para esta mensualidad.')).toBeInTheDocument();
+  expect(creditoAplicado.getByText('$16.00 USD')).toBeInTheDocument();
+  expect(creditoAplicado.getByText(estatus === 'En revision' ? 'Crédito en revisión' : 'Crédito confirmado')).toBeInTheDocument();
+  expect(screen.queryByText('No hay informacion de pago registrada.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Editar', exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Eliminar', exact: true })).not.toBeInTheDocument();
+  fireEvent.click(creditoAplicado.getByRole('button', { name: 'Ver pago de origen' }));
+  await screen.findByText('ORIGEN-QA');
+  expect(screen.getByRole('region', { name: 'Resumen de la mensualidad' })).toHaveTextContent('$60.00 USD');
+  expect(global.fetch.mock.calls.every(([, options]) => !options?.method || options.method === 'GET')).toBe(true);
+});
+
+test('credito historico sin origen disponible conserva el detalle sin inventar datos de transferencia', async () => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (url.includes('/api/pagos/m1')) return { ok: true, json: async () => [] };
+    if (url.includes('/api/mensualidades')) return { ok: true, json: async () => [
+      { _id: 'm1', id_alumno: { _id: 'a1' }, mes: 9, anio: 2026, monto_base: 20,
+        monto_esperado: 0, credito_aplicado: 20, estatus: 'En revision' }
+    ] };
+    return original(url, options);
+  });
+  await abrirDetalle();
+  expect(await screen.findByRole('region', { name: 'Resumen de la mensualidad' })).toHaveTextContent('- $20.00');
+  const aplicacion = within(screen.getByRole('region', { name: 'Aplicacion de saldo a favor' }));
+  expect(aplicacion.getByText('Origen histórico del saldo no disponible.')).toBeInTheDocument();
+  expect(aplicacion.getByText('Crédito aplicado')).toBeInTheDocument();
+  expect(aplicacion.queryByText('Crédito confirmado')).not.toBeInTheDocument();
+  expect(aplicacion.queryByRole('button', { name: 'Ver pago de origen' })).not.toBeInTheDocument();
+  expect(screen.queryByText('No hay informacion de pago registrada.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Datos del pago')).not.toBeInTheDocument();
+});
+
 test.each([false, true])('el formulario real envia el excedente completo sin limitarlo al esperado (agrupado=%s)', async (esGrupo) => {
   const ModalPagoReal = jest.requireActual('./ModalPago').default;
   const enviarGrupo = jest.fn().mockResolvedValue(undefined);

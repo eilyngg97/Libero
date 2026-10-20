@@ -13,7 +13,9 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const { obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
-const { cotizarCreditosAlumno, proyectarCreditoMensualidades } = require('../services/monthlyCredit');
+const { cotizarCreditosAlumno, proyectarCreditoMensualidades, obtenerTrazabilidadCredito, tomarCredito,
+  actualizarRevisionCredito, sincronizarCreditoAlumno } = require('../services/monthlyCredit');
+const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const SALDO_A_FAVOR_CONSUMIDO_ERROR = 'El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.';
 
 function esErrorSaldoAFavorConsumido(err) {
@@ -795,24 +797,28 @@ async function resolverMontoBaseAlumno(alumno, models = {}) {
   return 0;
 }
 
-async function consumirSaldoAFavor(alumno, montoBase, periodo, models) {
+async function consumirSaldoAFavor(alumno, montoBase, periodo, models, session) {
   const saldoDisponible = redondearMonto(alumno?.saldo_a_favor_mensualidades || 0);
   if (saldoDisponible <= 0 || montoBase <= 0) {
     return { creditoAplicado: 0, montoEsperado: redondearMonto(montoBase) };
   }
 
   const { Mensualidad: MensualidadModel } = resolveMensualidadModels(models);
-  const anteriorPendiente = await MensualidadModel.findOne({ id_alumno: alumno._id,
+  const anteriorPendiente = await aplicarSession(MensualidadModel.findOne({ id_alumno: alumno._id,
     estatus: { $in: ['Pendiente', 'Retrasado', 'Insolvente', 'Abono'] }, monto_esperado: { $gt: 0 },
-    $or: [{ anio: { $lt: periodo.anio } }, { anio: periodo.anio, mes: { $lt: periodo.mes } }] });
+    $or: [{ anio: { $lt: periodo.anio } }, { anio: periodo.anio, mes: { $lt: periodo.mes } }] }), session);
   if (anteriorPendiente) return { creditoAplicado: 0, montoEsperado: redondearMonto(montoBase) };
 
   const creditoAplicado = redondearMonto(Math.min(saldoDisponible, montoBase));
+  const trazabilidad = await obtenerTrazabilidadCredito(alumno._id, resolveMensualidadModels(models), { session, saldoActual: saldoDisponible });
+  const origenes = tomarCredito(trazabilidad.disponibles, creditoAplicado);
   alumno.saldo_a_favor_mensualidades = redondearMonto(saldoDisponible - creditoAplicado);
-  await alumno.save();
+  await alumno.save(session ? { session } : undefined);
 
   return {
     creditoAplicado,
+    origenes,
+    creditoEnRevision: redondearMonto(origenes.reduce((total, origen) => total + (origen.provisional ? origen.monto : 0), 0)),
     montoEsperado: redondearMonto(montoBase - creditoAplicado)
   };
 }
@@ -820,7 +826,9 @@ async function consumirSaldoAFavor(alumno, montoBase, periodo, models) {
 async function crearMensualidadParaPeriodo(
   alumno,
   periodo,
-  {
+  opciones = {}
+) {
+  const {
     models = {},
     cobroConfig,
     montoBaseManual,
@@ -829,21 +837,32 @@ async function crearMensualidadParaPeriodo(
     crearPagoSiPagado = false,
     referenciaPago = 'primera-mensualidad',
     metadataInscripcion,
-    esInscripcion = false
-  } = {}
-) {
+    esInscripcion = false,
+    session
+  } = opciones;
   const {
     Mensualidad: MensualidadModel,
     PagoDetalle: PagoDetalleModel
   } = resolveMensualidadModels(models);
 
+  if (!session && Number(alumno.saldo_a_favor_mensualidades) > 0) {
+    const resultado = await ejecutarConTransaccion(MensualidadModel, async (sesion) => {
+      const vigente = await aplicarSession(resolveMensualidadModels(models).Alumno.findById(alumno._id), sesion);
+      if (!vigente) throw Object.assign(new Error('Alumno no encontrado'), { status: 404 });
+      const generado = await crearMensualidadParaPeriodo(vigente, periodo, { ...opciones, session: sesion });
+      return { generado, saldo: vigente.saldo_a_favor_mensualidades };
+    }, { obligatoria: true });
+    alumno.saldo_a_favor_mensualidades = resultado.saldo;
+    return resultado.generado;
+  }
+
   const configCobro = cobroConfig || await obtenerConfigCobro(models);
 
-  const consultaExistente = MensualidadModel.findOne({
+  const consultaExistente = aplicarSession(MensualidadModel.findOne({
     id_alumno: alumno._id,
     mes: periodo.mes,
     anio: periodo.anio
-  });
+  }), session);
   const existente = typeof consultaExistente?.populate === 'function'
     ? await consultaExistente.populate('id_alumno')
     : await Promise.resolve(consultaExistente);
@@ -861,6 +880,8 @@ async function crearMensualidadParaPeriodo(
 
   let monto = montoBase;
   let creditoAplicado = 0;
+  let creditoOrigenes = [];
+  let creditoEnRevision = 0;
   let estatus = estatusManual || obtenerEstatusPendientePorVencimiento(fechaVencimiento);
 
   const reglaReposo = await obtenerReglaReposoParaPeriodo(alumno._id, periodo.mes, periodo.anio, models);
@@ -873,15 +894,19 @@ async function crearMensualidadParaPeriodo(
         ? reglaReposo.montoPersonalizado
         : montoBaseOriginal
     );
-    const credito = await consumirSaldoAFavor(alumno, montoBase, periodo, models);
+    const credito = await consumirSaldoAFavor(alumno, montoBase, periodo, models, session);
     creditoAplicado = credito.creditoAplicado;
+    creditoOrigenes = credito.origenes || [];
+    creditoEnRevision = credito.creditoEnRevision || 0;
     monto = credito.montoEsperado;
   } else if (esTipoMensualidadBecaCompleta(alumno.tipo_mensualidad)) {
     monto = 0;
     estatus = 'Becado';
   } else {
-    const credito = await consumirSaldoAFavor(alumno, montoBase, periodo, models);
+    const credito = await consumirSaldoAFavor(alumno, montoBase, periodo, models, session);
     creditoAplicado = credito.creditoAplicado;
+    creditoOrigenes = credito.origenes || [];
+    creditoEnRevision = credito.creditoEnRevision || 0;
     monto = credito.montoEsperado;
   }
 
@@ -890,7 +915,7 @@ async function crearMensualidadParaPeriodo(
     estatus !== 'Exento por reposo' &&
     estatus !== 'Becado'
   ) {
-    estatus = monto <= 0 ? 'Pagado' : 'Abono';
+    estatus = creditoEnRevision > 0 ? 'En revision' : (monto <= 0 ? 'Pagado' : 'Abono');
   }
 
   const recargoEfectivo = await obtenerRecargoEfectivoAlumno(alumno, models, configCobro);
@@ -912,12 +937,16 @@ async function crearMensualidadParaPeriodo(
     aplicaRecargo
   });
 
-  const mensualidad = await MensualidadModel.create({
+  const datosMensualidad = {
     id_alumno: alumno._id,
     mes: periodo.mes,
     anio: periodo.anio,
     monto_base: montoBase,
     credito_aplicado: creditoAplicado,
+    credito_origenes: creditoOrigenes,
+    credito_en_revision: creditoEnRevision,
+    pago_en_revision: estatus === 'En revision' && creditoEnRevision <= 0,
+    saldo_a_favor_restante: redondearMonto(alumno.saldo_a_favor_mensualidades),
     ajuste_extraordinario: 0,
     saldo_a_favor_generado: 0,
     aplica_recargo: snapshotRecargo.recargoAplicadoUsd > 0,
@@ -938,7 +967,11 @@ async function crearMensualidadParaPeriodo(
       referencia: metadataInscripcion.referencia,
       comprobante_url: metadataInscripcion.comprobanteUrl
     })
-  });
+  };
+  const resultadoCreacion = session
+    ? await MensualidadModel.create([datosMensualidad], { session })
+    : await MensualidadModel.create(datosMensualidad);
+  const mensualidad = Array.isArray(resultadoCreacion) ? resultadoCreacion[0] : resultadoCreacion;
 
   let pagoRegistrado = false;
   const estatusNormalizado = String(estatus || '').toLowerCase();
@@ -952,7 +985,7 @@ async function crearMensualidadParaPeriodo(
       : redondearMonto(metadataInscripcion?.montoPagadoUsd || 0);
 
     if (montoPagoInicial > 0) {
-    await PagoDetalleModel.create({
+    const datosPagoInicial = {
       id_mensualidad: mensualidad._id,
       monto_pagado: montoPagoInicial,
       monto_pagado_bs: metadataInscripcion?.montoPagadoBs,
@@ -963,12 +996,14 @@ async function crearMensualidadParaPeriodo(
       referencia: metadataInscripcion?.referencia || referenciaPago,
       comprobante_url: metadataInscripcion?.comprobanteUrl,
       registrado_por: metadataInscripcion?.registradoPor
-    });
+    };
+    if (session) await PagoDetalleModel.create([datosPagoInicial], { session });
+    else await PagoDetalleModel.create(datosPagoInicial);
     pagoRegistrado = true;
     }
   }
 
-  const consultaMensualidadCreada = MensualidadModel.findById(mensualidad._id);
+  const consultaMensualidadCreada = aplicarSession(MensualidadModel.findById(mensualidad._id), session);
   const mensualidadPopulada = typeof consultaMensualidadCreada?.populate === 'function'
     ? await consultaMensualidadCreada.populate('id_alumno')
     : await Promise.resolve(consultaMensualidadCreada || mensualidad);
@@ -1164,7 +1199,9 @@ async function recalcularMensualidadPorPagos(
 
   mensualidad.saldo_a_favor_generado = saldoGeneradoNuevo;
 
-  const requiereRevisionPagoCompleto = estatusAnterior === 'En revision' || actorRol === 'usuario';
+  const requiereRevisionPagoCompleto = (mensualidad.pago_en_revision
+    ?? (estatusAnterior === 'En revision')) || actorRol === 'usuario';
+  mensualidad.pago_en_revision = totalPagado > 0 && (requiereRevisionPagoCompleto || actorRol === 'usuario');
   const estatusAnteriorNormalizado = String(estatusAnterior || '').toLowerCase();
   const fechaCortePago = await obtenerFechaCortePagoAlumnoMensualidadAsync(mensualidad, models);
   const estaVencida = fechaCortePago ? fechaCortePago <= new Date() : false;
@@ -1202,6 +1239,8 @@ async function recalcularMensualidadPorPagos(
     mensualidad.estatus = 'Abono';
   }
 
+  await actualizarRevisionCredito(mensualidad, resolveMensualidadModels(models));
+  if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
   await mensualidad.save();
 
   return {
@@ -2646,6 +2685,21 @@ exports.getMensualidades = async (req, res) => {
       return raw;
     });
 
+    const historialesCredito = new Map();
+    for (const mensualidad of mensualidadesCompat) {
+      const id = mensualidad.id_alumno?._id || mensualidad.id_alumno;
+      if (!id || historialesCredito.has(String(id))) continue;
+      historialesCredito.set(String(id), await obtenerTrazabilidadCredito(id, tenantModels, {
+        saldoActual: mensualidad.id_alumno?.saldo_a_favor_mensualidades || 0
+      }));
+    }
+    for (const mensualidad of mensualidadesCompat) {
+      const id = mensualidad.id_alumno?._id || mensualidad.id_alumno;
+      const movimiento = historialesCredito.get(String(id))?.movimientos.get(String(mensualidad._id));
+      if (!movimiento) continue;
+      Object.assign(mensualidad, movimiento);
+      if (movimiento.credito_en_revision > 0) mensualidad.estatus = 'En revision';
+    }
     const alumnosConSaldo = new Map(mensualidades.map((item) => [String(item.id_alumno?._id), item.id_alumno])
       .filter(([, alumno]) => Number(alumno?.saldo_a_favor_mensualidades) > 0));
     const cotizaciones = new Map();
@@ -2787,14 +2841,23 @@ exports.getInscripciones = async (req, res) => {
 // Confirmar mensualidad en revisión
 exports.confirmarMensualidad = async (req, res) => {
   try {
-    const { Mensualidad: TenantMensualidad } = await getTenantMensualidadModels(req);
-    const mensualidad = await TenantMensualidad.findById(req.params.id);
-    if (!mensualidad) return res.status(404).json({ error: 'Mensualidad no encontrada' });
-    mensualidad.estatus = 'Pagado';
-    await mensualidad.save();
+    const models = await getTenantMensualidadModels(req);
+    const mensualidad = await ejecutarConTransaccion(models.Mensualidad, async (session) => {
+      const actual = await aplicarSession(models.Mensualidad.findById(req.params.id), session);
+      if (!actual) throw Object.assign(new Error('Mensualidad no encontrada'), { status: 404 });
+      await actualizarRevisionCredito(actual, models, { session });
+      if (actual.credito_en_revision > 0) {
+        throw Object.assign(new Error('El credito aplicado depende de un pago que sigue en revision. Confirma primero el pago de origen.'), { status: 409 });
+      }
+      actual.pago_en_revision = false;
+      actual.estatus = 'Pagado';
+      await actual.save(session ? { session } : undefined);
+      await sincronizarCreditoAlumno(actual.id_alumno?._id || actual.id_alumno, models, { session });
+      return actual;
+    }, { obligatoria: true });
     res.json({ message: 'Mensualidad confirmada', mensualidad });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 };
 
