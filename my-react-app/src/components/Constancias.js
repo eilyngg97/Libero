@@ -566,7 +566,7 @@ function Constancias() {
                       margin="normal"
                       required={Boolean(requisitos.entrenador)}
                       sx={inputSx}
-                      helperText="Completa las variables de entrenador. En formatos personalizados puedes seleccionar un alumno, un entrenador o ambos."
+                      helperText="Opcional, solo si tu formato lo requiere."
                     />
                   )}
                 />
