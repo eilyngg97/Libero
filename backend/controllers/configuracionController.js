@@ -11,6 +11,7 @@ const { normalizePersonalizados } = require('../services/constanciaTemplateServi
 
 const DEFAULT_CONFIG = {
   pagos: {
+    adicionales: [],
     pago_movil: {
       banco: '',
       codigo_banco: '',
@@ -30,12 +31,14 @@ const DEFAULT_CONFIG = {
     por_concepto: {
       mensualidades: {
         usar_generales: true,
+        adicionales: [],
         pago_movil: {},
         transferencia: {},
         deposito_usd: {}
       },
       uniformes: {
         usar_generales: true,
+        adicionales: [],
         pago_movil: {},
         transferencia: {},
         deposito_usd: {}
@@ -579,6 +582,27 @@ function normalizePublicacionesPayload(publicaciones = {}, fallback = DEFAULT_CO
   };
 }
 
+function normalizeAdditionalPayments(value = []) {
+  if (!Array.isArray(value) || value.length > 3) throw new Error('Metodos adicionales invalidos.');
+  const tipos = new Set();
+  return value.map((metodo) => {
+    if (!metodo || !['zelle', 'paypal', 'binance'].includes(metodo.tipo) || tipos.has(metodo.tipo)) {
+      throw new Error('Selecciona un metodo adicional valido y sin repetir.');
+    }
+    tipos.add(metodo.tipo);
+    const titular = cleanValue(metodo.titular);
+    const correo = cleanValue(metodo.correo);
+    const banco = metodo.tipo === 'zelle' ? cleanValue(metodo.banco) : '';
+    const identificador = metodo.tipo === 'binance' ? cleanValue(metodo.identificador) : '';
+    if (!titular || titular.length > 150 || correo.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)
+      || banco.length > 150 || identificador.length > 100
+      || (metodo.habilitado !== undefined && typeof metodo.habilitado !== 'boolean')) {
+      throw new Error('Revisa el nombre, correo y datos de la cuenta adicional.');
+    }
+    return { tipo: metodo.tipo, titular, correo, banco, identificador, habilitado: metodo.habilitado !== false };
+  });
+}
+
 function normalizeConfigPayload(payload = {}) {
   const root = payload && typeof payload === 'object' ? payload : {};
   const pagos = root.pagos && typeof root.pagos === 'object' ? root.pagos : root;
@@ -593,6 +617,7 @@ function normalizeConfigPayload(payload = {}) {
   const depositoUsd = pagos.deposito_usd || {};
   const normalizeConceptoPago = (concepto = {}) => ({
     usar_generales: concepto.usar_generales !== false,
+    adicionales: normalizeAdditionalPayments(concepto.adicionales),
     pago_movil: {
       banco: cleanValue(concepto?.pago_movil?.banco),
       codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
@@ -613,6 +638,7 @@ function normalizeConfigPayload(payload = {}) {
 
   return {
     pagos: {
+      adicionales: normalizeAdditionalPayments(pagos.adicionales),
       pago_movil: {
         banco: cleanValue(pagoMovil.banco),
         codigo_banco: cleanValue(pagoMovil.codigo_banco),
@@ -653,6 +679,9 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
 
   if (root.pagos && typeof root.pagos === 'object') {
     const pagosPatch = {};
+    if (Object.prototype.hasOwnProperty.call(root.pagos, 'adicionales')) {
+      pagosPatch.adicionales = normalizeAdditionalPayments(root.pagos.adicionales);
+    }
 
     if (root.pagos.pago_movil && typeof root.pagos.pago_movil === 'object') {
       const pagoMovil = root.pagos.pago_movil;
@@ -684,6 +713,7 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
     if (root.pagos.por_concepto && typeof root.pagos.por_concepto === 'object') {
       const normalizeConceptoPatch = (concepto = {}) => ({
         usar_generales: concepto.usar_generales !== false,
+        ...(Object.prototype.hasOwnProperty.call(concepto, 'adicionales') ? { adicionales: normalizeAdditionalPayments(concepto.adicionales) } : {}),
         pago_movil: {
           banco: cleanValue(concepto?.pago_movil?.banco),
           codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
@@ -860,6 +890,7 @@ function serializeConfig(doc) {
     : DEFAULT_CONFIG.categorias;
   const serializeConceptoPago = (concepto = {}) => ({
     usar_generales: concepto?.usar_generales !== false,
+    adicionales: normalizeAdditionalPayments(concepto.adicionales),
     pago_movil: {
       banco: cleanValue(concepto?.pago_movil?.banco),
       codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
@@ -880,6 +911,7 @@ function serializeConfig(doc) {
 
   return {
     pagos: {
+      adicionales: normalizeAdditionalPayments(pagos.adicionales),
       pago_movil: {
         banco: cleanValue(pagos?.pago_movil?.banco),
         codigo_banco: cleanValue(pagos?.pago_movil?.codigo_banco),
@@ -929,6 +961,7 @@ function serializePagosConfig(doc) {
   const cobro = doc?.cobro || {};
   const serializeConceptoPago = (concepto = {}) => ({
     usar_generales: concepto?.usar_generales !== false,
+    adicionales: normalizeAdditionalPayments(concepto.adicionales),
     pago_movil: {
       banco: cleanValue(concepto?.pago_movil?.banco),
       codigo_banco: cleanValue(concepto?.pago_movil?.codigo_banco),
@@ -948,6 +981,7 @@ function serializePagosConfig(doc) {
   });
   return {
     pagos: {
+      adicionales: normalizeAdditionalPayments(pagos.adicionales),
       pago_movil: {
         banco: cleanValue(pagos?.pago_movil?.banco),
         codigo_banco: cleanValue(pagos?.pago_movil?.codigo_banco),
@@ -1076,6 +1110,9 @@ exports.patchConfiguracionAdmin = async (req, res) => {
     };
 
     if (normalizedPatch.pagos) {
+      if (normalizedPatch.pagos.adicionales) {
+        setPayload['pagos.adicionales'] = normalizedPatch.pagos.adicionales;
+      }
       if (normalizedPatch.pagos.pago_movil) {
         setPayload['pagos.pago_movil'] = normalizedPatch.pagos.pago_movil;
       }
@@ -1087,7 +1124,9 @@ exports.patchConfiguracionAdmin = async (req, res) => {
       }
       if (normalizedPatch.pagos.por_concepto) {
         Object.entries(normalizedPatch.pagos.por_concepto).forEach(([concepto, value]) => {
-          setPayload[`pagos.por_concepto.${concepto}`] = value;
+          Object.entries(value).forEach(([field, fieldValue]) => {
+            setPayload[`pagos.por_concepto.${concepto}.${field}`] = fieldValue;
+          });
         });
       }
     }

@@ -17,6 +17,11 @@ const ESTADOS_PEDIDO = {
   CANCELADO: 'cancelado'
 };
 const MONTO_TOLERANCIA_BS = 100;
+const MONEDAS_METODOS_DIVISA = {
+  zelle: ['USD'],
+  paypal: ['USD', 'EUR'],
+  binance: ['USD']
+};
 
 function redondearMonto(valor) {
   return Number((Number(valor) || 0).toFixed(2));
@@ -726,8 +731,19 @@ exports.registrarPagoPedido = async (req, res) => {
       return res.status(400).json({ error: 'Debes indicar un monto_pagado valido' });
     }
 
-    const montoPagadoBs = Number(monto_pagado_bs);
-    if (!Number.isFinite(montoPagadoBs) || montoPagadoBs <= 0) {
+    const monedasMetodo = MONEDAS_METODOS_DIVISA[String(metodo_pago).trim().toLowerCase()];
+    const pagoEnDivisa = Array.isArray(monedasMetodo);
+    if (pagoEnDivisa && !monedasMetodo.includes(normalizeMoneda(pedido.moneda))) {
+      return res.status(400).json({ error: 'El metodo de pago no admite la moneda del pedido' });
+    }
+    if (pagoEnDivisa && !/^[a-zA-Z0-9][a-zA-Z0-9 _./-]{2,99}$/.test(String(referencia || '').trim())) {
+      return res.status(400).json({ error: 'Debes indicar una referencia valida para el pago en divisa' });
+    }
+    if (pagoEnDivisa && monto_pagado_bs !== undefined && monto_pagado_bs !== '' && Number(monto_pagado_bs) !== 0) {
+      return res.status(400).json({ error: 'El pago en divisa no debe incluir un monto en Bs' });
+    }
+    const montoPagadoBs = pagoEnDivisa ? 0 : Number(monto_pagado_bs);
+    if (!pagoEnDivisa && (!Number.isFinite(montoPagadoBs) || montoPagadoBs <= 0)) {
       return res.status(400).json({ error: 'Debes indicar un monto_pagado_bs valido' });
     }
 
@@ -995,11 +1011,25 @@ exports.editarUltimoPagoPedido = async (req, res) => {
       return res.status(400).json({ error: 'Debes indicar un monto_pagado valido' });
     }
 
-    let montoBsSolicitado = montoBsInput !== undefined
+    const metodoEditado = req.body?.metodo_pago !== undefined ? req.body.metodo_pago : targetPago.metodo_pago;
+    const monedasMetodoEditado = MONEDAS_METODOS_DIVISA[String(metodoEditado || '').trim().toLowerCase()];
+    const pagoEditadoEnDivisa = Array.isArray(monedasMetodoEditado);
+    if (pagoEditadoEnDivisa && !monedasMetodoEditado.includes(normalizeMoneda(pedido.moneda))) {
+      return res.status(400).json({ error: 'El metodo de pago no admite la moneda del pedido' });
+    }
+    const referenciaEditada = req.body?.referencia !== undefined ? req.body.referencia : targetPago.referencia;
+    if (pagoEditadoEnDivisa && !/^[a-zA-Z0-9][a-zA-Z0-9 _./-]{2,99}$/.test(String(referenciaEditada || '').trim())) {
+      return res.status(400).json({ error: 'Debes indicar una referencia valida para el pago en divisa' });
+    }
+    if (pagoEditadoEnDivisa && montoBsInput !== undefined && montoBsInput !== '' && Number(montoBsInput) !== 0) {
+      return res.status(400).json({ error: 'El pago en divisa no debe incluir un monto en Bs' });
+    }
+
+    let montoBsSolicitado = pagoEditadoEnDivisa ? 0 : montoBsInput !== undefined
       ? Number(montoBsInput)
       : montoOriginalBs;
 
-    if (!Number.isFinite(montoBsSolicitado) || montoBsSolicitado <= 0) {
+    if (!pagoEditadoEnDivisa && (!Number.isFinite(montoBsSolicitado) || montoBsSolicitado <= 0)) {
       const tasaOriginal = (montoOriginalDivisa > 0 && montoOriginalBs > 0)
         ? (montoOriginalBs / montoOriginalDivisa)
         : 0;
@@ -1008,7 +1038,7 @@ exports.editarUltimoPagoPedido = async (req, res) => {
         : 0;
     }
 
-    if (!Number.isFinite(montoBsSolicitado) || montoBsSolicitado <= 0) {
+    if (!pagoEditadoEnDivisa && (!Number.isFinite(montoBsSolicitado) || montoBsSolicitado <= 0)) {
       return res.status(400).json({ error: 'Debes indicar un monto_pagado_bs valido' });
     }
 

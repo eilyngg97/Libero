@@ -1203,6 +1203,61 @@ describe('Backend smoke tests', () => {
     expect(pedidoDoc.pagos_historial).toHaveLength(0);
   });
 
+  test.each([
+    ['Zelle', 'USD', 'pago_completo', 20],
+    ['PayPal', 'EUR', 'pago_completo', 20],
+    ['Binance', 'USD', 'pago_completo', 20],
+    ['Zelle', 'USD', 'dos_partes_50', 10]
+  ])('uniformes registra %s en %s sin bolivares (%s)', async (metodo, moneda, modalidad, monto) => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1', estado: 'esperando_pago', solicitado_por: 'usuario1', precio: 20, moneda,
+      monto_pagado: 0, monto_pagado_bs: 0, saldo_pendiente: monto, metodo_cobranza: modalidad,
+      regla_cobranza: 'obligatoria', apertura_segunda_cuota: 'bajo_solicitud',
+      segunda_parte_habilitada: false, monto_primera_parte_objetivo: 10, pagos_historial: [],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const populatedQuery = { populate: jest.fn().mockReturnThis(), then: (resolve) => resolve(pedidoDoc) };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc).mockReturnValueOnce(populatedQuery);
+    const response = await request(app).patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`).field('metodo_pago', metodo)
+      .field('monto_pagado', String(monto)).field('referencia', 'TX-UNIFORME-2026');
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.estado).toBe('pago_en_revision');
+    expect(pedidoDoc.monto_ultimo_pago).toBe(monto);
+    expect(pedidoDoc.monto_ultimo_pago_bs).toBe(0);
+    expect(pedidoDoc.metodo_pago).toBe(metodo);
+    expect(pedidoDoc.referencia).toBe('TX-UNIFORME-2026');
+    expect(pedidoDoc.monto_pagado).toBe(0);
+    expect(pedidoDoc.pagos_historial).toHaveLength(0);
+  });
+
+  test.each([
+    ['Zelle', 'EUR', 20, undefined, 'TX-VALIDA', 'moneda'],
+    ['Binance', 'EUR', 20, undefined, 'TX-VALIDA', 'moneda'],
+    ['Zelle', 'USD', 20, '16000', 'TX-VALIDA', 'no debe incluir'],
+    ['Zelle', 'USD', 20, undefined, '', 'referencia'],
+    ['Zelle', 'USD', 19, undefined, 'TX-VALIDA', 'monto exacto'],
+    ['Pago movil', 'USD', 20, undefined, '123456', 'monto_pagado_bs valido'],
+    ['Transferencia', 'USD', 20, '0', '123456', 'monto_pagado_bs valido']
+  ])('uniformes rechaza pago invalido %s %s %s %s %s', async (metodo, moneda, monto, bolivares, referencia, error) => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1', estado: 'esperando_pago', solicitado_por: 'usuario1', precio: 20, moneda,
+      monto_pagado: 0, saldo_pendiente: 20, metodo_cobranza: 'pago_completo',
+      save: jest.fn().mockResolvedValue(true)
+    };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc);
+    let pagoRequest = request(app).patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`).field('metodo_pago', metodo)
+      .field('monto_pagado', String(monto)).field('referencia', referencia);
+    if (bolivares !== undefined) pagoRequest = pagoRequest.field('monto_pagado_bs', bolivares);
+    const response = await pagoRequest;
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain(error);
+    expect(pedidoDoc.save).not.toHaveBeenCalled();
+  });
+
   test('PATCH /api/uniformes/pedidos/:id/pagar rechaza un monto menor al tramo 50/50', async () => {
     const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
     const pedidoDoc = {
@@ -1387,7 +1442,7 @@ describe('Backend smoke tests', () => {
     expect(pedidoDoc.pagos_historial).toHaveLength(1);
   });
 
-  test('PATCH /api/uniformes/pedidos/:id/verificar-pago confirma el total aunque el saldo previo fuera media cuota', async () => {
+  test.each([['Pago movil', 16000], ['Zelle', 0], ['PayPal', 0], ['Binance', 0]])('PATCH /api/uniformes/pedidos/:id/verificar-pago confirma %s sin inventar Bs', async (metodo, montoBs) => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
     const pedidoDoc = {
       _id: 'pedido1',
@@ -1396,11 +1451,11 @@ describe('Backend smoke tests', () => {
       monto_pagado: 0,
       monto_pagado_bs: 0,
       monto_ultimo_pago: 20,
-      monto_ultimo_pago_bs: 16000,
+      monto_ultimo_pago_bs: montoBs,
       saldo_pendiente: 10,
       metodo_cobranza: 'pago_completo',
       pagos_historial: [],
-      metodo_pago: 'Pago movil',
+      metodo_pago: metodo,
       referencia: '123456',
       fecha_pago: new Date('2026-09-15'),
       save: jest.fn().mockResolvedValue(true)
@@ -1427,7 +1482,66 @@ describe('Backend smoke tests', () => {
     expect(pedidoDoc.saldo_pendiente).toBe(0);
     expect(pedidoDoc.pagos_historial).toHaveLength(1);
     expect(pedidoDoc.pagos_historial[0].monto_pagado).toBe(20);
+    expect(pedidoDoc.pagos_historial[0].monto_pagado_bs).toBe(montoBs);
+    expect(pedidoDoc.pagos_historial[0].metodo_pago).toBe(metodo);
+    expect(pedidoDoc.monto_pagado_bs).toBe(montoBs);
     expect(pedidoDoc.monto_ultimo_pago).toBe(0);
+  });
+
+  test.each(['Zelle', 'PayPal', 'Binance'].flatMap((metodo) => ['pago_en_revision', 'verificado'].map((estado) => [metodo, estado])))('uniformes edita %s en %s conservando divisa y referencia sin Bs', async (metodo, estado) => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const pendiente = estado === 'pago_en_revision';
+    const pedidoDoc = {
+      _id: 'pedido1', estado, precio: 20, moneda: 'USD', metodo_pago: metodo, referencia: 'TX-ORIGINAL',
+      monto_pagado: pendiente ? 0 : 15, monto_pagado_bs: 0,
+      monto_ultimo_pago: pendiente ? 15 : 0, monto_ultimo_pago_bs: 0,
+      saldo_pendiente: pendiente ? 20 : 5, metodo_cobranza: 'pago_completo',
+      pagos_historial: pendiente ? [] : [{ monto_pagado: 15, monto_pagado_bs: 0,
+        metodo_pago: metodo, referencia: 'TX-ORIGINAL', fecha_pago: new Date('2026-10-21') }],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const populatedQuery = { populate: jest.fn().mockReturnThis(), then: (resolve) => resolve(pedidoDoc) };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc).mockReturnValueOnce(populatedQuery);
+    const response = await request(app).patch('/api/uniformes/pedidos/pedido1/pagos/ultimo')
+      .set('Authorization', `Bearer ${token}`).field('metodo_pago', metodo)
+      .field('monto_pagado', '15.50').field('referencia', 'TX-CORREGIDA-2026');
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.save).toHaveBeenCalledTimes(1);
+    expect(pedidoDoc.monto_pagado_bs).toBe(0);
+    expect(pedidoDoc.referencia).toBe('TX-CORREGIDA-2026');
+    expect(pedidoDoc.metodo_pago).toBe(metodo);
+    if (pendiente) {
+      expect(pedidoDoc.monto_ultimo_pago).toBe(15.5);
+      expect(pedidoDoc.monto_ultimo_pago_bs).toBe(0);
+      expect(pedidoDoc.monto_pagado).toBe(0);
+      expect(pedidoDoc.estado).toBe('pago_en_revision');
+    } else {
+      expect(pedidoDoc.monto_pagado).toBe(15.5);
+      expect(pedidoDoc.saldo_pendiente).toBe(4.5);
+      expect(pedidoDoc.pagos_historial[0]).toMatchObject({ monto_pagado: 15.5, monto_pagado_bs: 0,
+        metodo_pago: metodo, referencia: 'TX-CORREGIDA-2026' });
+    }
+  });
+
+  test.each([
+    ['EUR', '15', undefined, 'TX-VALIDA', 'moneda'],
+    ['USD', '15', '12000', 'TX-VALIDA', 'no debe incluir'],
+    ['USD', '15', undefined, '', 'referencia'],
+    ['USD', '21', undefined, 'TX-VALIDA', 'saldo pendiente']
+  ])('uniformes rechaza edicion Zelle invalida %s %s %s %s', async (moneda, monto, bolivares, referencia, error) => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const pedidoDoc = { _id: 'pedido1', estado: 'pago_en_revision', precio: 20, moneda,
+      monto_pagado: 0, monto_ultimo_pago: 15, monto_ultimo_pago_bs: 0, metodo_pago: 'Zelle',
+      referencia: 'TX-ORIGINAL', pagos_historial: [], save: jest.fn().mockResolvedValue(true) };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc);
+    let pagoRequest = request(app).patch('/api/uniformes/pedidos/pedido1/pagos/ultimo')
+      .set('Authorization', `Bearer ${token}`).field('metodo_pago', 'Zelle')
+      .field('monto_pagado', monto).field('referencia', referencia);
+    if (bolivares !== undefined) pagoRequest = pagoRequest.field('monto_pagado_bs', bolivares);
+    const response = await pagoRequest;
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain(error);
+    expect(pedidoDoc.save).not.toHaveBeenCalled();
   });
 
   test('GET /api/configuracion oculta pagos de uniformes sin permiso de solicitudes', async () => {

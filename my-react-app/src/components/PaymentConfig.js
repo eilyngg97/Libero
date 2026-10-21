@@ -5,6 +5,7 @@ import {
   Button,
   Divider,
   InputAdornment,
+  IconButton,
   MenuItem,
   Paper,
   Snackbar,
@@ -12,6 +13,7 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography
 } from '@mui/material';
 import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
@@ -21,13 +23,17 @@ import CheckroomOutlinedIcon from '@mui/icons-material/CheckroomOutlined';
 import PhoneIphoneOutlinedIcon from '@mui/icons-material/PhoneIphoneOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { BANCOS_PAGO_MOVIL } from '../constants/pagos';
 import { hasPermission } from '../utils/permissions';
+import { ADDITIONAL_PAYMENT_METHODS } from '../utils/paymentMethod';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
 const EMPTY_CONFIG = {
   pagos: {
+    adicionales: [],
     pago_movil: {
       banco: '',
       codigo_banco: '',
@@ -47,12 +53,14 @@ const EMPTY_CONFIG = {
     por_concepto: {
       mensualidades: {
         usar_generales: true,
+        adicionales: [],
         pago_movil: { banco: '', codigo_banco: '', telefono: '', cedula: '', titular: '' },
         transferencia: { banco: '', cuenta: '', titular: '', cedula: '' },
         deposito_usd: { instrucciones: '' }
       },
       uniformes: {
         usar_generales: true,
+        adicionales: [],
         pago_movil: { banco: '', codigo_banco: '', telefono: '', cedula: '', titular: '' },
         transferencia: { banco: '', cuenta: '', titular: '', cedula: '' },
         deposito_usd: { instrucciones: '' }
@@ -70,6 +78,7 @@ const EMPTY_CONFIG = {
 
 const buildConfigFromResponse = (data = {}) => ({
   pagos: {
+    adicionales: Array.isArray(data?.pagos?.adicionales) ? data.pagos.adicionales : [],
     pago_movil: {
       ...EMPTY_CONFIG.pagos.pago_movil,
       ...(data?.pagos?.pago_movil || {})
@@ -124,6 +133,7 @@ function PaymentConfig() {
   const [savingPagos, setSavingPagos] = useState(false);
   const [savingCobro, setSavingCobro] = useState(false);
   const [paymentScope, setPaymentScope] = useState('generales');
+  const [nuevoMetodo, setNuevoMetodo] = useState('zelle');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const monedaCobro = String(config?.cobro?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
@@ -133,6 +143,11 @@ function PaymentConfig() {
     : config.pagos.por_concepto[paymentScope];
   const usingGeneralPayments = paymentScope !== 'generales' && activePayments.usar_generales;
   const displayedPayments = usingGeneralPayments ? config.pagos : activePayments;
+  const adicionales = displayedPayments.adicionales || [];
+  const metodosDisponibles = ADDITIONAL_PAYMENT_METHODS.filter((metodo) => !adicionales.some((item) => item.tipo === metodo.id));
+  const metodosValidos = [config.pagos, ...Object.values(config.pagos.por_concepto)]
+    .every((pagos) => (pagos.adicionales || []).every((metodo) => String(metodo.titular || '').trim()
+      && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(metodo.correo || '').trim())));
 
   const buildFechaInicioRecargoTexto = () => {
     const diaVencimiento = Number(config?.cobro?.dia_vencimiento);
@@ -298,6 +313,26 @@ function PaymentConfig() {
     }));
   };
 
+  const updateAdditionalPayments = (updater) => {
+    setConfig((prev) => {
+      const target = paymentScope === 'generales' ? prev.pagos : prev.pagos.por_concepto[paymentScope];
+      const updated = { ...target, adicionales: updater(target.adicionales || []) };
+      return { ...prev, pagos: paymentScope === 'generales' ? updated : {
+        ...prev.pagos, por_concepto: { ...prev.pagos.por_concepto, [paymentScope]: updated }
+      } };
+    });
+  };
+
+  const updateAdditionalField = (tipo, field, value) => updateAdditionalPayments((items) => items.map((item) => (
+    item.tipo === tipo ? { ...item, [field]: value } : item
+  )));
+
+  const agregarMetodo = () => {
+    const tipo = metodosDisponibles.some((item) => item.id === nuevoMetodo) ? nuevoMetodo : metodosDisponibles[0]?.id;
+    if (!tipo || usingGeneralPayments) return;
+    updateAdditionalPayments((items) => [...items, { tipo, titular: '', correo: '', banco: '', identificador: '', habilitado: true }]);
+  };
+
   const updateCobroField = (field, value) => {
     setConfig((prev) => ({
       ...prev,
@@ -328,6 +363,10 @@ function PaymentConfig() {
   })();
 
   const savePagos = async () => {
+    if (!metodosValidos) {
+      setError('Completa el titular y un correo valido para cada metodo adicional.');
+      return;
+    }
     try {
       setSavingPagos(true);
       setError('');
@@ -347,7 +386,7 @@ function PaymentConfig() {
         body: JSON.stringify({ pagos: pagosPayload })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'No se pudo guardar pagos');
+      if (!res.ok) throw new Error(data?.detalle || data?.error || 'No se pudo guardar pagos');
 
       setSuccessMessage('Pagos actualizados correctamente');
       setConfig(buildConfigFromResponse(data));
@@ -491,7 +530,7 @@ function PaymentConfig() {
               size="small"
               checked={usingGeneralPayments}
               onChange={(event) => toggleGeneralPayments(event.target.checked)}
-              inputProps={{ 'aria-label': 'Usar datos generales' }}
+              slotProps={{ input: { 'aria-label': 'Usar datos generales' } }}
               sx={{
                 '& .MuiSwitch-switchBase.Mui-checked': { color: '#f97316' },
                 '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#f97316' }
@@ -510,8 +549,87 @@ function PaymentConfig() {
         </Alert>
       )}
 
+      <Box component="section" aria-label="Metodos adicionales" sx={{ mb: 2 }}>
+        <Box sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          alignItems: { xs: 'stretch', md: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          py: 2,
+          borderTop: '1px solid #e2e7ef',
+          borderBottom: '1px solid #e2e7ef',
+          mb: 2
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 20, color: '#b5641a', flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 16, fontWeight: 800, color: '#27364b' }}>Otros metodos de pago</Typography>
+          </Box>
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(180px, 1fr) auto' },
+            alignItems: 'center',
+            gap: 1.25,
+            width: { xs: '100%', md: 'auto' },
+            minWidth: 0
+          }}>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="Nuevo metodo"
+              InputLabelProps={{ shrink: true }}
+              value={metodosDisponibles.some((item) => item.id === nuevoMetodo) ? nuevoMetodo : (metodosDisponibles[0]?.id || '')}
+              onChange={(event) => setNuevoMetodo(event.target.value)}
+              disabled={usingGeneralPayments || !metodosDisponibles.length}
+              SelectProps={{ displayEmpty: true }}
+              sx={{
+                minWidth: 0,
+                '& .MuiOutlinedInput-root': {
+                  height: 42,
+                  bgcolor: '#ffffff',
+                  borderRadius: 1,
+                  '& fieldset': { borderColor: '#d6deea' },
+                  '&:hover fieldset': { borderColor: '#97a6ba' },
+                  '&.Mui-focused fieldset': { borderColor: '#c45c12' }
+                },
+                '& .MuiInputLabel-root': { color: '#66758d', fontSize: 13 },
+                '& .MuiInputLabel-root.Mui-focused': { color: '#a94d0d' },
+                '& .MuiSelect-select': { fontSize: 14, fontWeight: 600 }
+              }}
+            >
+              {!metodosDisponibles.length && <MenuItem value="" disabled>Sin metodos disponibles</MenuItem>}
+              {metodosDisponibles.map((metodo) => <MenuItem key={metodo.id} value={metodo.id}>{metodo.nombre}</MenuItem>)}
+            </TextField>
+            <Button
+              variant="contained"
+              disableElevation
+              startIcon={<AddRoundedIcon />}
+              onClick={agregarMetodo}
+              disabled={usingGeneralPayments || !metodosDisponibles.length}
+              sx={{
+                minHeight: 42,
+                px: 2,
+                borderRadius: 1,
+                textTransform: 'none',
+                letterSpacing: 0,
+                fontSize: 13,
+                fontWeight: 800,
+                whiteSpace: 'nowrap',
+                bgcolor: '#c45c12',
+                color: '#ffffff',
+                '&:hover': { bgcolor: '#a94d0d' },
+                '&:focus-visible': { outline: '3px solid #fdba74', outlineOffset: 2 }
+              }}
+            >
+              Agregar metodo
+            </Button>
+          </Box>
+        </Box>
+      </Box>
+
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 2, opacity: usingGeneralPayments ? 0.55 : 1 }}>
-        <Paper sx={sectionCardSx}>
+        <Paper component="section" aria-label="Pago movil" sx={sectionCardSx}>
           <Box sx={cardTitleSx}>
             <PhoneIphoneOutlinedIcon sx={{ color: '#bd6e26', fontSize: 18 }} />
             <Typography sx={{ fontWeight: 800, color: '#2a374d', fontSize: 22 }}>Pago movil</Typography>
@@ -539,7 +657,7 @@ function PaymentConfig() {
           </Box>
         </Paper>
 
-        <Paper sx={sectionCardSx}>
+        <Paper component="section" aria-label="Transferencia" sx={sectionCardSx}>
           <Box sx={cardTitleSx}>
             <AccountBalanceOutlinedIcon sx={{ color: '#bd6e26', fontSize: 18 }} />
             <Typography sx={{ fontWeight: 800, color: '#2a374d', fontSize: 22 }}>Transferencia</Typography>
@@ -566,6 +684,21 @@ function PaymentConfig() {
             <TextField disabled={usingGeneralPayments} label="Cedula" placeholder="J-00000000-0" InputLabelProps={{ shrink: true }} size="small" sx={fieldSx} value={displayedPayments.transferencia.cedula} onChange={(e) => updatePaymentField('transferencia', 'cedula', e.target.value)} />
           </Box>
         </Paper>
+
+        {adicionales.map((metodo) => <Paper component="section" aria-label={`Cuenta ${metodo.tipo}`} key={metodo.tipo} sx={{ ...sectionCardSx, borderRadius: 2, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 19, color: '#bd6e26' }} />
+            <Typography sx={{ fontWeight: 800, fontSize: 18, mr: 'auto' }}>{ADDITIONAL_PAYMENT_METHODS.find((item) => item.id === metodo.tipo)?.nombre}</Typography>
+            <Switch size="small" checked={metodo.habilitado !== false} onChange={(event) => updateAdditionalField(metodo.tipo, 'habilitado', event.target.checked)} disabled={usingGeneralPayments} slotProps={{ input: { 'aria-label': `Habilitar ${metodo.tipo}` } }} />
+            <Tooltip title="Quitar metodo"><span><IconButton size="small" aria-label={`Quitar ${metodo.tipo}`} disabled={usingGeneralPayments} onClick={() => updateAdditionalPayments((items) => items.filter((item) => item.tipo !== metodo.tipo))}><DeleteOutlineIcon fontSize="small" /></IconButton></span></Tooltip>
+          </Box>
+          <Box sx={{ display: 'grid', gap: 1.75 }}>
+            <TextField required disabled={usingGeneralPayments} label="Nombre del titular" size="small" sx={fieldSx} value={metodo.titular} onChange={(event) => updateAdditionalField(metodo.tipo, 'titular', event.target.value)} inputProps={{ maxLength: 150 }} />
+            <TextField required disabled={usingGeneralPayments} label="Correo" type="email" size="small" sx={fieldSx} value={metodo.correo} onChange={(event) => updateAdditionalField(metodo.tipo, 'correo', event.target.value)} inputProps={{ maxLength: 254 }} error={Boolean(metodo.correo) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(metodo.correo.trim())} />
+            {metodo.tipo === 'zelle' && <TextField disabled={usingGeneralPayments} label="Banco (opcional)" size="small" sx={fieldSx} value={metodo.banco || ''} onChange={(event) => updateAdditionalField(metodo.tipo, 'banco', event.target.value)} inputProps={{ maxLength: 150 }} />}
+            {metodo.tipo === 'binance' && <TextField disabled={usingGeneralPayments} label="Binance Pay ID (opcional)" size="small" sx={fieldSx} value={metodo.identificador || ''} onChange={(event) => updateAdditionalField(metodo.tipo, 'identificador', event.target.value)} inputProps={{ maxLength: 100 }} />}
+          </Box>
+        </Paper>)}
 
         <Box sx={{ gridColumn: { xs: '1 / -1' }, display: 'flex', justifyContent: 'flex-end', mt: -0.5 }}>
           <Button

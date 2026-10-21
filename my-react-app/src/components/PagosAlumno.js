@@ -22,7 +22,7 @@ import PaymentsIcon from '@mui/icons-material/Payments';
 import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
-import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
+import { normalizeMetodoPago, metodoRequiereReferencia, ADDITIONAL_PAYMENT_METHODS, esMetodoPagoAdicional, referenciaPagoValida } from '../utils/paymentMethod';
 import { mediaUrl } from '../utils/mediaUrl';
 
 // Eliminar pagosEjemplo, usaremos datos reales
@@ -68,7 +68,7 @@ const parseFechaSinDesfase = (value) => {
 };
 
 function PagosAlumno(props) {
-  const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo'];
+  const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo', ...ADDITIONAL_PAYMENT_METHODS.map((item) => item.nombre)];
 
   const { dolar } = useDolar();
   const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
@@ -106,6 +106,7 @@ function PagosAlumno(props) {
   const [pagoAEliminar, setPagoAEliminar] = useState(null);
   const [errorEliminarPago, setErrorEliminarPago] = useState('');
   const [metodoPago, setMetodoPago] = useState(metodosPago[0]);
+  const metodoEdicionAdicional = esMetodoPagoAdicional(metodoPago);
   const [montoPagoBs, setMontoPagoBs] = useState('');
   const [fechaPago, setFechaPago] = useState(() => new Date().toISOString().slice(0, 10));
   const [referencia, setReferencia] = useState('');
@@ -573,7 +574,9 @@ function PagosAlumno(props) {
     setEditandoPago(pago);
     setMetodoPago(normalizeMetodoPago(pago?.metodo_pago));
     const montoPagoBsInicial = Number(pago?.monto_pagado_bs);
-    if (Number.isFinite(montoPagoBsInicial) && montoPagoBsInicial > 0) {
+    if (esMetodoPagoAdicional(pago?.metodo_pago)) {
+      setMontoPagoBs(Number(pago?.monto_pagado).toFixed(2));
+    } else if (Number.isFinite(montoPagoBsInicial) && montoPagoBsInicial > 0) {
       setMontoPagoBs(montoPagoBsInicial);
     } else {
       const montoUsdInicial = Number(pago?.monto_pagado);
@@ -605,7 +608,7 @@ function PagosAlumno(props) {
       return;
     }
 
-    if (metodoRequiereReferencia(metodoPago) && referenciaNormalizada.length !== 6) {
+    if (metodoRequiereReferencia(metodoPago) && (metodoEdicionAdicional ? !referenciaPagoValida(referenciaNormalizada, metodoPago) : referenciaNormalizada.length !== 6)) {
       const msg = 'Debes ingresar los 6 ultimos digitos de la referencia';
       setErrorRef(msg);
       setErrorEdicion(msg);
@@ -641,7 +644,7 @@ function PagosAlumno(props) {
         setErrorEdicion(msg);
         return;
       }
-      formData.append('monto_pagado_bs', montoPagoBsNumerico.toFixed(2));
+      formData.append('monto_pagado_bs', metodoEdicionAdicional ? '' : montoPagoBsNumerico.toFixed(2));
 
       if (comprobante) {
         formData.append('comprobante', comprobante);
@@ -725,7 +728,7 @@ function PagosAlumno(props) {
   const totalPaginas = Math.ceil(pagosFiltrados.length / pagosPorPagina);
   const pagosPagina = pagosFiltrados.slice((pagina - 1) * pagosPorPagina, pagina * pagosPorPagina);
 
-  const referenciaNormalizada = String(referencia || '').replace(/\D/g, '');
+  const referenciaNormalizada = metodoEdicionAdicional ? String(referencia || '').trim() : String(referencia || '').replace(/\D/g, '');
   const telefonoPagoNormalizado = String(telefonoPago || '').replace(/\D/g, '');
   const telefonoPagoOriginal = formatTelefonoPago(editandoPago?.telefono_pago);
   const telefonoPagoSinCambios = telefonoPagoNormalizado === telefonoPagoOriginal;
@@ -733,7 +736,7 @@ function PagosAlumno(props) {
   const cedulaTitularNormalizada = String(cedulaTitular || '').replace(/\D/g, '');
   const montoPagoBsNumerico = Number(montoPagoBs);
   const metodoPagoNormalizado = normalizeMetodoPago(metodoPago);
-  const equivalenteUsdDesdeBs =
+  const equivalenteUsdDesdeBs = metodoEdicionAdicional ? montoPagoBsNumerico :
     Number.isFinite(montoPagoBsNumerico) && montoPagoBsNumerico > 0 && Number.isFinite(Number(tasaPagoHistorica)) && Number(tasaPagoHistorica) > 0
       ? montoPagoBsNumerico / Number(tasaPagoHistorica)
       : null;
@@ -745,10 +748,8 @@ function PagosAlumno(props) {
     montoPagoBsNumerico > 0 &&
     Number.isFinite(equivalenteUsdDesdeBs) &&
     equivalenteUsdDesdeBs > 0 &&
-    (!metodoRequiereReferencia(metodoPagoNormalizado) || referenciaNormalizada.length === 6) &&
-    telefonoPagoValido &&
-    Boolean(String(tipoCedulaTitular || '').trim()) &&
-    cedulaTitularNormalizada.length > 0;
+    (!metodoRequiereReferencia(metodoPagoNormalizado) || (metodoEdicionAdicional ? referenciaPagoValida(referenciaNormalizada, metodoPago) : referenciaNormalizada.length === 6)) &&
+    (metodoEdicionAdicional || (telefonoPagoValido && Boolean(String(tipoCedulaTitular || '').trim()) && cedulaTitularNormalizada.length > 0));
 
   const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -1792,6 +1793,10 @@ function PagosAlumno(props) {
             value={metodoPago}
             onChange={(e) => {
               const nuevoMetodo = normalizeMetodoPago(e.target.value);
+              if (esMetodoPagoAdicional(nuevoMetodo) !== metodoEdicionAdicional) {
+                const rate = Number(tasaPagoHistorica) || 0;
+                setMontoPagoBs(rate > 0 ? (esMetodoPagoAdicional(nuevoMetodo) ? Number(montoPagoBs) / rate : Number(montoPagoBs) * rate).toFixed(2) : '');
+              }
               setMetodoPago(nuevoMetodo);
               if (!metodoRequiereReferencia(nuevoMetodo)) setReferencia('');
               setErrorRef('');
@@ -1816,11 +1821,11 @@ function PagosAlumno(props) {
             sx={inputSx}
             InputLabelProps={{ shrink: true }}
           />
-          <Typography variant="caption" sx={{ mt: 0.25, mb: 1, color: '#94a3b8', display: 'block' }}>
+          {!metodoEdicionAdicional && <Typography variant="caption" sx={{ mt: 0.25, mb: 1, color: '#94a3b8', display: 'block' }}>
             Tasa aplicada: {tasaPagoHistorica ? `${formatMoney(tasaPagoHistorica)} ${etiquetaTasa}` : 'No disponible'}
-          </Typography>
+          </Typography>}
           <TextField
-            label="Monto pagado (Bs)"
+            label={metodoEdicionAdicional ? `Monto pagado (${monedaConfigurada})` : 'Monto pagado (Bs)'}
             type="number"
             value={montoPagoBs}
             onChange={(e) => setMontoPagoBs(e.target.value)}
@@ -1830,21 +1835,21 @@ function PagosAlumno(props) {
             sx={inputSx}
             inputProps={{ min: 0, step: '0.01' }}
           />
-          <Typography variant="caption" sx={{ color: '#64748b', mt: -0.35, mb: 0.5, display: 'block' }}>
+          {!metodoEdicionAdicional && <Typography variant="caption" sx={{ color: '#64748b', mt: -0.35, mb: 0.5, display: 'block' }}>
             {equivalenteUsdDesdeBs
               ? `Con tasa de ${formatMoney(tasaPagoHistorica)} ${etiquetaTasa}, este monto equivale a $${formatMoney(equivalenteUsdDesdeBs)} ${monedaConfigurada}.`
               : 'Equivalente no disponible hasta tener una tasa valida para la fecha seleccionada.'}
-          </Typography>
+          </Typography>}
           {metodoRequiereReferencia(metodoPago) && (
             <TextField
-              label="6 últimos dígitos de referencia"
+              label={metodoEdicionAdicional ? 'Referencia' : '6 últimos dígitos de referencia'}
               value={referencia}
-              onChange={(e) => setReferencia(e.target.value.replace(/[^0-9]/g, ''))}
+              onChange={(e) => setReferencia(metodoEdicionAdicional ? e.target.value : e.target.value.replace(/[^0-9]/g, ''))}
               fullWidth
               margin="normal"
               size="small"
               sx={inputSx}
-              inputProps={{ maxLength: 6 }}
+              inputProps={{ maxLength: metodoEdicionAdicional ? 100 : 6 }}
               error={!!errorRef}
               helperText={errorRef}
             />

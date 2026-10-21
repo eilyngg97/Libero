@@ -10,8 +10,10 @@ import PaymentsIcon from '@mui/icons-material/Payments';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
+import { ADDITIONAL_PAYMENT_METHODS } from '../utils/paymentMethod';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
@@ -46,12 +48,15 @@ function buildMetodosFromConfig(config = {}, conceptoPago = '') {
         cedula: pagosAplicables?.transferencia?.cedula || ''
       }
     },
-    {
-      id: 'deposito-usd',
-      nombre: 'Deposito USD',
-      etiqueta: 'Deposito USD',
-      instrucciones: pagosAplicables?.deposito_usd?.instrucciones || ''
-    }
+    ...(Array.isArray(pagosAplicables.adicionales) ? pagosAplicables.adicionales : [])
+      .filter((cuenta) => cuenta.habilitado !== false && cuenta.titular && cuenta.correo)
+      .flatMap((cuenta) => {
+        const proveedor = ADDITIONAL_PAYMENT_METHODS.find((item) => item.id === cuenta.tipo);
+        return proveedor ? [{ id: proveedor.id, nombre: proveedor.nombre, etiqueta: proveedor.nombre, adicional: true,
+          monedas: proveedor.monedas, detalles: { titular: cuenta.titular, correo: cuenta.correo,
+            ...(cuenta.tipo === 'zelle' && cuenta.banco ? { banco: cuenta.banco } : {}),
+            ...(cuenta.tipo === 'binance' && cuenta.identificador ? { identificador: cuenta.identificador } : {}) } }] : [];
+      })
   ];
 }
 
@@ -139,6 +144,7 @@ function ModalPago({
   const monedaDesdeProps = String(currencyCode || '').trim().toUpperCase();
   const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const moneda = (monedaDesdeProps === 'USD' || monedaDesdeProps === 'EUR') ? monedaDesdeProps : monedaConfigurada;
+  const esMetodoAdicional = metodoSeleccionado?.adicional === true;
   const monedaDolarContexto = String(dolar?.moneda || '').trim().toUpperCase();
   const tasaContexto = Number(dolar?.promedio) || null;
   const tasaFallbackProps = Number(fallbackRate) || null;
@@ -172,10 +178,12 @@ function ModalPago({
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
   };
-  const referenciaInvalida = !/^[0-9]{6,}$/.test(referencia);
-  const metodosDisponibles = Array.isArray(allowedMethodIds) && allowedMethodIds.length > 0
+  const referenciaInvalida = esMetodoAdicional ? !/^[a-zA-Z0-9][a-zA-Z0-9 _./-]{2,99}$/.test(referencia.trim()) : !/^[0-9]{6,}$/.test(referencia);
+  const metodosPermitidos = Array.isArray(allowedMethodIds) && allowedMethodIds.length > 0
     ? metodos.filter((m) => allowedMethodIds.includes(m.id))
     : metodos;
+  const metodosDisponibles = metodosPermitidos.filter((metodo) => !metodo.adicional
+    || ((typeof onSubmitPayment !== 'function' || conceptoPago === 'uniformes') && metodo.monedas.includes(moneda)));
   const tieneRecargoAplicado = Number(pago?.recargo_aplicado_usd || 0) > 0;
   const telefonoConfirmacionNormalizado = normalizarTelefonoPago(telefonoConfirmacionCantevista);
   const cedulaConfirmacionNormalizada = normalizarCedulaPago(cedulaConfirmacionCantevista);
@@ -496,6 +504,16 @@ function ModalPago({
   useEffect(() => {
     if (!open || !mostrarFormularioPago || !fechaPago || monto === undefined || monto === null) return;
 
+    if (esMetodoAdicional) {
+      setTasaPago(null);
+      if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
+        setMontoPagado(formatMoney(monto));
+      } else if (uniformInstallmentChoice && preferenciaCuota === 'parcial') {
+        setMontoPagado(formatMoney(Number(monto) / 2));
+      }
+      return;
+    }
+
     let cancelled = false;
 
     const actualizarMontoConHistorico = async () => {
@@ -507,7 +525,7 @@ function ModalPago({
         const tasaNormalizada = Number(tasaHistorica) || null;
         setTasaPago(tasaNormalizada);
         if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
-          setMontoPagado(tasaNormalizada ? formatMoney(Number(monto) * Number(tasaNormalizada)) : '');
+          setMontoPagado(esMetodoAdicional ? formatMoney(monto) : tasaNormalizada ? formatMoney(Number(monto) * Number(tasaNormalizada)) : '');
         } else if (uniformInstallmentChoice && preferenciaCuota === 'parcial') {
           setMontoPagado(formatMoney(Number(monto || 0) / 2));
           setMontoPagadoBs(tasaNormalizada ? formatMoney((Number(monto || 0) / 2) * tasaNormalizada) : '');
@@ -517,7 +535,7 @@ function ModalPago({
         const tasaActual = tasaBasePorMoneda;
         setTasaPago(tasaActual);
         if (!cuotasHabilitadas || preferenciaCuota === 'completo') {
-          setMontoPagado(tasaActual ? formatMoney(Number(monto) * tasaActual) : '');
+          setMontoPagado(esMetodoAdicional ? formatMoney(monto) : tasaActual ? formatMoney(Number(monto) * tasaActual) : '');
         } else if (uniformInstallmentChoice && preferenciaCuota === 'parcial') {
           setMontoPagado(formatMoney(Number(monto || 0) / 2));
           setMontoPagadoBs(tasaActual ? formatMoney((Number(monto || 0) / 2) * tasaActual) : '');
@@ -530,7 +548,7 @@ function ModalPago({
     return () => {
       cancelled = true;
     };
-  }, [open, mostrarFormularioPago, fechaPago, monto, cuotasHabilitadas, preferenciaCuota, moneda, tasaBasePorMoneda, uniformInstallmentChoice]);
+  }, [open, mostrarFormularioPago, fechaPago, monto, cuotasHabilitadas, preferenciaCuota, moneda, tasaBasePorMoneda, uniformInstallmentChoice, esMetodoAdicional]);
 
   const handleSeleccionMetodo = (m) => {
     setMetodoSeleccionado(m);
@@ -545,7 +563,7 @@ function ModalPago({
       const montoBaseBs = Number.isFinite(Number(monto)) && Number(monto) > 0 && Number.isFinite(Number(tasaBasePorMoneda)) && Number(tasaBasePorMoneda) > 0
         ? formatMoney(Number(monto) * Number(tasaBasePorMoneda))
         : '';
-      setMontoPagado(montoBaseBs);
+      setMontoPagado(esMetodoAdicional ? formatMoney(monto) : montoBaseBs);
     }
     setMostrarFormularioPago(true);
     if (esAbonoParcial) {
@@ -557,7 +575,7 @@ function ModalPago({
   };
 
   const handleYaPague = () => {
-    if (mostrarPasoConfirmacionCantevista && metodoSeleccionado?.id !== 'deposito-usd') {
+    if (mostrarPasoConfirmacionCantevista && metodoSeleccionado?.id !== 'deposito-usd' && !esMetodoAdicional) {
       setMostrarConfirmacionCantevista(true);
       if (fechaPago === '') {
         setFechaPago(getTodayInCaracas());
@@ -613,7 +631,7 @@ function ModalPago({
   };
 
   const handleConfirmar = async () => {
-    const montoRequerido = esAbonoParcial ? montoPagadoBs : montoPagado;
+    const montoRequerido = esAbonoParcial && !esMetodoAdicional ? montoPagadoBs : montoPagado;
     if (referenciaInvalida || !pago?.id || !montoRequerido || !fechaPago) {
       setSubmitError('Completa los campos requeridos');
       return;
@@ -621,21 +639,21 @@ function ModalPago({
     const montoPagadoNum = Number(montoPagado);
     const montoPagadoBsNum = Number(montoPagadoBs);
     const tasaAplicada = Number(tasaPago) || tasaBasePorMoneda || null;
-    const montoPagadoMoneda = esAbonoParcial
+    const montoPagadoMoneda = esMetodoAdicional ? montoPagadoNum : esAbonoParcial
       ? (tasaAplicada ? (montoPagadoBsNum / tasaAplicada) : null)
       : (tasaAplicada ? (montoPagadoNum / tasaAplicada) : null);
-    const montoPagadoBsFinal = esAbonoParcial ? montoPagadoBsNum : montoPagadoNum;
+    const montoPagadoBsFinal = esMetodoAdicional ? null : esAbonoParcial ? montoPagadoBsNum : montoPagadoNum;
     const montoEsperadoUsd = Number(monto);
     const montoEsperadoBs = montoBs !== null ? Number(montoBs) : null;
-    if (esAbonoParcial && (!montoPagadoBsNum || Number.isNaN(montoPagadoBsNum))) {
+    if (esAbonoParcial && !esMetodoAdicional && (!montoPagadoBsNum || Number.isNaN(montoPagadoBsNum))) {
       setSubmitError('Monto pagado en Bs invalido');
       return;
     }
-    if (!esAbonoParcial && (!montoPagadoNum || Number.isNaN(montoPagadoNum))) {
+    if ((!esAbonoParcial || esMetodoAdicional) && (!Number.isFinite(montoPagadoNum) || montoPagadoNum <= 0)) {
       setSubmitError('Monto pagado invalido');
       return;
     }
-    if (!tasaAplicada || !montoPagadoMoneda || Number.isNaN(montoPagadoMoneda)) {
+    if ((!esMetodoAdicional && !tasaAplicada) || !Number.isFinite(montoPagadoMoneda) || montoPagadoMoneda <= 0) {
       setSubmitError(`No se pudo calcular el monto en ${moneda}`);
       return;
     }
@@ -648,13 +666,13 @@ function ModalPago({
           metodoPago: metodoSeleccionado?.nombre || metodoSeleccionado?.id || '',
           fechaPago,
           referencia,
-          telefonoPago: normalizarTelefonoPago(telefonoConfirmacionCantevista),
-          cedulaTitular: `${String(tipoCedulaConfirmacionCantevista || 'V').toUpperCase()}-${normalizarCedulaPago(cedulaConfirmacionCantevista)}`,
+          telefonoPago: esMetodoAdicional ? '' : normalizarTelefonoPago(telefonoConfirmacionCantevista),
+          cedulaTitular: esMetodoAdicional ? '' : `${String(tipoCedulaConfirmacionCantevista || 'V').toUpperCase()}-${normalizarCedulaPago(cedulaConfirmacionCantevista)}`,
           notaPago: notaPago.trim(),
           solicitaRevisionRecargo,
           comprobante,
           montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
-          montoPagadoBs: Number(montoPagadoBsFinal.toFixed(2)),
+          montoPagadoBs: montoPagadoBsFinal === null ? null : Number(montoPagadoBsFinal.toFixed(2)),
           moneda,
           metodoCobranza: uniformInstallmentChoice
             ? (preferenciaCuota === 'parcial' ? 'dos_partes_50' : 'pago_completo')
@@ -667,7 +685,7 @@ function ModalPago({
           fechaPago,
           referencia,
           montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
-          montoPagadoBs: Number(montoPagadoBsFinal.toFixed(2)),
+          montoPagadoBs: montoPagadoBsFinal === null ? null : Number(montoPagadoBsFinal.toFixed(2)),
           moneda,
           tasaPago: Number(tasaPago) || null,
           comprobanteNombre: comprobante ? comprobante.name : ''
@@ -679,11 +697,11 @@ function ModalPago({
       formData.append('id_mensualidad', pago.id);
       formData.append('credito_a_aplicar', Number(pago.credito_a_aplicar || 0).toFixed(2));
       formData.append('monto_pagado', montoPagadoMoneda.toFixed(2));
-      formData.append('monto_pagado_bs', montoPagadoBsFinal.toFixed(2));
+      if (montoPagadoBsFinal !== null) formData.append('monto_pagado_bs', montoPagadoBsFinal.toFixed(2));
       if (Number.isFinite(montoEsperadoUsd)) {
         formData.append('monto_esperado_usd', montoEsperadoUsd.toFixed(2));
       }
-      if (Number.isFinite(montoEsperadoBs)) {
+      if (!esMetodoAdicional && Number.isFinite(montoEsperadoBs)) {
         formData.append('monto_esperado_bs', montoEsperadoBs.toFixed(2));
       }
       formData.append('fecha_pago', fechaPago);
@@ -717,7 +735,7 @@ function ModalPago({
         fechaPago,
         referencia,
         montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
-        montoPagadoBs: Number(montoPagadoBsFinal.toFixed(2)),
+        montoPagadoBs: montoPagadoBsFinal === null ? null : Number(montoPagadoBsFinal.toFixed(2)),
         moneda,
         tasaPago: Number(tasaPago) || null,
         comprobanteNombre: comprobante ? comprobante.name : ''
@@ -732,7 +750,10 @@ function ModalPago({
   const iconByMetodo = {
     'pago-movil': PhoneIphoneIcon,
     transferencia: AccountBalanceIcon,
-    'deposito-usd': SavingsIcon
+    'deposito-usd': SavingsIcon,
+    zelle: AccountBalanceWalletOutlinedIcon,
+    paypal: AccountBalanceWalletOutlinedIcon,
+    binance: AccountBalanceWalletOutlinedIcon
   };
 
   const inputSx = {
@@ -771,7 +792,7 @@ function ModalPago({
         ? 'Puedes pagar el monto completo o registrar ahora la primera mitad.'
         : 'Se ha habilitado el pago por cuotas para su cuenta. Seleccione su preferencia:')
     : (cuotasHabilitadas && !mostrarFormularioPago && preferenciaCuota === 'parcial' && metodoSeleccionado.id !== 'deposito-usd')
-      ? `Ingresa el monto en ${moneda} y usa el equivalente en Bs para realizar la transferencia.`
+      ? (esMetodoAdicional ? `Importe del abono en ${moneda}` : `Ingresa el monto en ${moneda} y usa el equivalente en Bs para realizar la transferencia.`)
     : (mostrarFormularioPago && metodoSeleccionado.id !== 'deposito-usd')
       ? 'Completa los datos y carga el comprobante para finalizar.'
       : metodoSeleccionado.id === 'deposito-usd'
@@ -864,6 +885,7 @@ function ModalPago({
                         {m.id === 'pago-movil' && 'Transaccion inmediata'}
                         {m.id === 'transferencia' && 'Cualquier banco nacional'}
                         {m.id === 'deposito-usd' && 'Divisas en efectivo o cuenta custodia'}
+                        {m.adicional && m.detalles.correo}
                       </Typography>
                     </Box>
                   </Box>
@@ -1090,16 +1112,16 @@ function ModalPago({
                         MONTO TOTAL A TRANSFERIR
                       </Typography>
                       <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                        {montoBs !== null ? `${formatMoney(montoBs)} Bs` : '-'} / {formatMoney(monto)} {moneda}
+                        {esMetodoAdicional ? `${formatMoney(monto)} ${moneda}` : `${montoBs !== null ? `${formatMoney(montoBs)} Bs` : '-'} / ${formatMoney(monto)} ${moneda}`}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <IconButton
                         size="small"
-                        onClick={() => copiarDatoPago('monto_bs', montoBs !== null ? formatMoney(montoBs) : '')}
-                        disabled={montoBs === null}
+                        onClick={() => copiarDatoPago(esMetodoAdicional ? 'monto' : 'monto_bs', esMetodoAdicional ? formatMoney(monto) : montoBs !== null ? formatMoney(montoBs) : '')}
+                        disabled={!esMetodoAdicional && montoBs === null}
                         sx={{ color: '#ffffff', opacity: montoBs === null ? 0.45 : 0.9 }}
-                        aria-label="Copiar monto en Bs"
+                        aria-label={esMetodoAdicional ? `Copiar monto en ${moneda}` : 'Copiar monto en Bs'}
                       >
                         <ContentCopyIcon fontSize="inherit" />
                       </IconButton>
@@ -1321,18 +1343,18 @@ function ModalPago({
                   >
                     <Box>
                       <Typography variant="caption" sx={{ opacity: 0.9, letterSpacing: '0.08em' }}>
-                        MONTO A TRANSFERIR EN BS
+                        {esMetodoAdicional ? `MONTO A TRANSFERIR EN ${moneda}` : 'MONTO A TRANSFERIR EN BS'}
                       </Typography>
                       <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                        {montoAbonoBs !== null ? `${formatMoney(montoAbonoBs)} Bs` : '-'}
+                        {esMetodoAdicional ? `${formatMoney(montoAbonoUsd)} ${moneda}` : montoAbonoBs !== null ? `${formatMoney(montoAbonoBs)} Bs` : '-'}
                       </Typography>
                     </Box>
                     <IconButton
                       size="small"
-                      onClick={() => copiarDatoPago('monto_bs', montoAbonoBs !== null ? formatMoney(montoAbonoBs) : '')}
-                      disabled={montoAbonoBs === null}
+                      onClick={() => copiarDatoPago(esMetodoAdicional ? 'monto' : 'monto_bs', esMetodoAdicional ? formatMoney(montoAbonoUsd) : montoAbonoBs !== null ? formatMoney(montoAbonoBs) : '')}
+                      disabled={esMetodoAdicional ? !(montoAbonoUsd > 0) : montoAbonoBs === null}
                       sx={{ color: '#ffffff', opacity: montoAbonoBs === null ? 0.45 : 0.9 }}
-                      aria-label="Copiar monto en Bs"
+                      aria-label={esMetodoAdicional ? `Copiar monto en ${moneda}` : 'Copiar monto en Bs'}
                     >
                       <ContentCopyIcon fontSize="inherit" />
                     </IconButton>
@@ -1361,14 +1383,14 @@ function ModalPago({
                       Copiar todos
                     </Button>
                   )}
-                  <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
+                  {!esMetodoAdicional && <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
                     Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/${moneda}` : 'No disponible'}
-                  </Typography>
+                  </Typography>}
                   <Button
                     variant="contained"
                     fullWidth
                     onClick={handleYaPague}
-                    disabled={montoAbonoBs === null}
+                    disabled={esMetodoAdicional ? !(montoAbonoUsd > 0) : montoAbonoBs === null}
                     sx={{
                       mt: 2,
                       bgcolor: '#f97316',
@@ -1411,12 +1433,12 @@ function ModalPago({
                     value={fechaPago}
                     onChange={(e) => setFechaPago(e.target.value)}
                   />
-                  <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
+                  {!esMetodoAdicional && <Typography variant="caption" sx={{ color: '#64748b', mt: 0.25, display: 'block' }}>
                     Tasa aplicada: {tasaPago ? `${formatMoney(tasaPago)} Bs/${moneda}` : 'No disponible'}
-                  </Typography>
-                  {!esAbonoParcial && (
+                  </Typography>}
+                  {(!esAbonoParcial || esMetodoAdicional) && (
                     <TextField
-                      label="Monto pagado (Bs)"
+                      label={esMetodoAdicional ? `Monto pagado (${moneda})` : 'Monto pagado (Bs)'}
                       fullWidth
                       margin="dense"
                       size="small"
@@ -1424,16 +1446,16 @@ function ModalPago({
                       value={montoPagado}
                       onChange={(e) => setMontoPagado(e.target.value)}
                       InputProps={{
-                        endAdornment: <InputAdornment position="end">Bs</InputAdornment>
+                        endAdornment: <InputAdornment position="end">{esMetodoAdicional ? moneda : 'Bs'}</InputAdornment>
                       }}
                     />
                   )}
-                  {!esAbonoParcial && montoPagadoEquivalenteMoneda !== null && (
+                  {!esAbonoParcial && !esMetodoAdicional && montoPagadoEquivalenteMoneda !== null && (
                     <Typography variant="caption" sx={{ color: '#64748b', mt: 0.35, display: 'block' }}>
                         Equivalente: {formatMoney(montoPagadoEquivalenteMoneda)} {moneda}
                     </Typography>
                   )}
-                  {esAbonoParcial && (
+                  {esAbonoParcial && !esMetodoAdicional && (
                     <>
                       <TextField
                         label="Monto pagado (Bs)"
@@ -1464,8 +1486,8 @@ function ModalPago({
                     value={referencia}
                     onChange={(e) => setReferencia(e.target.value)}
                     error={referenciaInvalida}
-                    helperText={referenciaInvalida ? 'La referencia debe incluir, como mínimo, los últimos 6 dígitos.' : ''}
-                    inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                    helperText={referenciaInvalida ? (esMetodoAdicional ? 'Ingresa el identificador de la operacion (3 a 100 caracteres).' : 'La referencia debe incluir, como mínimo, los últimos 6 dígitos.') : ''}
+                    inputProps={esMetodoAdicional ? { maxLength: 100 } : { inputMode: 'numeric', pattern: '[0-9]*' }}
                   />
                   <TextField
                     label="Nota para administracion (opcional)"

@@ -9,8 +9,27 @@ const PaymentMethodSchema = new mongoose.Schema({
   titular: { type: String, default: '' }
 }, { _id: false });
 
+const AdditionalPaymentSchema = new mongoose.Schema({
+  tipo: { type: String, enum: ['zelle', 'paypal', 'binance'], required: true },
+  titular: { type: String, trim: true, required: true, maxlength: 150 },
+  correo: { type: String, trim: true, required: true, maxlength: 254, match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
+  banco: { type: String, trim: true, default: '', maxlength: 150 },
+  identificador: { type: String, trim: true, default: '', maxlength: 100 },
+  habilitado: { type: Boolean, default: true }
+}, { _id: false });
+
+const additionalPaymentsField = {
+  type: [AdditionalPaymentSchema],
+  default: [],
+  validate: {
+    validator: (metodos) => metodos.length <= 3 && new Set(metodos.map((metodo) => metodo.tipo)).size === metodos.length,
+    message: 'Solo se permite una cuenta por metodo adicional.'
+  }
+};
+
 const PaymentConceptSchema = new mongoose.Schema({
   usar_generales: { type: Boolean, default: true },
+  adicionales: additionalPaymentsField,
   pago_movil: { type: PaymentMethodSchema, default: () => ({}) },
   transferencia: { type: PaymentMethodSchema, default: () => ({}) },
   deposito_usd: {
@@ -19,6 +38,7 @@ const PaymentConceptSchema = new mongoose.Schema({
 }, { _id: false });
 
 const PagosSchema = new mongoose.Schema({
+  adicionales: additionalPaymentsField,
   pago_movil: { type: PaymentMethodSchema, default: () => ({}) },
   transferencia: { type: PaymentMethodSchema, default: () => ({}) },
   deposito_usd: {

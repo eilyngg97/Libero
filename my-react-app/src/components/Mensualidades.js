@@ -17,14 +17,14 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
-import { normalizeMetodoPago, metodoRequiereReferencia } from '../utils/paymentMethod';
+import { normalizeMetodoPago, metodoRequiereReferencia, ADDITIONAL_PAYMENT_METHODS, esMetodoPagoAdicional, referenciaPagoValida } from '../utils/paymentMethod';
 import { mediaUrl } from '../utils/mediaUrl';
 import { hasPermission } from '../utils/permissions';
 import PagoAgrupadoEditor from './PagoAgrupadoEditor';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo',];
+const metodosPago = ['Pago movil', 'Transferencia', 'Efectivo', ...ADDITIONAL_PAYMENT_METHODS.map((item) => item.nombre)];
 const SESSION_AVATAR_CACHE_KEY = 'mensualidades_avatar_cache_v1';
 
 const loadAvatarCacheFromSession = () => {
@@ -1227,8 +1227,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const registrarPago = async () => {
 		if (guardandoPago) return;
 		// Validar numero de digitos de referencia
-		if (metodoRequiereReferencia(metodoPago) && referencia.length < 6) {
-			setErrorRef('Debes ingresar al menos 6 dígitos de la referencia');
+		if (!referenciaPagoValida(referencia, metodoPago)) {
+			setErrorRef(esMetodoPagoAdicional(metodoPago) ? 'Ingresa una referencia valida (3 a 100 caracteres).' : 'Debes ingresar al menos 6 dígitos de la referencia');
 			return;
 		}
 		const esMensualidadAbono = String(pagoInfo?.estatus || '').toLowerCase() === 'abono';
@@ -1269,11 +1269,15 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				if (esAdmin) formData.append('credito_a_aplicar', '0');
 			}
 			formData.append('monto_pagado', montoToPay);
-			formData.append('monto_pagado_bs', ((Number(montoToPay) || 0) * (tasaPagoHistorica || tasaBCV)).toFixed(2));
+			if (!esMetodoPagoAdicional(metodoPago)) {
+				formData.append('monto_pagado_bs', ((Number(montoToPay) || 0) * (tasaPagoHistorica || tasaBCV)).toFixed(2));
+			} else if (pagoEnEdicion) {
+				formData.append('monto_pagado_bs', '');
+			}
 			if (montoEsperadoUsd > 0) {
 				formData.append('monto_esperado_usd', montoEsperadoUsd.toFixed(2));
 			}
-			if (Number.isFinite(montoEsperadoBs) && montoEsperadoBs > 0) {
+			if (!esMetodoPagoAdicional(metodoPago) && Number.isFinite(montoEsperadoBs) && montoEsperadoBs > 0) {
 				formData.append('monto_esperado_bs', montoEsperadoBs.toFixed(2));
 			}
 			formData.append('fecha_pago', fechaPago);
@@ -1286,7 +1290,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			}
 			formData.append(
 				'telefono_pago',
-				metodoPagoNormalizado === 'Efectivo'
+				metodoPagoNormalizado === 'Efectivo' || esMetodoPagoAdicional(metodoPagoNormalizado)
 					? ''
 					: String(telefonoPago || '').replace(/[^0-9]/g, '').slice(-10)
 			);
@@ -1983,7 +1987,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		: 'No aplicado';
 	const diaRecargoPersonalizadoDetalle = obtenerDiaLimitePersonalizado(mensualidadDetalle);
 	const formatMontoCorto = (value) => `${simboloMonedaCobro}${formatMoney(value)}`;
+	const detallePagoEnDivisa = esMetodoPagoAdicional(detallePago?.metodo_pago);
 	const tasaDetallePago = (() => {
+		if (detallePagoEnDivisa) return null;
 		const tasaDesdeFechaEdicion = Number(tasaUltimoPagoHistorica);
 		if (editandoUltimoPagoInline && Number.isFinite(tasaDesdeFechaEdicion) && tasaDesdeFechaEdicion > 0) {
 			return tasaDesdeFechaEdicion;
@@ -1997,11 +2003,19 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		return Number.isFinite(tasaFallback) && tasaFallback > 0 ? tasaFallback : null;
 	})();
 	const ultimoPagoMontoPagadoUsdDraft = (() => {
+		if (detallePagoEnDivisa) {
+			const montoDivisa = Number(detallePago?.monto_original_usd ?? detallePago?.monto_pagado);
+			return Number.isFinite(montoDivisa) ? montoDivisa : null;
+		}
 		const montoBs = Number(ultimoPagoDraft?.monto_pagado_bs);
 		if (!Number.isFinite(montoBs) || montoBs <= 0 || !Number.isFinite(tasaDetallePago) || tasaDetallePago <= 0) return null;
 		return montoBs / tasaDetallePago;
 	})();
 	const ultimoPagoMontoEsperadoUsdDraft = (() => {
+		if (detallePagoEnDivisa) {
+			const montoDivisa = Number(detallePago?.monto_esperado_usd ?? mensualidadDetalle?.monto_esperado);
+			return Number.isFinite(montoDivisa) ? montoDivisa : null;
+		}
 		const montoBs = Number(ultimoPagoDraft?.monto_esperado_bs);
 		if (!Number.isFinite(montoBs) || montoBs < 0 || !Number.isFinite(tasaDetallePago) || tasaDetallePago <= 0) return null;
 		return montoBs / tasaDetallePago;
@@ -2533,6 +2547,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 																setUltimoPagoComprobante(null);
 																return;
 															}
+															if (esMetodoPagoAdicional(detallePago?.metodo_pago)) {
+																prepararModalPago(mensualidadDetalle, detallePago);
+																return;
+															}
 															setEditandoUltimoPagoInline(true);
 														}}
 														disabled={guardandoUltimoPagoInline}
@@ -2584,9 +2602,13 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										</TextField>
 									</Box>
 
-									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto pagado (Bs)</Typography>
-										<TextField
+									<Box role="group" aria-label={`Monto pagado (${detallePagoEnDivisa ? monedaCobro : 'Bs'})`} sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>{`Monto pagado (${detallePagoEnDivisa ? monedaCobro : 'Bs'})`}</Typography>
+										{detallePagoEnDivisa ? (
+											<Typography sx={{ mt: 0.7, fontSize: 17, fontWeight: 800, color: '#0b2a57' }}>
+												{ultimoPagoMontoPagadoUsdDraft !== null ? `${simboloMonedaCobro}${formatMoney(ultimoPagoMontoPagadoUsdDraft)} ${monedaCobro}` : '-'}
+											</Typography>
+										) : <TextField
 											type="number"
 											size="small"
 											sx={inlineEditableFieldSx}
@@ -2594,15 +2616,19 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											inputProps={{ min: 0, step: '0.01' }}
 											value={ultimoPagoDraft.monto_pagado_bs}
 											onChange={(e) => setUltimoPagoDraft((prev) => ({ ...prev, monto_pagado_bs: e.target.value }))}
-										/>
-										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+										/>}
+										{!detallePagoEnDivisa && <Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
 											Equivalente {monedaCobro}: {ultimoPagoMontoPagadoUsdDraft !== null ? `${simboloMonedaCobro}${formatMoney(ultimoPagoMontoPagadoUsdDraft)} ${monedaCobro}` : '-'}
-										</Typography>
+										</Typography>}
 									</Box>
 
-									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
-										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Monto esperado (Bs)</Typography>
-										<TextField
+									<Box role="group" aria-label={`Monto esperado (${detallePagoEnDivisa ? monedaCobro : 'Bs'})`} sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
+										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>{`Monto esperado (${detallePagoEnDivisa ? monedaCobro : 'Bs'})`}</Typography>
+										{detallePagoEnDivisa ? (
+											<Typography sx={{ mt: 0.7, fontSize: 17, fontWeight: 800, color: '#0b2a57' }}>
+												{ultimoPagoMontoEsperadoUsdDraft !== null ? `${simboloMonedaCobro}${formatMoney(ultimoPagoMontoEsperadoUsdDraft)} ${monedaCobro}` : '-'}
+											</Typography>
+										) : <TextField
 											type="number"
 											size="small"
 											sx={inlineEditableFieldSx}
@@ -2613,7 +2639,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												setUltimoPagoEsperadoBsManual(true);
 												setUltimoPagoDraft((prev) => ({ ...prev, monto_esperado_bs: e.target.value }));
 											}}
-										/>
+										/>}
 										{editandoUltimoPagoInline && (
 											<Button
 												size="small"
@@ -2625,10 +2651,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 												Recalcular
 											</Button>
 										)}
-										<Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+										{!detallePagoEnDivisa && <Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
 											Equivalente {monedaCobro}: {ultimoPagoMontoEsperadoUsdDraft !== null ? `${simboloMonedaCobro}${formatMoney(ultimoPagoMontoEsperadoUsdDraft)} ${monedaCobro}` : '-'}
-										</Typography>
-										{ultimoPagoTieneAjusteManualMontoEsperado && (
+										</Typography>}
+										{!detallePagoEnDivisa && ultimoPagoTieneAjusteManualMontoEsperado && (
 											<Typography sx={{ mt: 0.45, fontSize: 12, color: '#b45309', fontWeight: 800 }}>
 												Monto esperado Bs ajustado manualmente
 											</Typography>
@@ -2651,7 +2677,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 									<Box sx={{ borderBottom: '1px solid #e5e7eb', pb: 1.6 }}>
 										<Typography sx={{ fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#4b5563', fontWeight: 800 }}>Tasa aplicada</Typography>
 										<Typography sx={{ mt: 0.7, fontSize: { xs: 15, sm: 17 }, fontWeight: 800, color: '#0b2a57', lineHeight: 1.12 }}>
-											{cargandoTasaUltimoPago && editandoUltimoPagoInline
+											{detallePagoEnDivisa ? 'No aplica' : cargandoTasaUltimoPago && editandoUltimoPagoInline
 												? 'Actualizando...'
 												: (Number.isFinite(tasaDetallePago) && tasaDetallePago > 0 ? `${formatMoney(tasaDetallePago)} Bs/${monedaCobro}` : '-')}
 										</Typography>
@@ -3905,10 +3931,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 								}
 								disabled={pagosLoading}
 							/>
-							<Typography variant="body2" sx={{ mt: -0.5, mb: 1, color: '#64748b' }}>
+							<Typography variant="body2" sx={{ mt: -0.5, mb: 1, color: '#64748b', display: esMetodoPagoAdicional(metodoPago) ? 'none' : 'block' }}>
 								Monto en Bs: {formatMoney((Number(montoPago) || 0) * tasaPagoActiva)} Bs
 							</Typography>
-							<Typography variant="caption" sx={{ mt: -0.5, mb: 1, color: '#94a3b8', display: 'block' }}>
+							<Typography variant="caption" sx={{ mt: -0.5, mb: 1, color: '#94a3b8', display: esMetodoPagoAdicional(metodoPago) ? 'none' : 'block' }}>
 								Tasa aplicada: {formatMoney(tasaPagoActiva)} Bs/{monedaCobro}
 							</Typography>
 						</>
@@ -3933,19 +3959,19 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					)}
 					{metodoRequiereReferencia(metodoPago) && (
 						<TextField
-							label="Referencia (mínimo 6 últimos dígitos)"
+							label={esMetodoPagoAdicional(metodoPago) ? 'Referencia' : 'Referencia (mínimo 6 últimos dígitos)'}
 							fullWidth
 							margin="normal"
 							size="small"
 							sx={inputSx}
 							value={referencia}
-							onChange={e => setReferencia(e.target.value.replace(/[^0-9]/g, ''))}
-							inputProps={{ minLength: 6 }}
+							onChange={e => setReferencia(esMetodoPagoAdicional(metodoPago) ? e.target.value : e.target.value.replace(/[^0-9]/g, ''))}
+							inputProps={{ minLength: esMetodoPagoAdicional(metodoPago) ? 3 : 6, maxLength: esMetodoPagoAdicional(metodoPago) ? 100 : undefined }}
 							error={!!errorRef}
 							helperText={errorRef}
 						/>
 					)}
-					{normalizeMetodoPago(metodoPago) !== 'Efectivo' && (
+					{normalizeMetodoPago(metodoPago) !== 'Efectivo' && !esMetodoPagoAdicional(metodoPago) && (
 						<TextField
 							label="Telefono de pago"
 							fullWidth

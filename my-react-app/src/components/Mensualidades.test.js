@@ -91,6 +91,21 @@ test('exporta el monto total despues del recargo sin cambiar su valor', async ()
   expect(opciones.numberColumns).toEqual(['Recargo', 'Monto total']);
 });
 
+test.each(['Zelle', 'PayPal', 'Binance'])('detalle de %s muestra el monto real en divisa y no cero Bs', async (metodo) => {
+  agrupado = false;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => url.includes('/api/pagos/m1')
+    ? { ok: true, json: async () => [{ _id: 'p1', monto_pagado: 24, monto_pagado_bs: 0,
+      monto_esperado_usd: 24, metodo_pago: metodo, fecha_pago: '2026-10-21', referencia: 'TX-DIVISA-2026' }] }
+    : original(url, options));
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  expect(await screen.findByRole('group', { name: 'Monto pagado (USD)' })).toHaveTextContent('$24.00 USD');
+  expect(screen.getByRole('group', { name: 'Monto esperado (USD)' })).toHaveTextContent('$24.00 USD');
+  expect(screen.queryByRole('group', { name: 'Monto pagado (Bs)' })).not.toBeInTheDocument();
+  expect(screen.getByText('No aplica', { exact: true })).toBeInTheDocument();
+});
+
 test('registro administrativo envia pago completo sin aplicar el saldo a favor disponible', async () => {
   agrupado = false;
   const fetchPrevio = global.fetch;
@@ -115,6 +130,34 @@ test('registro administrativo envia pago completo sin aplicar el saldo a favor d
   expect(options.body.get('credito_a_aplicar')).toBe('0');
   expect(options.body.get('monto_pagado')).toBe('14');
   expect(options.body.get('id_mensualidad')).toBe('m1');
+});
+
+test.each(['Zelle', 'PayPal', 'Binance'])('registro administrativo con proveedor %s conserva referencia y no inventa monto en Bs', async (nombre) => {
+  agrupado = false;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (options.method === 'POST') return { ok: true, json: async () => ({ estatus: 'Pagado', credito_aplicado: 0 }) };
+    if (url.includes('/api/pagos/m1')) return { ok: true, json: async () => [] };
+    const respuesta = await original(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [mensualidad] = await respuesta.json();
+    return { ok: true, json: async () => [{ ...mensualidad, estatus: 'Pendiente' }] };
+  });
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Registrar pago' }));
+  await waitFor(() => expect(screen.getByRole('spinbutton', { name: 'Monto a pagar' })).toBeEnabled());
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: /todo de pago$/ }));
+  fireEvent.click(await screen.findByRole('option', { name: nombre }));
+  fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-ABC-2026' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar', exact: true }));
+  await waitFor(() => expect(global.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true));
+  const [, options] = global.fetch.mock.calls.find(([, params]) => params?.method === 'POST');
+  expect(options.body.get('metodo_pago')).toBe(nombre);
+  expect(options.body.get('referencia')).toBe('TX-ABC-2026');
+  expect(options.body.get('monto_pagado')).toBe('14');
+  expect(options.body.get('monto_pagado_bs')).toBeNull();
+  expect(options.body.get('monto_esperado_bs')).toBeNull();
+  expect(options.body.get('credito_a_aplicar')).toBe('0');
 });
 
 test('filtra por codigo agrupado completo o parcial y conserva la busqueda por alumno', async () => {

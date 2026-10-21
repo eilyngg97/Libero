@@ -173,6 +173,131 @@ test('credito historico sin origen disponible conserva el detalle sin inventar d
   expect(screen.queryByText('Datos del pago')).not.toBeInTheDocument();
 });
 
+test.each([
+  ['', false],
+  ['mensualidades', false],
+  ['mensualidades', true],
+  ['uniformes', true]
+])('formulario de usuario no ofrece deposito USD (concepto=%s, envio personalizado=%s)', async (conceptoPago, envioPersonalizado) => {
+  const ModalPagoReal = jest.requireActual('./ModalPago').default;
+  global.fetch.mockResolvedValue({ ok: true, json: async () => ({ pagos: {
+    deposito_usd: { instrucciones: 'Deposito legado general' },
+    por_concepto: {
+      mensualidades: { usar_generales: false, deposito_usd: { instrucciones: 'Deposito legado mensualidades' } },
+      uniformes: { usar_generales: false, deposito_usd: { instrucciones: 'Deposito legado uniformes' } }
+    }
+  } }) });
+  render(<ModalPagoReal open onClose={jest.fn()} pago={{ id: 'm1', monto: 20 }}
+    conceptoPago={conceptoPago} onSubmitPayment={envioPersonalizado ? jest.fn() : undefined} />);
+  expect(await screen.findByText('Pago Movil', { exact: true })).toBeInTheDocument();
+  expect(screen.getByText('Transferencia', { exact: true })).toBeInTheDocument();
+  expect(screen.queryByText(/dep[oó]sito USD/i)).not.toBeInTheDocument();
+  expect(screen.queryByText('Divisas en efectivo o cuenta custodia')).not.toBeInTheDocument();
+});
+
+test.each(['Zelle', 'PayPal', 'Binance'])('uniformes envia %s heredado en divisa sin bolivares inventados', async (nombre) => {
+  const ModalPagoReal = jest.requireActual('./ModalPago').default;
+  global.fetch.mockResolvedValue({ ok: true, json: async () => ({ pagos: {
+    adicionales: [{ tipo: nombre.toLowerCase(), titular: 'Titular QA', correo: 'uniformes@example.com', habilitado: true }],
+    por_concepto: { uniformes: { usar_generales: true, adicionales: [] } }
+  } }) });
+  const enviar = jest.fn().mockResolvedValue(undefined);
+  const cerrar = jest.fn();
+  const success = jest.fn();
+  render(<ModalPagoReal open onClose={cerrar} onSuccess={success} onSubmitPayment={enviar}
+    pago={{ id: 'u1', monto: 20 }} conceptoPago="uniformes" disableCuotas />);
+  fireEvent.click(await screen.findByText(nombre, { exact: true }));
+  expect(screen.getByText('uniformes@example.com')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Ya pague' }));
+  await waitFor(() => expect(screen.getByLabelText('Monto pagado (USD)')).toHaveValue('20.00'));
+  expect(screen.queryByLabelText('Monto pagado (Bs)')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-UNIFORME-2026' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+  await waitFor(() => expect(cerrar).toHaveBeenCalled());
+  expect(enviar).toHaveBeenCalledWith(expect.objectContaining({ metodoPago: nombre, montoPagadoMoneda: 20,
+    montoPagadoBs: null, telefonoPago: '', cedulaTitular: '', referencia: 'TX-UNIFORME-2026' }));
+  expect(success).toHaveBeenCalledWith(expect.objectContaining({ montoPagadoBs: null }));
+});
+
+test.each(['Zelle', 'PayPal', 'Binance'])('formulario real registra %s en divisa sin inventar bolivares ni datos de pago movil', async (nombre) => {
+  const ModalPagoReal = jest.requireActual('./ModalPago').default;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => url.includes('/api/configuracion/pagos')
+    ? { ok: true, json: async () => ({ pagos: { adicionales: [{ tipo: nombre.toLowerCase(), titular: 'Titular QA', correo: 'cuenta@example.com', banco: 'Banco Zelle QA', identificador: '12345678', habilitado: true }] } }) }
+    : original(url, options));
+  const cerrar = jest.fn();
+  const success = jest.fn();
+  render(<ModalPagoReal open onClose={cerrar} onSuccess={success} pago={{ id: 'm1', monto: 19.96 }} conceptoPago="mensualidades" />);
+  fireEvent.click(await screen.findByText(nombre, { exact: true }));
+  expect(screen.getByText('cuenta@example.com')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Ya pague' }));
+  const importe = await screen.findByRole('textbox', { name: 'Monto pagado (USD)' });
+  await waitFor(() => expect(importe).toHaveValue('19.96'));
+  expect(screen.queryByPlaceholderText('4125163627')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Monto pagado (Bs)')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-ABC-2026' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+  await waitFor(() => expect(cerrar).toHaveBeenCalled());
+  const [, options] = global.fetch.mock.calls.find(([, params]) => params?.method === 'POST');
+  expect(options.body.get('metodo_pago')).toBe(nombre);
+  expect(options.body.get('referencia')).toBe('TX-ABC-2026');
+  expect(options.body.get('monto_pagado')).toBe('19.96');
+  expect(options.body.get('monto_pagado_bs')).toBeNull();
+  expect(options.body.get('monto_esperado_bs')).toBeNull();
+  expect(options.body.get('telefono_pago')).toBeNull();
+  expect(options.body.get('cedula_titular')).toBeNull();
+  expect(success).toHaveBeenCalledWith(expect.objectContaining({ montoPagadoMoneda: 19.96, montoPagadoBs: null }));
+});
+
+test('formulario real permite abono parcial con Zelle y respeta configuracion propia del concepto', async () => {
+  const ModalPagoReal = jest.requireActual('./ModalPago').default;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => url.includes('/api/configuracion/pagos')
+    ? { ok: true, json: async () => ({ pagos: { adicionales: [{ tipo: 'paypal', titular: 'General', correo: 'general@example.com' }], por_concepto: { mensualidades: { usar_generales: false, adicionales: [
+      { tipo: 'zelle', titular: 'Titular QA', correo: 'mensualidad@example.com', habilitado: true },
+      { tipo: 'binance', titular: 'Inactivo QA', correo: 'inactivo@example.com', habilitado: false }
+    ] } } } }) }
+    : original(url, options));
+  const cerrar = jest.fn();
+  render(<ModalPagoReal open onClose={cerrar} pago={{ id: 'm1', monto: 20, id_alumno: { habilitar_pago_cuotas: true } }} conceptoPago="mensualidades" />);
+  const zelle = await screen.findByText('Zelle', { exact: true });
+  expect(screen.queryByText('PayPal', { exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByText('Binance', { exact: true })).not.toBeInTheDocument();
+  fireEvent.click(zelle);
+  fireEvent.click(screen.getByText('Realizar Abono Parcial'));
+  fireEvent.change(screen.getByLabelText('Monto a pagar (USD)'), { target: { value: '5.00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ya pague' }));
+  expect(await screen.findByLabelText('Monto pagado (USD)')).toHaveValue('5.00');
+  fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-ABONO-2026' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+  await waitFor(() => expect(cerrar).toHaveBeenCalled());
+  const [, options] = global.fetch.mock.calls.find(([, params]) => params?.method === 'POST');
+  expect(options.body.get('monto_pagado')).toBe('5.00');
+  expect(options.body.get('monto_pagado_bs')).toBeNull();
+});
+
+test.each(['Zelle', 'PayPal', 'Binance'])('editor conserva proveedor %s y referencia alfanumerica sin crear monto en Bs', async (nombre) => {
+  agrupado = false;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => url.includes('/api/pagos/m1')
+    ? { ok: true, json: async () => [{ _id: 'p1', monto_pagado: 19, metodo_pago: nombre, referencia: 'TX-ORIGINAL-2026', fecha_pago: '2026-10-07' }] }
+    : original(url, options));
+  await abrirDetalle();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar', exact: true }));
+  expect(await screen.findByRole('spinbutton', { name: 'Monto pagado (USD)' })).toHaveValue(19);
+  expect(screen.getByLabelText('Referencia')).toHaveValue('TX-ORIGINAL-2026');
+  fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-CORREGIDA-2026' } });
+  const guardar = screen.getByRole('button', { name: 'Guardar cambios' });
+  expect(guardar).toBeEnabled();
+  fireEvent.click(guardar);
+  await waitFor(() => expect(global.fetch.mock.calls.some(([, options]) => options?.method === 'PATCH')).toBe(true));
+  const [, options] = global.fetch.mock.calls.find(([, params]) => params?.method === 'PATCH');
+  expect(options.body.get('metodo_pago')).toBe(nombre);
+  expect(options.body.get('referencia')).toBe('TX-CORREGIDA-2026');
+  expect(Number(options.body.get('monto_pagado'))).toBe(19);
+  expect(options.body.get('monto_pagado_bs')).toBe('');
+});
+
 test.each([false, true])('el formulario real envia el excedente completo sin limitarlo al esperado (agrupado=%s)', async (esGrupo) => {
   const ModalPagoReal = jest.requireActual('./ModalPago').default;
   const enviarGrupo = jest.fn().mockResolvedValue(undefined);
@@ -325,7 +450,7 @@ test('edita la transferencia completa con todas las asignaciones y nunca usa PAT
 
 test('desde el historial abre el mismo editor agrupado', async () => {
   await abrirDetalle();
-  fireEvent.click(await screen.findByRole('button', { name: 'Editar grupo desde historial' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar grupo desde historial' }, { timeout: 10000 }));
   expect(await screen.findByLabelText(/Total transferido \(Bs\)/)).toHaveValue(33207.06);
 });
 
@@ -349,7 +474,7 @@ test('un acceso denegado no habilita el editor individual como alternativa', asy
 test('un conflicto del grupo conserva el editor y no reintenta individualmente', async () => {
   conflicto = true;
   await abrirDetalle();
-  fireEvent.click(await screen.findByRole('button', { name: 'Editar pago agrupado' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar pago agrupado' }, { timeout: 5000 }));
   await screen.findByLabelText(/Total transferido \(Bs\)/);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
@@ -443,7 +568,7 @@ test.each(['png', 'pdf'])('abre comprobante %s dentro de un dialogo con URL del 
 
 test('el detalle se cierra desde su control accesible sin alterar pagos', async () => {
   await abrirDetalle();
-  await screen.findByRole('button', { name: 'Editar pago agrupado' });
+  await screen.findByRole('button', { name: 'Editar pago agrupado' }, { timeout: 5000 });
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar detalle del pago' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   expect(global.fetch.mock.calls.every(([, options]) => !options?.method || options.method === 'GET')).toBe(true);

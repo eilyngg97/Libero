@@ -93,6 +93,25 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
 
   function respuesta() { return { status: jest.fn().mockReturnThis(), json: jest.fn() }; }
 
+  test.each(['Zelle', 'PayPal', 'Binance'])('proveedor %s registra y edita pago individual sin inventar importes en bolivares', async (metodo) => {
+    const registrado = await registrar(false, false, { metodo_pago: metodo, monto_pagado_bs: undefined, referencia: 'TX-ABC-2026' });
+    expect(registrado.status).not.toHaveBeenCalled();
+    const pago = await models.PagoDetalle.findOne({ id_mensualidad: octubreIds[0] });
+    expect(pago).toMatchObject({ metodo_pago: metodo, referencia: 'TX-ABC-2026', monto_pagado: 17.97 });
+    expect(pago.monto_pagado_bs).toBeNull();
+    expect(pago.monto_original_bs).toBeNull();
+    const editado = respuesta();
+    await controller.editarPago({ tenantId: 'qa-credit', params: { id_pago: String(pago._id) },
+      user: { id: String(usuarioId), rol: 'usuario' }, body: { monto_pagado: 17.97, monto_pagado_bs: '',
+        metodo_pago: metodo, referencia: 'TX-CORREGIDA-2026', fecha_pago: '2026-10-07' } }, editado);
+    expect(editado.status).not.toHaveBeenCalled();
+    const actualizado = await models.PagoDetalle.findById(pago._id);
+    expect(actualizado).toMatchObject({ metodo_pago: metodo, referencia: 'TX-CORREGIDA-2026', monto_pagado: 17.97 });
+    expect(actualizado.monto_pagado_bs).toBeNull();
+    expect(await models.PagoDetalle.countDocuments({ id_mensualidad: octubreIds[0] })).toBe(1);
+    expect((await models.Mensualidad.findById(octubreIds[0])).credito_aplicado).toBe(1.03);
+  });
+
   test.each([['admin', false], ['admin', true], ['super_admin', false], ['super_admin', true]])('pago administrativo separado conserva saldo y queda pagado (%s, provisional=%s)', async (rol, provisional) => {
     const origen = await models.Mensualidad.findOne({ id_alumno: alumnoIds[0], mes: 9 });
     origen.estatus = provisional ? 'En revision' : 'Pagado';

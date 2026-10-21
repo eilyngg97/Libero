@@ -30,6 +30,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import ModalPago from './ModalPago';
 import { mediaUrl } from '../utils/mediaUrl';
+import { esMetodoPagoAdicional } from '../utils/paymentMethod';
 
 const TALLAS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '6', '8', '10', '12', '14', '16'];
 const MONTO_TOLERANCIA_BS = 100;
@@ -742,16 +743,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     }
   };
 
-  const tieneTasaDisponibleParaPedido = (pedido) => {
-    const tasaActual = obtenerTasaPorMoneda(pedido?.moneda);
-    return Number.isFinite(tasaActual) && tasaActual > 0;
-  };
-
   const openPagoDialog = (pedido) => {
-    if (!tieneTasaDisponibleParaPedido(pedido)) {
-      setErrorMessage('Aun estamos cargando la tasa de cambio para esta moneda. Intenta de nuevo en unos segundos.');
-      return;
-    }
     setPedidoPago(pedido);
     setPagoDialogOpen(true);
   };
@@ -764,6 +756,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
   const handlePagarPedido = async ({ pago, metodoPago, metodoCobranza, fechaPago, referencia, comprobante, montoPagadoMoneda, montoPagadoBs, moneda, telefonoPago, cedulaTitular, notaPago }) => {
     if (!pago?._id) return;
 
+    const pagoEnDivisa = esMetodoPagoAdicional(metodoPago);
     const montoPagadoNum = Number(montoPagadoMoneda);
     const montoPagadoBsNum = Number(montoPagadoBs);
     const saldoPendiente = Number(pago?.saldo_pendiente);
@@ -788,11 +781,11 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
       throw new Error('Debes indicar un monto pagado valido');
     }
 
-    if (!montoPagadoBsNum || Number.isNaN(montoPagadoBsNum) || montoPagadoBsNum <= 0) {
+    if (!pagoEnDivisa && (!Number.isFinite(montoPagadoBsNum) || montoPagadoBsNum <= 0)) {
       throw new Error('Debes indicar un monto pagado en Bs valido');
     }
 
-    if (Number.isFinite(saldoValidoBs) && montoPagadoBsNum > (saldoValidoBs + MONTO_TOLERANCIA_BS)) {
+    if (!pagoEnDivisa && Number.isFinite(saldoValidoBs) && montoPagadoBsNum > (saldoValidoBs + MONTO_TOLERANCIA_BS)) {
       throw new Error(
         `El monto pagado en Bs no puede superar el saldo pendiente (${formatearMontoConMoneda(saldoValido, moneda)} = Bs. ${formatMoney(saldoValidoBs)}; tolerancia Bs. ${formatMoney(MONTO_TOLERANCIA_BS)})`
       );
@@ -803,7 +796,7 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
     formData.append('metodo_pago', metodoPago);
     if (metodoCobranza) formData.append('metodo_cobranza', metodoCobranza);
     formData.append('monto_pagado', montoPagadoFinal.toFixed(2));
-    formData.append('monto_pagado_bs', Number(montoPagadoBsNum.toFixed(2)).toFixed(2));
+    if (!pagoEnDivisa) formData.append('monto_pagado_bs', Number(montoPagadoBsNum.toFixed(2)).toFixed(2));
     if (referencia) formData.append('referencia', referencia);
     if (telefonoPago) formData.append('telefono_pago', telefonoPago);
     if (cedulaTitular) formData.append('cedula_titular', cedulaTitular);
@@ -1372,14 +1365,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                             size="small"
                             variant="outlined"
                             onClick={() => openPagoDialog(pedido)}
-                            disabled={!tieneTasaDisponibleParaPedido(pedido) || pagoBloqueadoPorSegundaParte(pedido)}
+                            disabled={pagoBloqueadoPorSegundaParte(pedido)}
                             sx={ACCION_BOTON_EDITAR_SX}
                           >
-                            {!tieneTasaDisponibleParaPedido(pedido)
-                              ? 'Cargando tasa...'
-                              : pagoBloqueadoPorSegundaParte(pedido)
-                                ? 'Segunda parte pendiente'
-                                : 'Realizar pago'}
+                            {pagoBloqueadoPorSegundaParte(pedido) ? 'Segunda parte pendiente' : 'Realizar pago'}
                           </Button>
                           <Button
                             size="small"
@@ -1499,14 +1488,10 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
                                   size="small"
                                   variant="outlined"
                                   onClick={() => openPagoDialog(pedido)}
-                                  disabled={!tieneTasaDisponibleParaPedido(pedido) || pagoBloqueadoPorSegundaParte(pedido)}
+                                  disabled={pagoBloqueadoPorSegundaParte(pedido)}
                                   sx={ACCION_BOTON_EDITAR_SX}
                                 >
-                                  {!tieneTasaDisponibleParaPedido(pedido)
-                                    ? 'Cargando tasa...'
-                                    : pagoBloqueadoPorSegundaParte(pedido)
-                                      ? 'Segunda parte pendiente'
-                                      : 'Realizar pago'}
+                                  {pagoBloqueadoPorSegundaParte(pedido) ? 'Segunda parte pendiente' : 'Realizar pago'}
                                 </Button>
                                 <Button
                                   size="small"
@@ -1776,7 +1761,6 @@ function SolicitudUniforme({ alumno, sede, onGuardar }) {
         conceptoPago="uniformes"
         uniformInstallmentChoice={String(pedidoPago?.regla_cobranza || '').trim().toLowerCase() === 'flexible'
           && (Number(pedidoPago?.monto_pagado) || 0) <= 0}
-        allowedMethodIds={['pago-movil', 'transferencia']}
         onSubmitPayment={handlePagarPedido}
         onSuccess={() => {
           closePagoDialog();
