@@ -3,6 +3,56 @@
 Fecha: 2026-03-06
 Alcance: backup/retencion, monitoreo y rollback backend.
 
+## Prueba manual de WhatsApp Cloud API (sin produccion)
+
+Esta primera etapa solo prueba la conexion desde Node al numero de prueba de Meta.
+No agrega rutas HTTP, pantallas, webhooks ni cron, y no consulta MongoDB, atletas,
+representantes o mensualidades de ninguna academia. No habilita cobranza automatica.
+Requiere Node 18 o superior.
+
+1. En el panel de Meta, abrir `Paso 1. Probar`. Utilizar exclusivamente el numero
+   de prueba, nunca registrar aqui la linea personal o de soporte.
+2. Anadir y verificar el telefono propio como destinatario autorizado de prueba.
+3. Copiar a `backend/.env` las variables `WHATSAPP_*` de
+   [la configuracion de ejemplo](../.env.example), sin reemplazar el resto del archivo.
+   Configurar `WHATSAPP_TEST_ENABLED=true`. Copiar la version de Graph, el
+   `Phone Number ID` del numero de prueba (no el telefono ni el ID de la cuenta),
+   token, destinatario y plantilla desde el panel. No compartir ni versionar el token.
+4. El destinatario debe incluir codigo de pais, solo digitos. El nombre tecnico,
+   idioma y parametros deben coincidir con el ejemplo JSON de Meta. El titulo
+   "Confirmacion de pedido" no es el nombre tecnico. Para parametros de cuerpo de
+   texto usar, por ejemplo, `WHATSAPP_TEST_BODY_PARAMETERS='["valor 1","valor 2"]'`.
+   Este comando solo soporta plantillas sin componentes o con parametros de texto
+   posicionales en el cuerpo; no soporta cabeceras, botones ni parametros con nombre.
+5. Desde la carpeta `backend`, ejecutar:
+
+```powershell
+npm run whatsapp:test
+```
+
+La simulacion valida formato local, no llama a Meta, no requiere token y solo muestra
+destinatario enmascarado, plantilla e idioma. No certifica permisos ni elegibilidad.
+Para enviar UNA solicitud al destinatario configurado:
+
+```powershell
+npm run whatsapp:test -- --send
+```
+
+El token temporal puede caducar; generar otro en Meta cuando sea necesario.
+Un resultado `accepted` solo indica aceptacion de la solicitud: comprobar la llegada
+en WhatsApp. Si hay fallo de red o respuesta incierta, revisar el telefono antes de
+repetir para evitar duplicados; no hay reintentos automaticos.
+
+El comando no puede distinguir por el ID si un emisor es de prueba o real:
+el operador debe verificar que el ID pertenece al numero de prueba de Meta.
+No configurar destinatarios reales de cobranza. No se registran cuerpos, token,
+respuesta completa de Meta ni telefono completo en la salida.
+Al terminar, cambiar `WHATSAPP_TEST_ENABLED=false` y retirar el token si no se usara.
+
+Antes de produccion faltan numero dedicado, credenciales de produccion, plantillas
+aprobadas, consentimiento y bajas, facturacion, estados de entrega via webhook y
+reglas de saldo, revision de pagos, aislamiento por academia y deduplicacion.
+
 ## 1) Backup MongoDB y retencion
 
 ### Requisitos
