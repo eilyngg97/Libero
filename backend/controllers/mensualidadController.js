@@ -2525,7 +2525,11 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
 
 async function obtenerFiltroRevisionRecargo(models) {
   const mensualidadIds = await models.PagoDetalle.distinct('id_mensualidad', { solicita_revision_recargo: true });
-  return { _id: { $in: mensualidadIds }, recargo_aplicado_usd: { $gt: 0 } };
+  return {
+    _id: { $in: mensualidadIds },
+    recargo_aplicado_usd: { $gt: 0 },
+    estatus: { $ne: 'Pagado' }
+  };
 }
 
 exports.getRevisionesRecargo = async (req, res) => {

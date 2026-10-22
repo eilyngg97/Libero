@@ -69,7 +69,7 @@ afterAll(async () => {
 });
 
 describe('getRevisionesRecargo', () => {
-  test('consulta solo solicitudes con recargo vigente, sin restringir periodo o estado del pago', async () => {
+  test('consulta solicitudes con recargo vigente de cualquier periodo, excluyendo mensualidades pagadas', async () => {
     const pendientes = [{ _id: 'm1', mes: 9, anio: 2025, recargo_aplicado_usd: 3 }];
     const lean = jest.fn().mockResolvedValue(pendientes);
     const populate = jest.fn().mockReturnValue({ lean });
@@ -82,8 +82,33 @@ describe('getRevisionesRecargo', () => {
     const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
     await mensualidadController.getRevisionesRecargo({ tenantId: 'academia-qa' }, res);
     expect(distinct).toHaveBeenCalledWith('id_mensualidad', { solicita_revision_recargo: true });
-    expect(find).toHaveBeenCalledWith({ _id: { $in: ['m1', 'm2'] }, recargo_aplicado_usd: { $gt: 0 } });
+    expect(find).toHaveBeenCalledWith({
+      _id: { $in: ['m1', 'm2'] },
+      recargo_aplicado_usd: { $gt: 0 },
+      estatus: { $ne: 'Pagado' }
+    });
     expect(res.json).toHaveBeenCalledWith(pendientes);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  test.each([true, false])('el listado aplica la exclusion de pagadas solo al filtrar revision: %s', async (filtrar) => {
+    const find = jest.fn().mockReturnValue(queryPopulate([]));
+    const distinct = jest.fn().mockResolvedValue(['m1', 'm-pagada']);
+    getTenantModel.mockImplementation((connection, name) => ({
+      Mensualidad: { find }, PagoDetalle: { distinct }
+    }[name] || {}));
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    await mensualidadController.getMensualidades({
+      tenantId: 'academia-qa',
+      user: { rol: 'admin' },
+      query: filtrar ? { revision_recargo: 'true' } : {}
+    }, res);
+    expect(find).toHaveBeenCalledWith(filtrar ? {
+      _id: { $in: ['m1', 'm-pagada'] },
+      recargo_aplicado_usd: { $gt: 0 },
+      estatus: { $ne: 'Pagado' }
+    } : {});
+    expect(res.json).toHaveBeenCalledWith([]);
     expect(res.status).not.toHaveBeenCalled();
   });
 
