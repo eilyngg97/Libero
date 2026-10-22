@@ -2523,6 +2523,25 @@ exports.aplicarAjusteExtraordinarioSede = async (req, res) => {
   }
 };
 
+async function obtenerFiltroRevisionRecargo(models) {
+  const mensualidadIds = await models.PagoDetalle.distinct('id_mensualidad', { solicita_revision_recargo: true });
+  return { _id: { $in: mensualidadIds }, recargo_aplicado_usd: { $gt: 0 } };
+}
+
+exports.getRevisionesRecargo = async (req, res) => {
+  try {
+    const models = await getTenantMensualidadModels(req);
+    const filtro = await obtenerFiltroRevisionRecargo(models);
+    const mensualidades = await models.Mensualidad.find(filtro)
+      .select('_id id_alumno mes anio recargo_aplicado_usd')
+      .populate({ path: 'id_alumno', select: 'nombres apellidos sede', populate: { path: 'sede', select: 'nombre' } })
+      .lean();
+    res.json(mensualidades);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // Consultar mensualidades (por sede, alumno, mes, año)
 exports.getMensualidades = async (req, res) => {
   try {
@@ -2535,7 +2554,9 @@ exports.getMensualidades = async (req, res) => {
       PagoAgrupado: TenantPagoAgrupado
     } = tenantModels;
 
-    const filtro = {};
+    const filtro = req.query.revision_recargo === 'true' && req.user?.rol !== 'usuario'
+      ? await obtenerFiltroRevisionRecargo(tenantModels)
+      : {};
     let ownedAlumnoIds = null;
 
     if (req.user?.rol === 'usuario') {

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip, Checkbox, FormGroup, FormControlLabel, InputAdornment } from '@mui/material';
 import PaymentIcon from '@mui/icons-material/Payment';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
@@ -92,6 +93,8 @@ const esAlumnoDeBajaMensualidad = (mensualidad) => {
 };
 
 function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyInsolventes = false, viewMode = 'mensualidades' }) {
+	const [searchParams, setSearchParams] = useSearchParams();
+	const filtroRevisionRecargo = searchParams.get('revision_recargo') === 'true';
 	const { sedeSeleccionada } = useSede();
 	const { dolar } = useDolar();
 	const theme = useTheme();
@@ -102,7 +105,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const esAdmin = rolActual === 'admin' || rolActual === 'super_admin';
 	const [mensualidades, setMensualidades] = useState([]);
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
-	const [filtroMes, setFiltroMes] = useState(() => (new Date().getMonth() + 1).toString());
+	const [filtroMes, setFiltroMes] = useState(() => filtroRevisionRecargo ? '' : (new Date().getMonth() + 1).toString());
 	const [filtroAlumno, setFiltroAlumno] = useState('');
 	const [filtroEstado, setFiltroEstado] = useState(() => String(initialEstado || '').trim());
 	const [filtroEstadoAlumno, setFiltroEstadoAlumno] = useState('');
@@ -401,6 +404,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			const params = [];
 			if (sedeSeleccionada && sedeSeleccionada._id) params.push(`id_sede=${sedeSeleccionada._id}`);
 			if (filtroMes) params.push(`mes=${filtroMes}`);
+			if (filtroRevisionRecargo && !esVistaInscripciones) params.push('revision_recargo=true');
 			if (params.length) url += '?' + params.join('&');
 			const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 			const data = await res.json();
@@ -411,7 +415,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			setMensualidadesBD([]);
 			setMensualidades([]);
 		}
-	}, [sedeSeleccionada, filtroMes, esVistaInscripciones]);
+	}, [sedeSeleccionada, filtroMes, esVistaInscripciones, filtroRevisionRecargo]);
 
 	const cargarPagosMensualidad = async (mensualidadId) => {
 		const res = await fetch(`${process.env.REACT_APP_API_URL}/api/pagos/${mensualidadId}`, {
@@ -1017,6 +1021,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			await actualizarDetalleMensualidad({
 				...mensualidadDetalle,
 				...mensualidadActualizada,
+				id_alumno: mensualidadActualizada?.id_alumno?._id
+					? mensualidadActualizada.id_alumno
+					: mensualidadDetalle.id_alumno,
 				...(!grupoId ? { monto_esperado: Number(montoBaseSinRecargo.toFixed(2)) } : {})
 			}, true);
 			setSuccessMessage(grupoId
@@ -2091,7 +2098,26 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					<MenuItem value="baja">De baja</MenuItem>
 				</TextField>
 			</Box>
-			<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', mb: 2, mt: 2 }}>
+			<Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', mb: 2, mt: 1.5 }}>
+				{!esVistaInscripciones && (
+					<FormControlLabel
+						sx={{ m: 0, width: { xs: '100%', sm: 'auto' }, minWidth: 0, '& .MuiCheckbox-root': { pl: 0 }, '& .MuiFormControlLabel-label': { fontSize: 13, color: '#475569', lineHeight: 1.4 } }}
+						control={<Checkbox checked={filtroRevisionRecargo} onChange={(event) => {
+							const params = new URLSearchParams(searchParams);
+							if (event.target.checked) {
+								params.set('revision_recargo', 'true');
+								setFiltroMes('');
+								setFiltroEstado('');
+								setFiltroEstadoAlumno('');
+								setFiltroAlumno('');
+							} else params.delete('revision_recargo');
+							setSearchParams(params);
+							setPagina(0);
+						}} />}
+						label="Solicitudes de revisión de recargo."
+					/>
+				)}
+				<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', ml: 'auto', width: { xs: '100%', sm: 'auto' } }}>
 				{esAdmin && !esVistaInscripciones && (
 					<Button
 						variant="outlined"
@@ -2121,6 +2147,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				>
 					Exportar Excel
 				</Button>
+				</Box>
 			</Box>
 			{esAdmin && !esVistaInscripciones && !sedeSeleccionada?._id && (
 				<Alert severity="info" sx={{ mb: 2 }}>

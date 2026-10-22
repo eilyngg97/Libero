@@ -659,9 +659,53 @@
   box-shadow: 0 8px 18px rgba(215, 38, 122, 0.28);
 }
 
+.recargos-periodo {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.recargos-revision-panel .pagos-sede-header {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recargos-revision-panel .recargo-sede-btn {
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 400;
+  color: #334155;
+  text-align: left;
+}
+
+.recargos-revision-panel .recargo-sede-btn:hover,
+.recargos-revision-panel .recargo-sede-btn:focus-visible {
+  background: #fff3df;
+}
+
 .revision-cta-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 10px 22px rgba(215, 38, 122, 0.34);
+}
+
+.recargos-revision-panel .revision-cta-btn {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  box-shadow: none;
+  font-weight: 600;
+  letter-spacing: 0;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.recargos-revision-panel .revision-cta-btn:hover,
+.recargos-revision-panel .revision-cta-btn:focus-visible {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: none;
+  transform: none;
 }
 
 .cumple-card {

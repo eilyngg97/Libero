@@ -25,6 +25,10 @@ function Dashboard() {
   const { dolar, loading: dolarLoading, error: dolarError, refreshDolar } = useDolar();
   const navigate = useNavigate();
   const canViewUniformes = hasPermission('solicitudes_uniformes.view');
+  const canViewMensualidades = hasPermission('mensualidades.view');
+  const [revisionesRecargo, setRevisionesRecargo] = useState([]);
+  const [recargosLoading, setRecargosLoading] = useState(true);
+  const [recargosError, setRecargosError] = useState(false);
   const [sedes, setSedes] = useState([]);
   const [alumnosPorSede, setAlumnosPorSede] = useState({});
   const [cumpleaneros, setCumpleaneros] = useState([]);
@@ -492,6 +496,33 @@ function Dashboard() {
 
     fetchRevisionPorSede();
   }, [mesRevisionSeleccionado]);
+  useEffect(() => {
+    if (!canViewMensualidades) return;
+    let cancelled = false;
+    let ultimaConsulta = 0;
+    const cargarRevisionesRecargo = async () => {
+      const consultaActual = ++ultimaConsulta;
+      setRecargosLoading(true);
+      setRecargosError(false);
+      try {
+        const res = await fetchConSesion(`${apiBase}/api/mensualidades/revisiones-recargo`);
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data)) throw new Error('Consulta no disponible');
+        if (!cancelled && consultaActual === ultimaConsulta) setRevisionesRecargo(data);
+      } catch {
+        if (!cancelled && consultaActual === ultimaConsulta) setRecargosError(true);
+      } finally {
+        if (!cancelled && consultaActual === ultimaConsulta) setRecargosLoading(false);
+      }
+    };
+    cargarRevisionesRecargo();
+    window.addEventListener('focus', cargarRevisionesRecargo);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', cargarRevisionesRecargo);
+    };
+  }, [apiBase, canViewMensualidades]);
+
   const formatDolar = (value) => {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
     return Number(value).toFixed(2);
@@ -820,6 +851,17 @@ function Dashboard() {
     .sort((a, b) => b.enRevision - a.enRevision);
 
   const totalEnRevision = sedesRevisionOrdenadas.reduce((acc, sede) => acc + sede.enRevision, 0);
+  const recargosPorSede = Object.values(revisionesRecargo.reduce((acc, mensualidad) => {
+    const sede = mensualidad.id_alumno?.sede;
+    const clave = sede?._id || 'sin-sede';
+    if (!acc[clave]) acc[clave] = { sede: sede || null, nombre: sede?.nombre || 'Sin sede', cantidad: 0 };
+    acc[clave].cantidad += 1;
+    return acc;
+  }, {})).sort((primera, segunda) => segunda.cantidad - primera.cantidad);
+  const abrirRevisionesRecargo = (sede = null) => {
+    setSedeSeleccionada(sede);
+    navigate('/mensualidades?revision_recargo=true');
+  };
   const totalIngresosMensualidadesMes = Number(ingresosMensualidadesMes || 0);
   const totalIngresosInscripcionesMes = Number(ingresosInscripcionesMes || 0);
   const totalIngresosMes = totalIngresosMensualidadesMes
@@ -1268,6 +1310,42 @@ function Dashboard() {
               Ir a conciliación bancaria
             </button>
           </div>
+
+          {canViewMensualidades && (
+            <section className="dashboard-card revision-sede-panel recargos-revision-panel" aria-label="Solicitudes de revisión de recargo.">
+              <div className="pagos-sede-header">
+                <h3>Solicitudes de revisión de recargo</h3>
+                <span className="recargos-periodo">Todos los meses</span>
+              </div>
+              {recargosLoading ? (
+                <div className="pagos-sede-empty" role="status">Cargando solicitudes...</div>
+              ) : recargosError ? (
+                <div className="pagos-sede-empty" role="alert">No se pudieron cargar las solicitudes.</div>
+              ) : (
+                <>
+                  {recargosPorSede.length === 0 ? (
+                    <div className="pagos-sede-empty">Sin solicitudes de revisión de recargo.</div>
+                  ) : (
+                    <div className="revision-list">
+                      {recargosPorSede.map((item) => (
+                        <button type="button" className="revision-item recargo-sede-btn" key={item.sede?._id || 'sin-sede'}
+                          onClick={() => abrirRevisionesRecargo(item.sede)}>
+                          <span>{item.nombre}</span><b>{item.cantidad}</b>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="revision-total-row">
+                    <span className="revision-total-label">Solicitudes pendientes:</span>
+                    <span className="revision-total-badge">{revisionesRecargo.length}</span>
+                  </div>
+                </>
+              )}
+              <button type="button" className="revision-cta-btn" onClick={() => abrirRevisionesRecargo()}>
+                Ver solicitudes de recargo
+              </button>
+            </section>
+          )}
 
           <div className="dashboard-card cumple-card">
             <div style={{ marginTop: 2 }}>

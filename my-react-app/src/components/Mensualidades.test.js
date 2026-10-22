@@ -1,8 +1,15 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render as renderComponent, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import Mensualidades from './Mensualidades';
 import { hasPermission } from '../utils/permissions';
 import { exportToExcel } from '../utils/exportExcel';
+import { MemoryRouter } from 'react-router-dom';
+
+const render = (component, entry = '/mensualidades') => renderComponent(
+  <MemoryRouter initialEntries={[entry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    {component}
+  </MemoryRouter>
+);
 
 jest.mock('../context/SedeContext', () => ({ useSede: () => ({ sedeSeleccionada: null }) }));
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 872.39, moneda: 'USD' } }) }));
@@ -60,6 +67,28 @@ beforeEach(() => {
 });
 
 afterEach(() => { global.fetch = fetchOriginal; localStorage.clear(); });
+
+test('desde el dashboard consulta revisiones de recargo de todos los meses y permite abrir su detalle', async () => {
+  render(<Mensualidades />, '/mensualidades?revision_recargo=true');
+  expect(screen.getByRole('checkbox', { name: 'Solicitudes de revisión de recargo.' })).toBeChecked();
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  expect(await screen.findByRole('button', { name: 'Retirar recargos del grupo' })).toBeInTheDocument();
+  const [url] = global.fetch.mock.calls.find(([ruta]) => ruta.includes('/api/mensualidades'));
+  expect(url).toContain('revision_recargo=true');
+  expect(url).not.toContain('mes=');
+});
+
+test('activar revision de recargo limpia el mes y desactivarla recupera la consulta normal', async () => {
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Solicitudes de revisión de recargo.' }));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringMatching(/mensualidades\?revision_recargo=true$/), expect.any(Object)));
+  global.fetch.mockClear();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Solicitudes de revisión de recargo.' }));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringMatching(/\/api\/mensualidades$/), expect.any(Object)));
+});
 
 test('ordena credito y recargos antes del monto total y conserva los importes de cada columna', async () => {
   render(<Mensualidades />);
@@ -385,6 +414,34 @@ test('conflicto de version muestra error sin reintentar por la ruta individual',
   const solicitudes = global.fetch.mock.calls.filter(([, options]) => options?.method === 'PATCH');
   expect(solicitudes).toHaveLength(1);
   expect(solicitudes[0][0]).toContain('/api/pagos/agrupado/g1/');
+});
+
+test.each([false, true])('conserva el atleta en el titulo al retirar recargo con respuesta sin poblar (agrupado=%s)', async (esAgrupado) => {
+  agrupado = esAgrupado;
+  const original = global.fetch.getMockImplementation();
+  let retirado = false;
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (retirado && url.includes('/api/mensualidades') && !options.method) {
+      return { ok: true, json: async () => [] };
+    }
+    const respuesta = await original(url, options);
+    if (options.method !== 'PATCH') return respuesta;
+    retirado = true;
+    const data = await respuesta.json();
+    return { ...respuesta, json: async () => ({ ...data,
+      mensualidad: { ...data.mensualidad, id_alumno: 'a1' },
+      mensualidades: data.mensualidades.map((mensualidad) => ({ ...mensualidad, id_alumno: 'a1' }))
+    }) };
+  });
+  render(<Mensualidades />, '/mensualidades?revision_recargo=true');
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+  expect(await screen.findByRole('heading', { name: /Detalle del pago/ })).toHaveTextContent('Ana');
+  fireEvent.click(await screen.findByRole('button', { name: /^Retirar recargo/ }));
+  fireEvent.click(await screen.findByRole('button', { name: esAgrupado ? 'Retirar todos los recargos' : /^S.*retirar recargo$/ }));
+  await screen.findByText(esAgrupado ? /Recargos retirados de 2 atletas/ : /Recargo retirado y mensualidad recalculada correctamente/);
+  const titulo = await screen.findByRole('heading', { name: /Detalle del pago/ });
+  expect(titulo).toHaveTextContent('Ana');
+  expect(titulo).toHaveTextContent('Raga');
 });
 
 test('pago individual conserva su ruta de retiro actual', async () => {

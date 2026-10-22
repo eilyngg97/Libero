@@ -45,6 +45,7 @@ router.get('/', authMiddleware, mensualidadController.getMensualidades);
 router.get('/inscripciones', authMiddleware, mensualidadController.getInscripciones);
 // Resumen por sede (mes en curso)
 router.get('/resumen-por-sede', authMiddleware, permisoMiddleware('mensualidades.view'), mensualidadController.getResumenMensualidadesPorSede);
+router.get('/revisiones-recargo', authMiddleware, permisoMiddleware('mensualidades.view'), mensualidadController.getRevisionesRecargo);
 // Dolares pagados por sede agrupados por mes del año
 router.get('/dolares-pagados-por-sede', authMiddleware, permisoMiddleware('mensualidades.view'), mensualidadController.getDolaresPagadosPorSede);
 // Ingresos totales por mes para el anio seleccionado

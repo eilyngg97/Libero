@@ -68,6 +68,35 @@ afterAll(async () => {
   }
 });
 
+describe('getRevisionesRecargo', () => {
+  test('consulta solo solicitudes con recargo vigente, sin restringir periodo o estado del pago', async () => {
+    const pendientes = [{ _id: 'm1', mes: 9, anio: 2025, recargo_aplicado_usd: 3 }];
+    const lean = jest.fn().mockResolvedValue(pendientes);
+    const populate = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ populate });
+    const find = jest.fn().mockReturnValue({ select });
+    const distinct = jest.fn().mockResolvedValue(['m1', 'm2']);
+    getTenantModel.mockImplementation((connection, name) => ({
+      Mensualidad: { find }, PagoDetalle: { distinct }
+    }[name] || {}));
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    await mensualidadController.getRevisionesRecargo({ tenantId: 'academia-qa' }, res);
+    expect(distinct).toHaveBeenCalledWith('id_mensualidad', { solicita_revision_recargo: true });
+    expect(find).toHaveBeenCalledWith({ _id: { $in: ['m1', 'm2'] }, recargo_aplicado_usd: { $gt: 0 } });
+    expect(res.json).toHaveBeenCalledWith(pendientes);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  test('expone errores de consulta sin devolver un falso cero de pendientes', async () => {
+    getTenantModel.mockImplementation((connection, name) => name === 'PagoDetalle'
+      ? { distinct: jest.fn().mockRejectedValue(new Error('Consulta no disponible')) } : {});
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    await mensualidadController.getRevisionesRecargo({ tenantId: 'academia-qa' }, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Consulta no disponible' });
+  });
+});
+
 describe('adelantarMensualidadSiguiente', () => {
   beforeEach(() => {
     jest.clearAllMocks();
