@@ -13,6 +13,8 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 
 const { obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
+const { normalizarDiaMes, construirFechaPeriodoConDia, obtenerInicioDiaZonaCaracas,
+  obtenerFechaCortePagoAlumnoMensualidad } = require('../services/monthlyDueDate');
 const { cotizarCreditosAlumno, proyectarCreditoMensualidades, obtenerTrazabilidadCredito, tomarCredito,
   actualizarRevisionCredito, sincronizarCreditoAlumno } = require('../services/monthlyCredit');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
@@ -64,14 +66,6 @@ function resolveMensualidadModels(models = {}) {
   };
 }
 
-function normalizarDiaMes(valor, fallback) {
-  const numero = Number(valor);
-  if (!Number.isInteger(numero) || numero < 1 || numero > 31) {
-    return fallback;
-  }
-  return numero;
-}
-
 function normalizarConfigCobro(rawCobro = {}) {
   return {
     dia_cobro: normalizarDiaMes(rawCobro?.dia_cobro, 1),
@@ -85,22 +79,6 @@ async function obtenerConfigCobro(models = {}) {
   const { TenantConfig: TenantConfigModel } = resolveMensualidadModels(models);
   const config = await TenantConfigModel.findOne({ key: 'default' }).select('cobro').lean();
   return normalizarConfigCobro(config?.cobro || {});
-}
-
-function construirFechaPeriodoConDia(mes, anio, dia, { finDelDia = false } = {}) {
-  const ultimoDiaMes = new Date(anio, mes, 0).getDate();
-  const diaAjustado = Math.min(Math.max(1, Number(dia) || 1), ultimoDiaMes);
-  const CARACAS_OFFSET_UTC_HOURS = 4;
-
-  return new Date(Date.UTC(
-    anio,
-    mes - 1,
-    diaAjustado,
-    (finDelDia ? 23 : 0) + CARACAS_OFFSET_UTC_HOURS,
-    finDelDia ? 59 : 0,
-    finDelDia ? 59 : 0,
-    finDelDia ? 999 : 0
-  ));
 }
 
 function formatearFechaZonaCaracas(fecha) {
@@ -364,52 +342,6 @@ function obtenerFechaRecargoAlumnoPeriodo(mes, anio, cobroConfig, alumno) {
   }
 
   return obtenerFechaRecargoPeriodo(mes, anio, cobroConfig);
-}
-
-function obtenerInicioDiaZonaCaracas(fecha) {
-  const fechaValida = fecha instanceof Date ? fecha : new Date(fecha);
-  if (Number.isNaN(fechaValida.getTime())) return null;
-
-  const partes = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Caracas',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric'
-  }).formatToParts(fechaValida);
-  const obtenerParte = (tipo) => Number(partes.find((parte) => parte.type === tipo)?.value);
-
-  return construirFechaPeriodoConDia(
-    obtenerParte('month'),
-    obtenerParte('year'),
-    obtenerParte('day')
-  );
-}
-
-function obtenerFechaCortePagoAlumnoMensualidad(mensualidad, alumno = null) {
-  const diaPersonalizado = normalizarDiaMes(
-    alumno?.dia_limite_personalizado ?? mensualidad?.id_alumno?.dia_limite_personalizado,
-    null
-  );
-  const mesPeriodo = Number(mensualidad?.mes);
-  const anioPeriodo = Number(mensualidad?.anio);
-
-  if (
-    diaPersonalizado &&
-    Number.isInteger(mesPeriodo) &&
-    mesPeriodo >= 1 &&
-    mesPeriodo <= 12 &&
-    Number.isInteger(anioPeriodo) &&
-    anioPeriodo > 1900
-  ) {
-    return construirFechaPeriodoConDia(mesPeriodo, anioPeriodo, diaPersonalizado);
-  }
-
-  const fechaVencimiento = mensualidad?.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) : null;
-  if (!fechaVencimiento || Number.isNaN(fechaVencimiento.getTime())) {
-    return null;
-  }
-
-  return obtenerInicioDiaZonaCaracas(fechaVencimiento);
 }
 
 async function obtenerFechaCortePagoAlumnoMensualidadAsync(mensualidad, models = {}) {

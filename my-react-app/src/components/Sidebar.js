@@ -35,6 +35,7 @@ import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
+import NotificationsOutlinedIcon from '@mui/icons-material/NotificationsOutlined';
 import { hasAnyPermission, hasPermission } from '../utils/permissions';
 
 
@@ -53,6 +54,9 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   ];
 
   const esAdminLegacy = rol === 'admin' || rol === 'super_admin';
+  if (esAdminLegacy) {
+    options.push({ text: 'Notificaciones', icon: <NotificationsOutlinedIcon />, path: '/notificaciones' });
+  }
   const canViewConstancias = hasPermission('constancias.view') || esAdminLegacy;
   const canViewRecaudos = hasPermission('recaudos.view') || esAdminLegacy;
   const canViewEgresos = hasPermission('egresos.view') || esAdminLegacy;

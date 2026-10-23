@@ -5,7 +5,7 @@ Alcance: backup/retencion, monitoreo y rollback backend.
 
 ## Prueba manual de WhatsApp Cloud API (sin produccion)
 
-Esta primera etapa solo prueba la conexion desde Node al numero de prueba de Meta.
+Este comando aislado solo prueba la conexion desde Node al numero de prueba de Meta.
 No agrega rutas HTTP, pantallas, webhooks ni cron, y no consulta MongoDB, atletas,
 representantes o mensualidades de ninguna academia. No habilita cobranza automatica.
 Requiere Node 18 o superior.
@@ -52,6 +52,45 @@ Al terminar, cambiar `WHATSAPP_TEST_ENABLED=false` y retirar el token si no se u
 Antes de produccion faltan numero dedicado, credenciales de produccion, plantillas
 aprobadas, consentimiento y bajas, facturacion, estados de entrega via webhook y
 reglas de saldo, revision de pagos, aislamiento por academia y deduplicacion.
+
+## Notificaciones WhatsApp por academia (solo vista previa)
+
+- Ruta de interfaz `/notificaciones`, visible para admin y super_admin. Los
+  administradores solo consultan; super_admin cambia la preferencia de la academia
+  de su sesion. No se aceptan selectores arbitrarios de otro tenant por parametro.
+- La pantalla abre en Historial de envios, con tres indicadores: enviados,
+  entregados y con error. La pestana Simulacion permite buscar representante o
+  atleta; los requisitos pendientes se consultan en Ver detalle. Las reglas y
+  exclusiones quedan en una seccion desplegable. Ambas tablas tienen paginacion.
+- `GET /api/notificaciones?periodo=YYYY-MM&pagina=1` devuelve preferencia, historial
+  paginado de 25 registros, cantidades y vista previa del periodo de mensualidades.
+  `PATCH /api/notificaciones/configuracion` acepta solo `{"habilitadas":true/false}`
+  y exige super_admin. La preferencia vive en TenantConfig de la conexion del tenant.
+- Desactivado por defecto. No hay cron, endpoint de envio ni escritura de pendientes.
+  Incluso habilitada, la funcion permanece en modo vista previa sin enviar mensajes.
+- Se agrupa por representante, periodo, tipo y fecha: un dia antes y tres dias
+  despues del vencimiento. Se reutiliza la fecha de corte de mensualidades (dia
+  personalizado ajustado al fin de mes; en otro caso fecha_vencimiento registrada).
+  Las fechas se interpretan en America/Caracas y pueden cruzar mes/anio.
+- Solo se calculan avisos de mensualidades ordinarias del periodo seleccionado.
+  Se excluyen inscripciones/reingresos, pagadas, exoneradas, becas completas, reposos
+  exentos, atletas inactivos/de baja, pagos en revision y cualquier abono, credito
+  aplicado o credito que se proyectaria aplicar. La proyeccion de saldo respeta
+  deudas anteriores; no modifica documentos ni proyecta recargos futuros.
+- Telefono invalido, preferencia apagada y falta de consentimiento se muestran
+  como bloqueos. Representante.whatsapp_consentimiento no se acepta por defecto;
+  su captura verificable y mecanismo de baja estan pendientes para produccion.
+  No modificar este campo para simular consentimiento de personas reales.
+- "Calculados" no significa pendientes guardados. "Elegibles hoy" es una
+  simulacion que no elimina el bloqueo global de produccion. Fechas pasadas no
+  generan recuperacion automatica. La vista usa saldos actuales, no historicos.
+- Notificacion almacena el futuro historial del tenant, sin endpoint publico para
+  escribirlo en esta etapa. El historial inicia vacio. Las pruebas tecnicas no
+  se importan como cobranza. Aceptado por Meta no equivale a entregado; enviados
+  suma aceptados y entregados, con fallidos separado.
+- La plantilla por atleta no sirve para el aviso agrupado: faltan plantillas
+  aprobadas para ambos tipos, linea, credenciales, webhooks verificados,
+  consentimiento/bajas y revalidacion/deduplicacion antes de activar envios reales.
 
 ## 1) Backup MongoDB y retencion
 

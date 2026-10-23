@@ -9,6 +9,10 @@ const RepresentanteSchema = new mongoose.Schema({
   correo: { type: String },
   direccion: { type: String },
   telefono: { type: String },
+  whatsapp_consentimiento: {
+    aceptado: { type: Boolean, default: false },
+    fecha: { type: Date }
+  },
   usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 

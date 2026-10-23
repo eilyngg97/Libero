@@ -19,6 +19,7 @@ import ListadoSolicitudesUniformes from './components/ListadoSolicitudesUniforme
 import PagosAlumno from './components/PagosAlumno';
 import PagoAgrupado from './components/PagoAgrupado';
 import Mensualidades from './components/Mensualidades';
+import Notificaciones from './components/Notificaciones';
 import TablaAlumnos from './components/TablaAlumnos';
 import Torneos from './components/Torneos';
 import TorneoCrear from './components/TorneoCrear';
@@ -374,6 +375,7 @@ function App() {
                             )}
                           />
                           <Route path="mensualidades" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['mensualidades.view']}><Mensualidades /></ProtectedRoute>} />
+                          <Route path="notificaciones" element={<ProtectedRoute allowedRoles={adminOnly}><Notificaciones /></ProtectedRoute>} />
                           <Route
                             path="mensualidades/insolventes"
                             element={(

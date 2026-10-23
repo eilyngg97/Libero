@@ -219,6 +219,11 @@ const TenantConfigSchema = new mongoose.Schema({
   key: { type: String, default: 'default', unique: true },
   pagos: { type: PagosSchema, default: () => ({}) },
   cobro: { type: CobroSchema, default: () => ({}) },
+  notificaciones: {
+    habilitadas: { type: Boolean, default: false },
+    actualizado_por: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    actualizado_en: { type: Date }
+  },
   categorias: { type: CategoriasSchema, default: () => ({}) },
   constancias: { type: ConstanciasSchema, default: () => ({}) },
   publicaciones: { type: PublicacionesSchema, default: () => ({}) },
