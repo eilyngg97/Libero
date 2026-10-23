@@ -146,3 +146,9 @@ La conversion de standalone a replica set no se realiza automaticamente desde la
 - Si el credito cubre toda la cuota, `POST /api/pagos/credito` recibe `{ id_mensualidad, credito_a_aplicar }` y permite al propietario cubrirla sin transferencia. El pago agrupado solo selecciona cuotas con transferencia positiva; una cuota cubierta totalmente se resuelve desde su detalle.
 - Crear una cuota futura no consume credito mientras exista una deuda pagable anterior. Consultar nuevamente o volver a enfocar Mis pagos obtiene los importes vigentes. Un saldo consumido no puede recuperarse reduciendo el excedente del pago origen.
 - Prueba Mongo optativa: en PowerShell, establecer `$env:RUN_MONGO_CREDIT_TESTS = '1'` y ejecutar desde backend `npx jest --config '{\"testEnvironment\":\"node\"}' --runInBand --runTestsByPath tests/monthlyCredit.mongo.test.js`. Usa exclusivamente una base temporal `libero_qa_credit_*` en `127.0.0.1:27017` con replica set `rs0` y la elimina al terminar. Verifica efectivo, rollback al fallar la segunda cuota y solicitudes concurrentes. Desactivar despues con `Remove-Item Env:RUN_MONGO_CREDIT_TESTS`. No ejecutarla contra produccion.
+
+## 6) Historial de pagos de entrenadores
+
+- En el detalle del entrenador, la pestaña Historial inicia filtrada por el mes actual. El mes corresponde al periodo contable del pago; si no tiene periodo valido, se usa su fecha de pago.
+- El selector conserva los otros meses con pagos y la opcion Todos los meses. Limpiar filtros muestra todos los meses y periodos. El mes actual sigue disponible aunque no tenga registros.
+- Cada pago con un adjunto guardado muestra Ver comprobante, que abre una ventana dentro del historial con la imagen o PDF y los datos del pago. Al cerrar se conservan los filtros. Si la imagen no carga se muestra un error para reintentar. Los pagos sin adjunto no muestran este boton.

@@ -232,6 +232,7 @@ function EntrenadorDetalleView({
   const [eliminandoPago, setEliminandoPago] = useState(false);
   const [confirmarPagoDialogOpen, setConfirmarPagoDialogOpen] = useState(false);
   const [comprobantePago, setComprobantePago] = useState(null);
+  const [comprobanteVista, setComprobanteVista] = useState(null);
   const [pagoSuccessDialogOpen, setPagoSuccessDialogOpen] = useState(false);
   const [pagoSuccessData, setPagoSuccessData] = useState(null);
   const [pdfModalState, setPdfModalState] = useState({
@@ -244,7 +245,7 @@ function EntrenadorDetalleView({
     error: ''
   });
   const [descargandoCertifIndex, setDescargandoCertifIndex] = useState(null);
-  const [historialMesFiltro, setHistorialMesFiltro] = useState('todos');
+  const [historialMesFiltro, setHistorialMesFiltro] = useState(() => formatMonthYear(getTodayIsoDate()).toLowerCase());
   const [historialPeriodoFiltro, setHistorialPeriodoFiltro] = useState('todos');
   const [mesVistaPago, setMesVistaPago] = useState(() => formatMonthYear(getTodayIsoDate()).toLowerCase());
   const { dolar, loading: dolarLoading, error: dolarError } = useDolar();
@@ -525,7 +526,8 @@ function EntrenadorDetalleView({
   }, [entrenador, pagoForm.metodo_pago]);
 
   const historialMesOptions = useMemo(() => {
-    const meses = new Map();
+    const mesActual = formatMonthYear(getTodayIsoDate());
+    const meses = new Map([[mesActual.toLowerCase(), mesActual]]);
 
     pagosNominaOrdenados.forEach((pago) => {
       const etiqueta = formatMonthYearFromPeriodoClave(pago?.periodo_clave) || formatMonthYear(pago?.fecha_pago);
@@ -737,6 +739,7 @@ function EntrenadorDetalleView({
     setConfirmarPagoDialogOpen(false);
     setPagoSuccessDialogOpen(false);
     setPagoSuccessData(null);
+    setComprobanteVista(null);
   }, [entrenador?._id, entrenador?.id]);
 
   useEffect(() => {
@@ -2649,7 +2652,17 @@ function EntrenadorDetalleView({
                       </Typography>
                     )}
 
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                      {!!pago?.comprobante_url && (
+                        <Button
+                          size="small"
+                          onClick={() => setComprobanteVista({ pago, loading: true, error: false })}
+                          startIcon={<VisibilityOutlinedIcon />}
+                          sx={{ textTransform: 'none', fontWeight: 800 }}
+                        >
+                          Ver comprobante
+                        </Button>
+                      )}
                       <Button
                         size="small"
                         color="error"
@@ -2673,6 +2686,74 @@ function EntrenadorDetalleView({
       */}
       </>
       )}
+
+      <Dialog
+        open={!!comprobanteVista}
+        onClose={() => setComprobanteVista(null)}
+        aria-labelledby="comprobante-pago-title"
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', m: { xs: 1, sm: 4 }, width: { xs: 'calc(100% - 16px)', sm: '100%' } } }}
+      >
+        <DialogTitle id="comprobante-pago-header" sx={{ bgcolor: '#0f172a', color: '#fff', display: 'flex', alignItems: 'center', gap: 1.5, p: 2 }}>
+          <ReceiptLongOutlinedIcon sx={{ color: '#38bdf8' }} />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography id="comprobante-pago-title" sx={{ fontWeight: 800 }}>Comprobante de pago</Typography>
+            <Typography sx={{ color: '#cbd5e1', fontSize: 13, overflowWrap: 'anywhere' }}>
+              {comprobanteVista?.pago?.periodo || comprobanteVista?.pago?.periodo_clave || 'Pago de nómina'}
+              {' · '}{formatDate(comprobanteVista?.pago?.fecha_pago)}
+              {' · '}{formatMoney(comprobanteVista?.pago?.monto_total_usd, 'USD')}
+            </Typography>
+          </Box>
+          <Button
+            aria-label="Cerrar comprobante"
+            onClick={() => setComprobanteVista(null)}
+            sx={{ color: '#fff', minWidth: 36, p: 0.75 }}
+          >
+            <CloseRoundedIcon />
+          </Button>
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#f1f5f9', p: { xs: 1, sm: 2 }, '&&': { pt: { xs: 2, sm: 3 } }, position: 'relative', minHeight: 240 }}>
+          {comprobanteVista?.error ? (
+            <Alert severity="error" sx={{ my: 2 }}>
+              No se pudo cargar el comprobante. Cierra esta ventana e intenta nuevamente.
+            </Alert>
+          ) : comprobanteVista && (
+            <>
+              {comprobanteVista.loading && (
+                <Box role="status" sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+                  <CircularProgress size={24} />
+                  <Typography>Cargando comprobante...</Typography>
+                </Box>
+              )}
+              {/\.pdf(?:[?#]|$)/i.test(comprobanteVista.pago.comprobante_url) ? (
+                <Box
+                  component="iframe"
+                  title="Vista previa del comprobante"
+                  src={mediaUrl(comprobanteVista.pago.comprobante_url)}
+                  onLoad={() => setComprobanteVista((prev) => prev && ({ ...prev, loading: false }))}
+                  onError={() => setComprobanteVista((prev) => prev && ({ ...prev, loading: false, error: true }))}
+                  sx={{ width: '100%', height: '65vh', border: 0, borderRadius: 2, display: 'block', visibility: comprobanteVista.loading ? 'hidden' : 'visible' }}
+                />
+              ) : (
+                <Box
+                  component="img"
+                  alt="Comprobante de pago"
+                  src={mediaUrl(comprobanteVista.pago.comprobante_url)}
+                  onLoad={() => setComprobanteVista((prev) => prev && ({ ...prev, loading: false }))}
+                  onError={() => setComprobanteVista((prev) => prev && ({ ...prev, loading: false, error: true }))}
+                  sx={{ display: 'block', mx: 'auto', maxWidth: '100%', maxHeight: '65vh', objectFit: 'contain', borderRadius: 2, visibility: comprobanteVista.loading ? 'hidden' : 'visible' }}
+                />
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 2, py: 1.5, borderTop: '1px solid #e2e8f0' }}>
+          <Button variant="contained" onClick={() => setComprobanteVista(null)} sx={{ textTransform: 'none', bgcolor: '#0f172a', borderRadius: 2 }}>
+            Volver al historial
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={pdfModalState.open}
