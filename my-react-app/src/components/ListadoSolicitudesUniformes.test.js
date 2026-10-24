@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ListadoSolicitudesUniformes from './ListadoSolicitudesUniformes';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
@@ -39,6 +39,14 @@ async function abrirDetalle() {
   fireEvent.click((await screen.findAllByRole('button', { name: 'Ver detalle de pago' }))[0]);
   expect(screen.getByRole('dialog')).toBeInTheDocument();
 }
+
+test('muestra la categoria como dato secundario en la celda del alumno', async () => {
+  pedido.alumno.categoria = 'U13/MINI';
+  render(<ListadoSolicitudesUniformes />);
+  const celda = await screen.findByRole('cell', { name: /Andres QA U13\/MINI/ });
+  expect(within(celda).getByText('Andres QA')).toBeInTheDocument();
+  expect(within(celda).getByText('U13/MINI')).toHaveStyle({ fontSize: '11px' });
+});
 
 test.each(['Zelle', 'PayPal', 'Binance'])('detalle de %s muestra metodo, importe esperado y pagado en USD y referencia', async (metodo) => {
   pedido.metodo_pago = metodo;

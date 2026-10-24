@@ -47,6 +47,7 @@ import { useDolar } from '../context/DolarContext';
 import { exportToExcel } from '../utils/exportExcel';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import useTenantCategorias, { combinarCategoriasTenant } from '../hooks/useTenantCategorias';
+import NumeroFranelaResumen from './NumeroFranelaResumen';
 import { ADDITIONAL_PAYMENT_METHODS, esMetodoPagoAdicional, metodoRequiereReferencia, referenciaPagoValida } from '../utils/paymentMethod';
 
 const ESTADO_LABELS = {
@@ -2341,9 +2342,16 @@ function ListadoSolicitudesUniformes() {
                         />
                       </Tooltip>
                     ) : null}
-                    <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
-                      {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
-                    </Typography>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 700, color: '#0f172a', fontSize: 14 }}>
+                        {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
+                      </Typography>
+                      {pedido.alumno?.categoria && (
+                        <Typography sx={{ fontSize: 11, color: '#64748b', mt: 0.25, overflowWrap: 'anywhere' }}>
+                          {pedido.alumno.categoria}
+                        </Typography>
+                      )}
+                    </Box>
                   </Box>
                   <Chip label={getEstadoLabel(pedido.estado)} size="small" sx={{ ...getEstadoStyle(pedido.estado), fontWeight: 700 }} />
                 </Box>
@@ -2353,7 +2361,7 @@ function ListadoSolicitudesUniformes() {
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Prenda:</b> {pedido.prenda || '-'}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Talla:</b> {pedido.talla || '-'}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Nombre:</b> {pedido.nombre_personalizado || '-'}</Typography>
-                  <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Numero:</b> {pedido.numero_franela || '-'}</Typography>
+                  <Box sx={{ fontSize: 12.5, color: '#475569' }}><b>Numero:</b> <NumeroFranelaResumen pedido={pedido} /></Box>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Cobranza:</b> {getMetodoCobranzaLabel(pedido)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#0f172a' }}><b>Precio:</b> {formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</Typography>
                   <Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Fecha:</b> {formatFecha(pedido.createdAt)}</Typography>
@@ -2401,6 +2409,8 @@ function ListadoSolicitudesUniformes() {
               onRowsPerPageChange={handleChangeFilasPorPagina}
               rowsPerPageOptions={[5, 10, 25, 50]}
               labelRowsPerPage="Filas por página"
+              showFirstButton
+              showLastButton
             />
           </Paper>
         </Box>
@@ -2476,16 +2486,23 @@ function ListadoSolicitudesUniformes() {
                           />
                         </Tooltip>
                       ) : null}
-                      <Typography sx={{ fontWeight: 600, color: '#1f2937' }}>
-                        {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
-                      </Typography>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 600, color: '#1f2937' }}>
+                          {pedido.alumno ? `${pedido.alumno.nombres} ${pedido.alumno.apellidos}` : '-'}
+                        </Typography>
+                        {pedido.alumno?.categoria && (
+                          <Typography sx={{ fontSize: 11, color: '#64748b', mt: 0.25, overflowWrap: 'anywhere' }}>
+                            {pedido.alumno.categoria}
+                          </Typography>
+                        )}
+                      </Box>
                     </Box>
                   </TableCell>
                   <TableCell sx={{ color: '#475569' }}>{pedido.sede?.nombre || '-'}</TableCell>
                   <TableCell sx={{ color: '#1f2937' }}>{pedido.prenda}</TableCell>
                   <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{pedido.talla}</TableCell>
                   <TableCell sx={{ color: '#475569' }}>{pedido.nombre_personalizado || '-'}</TableCell>
-                  <TableCell sx={{ color: '#475569' }}>{pedido.numero_franela || '-'}</TableCell>
+                  <TableCell sx={{ color: '#475569' }}><NumeroFranelaResumen pedido={pedido} /></TableCell>
                   <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{getMetodoCobranzaLabel(pedido)}</TableCell>
                   <TableCell sx={{ fontWeight: 700, color: '#0f172a' }}>{formatMoneyWithCurrency(pedido.precio, pedido.moneda)}</TableCell>
                   <TableCell sx={{ color: '#475569', fontWeight: 600 }}>{formatFecha(pedido.createdAt)}</TableCell>
@@ -2508,6 +2525,8 @@ function ListadoSolicitudesUniformes() {
             onRowsPerPageChange={handleChangeFilasPorPagina}
             rowsPerPageOptions={[5, 10, 25, 50]}
             labelRowsPerPage="Filas por página"
+            showFirstButton
+            showLastButton
           />
         </TableContainer>
       )}

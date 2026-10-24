@@ -15,6 +15,7 @@ import {
   ListItemText,
   MenuItem,
   Snackbar,
+  TablePagination,
   TextField,
   Typography
 } from '@mui/material';
@@ -80,6 +81,19 @@ function Torneos() {
   const [, setExpandedTorneoId] = useState('');
 
   const [torneos, setTorneos] = useState([]);
+  const [paginaTorneos, setPaginaTorneos] = useState(0);
+  const [torneosPorPagina, setTorneosPorPagina] = useState(5);
+  const ultimaPaginaTorneos = Math.max(0, Math.ceil(torneos.length / torneosPorPagina) - 1);
+  const paginaTorneosActual = Math.min(paginaTorneos, ultimaPaginaTorneos);
+  const torneosPaginados = torneos.slice(
+    paginaTorneosActual * torneosPorPagina,
+    (paginaTorneosActual + 1) * torneosPorPagina
+  );
+
+  useEffect(() => {
+    setPaginaTorneos((pagina) => Math.min(pagina, ultimaPaginaTorneos));
+  }, [ultimaPaginaTorneos]);
+
   const [torneosError, setTorneosError] = useState('');
   const [rosters, setRosters] = useState([]);
   const [rostersLoading, setRostersLoading] = useState(false);
@@ -886,7 +900,7 @@ function Torneos() {
 
       <Typography variant="h6" sx={{ mt: 1.2, mb: 1, fontWeight: 700, color: '#334155', fontSize: 16 }}>Torneos creados</Typography>
       <Box sx={{ display: 'grid', gap: 0.8 }}>
-        {torneos.map((torneo) => {
+        {torneosPaginados.map((torneo) => {
           const convocadosTorneo = Array.isArray(torneo.convocados) ? torneo.convocados : [];
           const totalConvocados = convocadosTorneo.length;
           const aceptados = convocadosTorneo.filter((c) => c.estado === 'aceptado').length;
@@ -1258,6 +1272,34 @@ function Torneos() {
           );
         })}
       </Box>
+
+      <TablePagination
+        component="div"
+        count={torneos.length}
+        page={paginaTorneosActual}
+        onPageChange={(event, nuevaPagina) => setPaginaTorneos(nuevaPagina)}
+        rowsPerPage={torneosPorPagina}
+        onRowsPerPageChange={(event) => {
+          setTorneosPorPagina(Number(event.target.value));
+          setPaginaTorneos(0);
+        }}
+        rowsPerPageOptions={[5, 10, 25]}
+        labelRowsPerPage="Torneos por página:"
+        labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        getItemAriaLabel={(tipo) => ({
+          first: 'Ir a la primera pagina',
+          previous: 'Ir a la pagina anterior',
+          next: 'Ir a la pagina siguiente',
+          last: 'Ir a la ultima pagina'
+        }[tipo])}
+        showFirstButton
+        showLastButton
+        sx={{
+          mt: 1,
+          '& .MuiTablePagination-toolbar': { flexWrap: 'wrap', px: 0, rowGap: 0.5 },
+          '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': { m: 0, fontSize: 12 }
+        }}
+      />
 
       <Dialog
         open={dialogEliminarOpen}

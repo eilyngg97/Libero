@@ -2298,6 +2298,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							onRowsPerPageChange={handleChangeFilasPorPagina}
 							rowsPerPageOptions={[5, 10, 25, 50]}
 							labelRowsPerPage="Filas por página"
+							showFirstButton
+							showLastButton
 						/>
 					</Paper>
 				</Box>
@@ -2445,6 +2447,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											onRowsPerPageChange={handleChangeFilasPorPagina}
 											rowsPerPageOptions={[5, 10, 25, 50]}
 											labelRowsPerPage="Filas por página"
+											showFirstButton
+											showLastButton
 										/>
 									</div>
 								</TableCell>

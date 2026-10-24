@@ -9,6 +9,7 @@ import DialogActions from '@mui/material/DialogActions';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
+import TableSortLabel from '@mui/material/TableSortLabel';
 import { Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, IconButton, TablePagination, TextField, InputAdornment, Tooltip, Avatar, Box, MenuItem, Select, FormControl, InputLabel, Checkbox, Radio, RadioGroup, FormControlLabel, Chip } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -303,6 +304,8 @@ function TablaAlumnos() {
   const [alumnos, setAlumnos] = useState([]);
   const [page, setPage] = useState(() => obtenerPaginaInicial(searchParams));
   const [rowsPerPage, setRowsPerPage] = useState(() => obtenerFilasPorPaginaInicial(searchParams));
+  const [ordenColumna, setOrdenColumna] = useState('alumno');
+  const [ordenDireccion, setOrdenDireccion] = useState('asc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
@@ -979,6 +982,12 @@ function TablaAlumnos() {
     setPage(newPage);
   };
 
+  const handleOrdenar = (columna) => {
+    setOrdenDireccion(ordenColumna === columna && ordenDireccion === 'asc' ? 'desc' : 'asc');
+    setOrdenColumna(columna);
+    setPage(0);
+  };
+
   const handleChangeRowsPerPage = (event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setFiltroPagoCuotas('');
@@ -1054,10 +1063,37 @@ function TablaAlumnos() {
     const apellidoA = String(a?.apellidos || '').trim();
     const apellidoB = String(b?.apellidos || '').trim();
 
-    const cmpNombre = nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' });
-    if (cmpNombre !== 0) return cmpNombre;
+    const compararNombres = nombreA.localeCompare(nombreB, 'es', { sensitivity: 'base' })
+      || apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
+    const sentido = ordenDireccion === 'asc' ? 1 : -1;
+    if (ordenColumna === 'alumno') return compararNombres * sentido;
 
-    return apellidoA.localeCompare(apellidoB, 'es', { sensitivity: 'base' });
+    const obtenerValor = (alumno) => {
+      switch (ordenColumna) {
+        case 'edad': return calcularEdad(alumno.fecha_nacimiento);
+        case 'sexo': return obtenerSexoAlumno(alumno);
+        case 'categoria': return alumno.categoria;
+        case 'franela': return alumno.numero_franela;
+        case 'mensualidad': return obtenerTipoMensualidad(alumno);
+        default: return '';
+      }
+    };
+    const esNumerico = ordenColumna === 'edad' || ordenColumna === 'franela';
+    const normalizar = (valor) => {
+      if (valor == null || String(valor).trim() === '' || valor === '-') return null;
+      if (!esNumerico) return String(valor).trim();
+      const numero = Number(valor);
+      return Number.isFinite(numero) ? numero : null;
+    };
+    const valorA = normalizar(obtenerValor(a));
+    const valorB = normalizar(obtenerValor(b));
+    if (valorA === null && valorB === null) return compararNombres;
+    if (valorA === null) return 1;
+    if (valorB === null) return -1;
+    const comparacion = esNumerico
+      ? valorA - valorB
+      : valorA.localeCompare(valorB, 'es', { sensitivity: 'base', numeric: true });
+    return comparacion * sentido || compararNombres;
   });
   const alumnosPaginados = alumnosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
@@ -1482,7 +1518,7 @@ function TablaAlumnos() {
                   <strong>Categoría:</strong> {alumno.categoria || '-'}
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
-                  <strong>Nro franela:</strong> {(alumno.numero_franela ?? '-') || '-'}
+                  <strong>Nro franela:</strong> {String(alumno.numero_franela ?? '-') || '-'}
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#475569' }}>
                   <strong>Tipo de mensualidad:</strong> {obtenerTipoMensualidad(alumno)}
@@ -1603,6 +1639,8 @@ function TablaAlumnos() {
               onRowsPerPageChange={handleChangeRowsPerPage}
               rowsPerPageOptions={[5, 10, 25]}
               labelRowsPerPage="Filas por página:"
+              showFirstButton
+              showLastButton
               sx={{
                 width: '100%',
                 '& .MuiTablePagination-toolbar': {
@@ -1633,12 +1671,30 @@ function TablaAlumnos() {
           <Table sx={{ width: '100%', minWidth: 1060, tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f8fafc' }}>
-                <TableCell sx={{ width: '28%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1.5 }}>ALUMNO</TableCell>
-                <TableCell sx={{ width: '6%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>EDAD</TableCell>
-                <TableCell sx={{ width: '8%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>SEXO</TableCell>
-                <TableCell sx={{ width: '11%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>CATEGORÍA</TableCell>
-                <TableCell sx={{ width: '7%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>FRANELA</TableCell>
-                <TableCell sx={{ width: '17%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: 1 }}>TIPO DE MENSUALIDAD</TableCell>
+                {[
+                  { campo: 'alumno', titulo: 'ALUMNO', ancho: '28%' },
+                  { campo: 'edad', titulo: 'EDAD', ancho: '6%' },
+                  { campo: 'sexo', titulo: 'SEXO', ancho: '8%' },
+                  { campo: 'categoria', titulo: 'CATEGORÍA', ancho: '11%' },
+                  { campo: 'franela', titulo: 'FRANELA', ancho: '7%' },
+                  { campo: 'mensualidad', titulo: 'TIPO DE MENSUALIDAD', ancho: '17%' }
+                ].map(({ campo, titulo, ancho }) => (
+                  <TableCell
+                    key={campo}
+                    sortDirection={ordenColumna === campo ? ordenDireccion : false}
+                    sx={{ width: ancho, color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', px: campo === 'alumno' ? 1.5 : 1 }}
+                  >
+                    <TableSortLabel
+                      active={ordenColumna === campo}
+                      direction={ordenColumna === campo ? ordenDireccion : 'asc'}
+                      onClick={() => handleOrdenar(campo)}
+                      aria-label={`Ordenar por ${titulo.toLowerCase()} ${ordenColumna === campo && ordenDireccion === 'asc' ? 'descendente' : 'ascendente'}`}
+                      sx={{ '& .MuiTableSortLabel-icon': { fontSize: 16, mx: 0.25 } }}
+                    >
+                      {titulo}
+                    </TableSortLabel>
+                  </TableCell>
+                ))}
                 <TableCell sx={{ width: '23%', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textAlign: 'center', px: 1 }}>ACCIONES</TableCell>
               </TableRow>
             </TableHead>
@@ -1697,7 +1753,7 @@ function TablaAlumnos() {
                     <Typography sx={{ fontSize: 14, fontWeight: 600, lineHeight: 1.2 }}>{alumno.categoria || '-'}</Typography>
                     {alumno.division && <Typography sx={{ mt: 0.25, fontSize: 11, color: '#94a3b8', lineHeight: 1.2 }}>{obtenerDivisionAlumno(alumno.division)}</Typography>}
                   </TableCell>
-                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{(alumno.numero_franela ?? '-') || '-'}</TableCell>
+                  <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>{String(alumno.numero_franela ?? '-') || '-'}</TableCell>
                   <TableCell sx={{ color: '#64748b', fontWeight: 600, px: 1 }}>
                     {obtenerTipoMensualidad(alumno)}
                   </TableCell>
@@ -1810,6 +1866,8 @@ function TablaAlumnos() {
             onRowsPerPageChange={handleChangeRowsPerPage}
             rowsPerPageOptions={[5, 10, 25]}
             labelRowsPerPage="Filas por página:"
+            showFirstButton
+            showLastButton
           />
         </TableContainer>
       )}

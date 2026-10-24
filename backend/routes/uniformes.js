@@ -58,6 +58,7 @@ router.get('/public', uniformeController.getUniformes);
 router.post('/pedidos', authMiddleware, uploadComprobante.single('comprobante'), uniformePedidoController.createPedidoUniforme);
 router.get('/pedidos/mis', authMiddleware, uniformePedidoController.getMisPedidosUniforme);
 router.get('/pedidos', authMiddleware, permisoMiddleware('solicitudes_uniformes.view'), uniformePedidoController.getPedidosUniforme);
+router.get('/pedidos/:id/resumen-numero', authMiddleware, permisoMiddleware('solicitudes_uniformes.view'), uniformePedidoController.getResumenNumeroFranela);
 router.patch('/pedidos/:id', authMiddleware, parseMultipartFields, uniformePedidoController.actualizarPedidoUniforme);
 router.patch('/pedidos/:id/solicitar-pago', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.solicitarPagoPedido);
 router.patch('/pedidos/:id/habilitar-segunda-parte', authMiddleware, permisoMiddleware('solicitudes_uniformes.manage'), uniformePedidoController.habilitarSegundaPartePedido);

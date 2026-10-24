@@ -8,6 +8,7 @@ const UniformePedidoSchema = new mongoose.Schema({
   moneda: { type: String, enum: ['USD', 'EUR'], default: 'USD' },
   nombre_personalizado: { type: String, trim: true },
   numero_franela: { type: String, trim: true },
+  numero_franela_primera_eleccion: { type: Boolean, default: null },
   precio: { type: Number, default: 0 },
   talla: { type: String, required: true },
   genero_precio_variante: { type: String, enum: ['masculino', 'femenino', 'mixto'], required: false },

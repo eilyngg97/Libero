@@ -314,6 +314,7 @@ exports.actualizarPedidoUniforme = async (req, res) => {
     }
 
     if (numeroFranela !== undefined) {
+      const numeroAnterior = pedido.numero_franela;
       const numeroNormalizado = String(numeroFranela || '').trim();
       if (!numeroNormalizado) {
         pedido.numero_franela = null;
@@ -323,6 +324,9 @@ exports.actualizarPedidoUniforme = async (req, res) => {
           return res.status(400).json({ error: 'numeroFranela invalido. Debe estar entre 1 y 100' });
         }
         pedido.numero_franela = String(numero);
+      }
+      if (String(numeroAnterior || '') !== String(pedido.numero_franela || '')) {
+        pedido.numero_franela_primera_eleccion = null;
       }
     }
 
@@ -429,6 +433,30 @@ async function getTenantUniformePedidoModels(req) {
   return models;
 }
 
+exports.getResumenNumeroFranela = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Pedido invalido' });
+    }
+    const { UniformePedido: TenantUniformePedido, Alumno: TenantAlumno } = await getTenantUniformePedidoModels(req);
+    const pedido = await TenantUniformePedido.findById(req.params.id).select('alumno numero_franela').lean();
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    const numero = Number(pedido.numero_franela);
+    if (!Number.isInteger(numero) || numero < 1 || numero > 100) {
+      return res.status(400).json({ error: 'El pedido no tiene un numero valido' });
+    }
+    const campos = 'nombres apellidos numero_franela fecha_nacimiento categoria sexo division sede activo dado_de_baja estado';
+    const alumno = await TenantAlumno.findById(pedido.alumno).select(campos).populate('sede', 'nombre').lean();
+    const coincidencias = await TenantAlumno.find({
+      numero_franela: numero,
+      _id: { $ne: pedido.alumno }
+    }).select(campos).populate('sede', 'nombre').sort({ nombres: 1, apellidos: 1 }).lean();
+    return res.json({ numero, alumno, coincidencias });
+  } catch (err) {
+    return res.status(500).json({ error: 'No se pudo consultar el resumen del numero' });
+  }
+};
+
 exports.createPedidoUniforme = async (req, res) => {
   try {
     const {
@@ -487,6 +515,7 @@ exports.createPedidoUniforme = async (req, res) => {
     const precio = resolvePrecioUniformePorVariante(uniforme, talla, generoPrecio);
 
     let numeroFranelaPedido = null;
+    let numeroFranelaPrimeraEleccion = false;
 
     if (requiereNumeroFranela) {
       if (esFranelaRepresentante) {
@@ -534,6 +563,7 @@ exports.createPedidoUniforme = async (req, res) => {
           alumno.numero_franela = numeroSolicitado;
           await alumno.save();
           numeroFranelaPedido = numeroSolicitado;
+          numeroFranelaPrimeraEleccion = true;
         }
       }
     }
@@ -552,6 +582,7 @@ exports.createPedidoUniforme = async (req, res) => {
       monto_primera_parte_objetivo: metodoCobranza === 'dos_partes_50' ? calcularMontoPrimeraParteObjetivo(precio) : 0,
       nombre_personalizado: requiereNombrePersonalizado ? (String(nombrePersonalizado || '').trim().toUpperCase() || undefined) : undefined,
       numero_franela: requiereNumeroFranela ? String(numeroFranelaPedido) : null,
+      numero_franela_primera_eleccion: numeroFranelaPrimeraEleccion,
       precio,
       talla,
       estado: ESTADOS_PEDIDO.PENDIENTE,
@@ -593,7 +624,7 @@ exports.getMisPedidosUniforme = async (req, res) => {
     const pedidos = await TenantUniformePedido.find(filtro)
       .populate('alumno')
       .populate('sede')
-      .populate('uniforme', 'prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota')
+      .populate('uniforme', 'prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota franela_representante')
       .sort({ createdAt: -1 });
 
     res.json(pedidos.map(resolvePedidoPrenda));
@@ -618,7 +649,7 @@ exports.getPedidosUniforme = async (req, res) => {
       .populate('alumno')
       .populate('sede')
       .populate('solicitado_por')
-      .populate('uniforme', 'prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota')
+      .populate('uniforme', 'prenda precio moneda metodo_cobranza regla_cobranza apertura_segunda_cuota franela_representante')
       .sort({ createdAt: -1 });
     res.json(pedidos.map(resolvePedidoPrenda));
   } catch (err) {
