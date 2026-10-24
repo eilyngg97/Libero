@@ -1258,6 +1258,58 @@ describe('Backend smoke tests', () => {
     expect(pedidoDoc.save).not.toHaveBeenCalled();
   });
 
+  test.each(['admin', 'super_admin'].flatMap((rol) => [
+    [rol, 0, 5, 'abono'],
+    [rol, 0, 12, 'abono'],
+    [rol, 0, 20, 'verificado'],
+    [rol, 0, 25, 'verificado'],
+    [rol, 10, 2, 'abono'],
+    [rol, 12, 10, 'verificado']
+  ]))('uniformes permite a %s registrar %s previos + %s sin limitarse al tramo 50/50', async (rol, previo, monto, estado) => {
+    const token = makeToken({ id: 'admin1', rol, nombre: 'Administracion' });
+    const pedidoDoc = {
+      _id: 'pedido1', estado: previo ? 'abono' : 'esperando_pago', solicitado_por: 'usuario1',
+      precio: 20, moneda: 'USD', monto_pagado: previo, monto_pagado_bs: previo * 800,
+      saldo_pendiente: 10, metodo_cobranza: 'dos_partes_50', regla_cobranza: 'obligatoria',
+      apertura_segunda_cuota: 'bajo_solicitud', segunda_parte_habilitada: false,
+      monto_primera_parte_objetivo: 10,
+      pagos_historial: previo ? [{ monto_pagado: previo, monto_pagado_bs: previo * 800 }] : [],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const populatedQuery = { populate: jest.fn().mockReturnThis(), then: (resolve) => resolve(pedidoDoc) };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc).mockReturnValueOnce(populatedQuery);
+    const response = await request(app).patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`).field('metodo_pago', 'Pago movil')
+      .field('monto_pagado', String(monto)).field('monto_pagado_bs', String(monto * 800));
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.estado).toBe(estado);
+    expect(pedidoDoc.monto_pagado).toBe(previo + monto);
+    expect(pedidoDoc.monto_pagado_bs).toBe((previo + monto) * 800);
+    expect(pedidoDoc.saldo_pendiente).toBe(Math.max(20 - previo - monto, 0));
+    expect(pedidoDoc.pagos_historial).toEqual(expect.arrayContaining([
+      expect.objectContaining({ monto_pagado: monto, monto_pagado_bs: monto * 800 })
+    ]));
+    expect(pedidoDoc.segunda_parte_habilitada).toBe(false);
+    expect(pedidoDoc.save).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([5, 12, 25])('uniformes mantiene la cuota exacta para usuario aunque solicite %s', async (monto) => {
+    const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
+    const pedidoDoc = {
+      _id: 'pedido1', estado: 'esperando_pago', solicitado_por: 'usuario1', precio: 20,
+      monto_pagado: 0, saldo_pendiente: 10, metodo_cobranza: 'dos_partes_50',
+      segunda_parte_habilitada: false, monto_primera_parte_objetivo: 10,
+      save: jest.fn().mockResolvedValue(true)
+    };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc);
+    const response = await request(app).patch('/api/uniformes/pedidos/pedido1/pagar')
+      .set('Authorization', `Bearer ${token}`).field('metodo_pago', 'Pago movil')
+      .field('monto_pagado', String(monto)).field('monto_pagado_bs', String(monto * 800));
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('monto exacto');
+    expect(pedidoDoc.save).not.toHaveBeenCalled();
+  });
+
   test('PATCH /api/uniformes/pedidos/:id/pagar rechaza un monto menor al tramo 50/50', async () => {
     const token = makeToken({ id: 'usuario1', rol: 'usuario', nombre: 'Representante' });
     const pedidoDoc = {
@@ -1521,6 +1573,52 @@ describe('Backend smoke tests', () => {
       expect(pedidoDoc.pagos_historial[0]).toMatchObject({ monto_pagado: 15.5, monto_pagado_bs: 0,
         metodo_pago: metodo, referencia: 'TX-CORREGIDA-2026' });
     }
+  });
+
+  test.each(['admin', 'super_admin'].flatMap((rol) => [
+    [rol, 25, 'verificado'], [rol, 15, 'abono'], [rol, 20, 'verificado']
+  ]))('uniformes conserva importes administrativos al editar como %s a %s', async (rol, monto, estado) => {
+    const token = makeToken({ id: 'admin1', rol, nombre: 'Administracion' });
+    const pedidoDoc = {
+      _id: 'pedido1', estado: 'verificado', precio: 20, moneda: 'USD', monto_pagado: 25,
+      monto_pagado_bs: 20000, saldo_pendiente: 0, metodo_cobranza: 'dos_partes_50',
+      pagos_historial: [{ monto_pagado: 25, monto_pagado_bs: 20000, metodo_pago: 'Pago movil', referencia: '123456' }],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const populatedQuery = { populate: jest.fn().mockReturnThis(), then: (resolve) => resolve(pedidoDoc) };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc).mockReturnValueOnce(populatedQuery);
+    const response = await request(app).patch('/api/uniformes/pedidos/pedido1/pagos/ultimo')
+      .set('Authorization', `Bearer ${token}`).field('monto_pagado', String(monto))
+      .field('monto_pagado_bs', String(monto * 800)).field('nota', 'Correccion administrativa');
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.estado).toBe(estado);
+    expect(pedidoDoc.monto_pagado).toBe(monto);
+    expect(pedidoDoc.monto_pagado_bs).toBe(monto * 800);
+    expect(pedidoDoc.saldo_pendiente).toBe(Math.max(20 - monto, 0));
+    expect(pedidoDoc.pagos_historial[0]).toMatchObject({ monto_pagado: monto, nota: 'Correccion administrativa' });
+  });
+
+  test('uniformes no recorta un sobrepago previo al eliminar el ultimo registro', async () => {
+    const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
+    const pedidoDoc = {
+      _id: 'pedido1', estado: 'verificado', precio: 20, monto_pagado: 27, monto_pagado_bs: 21600,
+      saldo_pendiente: 0, metodo_cobranza: 'dos_partes_50',
+      pagos_historial: [
+        { monto_pagado: 25, monto_pagado_bs: 20000, metodo_pago: 'Pago movil' },
+        { monto_pagado: 2, monto_pagado_bs: 1600, metodo_pago: 'Pago movil' }
+      ],
+      save: jest.fn().mockResolvedValue(true)
+    };
+    const populatedQuery = { populate: jest.fn().mockReturnThis(), then: (resolve) => resolve(pedidoDoc) };
+    UniformePedido.findById.mockResolvedValueOnce(pedidoDoc).mockReturnValueOnce(populatedQuery);
+    const response = await request(app).delete('/api/uniformes/pedidos/pedido1/pagos/ultimo')
+      .set('Authorization', `Bearer ${token}`);
+    expect(response.status).toBe(200);
+    expect(pedidoDoc.monto_pagado).toBe(25);
+    expect(pedidoDoc.monto_pagado_bs).toBe(20000);
+    expect(pedidoDoc.saldo_pendiente).toBe(0);
+    expect(pedidoDoc.estado).toBe('verificado');
+    expect(pedidoDoc.pagos_historial).toHaveLength(1);
   });
 
   test.each([

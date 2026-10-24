@@ -23,6 +23,12 @@ beforeEach(() => {
     monto_pagado: 0, monto_pagado_bs: 0, monto_ultimo_pago: 15, monto_ultimo_pago_bs: 0,
     saldo_pendiente: 15, metodo_pago: 'Zelle', referencia: 'TX-ZELLE-2026', pagos_historial: [] };
   global.fetch = jest.fn(async (url, options = {}) => {
+    if (options.method === 'PATCH' && url.endsWith('/pagar')) {
+      const monto = Number(options.body.get('monto_pagado'));
+      pedido = { ...pedido, monto_pagado: monto, monto_pagado_bs: Number(options.body.get('monto_pagado_bs')),
+        saldo_pendiente: Math.max(pedido.precio - monto, 0), estado: monto >= pedido.precio ? 'verificado' : 'abono' };
+      return { ok: true, json: async () => pedido };
+    }
     if (options.method === 'PATCH') {
       pedido = { ...pedido, referencia: options.body.get('referencia'),
         monto_ultimo_pago: Number(options.body.get('monto_pagado')) };
@@ -47,6 +53,25 @@ test('muestra la categoria como dato secundario en la celda del alumno', async (
   expect(within(celda).getByText('Andres QA')).toBeInTheDocument();
   expect(within(celda).getByText('U13/MINI')).toHaveStyle({ fontSize: '11px' });
 });
+
+test.each(['admin', 'super_admin'].flatMap((rol) => [5, 12, 25].map((monto) => [rol, monto])))(
+  '%s puede enviar %s desde el formulario sin limitarlo a la cuota de 10', async (rol, monto) => {
+    localStorage.setItem('rol', rol);
+    pedido = { ...pedido, precio: 20, estado: 'esperando_pago', saldo_pendiente: 10,
+      metodo_cobranza: 'dos_partes_50', regla_cobranza: 'obligatoria', segunda_parte_habilitada: false };
+    render(<ListadoSolicitudesUniformes />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Registrar pago', exact: true }));
+    const dialogo = within(screen.getByRole('dialog'));
+    fireEvent.change(dialogo.getByRole('spinbutton', { name: 'Monto a pagar (USD)' }), { target: { value: String(monto) } });
+    fireEvent.change(dialogo.getByRole('textbox', { name: /^Referencia/ }), { target: { value: '123456' } });
+    fireEvent.click(dialogo.getByRole('button', { name: 'Registrar', exact: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const [, options] = global.fetch.mock.calls.find(([url, params]) => url.endsWith('/pagar') && params?.method === 'PATCH');
+    expect(options.body.get('monto_pagado')).toBe(String(monto));
+    expect(options.body.get('monto_pagado_bs')).toBe(String(monto * 800));
+    expect(screen.getByText(monto >= 20 ? 'Verificado' : 'Abono', { exact: true })).toBeInTheDocument();
+  }
+);
 
 test.each(['Zelle', 'PayPal', 'Binance'])('detalle de %s muestra metodo, importe esperado y pagado en USD y referencia', async (metodo) => {
   pedido.metodo_pago = metodo;

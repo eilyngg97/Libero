@@ -133,7 +133,7 @@ function reflejarUltimoPagoEnCamposPrincipales(pedido) {
 function recalcularResumenPedidoDesdeHistorial(pedido) {
   const totalPedido = redondearMonto(Number(pedido?.precio) || 0);
   const { totalDivisa, totalBs } = resumirPagosHistorial(pedido);
-  const totalPagado = redondearMonto(Math.min(totalPedido, totalDivisa));
+  const totalPagado = redondearMonto(totalDivisa);
   const metodoCobranza = normalizeMetodoCobranza(pedido?.metodo_cobranza);
   const montoPrimeraParteObjetivo = metodoCobranza === 'dos_partes_50'
     ? (Number(pedido?.monto_primera_parte_objetivo) > 0
@@ -734,6 +734,7 @@ exports.registrarPagoPedido = async (req, res) => {
     }
 
     const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+    const esRegistroAdministrativo = rolUsuario === 'admin' || rolUsuario === 'super_admin';
     const permisosToken = Array.isArray(req.user?.permisos) ? req.user.permisos : [];
     const permisosRol = getDefaultPermissionsByLegacyRole(rolUsuario);
     const permisosUsuario = new Set(
@@ -805,16 +806,18 @@ exports.registrarPagoPedido = async (req, res) => {
       ? saldoActual
       : Math.max(totalPedido - montoPagadoPrevio, 0);
 
-    if (metodoCobranza === 'dos_partes_50' && !segundaParteHabilitada) {
+    if (!esRegistroAdministrativo && metodoCobranza === 'dos_partes_50' && !segundaParteHabilitada) {
       const pendientePrimeraParte = redondearMonto(Math.max(0, montoPrimeraParteObjetivo - montoPagadoPrevio));
       if (pendientePrimeraParte <= 0) {
         return res.status(400).json({ error: 'La primera parte ya fue pagada. Espera que administracion habilite la segunda parte.' });
       }
     }
 
-    const saldoPendiente = (metodoCobranza === 'dos_partes_50' && !segundaParteHabilitada)
-      ? redondearMonto(Math.max(0, montoPrimeraParteObjetivo - montoPagadoPrevio))
-      : saldoPendienteTotal;
+    const saldoPendiente = esRegistroAdministrativo
+      ? redondearMonto(Math.max(totalPedido - montoPagadoPrevio, 0))
+      : (metodoCobranza === 'dos_partes_50' && !segundaParteHabilitada)
+        ? redondearMonto(Math.max(0, montoPrimeraParteObjetivo - montoPagadoPrevio))
+        : saldoPendienteTotal;
 
     if (saldoPendiente <= 0) {
       return res.status(400).json({ error: 'El pedido no tiene saldo pendiente por pagar' });
@@ -833,11 +836,11 @@ exports.registrarPagoPedido = async (req, res) => {
       });
     }
 
-    if (montoPagado > (saldoPendiente + toleranciaDivisa)) {
+    if (!esRegistroAdministrativo && montoPagado > (saldoPendiente + toleranciaDivisa)) {
       return res.status(400).json({ error: `El monto pagado no puede superar el saldo pendiente (${saldoPendiente.toFixed(2)}).` });
     }
 
-    const factorAjuste = montoPagado > saldoPendiente ? (saldoPendiente / montoPagado) : 1;
+    const factorAjuste = !esRegistroAdministrativo && montoPagado > saldoPendiente ? (saldoPendiente / montoPagado) : 1;
     const montoPagadoAplicado = redondearMonto(montoPagado * factorAjuste);
     const montoPagadoBsAplicado = redondearMonto(montoPagadoBs * factorAjuste);
     pedido.metodo_pago = metodo_pago;
@@ -850,9 +853,9 @@ exports.registrarPagoPedido = async (req, res) => {
     pedido.monto_ultimo_pago = montoPagadoAplicado;
     pedido.monto_ultimo_pago_bs = montoPagadoBsAplicado;
 
-    const totalPagado = montoPagadoPrevio + montoPagadoAplicado;
-    const totalPagadoBs = (Number(pedido.monto_pagado_bs) || 0) + montoPagadoBsAplicado;
-    const saldoPendienteNuevo = Math.max(totalPedido - totalPagado, 0);
+    const totalPagado = redondearMonto(montoPagadoPrevio + montoPagadoAplicado);
+    const totalPagadoBs = redondearMonto((Number(pedido.monto_pagado_bs) || 0) + montoPagadoBsAplicado);
+    const saldoPendienteNuevo = redondearMonto(Math.max(totalPedido - totalPagado, 0));
     const esPagoCompletoPedido = totalPagado >= (totalPedido - 0.0001);
 
     if (!puedeGestionar) {
@@ -1117,18 +1120,20 @@ exports.editarUltimoPagoPedido = async (req, res) => {
       }, { totalDivisa: 0, totalBs: 0 });
 
       const saldoParaUltimo = redondearMonto(Math.max(totalPedido - resumenPrevio.totalDivisa, 0));
-      if (saldoParaUltimo <= 0) {
+      const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
+      const esEdicionAdministrativa = rolUsuario === 'admin' || rolUsuario === 'super_admin';
+      if (!esEdicionAdministrativa && saldoParaUltimo <= 0) {
         return res.status(400).json({ error: 'El pedido no tiene saldo pendiente para ajustar este pago' });
       }
 
       const toleranciaDivisa = calcularToleranciaDivisaDesdeBs(montoDivisaSolicitado, montoBsSolicitado);
-      if (montoDivisaSolicitado > (saldoParaUltimo + toleranciaDivisa)) {
+      if (!esEdicionAdministrativa && montoDivisaSolicitado > (saldoParaUltimo + toleranciaDivisa)) {
         return res.status(400).json({
           error: `El monto pagado no puede superar el saldo pendiente (${saldoParaUltimo.toFixed(2)}).`
         });
       }
 
-      const factorAjuste = montoDivisaSolicitado > saldoParaUltimo
+      const factorAjuste = !esEdicionAdministrativa && montoDivisaSolicitado > saldoParaUltimo
         ? (saldoParaUltimo / montoDivisaSolicitado)
         : 1;
       const montoDivisaAplicado = redondearMonto(montoDivisaSolicitado * factorAjuste);
