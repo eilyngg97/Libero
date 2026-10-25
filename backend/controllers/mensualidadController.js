@@ -1020,7 +1020,8 @@ async function generarMensualidadesPendientesAlumno(
     overridePeriodoActual,
     crearPagoSiPagado = false,
     referenciaPago = 'primera-mensualidad',
-    esInscripcionOverride
+    esInscripcionOverride,
+    session
   } = {}
 ) {
   const periodoActual = periodoFin || getPeriodoZonaCaracas();
@@ -1048,7 +1049,8 @@ async function generarMensualidadesPendientesAlumno(
         metadataInscripcion: esPeriodoOverride ? overridePeriodoActual.metadataInscripcion : undefined,
         crearPagoSiPagado: esPeriodoOverride ? crearPagoSiPagado : false,
         referenciaPago,
-        esInscripcion
+        esInscripcion,
+        session
       })
     );
   }
