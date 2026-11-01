@@ -1837,13 +1837,16 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		if (opcionesExportExcel.incluirNombreRepresentante) nombreColumnas.push('Representante');
 
 		const rows = fuente.map((m) => {
+			const montoTotal = Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2));
+			const recargo = Number(Number(m.recargo_aplicado_usd || 0).toFixed(2));
 			const row = {
 				Categoria: m.id_alumno?.categoria || '-',
 				Sede: m.id_alumno?.sede?.nombre || '-',
 				Mes: meses[(m.mes || 1) - 1],
 				Anio: m.anio || '-',
-				Recargo: Number(Number(m.recargo_aplicado_usd || 0).toFixed(2)),
-				'Monto total': Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2)),
+				'Monto total sin recargo': Number(Math.max(0, montoTotal - recargo).toFixed(2)),
+				Recargo: recargo,
+				'Monto total': montoTotal,
 				Estado: m.estatus || '-'
 			};
 
@@ -1863,6 +1866,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			'Sede',
 			'Mes',
 			'Anio',
+			'Monto total sin recargo',
 			'Recargo',
 			'Monto total',
 			'Estado'
@@ -1879,7 +1883,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			{
 				statusColumnName: 'Estado',
 				statusStyleMap: estilosEstadoExcel,
-				numberColumns: ['Recargo', 'Monto total'],
+				numberColumns: ['Monto total sin recargo', 'Recargo', 'Monto total'],
 				numberFormat: '#,##0.00'
 			}
 		);

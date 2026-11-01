@@ -105,8 +105,20 @@ test('ordena credito y recargos antes del monto total y conserva los importes de
   expect(celdas[7]).toHaveTextContent('$0.00');
 });
 
-test('exporta el monto total despues del recargo sin cambiar su valor', async () => {
+test.each([
+  [14, 4, 10],
+  [10, 0, 10],
+  [19.52, 4, 15.52]
+])('exporta total %s y recargo %s con el monto sin recargo %s antes de ambos', async (total, recargo, sinRecargo) => {
   exportToExcel.mockClear();
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    const respuesta = await original(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [mensualidad] = await respuesta.json();
+    return { ok: true, json: async () => [{ ...mensualidad, monto_esperado: total,
+      monto_con_recargo_usd: total, monto_sin_recargo_usd: sinRecargo, recargo_aplicado_usd: recargo }] };
+  });
   render(<Mensualidades />);
   await screen.findByRole('button', { name: 'Ver detalle' });
   fireEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
@@ -114,10 +126,11 @@ test('exporta el monto total despues del recargo sin cambiar su valor', async ()
   await waitFor(() => expect(exportToExcel).toHaveBeenCalledTimes(1));
   const [filas, , encabezados, opciones] = exportToExcel.mock.calls[0];
   expect(encabezados).toEqual([
-    'Alumno', 'Representante', 'Categoria', 'Sede', 'Mes', 'Anio', 'Recargo', 'Monto total', 'Estado'
+    'Alumno', 'Representante', 'Categoria', 'Sede', 'Mes', 'Anio', 'Monto total sin recargo', 'Recargo', 'Monto total', 'Estado'
   ]);
-  expect(filas[0]).toMatchObject({ Recargo: 4, 'Monto total': 14 });
-  expect(opciones.numberColumns).toEqual(['Recargo', 'Monto total']);
+  expect(filas[0]).toMatchObject({ 'Monto total sin recargo': sinRecargo, Recargo: recargo, 'Monto total': total });
+  expect(opciones.numberColumns).toEqual(['Monto total sin recargo', 'Recargo', 'Monto total']);
+  expect(opciones.numberFormat).toBe('#,##0.00');
 });
 
 test.each(['Zelle', 'PayPal', 'Binance'])('detalle de %s muestra el monto real en divisa y no cero Bs', async (metodo) => {
