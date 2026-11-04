@@ -128,6 +128,7 @@ async function getTenantAlumnoWriteModels(req) {
     Reposo: getTenantModel(connection, 'Reposo'),
     Role: getTenantModel(connection, 'Role'),
     Mensualidad: getTenantModel(connection, 'Mensualidad'),
+    MensualidadEliminada: getTenantModel(connection, 'MensualidadEliminada'),
     PagoDetalle: getTenantModel(connection, 'PagoDetalle'),
     TenantConfig: getTenantModel(connection, 'TenantConfig'),
     HistorialEstadoAlumno: getTenantModel(connection, 'HistorialEstadoAlumno'),
@@ -3957,6 +3958,7 @@ exports.reactivarAlumno = async (req, res) => {
       Alumno: TenantAlumno,
       Sede: TenantSede,
       Mensualidad: TenantMensualidad,
+      MensualidadEliminada: TenantMensualidadEliminada,
       PagoDetalle: TenantPagoDetalle,
       HistorialEstadoAlumno: TenantHistorialEstadoAlumno,
       TenantConfig: TenantConfigModel
@@ -4047,6 +4049,13 @@ exports.reactivarAlumno = async (req, res) => {
     }
 
     const condicionesPeriodos = periodosObjetivo.map((periodo) => ({ mes: periodo.mes, anio: periodo.anio }));
+    const periodoEliminado = await TenantMensualidadEliminada.findOne({
+      id_alumno: alumnoActual._id,
+      $or: condicionesPeriodos
+    });
+    if (periodoEliminado) {
+      return res.status(409).json({ error: 'El reingreso incluye un periodo eliminado definitivamente. Selecciona una fecha posterior.' });
+    }
     const mensualidadesExistentes = await TenantMensualidad.find({
       id_alumno: alumnoActual._id,
       $or: condicionesPeriodos

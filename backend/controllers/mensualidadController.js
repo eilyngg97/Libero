@@ -1,4 +1,5 @@
 const Mensualidad = require('../models/Mensualidad');
+const MensualidadEliminada = require('../models/MensualidadEliminada');
 const Alumno = require('../models/Alumno');
 const Sede = require('../models/Sede');
 const Reposo = require('../models/Reposo');
@@ -62,6 +63,12 @@ function resolveMensualidadModels(models = {}) {
     TenantConfig: models.TenantConfig || TenantConfig,
     HistorialEstadoAlumno: models.HistorialEstadoAlumno || HistorialEstadoAlumno
   };
+}
+
+function obtenerModeloEliminadas(models = {}) {
+  if (models.MensualidadEliminada) return models.MensualidadEliminada;
+  const connection = (models.Mensualidad || Mensualidad).db;
+  return connection?.model ? getTenantModel(connection, 'MensualidadEliminada') : MensualidadEliminada;
 }
 
 function normalizarDiaMes(valor, fallback) {
@@ -869,6 +876,13 @@ async function crearMensualidadParaPeriodo(
 
   if (existente) {
     return { mensualidad: existente, creada: false, pagoRegistrado: false };
+  }
+
+  const eliminada = await aplicarSession(obtenerModeloEliminadas(models).findOne({
+    id_alumno: alumno._id, mes: periodo.mes, anio: periodo.anio
+  }), session);
+  if (eliminada) {
+    return { mensualidad: null, creada: false, pagoRegistrado: false, eliminada: true };
   }
 
   const fechaVencimiento = fechaVencimientoManual || obtenerFechaVencimientoPeriodo(periodo.mes, periodo.anio, configCobro?.dia_vencimiento);
@@ -2009,6 +2023,12 @@ exports.registrarPrimeraMensualidad = async (req, res) => {
     const periodoInicioCobro = obtenerPeriodoInicioCobroAlumno(alumno, periodoActual);
     // Regla: la inscripcion y su pago deben registrarse en el mes de inicio de cobro.
     const periodoObjetivo = periodoInicioCobro;
+    const periodoEliminado = await obtenerModeloEliminadas({ Mensualidad: TenantMensualidad }).findOne({
+      id_alumno: alumno._id, mes: periodoObjetivo.mes, anio: periodoObjetivo.anio
+    });
+    if (periodoEliminado) {
+      return res.status(409).json({ error: 'El periodo inicial fue eliminado definitivamente y no puede volver a generarse.' });
+    }
     // Para no dejar huecos, generamos mensualidades hasta el periodo mas reciente entre
     // inicio de cobro y periodo actual.
     const periodoFinGeneracion = compararPeriodos(periodoInicioCobro, periodoActual) > 0
@@ -2148,6 +2168,10 @@ exports.adelantarMensualidadSiguiente = async (req, res) => {
         cobroConfig: configCobro
       }
     );
+
+    if (!mensualidadPopulada) {
+      return res.status(409).json({ error: 'Este periodo fue eliminado definitivamente y no puede volver a generarse.' });
+    }
 
     return res.status(201).json({
       message: 'Mensualidad del mes siguiente creada correctamente',
@@ -3035,23 +3059,71 @@ exports.editarMensualidadIndividual = async (req, res) => {
   }
 };
 
-// Eliminar mensualidad y sus pagos asociados
 exports.eliminarMensualidad = async (req, res) => {
   try {
-    const {
-      Mensualidad: TenantMensualidad,
-      PagoDetalle: TenantPagoDetalle
-    } = await getTenantMensualidadModels(req);
-
-    const mensualidad = await TenantMensualidad.findById(req.params.id);
-    if (!mensualidad) {
-      return res.status(404).json({ error: 'Mensualidad no encontrada' });
+    const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+    if (!motivo || motivo.length > 1000) {
+      return res.status(400).json({ error: 'Escribe un motivo de eliminacion de hasta 1000 caracteres.' });
     }
+    const models = await getTenantMensualidadModels(req);
+    const Archivo = obtenerModeloEliminadas(models);
+    await Archivo.init();
+    const registro = await ejecutarConTransaccion(models.Mensualidad, async (session) => {
+      const mensualidad = await aplicarSession(models.Mensualidad.findById(req.params.id), session);
+      if (!mensualidad) throw Object.assign(new Error('Mensualidad no encontrada'), { status: 404 });
+      const pagos = await aplicarSession(models.PagoDetalle.find({ id_mensualidad: mensualidad._id }), session);
+      if (pagos.length || Number(mensualidad.credito_aplicado) > 0
+        || Number(mensualidad.saldo_a_favor_generado) > 0 || mensualidad.credito_origenes?.length) {
+        throw Object.assign(new Error('La mensualidad tiene pagos o creditos vinculados. Debes resolverlos antes de eliminarla.'), { status: 409 });
+      }
+      const alumno = await aplicarSession(models.Alumno.findById(mensualidad.id_alumno), session);
+      if (!alumno) throw Object.assign(new Error('Alumno no encontrado'), { status: 404 });
+      const [archivo] = await Archivo.create([{
+        id_alumno: mensualidad.id_alumno,
+        mes: mensualidad.mes,
+        anio: mensualidad.anio,
+        motivo,
+        actor_id: req.user.id,
+        actor_nombre: req.user.nombre || req.user.email || '',
+        actor_rol: req.user.rol || '',
+        alumno_nombre: `${alumno.nombres || ''} ${alumno.apellidos || ''}`.trim(),
+        sede: alumno.sede,
+        mensualidad_original: mensualidad.toObject()
+      }], { session });
+      await mensualidad.deleteOne({ session });
+      return archivo;
+    }, { obligatoria: true });
 
-    await TenantPagoDetalle.deleteMany({ id_mensualidad: mensualidad._id });
-    await mensualidad.deleteOne();
+    res.json({ message: 'Mensualidad eliminada definitivamente. Se conservo el registro de auditoria.', registro });
+  } catch (err) {
+    res.status(err.status || (err.code === 11000 ? 409 : 500)).json({ error: err.message });
+  }
+};
 
-    res.json({ message: 'Mensualidad eliminada correctamente' });
+exports.getMensualidadesEliminadas = async (req, res) => {
+  try {
+    const models = await getTenantMensualidadModels(req);
+    const filtro = {};
+    if (req.query.mes !== undefined && req.query.mes !== '') {
+      const mes = Number(req.query.mes);
+      if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+        return res.status(400).json({ error: 'mes invalido' });
+      }
+      filtro.mes = mes;
+    }
+    for (const campo of ['id_alumno', 'sede']) {
+      if (req.query[campo]) {
+        if (!mongoose.isValidObjectId(req.query[campo])) return res.status(400).json({ error: `${campo} invalido` });
+        filtro[campo] = req.query[campo];
+      }
+    }
+    const pagina = Math.max(1, Number.parseInt(req.query.pagina, 10) || 1);
+    const Archivo = obtenerModeloEliminadas(models);
+    const [registros, total] = await Promise.all([
+      Archivo.find(filtro).sort({ createdAt: -1, _id: -1 }).skip((pagina - 1) * 25).limit(25).lean(),
+      Archivo.countDocuments(filtro)
+    ]);
+    res.json({ registros, total, pagina });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

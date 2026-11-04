@@ -59,6 +59,8 @@ jest.mock('../models/PagoDetalle', () => ({
   deleteMany: jest.fn()
 }));
 
+jest.mock('../models/MensualidadEliminada', () => ({ findOne: jest.fn().mockResolvedValue(null) }));
+
 jest.mock('../models/PagoAgrupado', () => ({
   find: jest.fn(),
   findById: jest.fn(),

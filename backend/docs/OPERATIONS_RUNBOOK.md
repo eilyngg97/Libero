@@ -3,6 +3,17 @@
 Fecha: 2026-03-06
 Alcance: backup/retencion, monitoreo y rollback backend.
 
+## Eliminacion definitiva de mensualidades
+
+- `DELETE /api/mensualidades/:id` requiere `mensualidades.manage` y un cuerpo JSON con `motivo` obligatorio (1-1000 caracteres sin espacios exteriores). La eliminacion es definitiva para ese alumno, mes y anio.
+- Guarda en `MensualidadEliminada`, dentro de la base del tenant, la cuota original completa, nombre del alumno, sede, motivo, fecha e identidad/rol del responsable. No ofrece edicion, restauracion ni borrado del archivo desde la API.
+- Solo elimina cuotas sin pagos ni creditos vinculados. Si hay pagos, credito aplicado u origenes de saldo a favor, responde `409` sin modificar nada; primero hay que resolver esos movimientos mediante sus operaciones financieras correspondientes.
+- Archivo y borrado se confirman juntos en una transaccion obligatoria. Mongo standalone devuelve `503`; no deja una cuota borrada sin evidencia ni una cuota vigente bloqueada por una auditoria parcial.
+- El generador compartido (cron, catch-up al iniciar y generacion manual) omite los periodos archivados y continua con los demas meses. El adelanto y el registro inicial rechazan un periodo eliminado. Un reingreso que incluya algun periodo eliminado se rechaza antes de crear cuotas.
+- En Mensualidades, `Mensualidades eliminadas` respeta el mes y la sede seleccionados; `Todos` consulta todos los meses. El mes corresponde al periodo de la cuota, no a la fecha de eliminacion. Presenta monto, motivo y responsable por separado, con referencias de auditoria desplegables. `GET /api/mensualidades/eliminadas` requiere `mensualidades.manage`, admite `sede`, `id_alumno`, `mes` (entero 1-12, opcional) y `pagina`, y entrega hasta 25 registros por pagina. Filtra antes de paginar y contar.
+- Las eliminaciones realizadas antes de este cambio no tienen marca historica y no quedan protegidas retroactivamente. No reconstruirlas suponiendo que todo mes faltante fue eliminado; contrastar respaldos y registros administrativos antes de cualquier migracion.
+- Desplegar esta version en TODAS las instancias que generan cuotas, incluidos workers/cron externos, antes de usar la eliminacion definitiva. Volver a una version anterior que ignore el archivo puede regenerar los periodos excluidos. Respaldar tambien esta nueva coleccion y reiniciar los procesos backend al desplegar.
+
 ## 1) Backup MongoDB y retencion
 
 ### Requisitos

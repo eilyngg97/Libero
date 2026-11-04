@@ -25,7 +25,7 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
       serverSelectionTimeoutMS: 5000
     }).asPromise();
     models = Object.fromEntries(['Alumno', 'Representante', 'Mensualidad', 'PagoDetalle', 'PagoAgrupado',
-      'TenantConfig', 'Sede', 'Reposo'].map((nombre) => [nombre, getTenantModel(connection, nombre)]));
+      'TenantConfig', 'Sede', 'Reposo', 'MensualidadEliminada'].map((nombre) => [nombre, getTenantModel(connection, nombre)]));
     await Promise.all(Object.values(models).map((model) => model.init()));
     getTenantBusinessConnection.mockResolvedValue(connection);
   });
@@ -92,6 +92,122 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
   }
 
   function respuesta() { return { status: jest.fn().mockReturnThis(), json: jest.fn() }; }
+
+  async function eliminarCuota(id, motivo = 'No corresponde el cobro de este periodo') {
+    const res = respuesta();
+    await mensualidades.eliminarMensualidad({ tenantId: 'qa-credit', params: { id: String(id) },
+      user: { id: String(usuarioId), nombre: 'Administracion QA', rol: 'admin' }, body: { motivo } }, res);
+    return res;
+  }
+
+  test('eliminacion_definitiva conserva auditoria y omite el mes sin bloquear los siguientes', async () => {
+    await prepararSinCredito();
+    const original = await models.Mensualidad.findById(octubreIds[0]).lean();
+    const res = await eliminarCuota(octubreIds[0]);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(await models.Mensualidad.findById(octubreIds[0])).toBeNull();
+    const archivo = await models.MensualidadEliminada.findOne({ id_alumno: alumnoIds[0], mes: 10 });
+    expect(archivo).toMatchObject({ motivo: 'No corresponde el cobro de este periodo', actor_nombre: 'Administracion QA',
+      mes: 10, anio: 2026, mensualidad_original: { monto_esperado: original.monto_esperado, estatus: original.estatus } });
+    expect(String(archivo.actor_id)).toBe(String(usuarioId));
+    const alumno = await models.Alumno.findById(alumnoIds[0]);
+    alumno.tipo_mensualidad = 'monto_personalizado';
+    alumno.monto_personalizado_valor = 25;
+    alumno.aplicar_recargo_mensualidad = false;
+    const opciones = { models, periodoInicio: { mes: 10, anio: 2026 }, periodoFin: { mes: 11, anio: 2026 } };
+    await mensualidades.generarMensualidadesPendientesAlumno(alumno, opciones);
+    await mensualidades.generarMensualidadesPendientesAlumno(alumno, opciones);
+    expect(await models.Mensualidad.countDocuments({ id_alumno: alumno._id, mes: 10, anio: 2026 })).toBe(0);
+    expect(await models.Mensualidad.countDocuments({ id_alumno: alumno._id, mes: 11, anio: 2026 })).toBe(1);
+    const historial = respuesta();
+    await mensualidades.getMensualidadesEliminadas({ tenantId: 'qa-credit', query: { id_alumno: String(alumno._id) } }, historial);
+    expect(historial.json).toHaveBeenCalledWith(expect.objectContaining({ total: 1,
+      registros: [expect.objectContaining({ motivo: archivo.motivo, alumno_nombre: 'QA 1.03' })] }));
+  });
+
+  test('eliminacion_definitiva requiere motivo y no borra nada si falta', async () => {
+    const res = await eliminarCuota(octubreIds[0], '   ');
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(await models.Mensualidad.findById(octubreIds[0])).not.toBeNull();
+    expect(await models.MensualidadEliminada.countDocuments()).toBe(0);
+  });
+
+  test('eliminacion_definitiva bloquea adelantar otra vez el mismo periodo', async () => {
+    await prepararSinCredito();
+    const alumno = await models.Alumno.findById(alumnoIds[0]);
+    alumno.tipo_mensualidad = 'monto_personalizado';
+    alumno.monto_personalizado_valor = 20;
+    await alumno.save();
+    await eliminarCuota(octubreIds[0]);
+    const res = respuesta();
+    await mensualidades.adelantarMensualidadSiguiente({ tenantId: 'qa-credit', body: { id_alumno: String(alumno._id) } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(await models.Mensualidad.countDocuments({ id_alumno: alumno._id, mes: 10 })).toBe(0);
+  });
+
+  test('eliminacion_definitiva bloquea reingreso sin cuotas parciales', async () => {
+    await eliminarCuota(octubreIds[0]);
+    await models.Alumno.updateOne({ _id: alumnoIds[0] }, { $set: { activo: false, dado_de_baja: true } });
+    const res = respuesta();
+    await require('../controllers/alumnoController').reactivarAlumno({ tenantId: 'qa-credit', params: { id: String(alumnoIds[0]) },
+      user: { id: String(usuarioId), rol: 'admin' }, body: { fecha_reingreso: '2026-10-01',
+        monto_reingreso: 0, monto_primera_mensualidad: 20 } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining('eliminado definitivamente') });
+    expect(await models.Mensualidad.countDocuments({ id_alumno: alumnoIds[0] })).toBe(1);
+    expect((await models.Alumno.findById(alumnoIds[0])).activo).toBe(false);
+  });
+
+  test('eliminacion_definitiva usa la conexion tenant y no la base global', async () => {
+    await eliminarCuota(octubreIds[0]);
+    const nombreOtraBase = `${connection.name}_otra`;
+    const otra = connection.useDb(nombreOtraBase, { useCache: true });
+    try {
+      const ArchivoOtra = getTenantModel(otra, 'MensualidadEliminada');
+      await ArchivoOtra.init();
+      expect(await ArchivoOtra.countDocuments({ id_alumno: alumnoIds[0] })).toBe(0);
+      getTenantBusinessConnection.mockResolvedValueOnce(otra);
+      const res = respuesta();
+      await mensualidades.getMensualidadesEliminadas({ tenantId: 'qa-otra', query: {} }, res);
+      expect(res.json).toHaveBeenCalledWith({ registros: [], total: 0, pagina: 1 });
+    } finally {
+      await otra.dropDatabase();
+      await connection.removeDb(nombreOtraBase);
+    }
+  });
+
+  test('eliminacion_definitiva concurrente guarda solo una auditoria', async () => {
+    const respuestas = await Promise.all([eliminarCuota(octubreIds[0]), eliminarCuota(octubreIds[0])]);
+    expect(respuestas.filter((res) => res.status.mock.calls.length === 0)).toHaveLength(1);
+    expect(await models.MensualidadEliminada.countDocuments({ id_alumno: alumnoIds[0], mes: 10 })).toBe(1);
+    expect(await models.Mensualidad.findById(octubreIds[0])).toBeNull();
+  });
+
+  test.each(['pagos', 'credito_aplicado', 'saldo_a_favor_generado'])('eliminacion_definitiva rechaza %s vinculados', async (tipo) => {
+    if (tipo === 'pagos') {
+      await models.PagoDetalle.create({ id_mensualidad: octubreIds[0], monto_pagado: 1,
+        fecha_pago: new Date(), metodo_pago: 'QA' });
+    } else {
+      await models.Mensualidad.updateOne({ _id: octubreIds[0] }, { $set: { [tipo]: 1 } });
+    }
+    const res = await eliminarCuota(octubreIds[0]);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(await models.Mensualidad.findById(octubreIds[0])).not.toBeNull();
+    expect(await models.MensualidadEliminada.countDocuments()).toBe(0);
+  });
+
+  test('eliminacion_definitiva revierte el archivo si falla el borrado y permite reintentar', async () => {
+    const borrar = jest.spyOn(models.Mensualidad.prototype, 'deleteOne').mockRejectedValueOnce(new Error('Fallo QA'));
+    try {
+      const res = await eliminarCuota(octubreIds[0]);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(await models.Mensualidad.findById(octubreIds[0])).not.toBeNull();
+      expect(await models.MensualidadEliminada.countDocuments()).toBe(0);
+    } finally { borrar.mockRestore(); }
+    const reintento = await eliminarCuota(octubreIds[0]);
+    expect(reintento.status).not.toHaveBeenCalled();
+    expect(await models.MensualidadEliminada.countDocuments()).toBe(1);
+  });
 
   test.each(['Zelle', 'PayPal', 'Binance'])('proveedor %s registra y edita pago individual sin inventar importes en bolivares', async (metodo) => {
     const registrado = await registrar(false, false, { metodo_pago: metodo, monto_pagado_bs: undefined, referencia: 'TX-ABC-2026' });

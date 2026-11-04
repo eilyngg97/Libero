@@ -7,6 +7,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
@@ -157,6 +159,12 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [confirmarEliminarMensualidadOpen, setConfirmarEliminarMensualidadOpen] = useState(false);
 	const [mensualidadAEliminar, setMensualidadAEliminar] = useState(null);
 	const [eliminandoMensualidadId, setEliminandoMensualidadId] = useState('');
+	const [motivoEliminacion, setMotivoEliminacion] = useState('');
+	const [errorEliminarMensualidad, setErrorEliminarMensualidad] = useState('');
+	const [archivoOpen, setArchivoOpen] = useState(false);
+	const [archivo, setArchivo] = useState({ registros: [], total: 0, pagina: 1 });
+	const [archivoLoading, setArchivoLoading] = useState(false);
+	const [archivoError, setArchivoError] = useState('');
 	const [confirmarPagoOpen, setConfirmarPagoOpen] = useState(false);
 	const [confirmandoMensualidad, setConfirmandoMensualidad] = useState(false);
 	const [confirmarRetiroRecargoOpen, setConfirmarRetiroRecargoOpen] = useState(false);
@@ -1097,7 +1105,28 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const solicitarEliminarMensualidad = (mensualidad) => {
 		if (!mensualidad?._id) return;
 		setMensualidadAEliminar(mensualidad);
+		setMotivoEliminacion('');
+		setErrorEliminarMensualidad('');
 		setConfirmarEliminarMensualidadOpen(true);
+	};
+
+	const cargarArchivoEliminadas = async (pagina = 1) => {
+		setArchivoOpen(true);
+		setArchivoLoading(true);
+		setArchivoError('');
+		try {
+			const params = new URLSearchParams({ pagina: String(pagina) });
+			if (sedeSeleccionada?._id) params.set('sede', sedeSeleccionada._id);
+			if (filtroMes) params.set('mes', filtroMes);
+			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/eliminadas?${params}`, { headers: getAuthHeaders() });
+			const data = await res.json();
+			if (!res.ok) throw new Error(data?.error || 'No se pudo cargar el archivo.');
+			setArchivo(data);
+		} catch (err) {
+			setArchivoError(err.message || 'No se pudo cargar el archivo.');
+		} finally {
+			setArchivoLoading(false);
+		}
 	};
 
 	const abrirModalEditarMensualidad = (mensualidad) => {
@@ -1172,13 +1201,19 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	};
 
 	const eliminarMensualidad = async () => {
-		if (!mensualidadAEliminar?._id) return;
+		if (!mensualidadAEliminar?._id || eliminandoMensualidadId) return;
+		if (!motivoEliminacion.trim()) {
+			setErrorEliminarMensualidad('Escribe el motivo de la eliminaci\u00f3n.');
+			return;
+		}
 
 		try {
 			setEliminandoMensualidadId(mensualidadAEliminar._id);
+			setErrorEliminarMensualidad('');
 			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/${mensualidadAEliminar._id}`, {
 				method: 'DELETE',
-				headers: getAuthHeaders()
+				headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+				body: JSON.stringify({ motivo: motivoEliminacion.trim() })
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'Error al eliminar mensualidad');
@@ -1193,9 +1228,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			setConfirmarEliminarMensualidadOpen(false);
 			setMensualidadAEliminar(null);
 			await cargarMensualidades();
-			setSuccessMessage('Mensualidad eliminada correctamente');
+			setSuccessMessage('Mensualidad eliminada definitivamente. Registro guardado en el archivo.');
 		} catch (err) {
-			alert(err.message || 'Error al eliminar mensualidad');
+			setErrorEliminarMensualidad(err.message || 'Error al eliminar mensualidad');
 		} finally {
 			setEliminandoMensualidadId('');
 		}
@@ -2122,6 +2157,22 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					/>
 				)}
 				<Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', ml: 'auto', width: { xs: '100%', sm: 'auto' } }}>
+				{hasPermission('mensualidades.manage') && (
+					<Button startIcon={<HistoryRoundedIcon />} variant="outlined" onClick={() => cargarArchivoEliminadas(1)}
+						sx={{
+							width: { xs: '100%', sm: 'auto' },
+							borderRadius: '10px',
+							fontWeight: 700,
+							color: '#475569',
+							borderColor: '#94a3b8',
+							'&:hover': {
+								borderColor: '#64748b',
+								backgroundColor: '#fdfdfd'
+							}
+						}}>
+						Mensualidades eliminadas
+					</Button>
+				)}
 				{esAdmin && !esVistaInscripciones && (
 					<Button
 						variant="outlined"
@@ -3565,16 +3616,20 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				<DialogTitle sx={{ fontWeight: 800, color: '#b91c1c' }}>Eliminar mensualidad</DialogTitle>
 				<DialogContent>
 					<Typography sx={{ color: '#334155' }}>
-						¿Estás seguro de eliminar esta mensualidad? Esta acción también eliminará sus pagos asociados y no se puede deshacer.
+						Se conservará un registro con el motivo, la fecha y el responsable. Esta acción no se puede deshacer.
 					</Typography>
 					{mensualidadAEliminar && (
 						<Box sx={{ mt: 1.5, p: 1.25, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
 							<Typography variant="body2"><b>Alumno:</b> {mensualidadAEliminar.id_alumno ? `${mensualidadAEliminar.id_alumno.nombres || ''} ${mensualidadAEliminar.id_alumno.apellidos || ''}`.trim() : '-'}</Typography>
-							<Typography variant="body2"><b>Mes:</b> {meses[(mensualidadAEliminar.mes || 1) - 1] || '-'}</Typography>
+							<Typography variant="body2"><b>Mes:</b> {meses[(mensualidadAEliminar.mes || 1) - 1] || '-'} {mensualidadAEliminar.anio}</Typography>
 							<Typography variant="body2"><b>Monto:</b> {simboloMonedaCobro}{formatMoney(obtenerMontoTablaMensualidad(mensualidadAEliminar))} {monedaCobro}</Typography>
 							<Typography variant="body2"><b>Estado:</b> {mensualidadAEliminar.estatus || '-'}</Typography>
 						</Box>
 					)}
+					<TextField label="Motivo de eliminación" value={motivoEliminacion}
+						onChange={(event) => setMotivoEliminacion(event.target.value)} required multiline minRows={3}
+						fullWidth margin="normal" inputProps={{ maxLength: 1000 }} disabled={!!eliminandoMensualidadId} />
+					{errorEliminarMensualidad && <Alert severity="error">{errorEliminarMensualidad}</Alert>}
 				</DialogContent>
 				<DialogActions>
 					<Button
@@ -3590,10 +3645,76 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						variant="contained"
 						color="error"
 						onClick={eliminarMensualidad}
-						disabled={!!eliminandoMensualidadId}
+						disabled={!!eliminandoMensualidadId || !motivoEliminacion.trim()}
 					>
-						{eliminandoMensualidadId ? 'Eliminando...' : 'Eliminar mensualidad'}
+						{eliminandoMensualidadId ? 'Eliminando...' : 'Eliminar'}
 					</Button>
+				</DialogActions>
+			</Dialog>
+			<Dialog open={archivoOpen} onClose={() => { if (!archivoLoading) setArchivoOpen(false); }} maxWidth="sm" fullWidth
+				aria-labelledby="archivo-eliminadas-title" PaperProps={{ sx: { borderRadius: 2, maxHeight: '85dvh', m: { xs: 2, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: '100%' } } }}>
+				<DialogTitle id="archivo-eliminadas-header" component="div" sx={{ bgcolor: '#0f1535', color: '#fff', px: { xs: 2, sm: 3 }, py: 2.5 }}>
+					<Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+						<HistoryRoundedIcon sx={{ mt: 0.25, color: '#cbd5e1' }} />
+						<Box sx={{ flex: 1, minWidth: 0 }}>
+							<Typography id="archivo-eliminadas-title" component="h2" sx={{ fontSize: 19, fontWeight: 700, lineHeight: 1.35 }}>Mensualidades eliminadas</Typography>
+							<Typography sx={{ mt: 0.75, fontSize: 13, color: '#cbd5e1', overflowWrap: 'anywhere' }}>
+								{filtroMes ? meses[Number(filtroMes) - 1] : 'Todos los meses'} · {sedeSeleccionada?.nombre || 'Todas las sedes'}
+							</Typography>
+						</Box>
+						<IconButton aria-label="Cerrar archivo" disabled={archivoLoading} onClick={() => setArchivoOpen(false)} size="small"
+							sx={{ color: '#fff', '&.Mui-disabled': { color: '#94a3b8' } }}><CloseIcon fontSize="small" /></IconButton>
+					</Box>
+				</DialogTitle>
+				<DialogContent sx={{ overflowWrap: 'anywhere', px: { xs: 2, sm: 3 }, py: 0 }}>
+					{archivoLoading ? <Typography role="status">Cargando archivo...</Typography> : archivoError ? (
+						<Alert severity="error" action={<Button onClick={() => cargarArchivoEliminadas(archivo.pagina)}>Reintentar</Button>}>{archivoError}</Alert>
+					) : archivo.registros.length === 0 ? (
+						<Box sx={{ py: 5, textAlign: 'center' }}>
+							<HistoryRoundedIcon sx={{ fontSize: 36, color: '#94a3b8', mb: 1 }} />
+							<Typography fontWeight={700}>Sin mensualidades eliminadas</Typography>
+							<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{filtroMes ? meses[Number(filtroMes) - 1] : 'Todos los meses'} · {sedeSeleccionada?.nombre || 'Todas las sedes'}</Typography>
+						</Box>
+					) : archivo.registros.map((registro) => (
+						<Box component="article" aria-label={`Mensualidad eliminada de ${registro.alumno_nombre || registro.id_alumno}`} key={registro._id}
+							sx={{ py: 3, borderBottom: '1px solid #e2e8f0', '&:last-child': { borderBottom: 0 } }}>
+							<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) auto' }, gap: 1.5 }}>
+								<Box sx={{ minWidth: 0 }}>
+									<Typography component="h3" sx={{ fontSize: 16, fontWeight: 700, color: '#0f1535', lineHeight: 1.4 }}>{registro.alumno_nombre || registro.id_alumno}</Typography>
+									<Typography variant="body2" sx={{ mt: 0.5, color: '#475569' }}>{meses[registro.mes - 1]} {registro.anio}</Typography>
+								</Box>
+								<Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
+									<Typography sx={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Monto eliminado</Typography>
+									<Typography sx={{ fontSize: 21, fontWeight: 700, color: '#0f1535', lineHeight: 1.4 }}>{simboloMonedaCobro}{formatMoney(registro.mensualidad_original?.monto_esperado)} <Box component="span" sx={{ fontSize: 12, fontWeight: 500 }}>{monedaCobro}</Box></Typography>
+								</Box>
+							</Box>
+							<Box sx={{ my: 2, py: 1.25, px: 1.5, bgcolor: '#fff7f7', borderLeft: '3px solid #d88a8a' }}>
+								<Typography sx={{ fontSize: 11, fontWeight: 700, color: '#9f3030', textTransform: 'uppercase', mb: 0.5 }}>Motivo de eliminación</Typography>
+								<Typography sx={{ fontSize: 14, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{registro.motivo}</Typography>
+							</Box>
+							<Box component="dl" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, m: 0,
+								'& dt': { fontSize: 11, fontWeight: 700, color: '#64748b', mb: 0.5 }, '& dd': { m: 0, fontSize: 13, color: '#334155' } }}>
+								<Box><Box component="dt">Eliminada el</Box><Box component="dd">{new Date(registro.createdAt).toLocaleString('es-VE', { timeZone: 'America/Caracas' })}</Box></Box>
+								<Box><Box component="dt">Responsable</Box><Box component="dd">{registro.actor_nombre || registro.actor_id}</Box></Box>
+								<Box><Box component="dt">Estado anterior</Box><Box component="dd">{registro.mensualidad_original?.estatus || 'No registrado'}</Box></Box>
+								<Box><Box component="dt">Rol del responsable</Box><Box component="dd">{({ admin: 'Administrador', super_admin: 'Superadministrador', asistente: 'Asistente' })[registro.actor_rol] || registro.actor_rol || 'No registrado'}</Box></Box>
+							</Box>
+							<Box component="details" sx={{ mt: 2, color: '#64748b', fontSize: 12, '& summary': { cursor: 'pointer', width: 'fit-content', py: 0.5 } }}>
+								<Box component="summary">Referencia de auditoría</Box>
+								<Typography variant="caption" component="p" sx={{ mt: 0.5 }}>Registro: {registro._id}</Typography>
+								<Typography variant="caption" component="p">Cuota original: {registro.mensualidad_original?._id}</Typography>
+							</Box>
+						</Box>
+					))}
+				</DialogContent>
+				<DialogActions sx={{ px: { xs: 2, sm: 3 }, py: 1.5, borderTop: '1px solid #e2e8f0', gap: 1, flexWrap: 'wrap', bgcolor: '#f8fafc' }}>
+					<Typography variant="body2" sx={{ mr: 'auto', color: '#64748b' }}>{archivoLoading ? 'Cargando...' : `${archivo.total} ${archivo.total === 1 ? 'registro' : 'registros'}`}</Typography>
+					<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+						<Tooltip title="Página anterior"><span><IconButton aria-label="Página anterior" size="small" disabled={archivoLoading || !!archivoError || archivo.pagina <= 1} onClick={() => cargarArchivoEliminadas(archivo.pagina - 1)}><ChevronLeftIcon /></IconButton></span></Tooltip>
+						<Typography sx={{ fontSize: 12, minWidth: 32, textAlign: 'center' }}>{archivo.pagina} / {Math.max(1, Math.ceil(archivo.total / 25))}</Typography>
+						<Tooltip title="Página siguiente"><span><IconButton aria-label="Página siguiente" size="small" disabled={archivoLoading || !!archivoError || archivo.pagina * 25 >= archivo.total} onClick={() => cargarArchivoEliminadas(archivo.pagina + 1)}><ChevronRightIcon /></IconButton></span></Tooltip>
+					</Box>
+					<Button disabled={archivoLoading} variant="contained" onClick={() => setArchivoOpen(false)} sx={{ bgcolor: '#0f1535', borderRadius: 1, boxShadow: 'none', fontWeight: 700, '&:hover': { bgcolor: '#20294d', boxShadow: 'none' } }}>Cerrar</Button>
 				</DialogActions>
 			</Dialog>
 			<Dialog

@@ -7,6 +7,7 @@ jest.mock('../services/tenantModelService', () => ({
 }));
 
 jest.mock('../models/Mensualidad', () => ({}));
+jest.mock('../models/MensualidadEliminada', () => ({ findOne: jest.fn().mockResolvedValue(null) }));
 jest.mock('../models/Alumno', () => ({}));
 jest.mock('../models/Sede', () => ({}));
 jest.mock('../models/Reposo', () => ({}));
@@ -66,6 +67,33 @@ afterAll(async () => {
   } catch {
     // noop
   }
+});
+
+describe('getMensualidadesEliminadas', () => {
+  test.each([{ mes: '10' }, {}])('filtra antes de paginar y contar: %j', async (query) => {
+    const lean = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const skip = jest.fn().mockReturnValue({ limit });
+    const sort = jest.fn().mockReturnValue({ skip });
+    const archivo = { find: jest.fn().mockReturnValue({ sort }), countDocuments: jest.fn().mockResolvedValue(0) };
+    getTenantModel.mockImplementation((connection, name) => ({
+      Mensualidad: { db: { model: jest.fn() } }, MensualidadEliminada: archivo
+    }[name] || {}));
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    await mensualidadController.getMensualidadesEliminadas({ tenantId: 'qa', query: { ...query, pagina: '2' } }, res);
+    const esperado = query.mes ? { mes: 10 } : {};
+    expect(archivo.find).toHaveBeenCalledWith(esperado);
+    expect(archivo.countDocuments).toHaveBeenCalledWith(esperado);
+    expect(skip).toHaveBeenCalledWith(25);
+    expect(res.json).toHaveBeenCalledWith({ registros: [], total: 0, pagina: 2 });
+  });
+
+  test.each(['0', '13', 'octubre', '1.5'])('rechaza mes invalido %s', async (mes) => {
+    getTenantModel.mockReturnValue({});
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    await mensualidadController.getMensualidadesEliminadas({ tenantId: 'qa', query: { mes } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
 });
 
 describe('getRevisionesRecargo', () => {

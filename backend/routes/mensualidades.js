@@ -41,6 +41,7 @@ router.post('/adelantar', authMiddleware, ensureAlumnoOwnershipFromBody('id_alum
 router.post('/actualizar-retrasados', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.actualizarRetrasados);
 // Consultar mensualidades
 router.get('/', authMiddleware, mensualidadController.getMensualidades);
+router.get('/eliminadas', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.getMensualidadesEliminadas);
 // Consultar inscripciones (vista separada de mensualidades)
 router.get('/inscripciones', authMiddleware, mensualidadController.getInscripciones);
 // Resumen por sede (mes en curso)

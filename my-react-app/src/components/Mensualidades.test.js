@@ -68,6 +68,90 @@ beforeEach(() => {
 
 afterEach(() => { global.fetch = fetchOriginal; localStorage.clear(); });
 
+test('eliminacion definitiva exige motivo y lo envia al servidor', async () => {
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar mensualidad', exact: true }));
+  const confirmar = screen.getByRole('button', { name: 'Eliminar', exact: true });
+  expect(confirmar).toBeDisabled();
+  fireEvent.change(screen.getByRole('textbox', { name: /Motivo de eliminaci/ }), { target: { value: '  Cobro no corresponde  ' } });
+  fireEvent.click(confirmar);
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/\/api\/mensualidades\/m1$/),
+    expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ motivo: 'Cobro no corresponde' }),
+      headers: expect.objectContaining({ 'Content-Type': 'application/json' }) })));
+});
+
+test('eliminacion definitiva conserva motivo y muestra error si hay pagos vinculados', async () => {
+  errorRetiro = true;
+  render(<Mensualidades />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar mensualidad', exact: true }));
+  fireEvent.change(screen.getByRole('textbox', { name: /Motivo de eliminaci/ }), { target: { value: 'Cobro no corresponde' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar', exact: true }));
+  expect(await screen.findByText('El grupo cambio. Actualiza el detalle.')).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: /Motivo de eliminaci/ })).toHaveValue('Cobro no corresponde');
+});
+
+test('archivo de eliminadas muestra motivo, responsable, periodo e identificador original', async () => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/mensualidades/eliminadas')
+    ? { ok: true, json: async () => ({ pagina: 1, total: 1, registros: [{ _id: 'archivo-qa', alumno_nombre: 'Roberto QA',
+      mes: 8, anio: 2026, motivo: 'Cobro no corresponde', actor_nombre: 'Administracion QA', actor_rol: 'admin',
+      createdAt: '2026-11-03T15:00:00Z', mensualidad_original: { _id: 'cuota-agosto', monto_esperado: 20, estatus: 'Insolvente' } }] }) }
+    : original(url, options));
+  render(<Mensualidades />);
+  fireEvent.click(screen.getByRole('button', { name: 'Mensualidades eliminadas' }));
+  expect(await screen.findByText('Roberto QA')).toBeInTheDocument();
+  expect(screen.getByText('Cobro no corresponde')).toBeInTheDocument();
+  const registro = screen.getByRole('article', { name: 'Mensualidad eliminada de Roberto QA' });
+  expect(within(registro).getByText('Agosto 2026')).toBeInTheDocument();
+  expect(within(registro).getByText(/\$20.00/)).toBeInTheDocument();
+  expect(within(registro).getByText('Estado anterior')).toBeInTheDocument();
+  expect(screen.getByText(/Administracion QA/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Referencia de auditoría'));
+  expect(within(registro).getByText(/cuota-agosto/)).toBeInTheDocument();
+  expect(within(registro).getByText(/archivo-qa/)).toBeInTheDocument();
+});
+
+test.each([['Octubre', '10'], ['Todos', null]])('archivo aplica el filtro de mes %s', async (opcion, mes) => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/mensualidades/eliminadas')
+    ? { ok: true, json: async () => ({ pagina: 1, total: 0, registros: [] }) } : original(url, options));
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Mes', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: opcion, exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mensualidades eliminadas' }));
+  expect(await screen.findByText('Sin mensualidades eliminadas')).toBeInTheDocument();
+  const [url] = global.fetch.mock.calls.find(([ruta]) => ruta.includes('/mensualidades/eliminadas'));
+  const params = new URLSearchParams(url.split('?')[1]);
+  expect(params.get('mes')).toBe(mes);
+  expect(within(screen.getByRole('dialog')).getAllByText(new RegExp(mes ? 'Octubre' : 'Todos los meses'))).toHaveLength(2);
+});
+
+test('archivo conserva mes al pasar de pagina y pagina desde uno al reabrir', async () => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/mensualidades/eliminadas')
+    ? { ok: true, json: async () => ({ pagina: Number(new URLSearchParams(url.split('?')[1]).get('pagina')), total: 26, registros: [] }) }
+    : original(url, options));
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Mes', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Octubre', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mensualidades eliminadas' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Página siguiente' }));
+  await waitFor(() => expect(global.fetch.mock.calls.some(([ruta]) => ruta.includes('/eliminadas?pagina=2&mes=10'))).toBe(true));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Cerrar', exact: true })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar', exact: true }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Mensualidades eliminadas' }));
+  await waitFor(() => expect(global.fetch.mock.calls.filter(([ruta]) => ruta.includes('/eliminadas?pagina=1&mes=10'))).toHaveLength(2));
+});
+
+test('archivo de eliminadas oculta el acceso sin permiso de gestion', async () => {
+  hasPermission.mockReturnValue(false);
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  expect(screen.queryByRole('button', { name: 'Mensualidades eliminadas' })).not.toBeInTheDocument();
+});
+
 test('desde el dashboard consulta revisiones de recargo de todos los meses y permite abrir su detalle', async () => {
   render(<Mensualidades />, '/mensualidades?revision_recargo=true');
   expect(screen.getByRole('checkbox', { name: 'Solicitudes de revisión de recargo.' })).toBeChecked();
