@@ -9,6 +9,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { useSede } from '../context/SedeContext';
 import { useDolar } from '../context/DolarContext';
@@ -24,6 +25,7 @@ import { normalizeMetodoPago, metodoRequiereReferencia, ADDITIONAL_PAYMENT_METHO
 import { mediaUrl } from '../utils/mediaUrl';
 import { hasPermission } from '../utils/permissions';
 import PagoAgrupadoEditor from './PagoAgrupadoEditor';
+import ReportePagosMensuales from './ReportePagosMensuales';
 import './Mensualidades.css';
 
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -111,6 +113,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [filtroAlumno, setFiltroAlumno] = useState('');
 	const [filtroEstado, setFiltroEstado] = useState(() => String(initialEstado || '').trim());
 	const [filtroEstadoAlumno, setFiltroEstadoAlumno] = useState('');
+	const [reportePagosOpen, setReportePagosOpen] = useState(false);
 	const [modalPago, setModalPago] = useState(false);
 	const [pagoInfo, setPagoInfo] = useState({});
 	const [comprobante, setComprobante] = useState(null);
@@ -2108,6 +2111,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	return (
 		<div>
 			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>{pageTitle}</Typography>
+			{reportePagosOpen && filtroMes && <ReportePagosMensuales mes={Number(filtroMes)} sede={sedeSeleccionada} onClose={() => setReportePagosOpen(false)} />}
 			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
 				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
@@ -2172,6 +2176,14 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						}}>
 						Mensualidades eliminadas
 					</Button>
+				{!esVistaInscripciones && hasPermission('mensualidades.view') && (
+					<Tooltip title={filtroMes ? 'Pagos recibidos y hábitos de pago' : 'Selecciona un mes para consultar el reporte'}>
+						<Box component="span" sx={{ display: 'inline-flex', width: { xs: '100%', sm: 'auto' } }}>
+							<Button variant="outlined" startIcon={<AssessmentOutlinedIcon />} disabled={!filtroMes} onClick={() => setReportePagosOpen(true)}
+								sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: '10px', fontWeight: 700, color: '#475569', borderColor: '#94a3b8',
+									'&:hover': { borderColor: '#64748b', backgroundColor: '#fdfdfd' } }}>Reporte de pagos</Button>
+						</Box>
+					</Tooltip>
 				)}
 				{esAdmin && !esVistaInscripciones && (
 					<Button

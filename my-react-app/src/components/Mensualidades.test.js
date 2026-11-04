@@ -131,6 +131,10 @@ test('archivo conserva mes al pasar de pagina y pagina desde uno al reabrir', as
   const original = global.fetch.getMockImplementation();
   global.fetch.mockImplementation(async (url, options) => url.includes('/mensualidades/eliminadas')
     ? { ok: true, json: async () => ({ pagina: Number(new URLSearchParams(url.split('?')[1]).get('pagina')), total: 26, registros: [] }) }
+test('reporte de pagos utiliza el mes seleccionado y se deshabilita con Todos', async () => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/reporte-pagos?')
+    ? { ok: true, json: async () => ({ pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
     : original(url, options));
   render(<Mensualidades />);
   await screen.findByRole('button', { name: 'Ver detalle' });
@@ -150,6 +154,21 @@ test('archivo de eliminadas oculta el acceso sin permiso de gestion', async () =
   render(<Mensualidades />);
   await screen.findByRole('button', { name: 'Ver detalle' });
   expect(screen.queryByRole('button', { name: 'Mensualidades eliminadas' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Reporte de pagos', exact: true }));
+  expect(await screen.findByText('No hay pagos recibidos para esta selección.')).toBeInTheDocument();
+  expect(global.fetch.mock.calls.find(([url]) => url.includes('/reporte-pagos?'))[0]).toContain('mes=10');
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar reporte' }));
+  await screen.findByRole('button', { name: 'Reporte de pagos', exact: true });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Mes', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Todos', exact: true }));
+  expect(screen.getByRole('button', { name: 'Reporte de pagos', exact: true })).toBeDisabled();
+});
+
+test('sin permiso de consulta no ofrece reporte de pagos', async () => {
+  hasPermission.mockImplementation((permiso) => permiso !== 'mensualidades.view');
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  expect(screen.queryByRole('button', { name: 'Reporte de pagos', exact: true })).not.toBeInTheDocument();
 });
 
 test('desde el dashboard consulta revisiones de recargo de todos los meses y permite abrir su detalle', async () => {
