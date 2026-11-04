@@ -2176,6 +2176,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						}}>
 						Mensualidades eliminadas
 					</Button>
+				)}
 				{!esVistaInscripciones && hasPermission('mensualidades.view') && (
 					<Tooltip title={filtroMes ? 'Pagos recibidos y hábitos de pago' : 'Selecciona un mes para consultar el reporte'}>
 						<Box component="span" sx={{ display: 'inline-flex', width: { xs: '100%', sm: 'auto' } }}>
