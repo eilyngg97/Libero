@@ -7,6 +7,7 @@ const { getTenantModel } = require('../services/tenantModelService');
 const controller = require('../controllers/pagoDetalleController');
 const conciliacion = require('../controllers/conciliacionController');
 const mensualidades = require('../controllers/mensualidadController');
+const { getReportePagos } = require('../controllers/paymentReportController');
 const { obtenerTrazabilidadCredito } = require('../services/monthlyCredit');
 
 const suite = process.env.RUN_MONGO_CREDIT_TESTS === '1' ? describe : describe.skip;
@@ -92,6 +93,71 @@ suite('credito mensual con transacciones Mongo reales en base temporal', () => {
   }
 
   function respuesta() { return { status: jest.fn().mockReturnThis(), json: jest.fn() }; }
+
+  test('reporte_pagos consulta grupos entre sedes sin duplicar transferencia ni modificar saldos', async () => {
+    const sedes = await models.Sede.create([{ nombre: 'QA Primera', direccion: 'QA', costo: 19 },
+      { nombre: 'QA Segunda', direccion: 'QA', costo: 19 }]);
+    await models.Alumno.updateOne({ _id: alumnoIds[0] }, { $set: { sede: sedes[0]._id } });
+    await models.Alumno.updateOne({ _id: alumnoIds[1] }, { $set: { sede: sedes[1]._id } });
+    const representante = await models.Representante.findOne({ usuario: usuarioId });
+    const grupo = await models.PagoAgrupado.create({ codigo: 'PA-QA-REPORTE', representante: representante._id,
+      monto_total: 38, monto_total_bs: 38000, tasa_aplicada: 1000, fecha_pago: new Date('2026-10-15'),
+      metodo_pago: 'Transferencia', estado: 'Conciliado', cantidad_atletas: 2 });
+    await models.PagoDetalle.create(octubreIds.map((id_mensualidad) => ({ id_mensualidad,
+      id_pago_agrupado: grupo._id, monto_pagado: 19, fecha_pago: new Date('2026-10-15'), metodo_pago: 'Transferencia' })));
+    const antes = await models.Alumno.find({ _id: { $in: alumnoIds } }).lean();
+    const res = respuesta();
+    await getReportePagos({ tenantId: 'qa-credit', user: { rol: 'admin' }, query: { mes: '10', anio: '2026' } }, res);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ resumen: expect.objectContaining({ pagos: 1,
+      alumnos: 2, total_confirmado: 38 }), pagos: [expect.objectContaining({ codigo: grupo.codigo, monto: 38 })] }));
+    const porSede = respuesta();
+    await getReportePagos({ tenantId: 'qa-credit', user: { rol: 'admin' }, query: { mes: '10', anio: '2026',
+      id_sede: String(sedes[0]._id), desde: '2026-10-15', hasta: '2026-10-15' } }, porSede);
+    expect(porSede.json).toHaveBeenCalledWith(expect.objectContaining({ resumen: expect.objectContaining({ pagos: 1,
+      alumnos: 1, total_confirmado: 19 }) }));
+    const despues = await models.Alumno.find({ _id: { $in: alumnoIds } }).lean();
+    expect(despues).toEqual(antes);
+    expect(await models.PagoDetalle.countDocuments({ id_pago_agrupado: grupo._id })).toBe(2);
+  });
+
+  test('reporte_pagos estima con todas las cuotas registradas sin limitarse al mes de recibidos', async () => {
+    const sede = await models.Sede.create({ nombre: 'QA Historial', direccion: 'QA', costo: 19 });
+    await models.Alumno.updateOne({ _id: alumnoIds[0] }, { $set: { sede: sede._id } });
+    for (const [mes, anio] of [[1, 2025], [2, 2025], [1, 2026], [11, 2026]]) {
+      const fecha = `${anio}-${String(mes).padStart(2, '0')}-03`;
+      const historica = await models.Mensualidad.create({ id_alumno: alumnoIds[0], mes, anio,
+        monto_base: 19, monto_esperado: 19, fecha_vencimiento: new Date(fecha),
+        estatus: 'Pagado', pago_en_revision: false });
+      await models.PagoDetalle.create({ id_mensualidad: historica._id, monto_pagado: 19,
+        fecha_pago: new Date(fecha), metodo_pago: 'QA' });
+    }
+    const antes = await models.Mensualidad.find({ id_alumno: alumnoIds[0] }).lean();
+    const res = respuesta();
+    await getReportePagos({ tenantId: 'qa-credit', user: { rol: 'admin' }, query: {
+      mes: '10', anio: '2026', id_sede: String(sede._id) } }, res);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      resumen: expect.objectContaining({ pagos: 0 }),
+      habitos: [expect.objectContaining({ franja: '1_5', coincidencias: 4, meses_observados: 5 })],
+      periodos_habito: [{ mes: 1, anio: 2025 }, { mes: 2, anio: 2025 }, { mes: 1, anio: 2026 },
+        { mes: 9, anio: 2026 }, { mes: 11, anio: 2026 }]
+    }));
+    expect(await models.Mensualidad.find({ id_alumno: alumnoIds[0] }).lean()).toEqual(antes);
+  });
+
+  test('reporte_pagos no consulta datos de otra conexion tenant', async () => {
+    const otra = mongoose.createConnection();
+    await otra.openUri(`mongodb://127.0.0.1:27017/${connection.name}_reporte_otra?replicaSet=rs0`);
+    try {
+      getTenantBusinessConnection.mockResolvedValueOnce(otra);
+      const res = respuesta();
+      await getReportePagos({ tenantId: 'qa-otra', user: { rol: 'admin' }, query: { mes: '9', anio: '2026' } }, res);
+      expect(res.status).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ resumen: expect.objectContaining({ pagos: 0, alumnos: 0 }),
+        pagos: [], habitos: [] }));
+    } finally { await otra.dropDatabase(); await otra.close(); }
+  });
 
   test.each(['Zelle', 'PayPal', 'Binance'])('proveedor %s registra y edita pago individual sin inventar importes en bolivares', async (metodo) => {
     const registrado = await registrar(false, false, { metodo_pago: metodo, monto_pagado_bs: undefined, referencia: 'TX-ABC-2026' });

@@ -68,6 +68,32 @@ beforeEach(() => {
 
 afterEach(() => { global.fetch = fetchOriginal; localStorage.clear(); });
 
+test('reporte de pagos utiliza el mes seleccionado y se deshabilita con Todos', async () => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/reporte-pagos?')
+    ? { ok: true, json: async () => ({ pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
+    : original(url, options));
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Mes', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Octubre', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reporte de pagos', exact: true }));
+  expect(await screen.findByText('No hay pagos recibidos para esta selección.')).toBeInTheDocument();
+  expect(global.fetch.mock.calls.find(([url]) => url.includes('/reporte-pagos?'))[0]).toContain('mes=10');
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar reporte' }));
+  await screen.findByRole('button', { name: 'Reporte de pagos', exact: true });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Mes', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Todos', exact: true }));
+  expect(screen.getByRole('button', { name: 'Reporte de pagos', exact: true })).toBeDisabled();
+});
+
+test('sin permiso de consulta no ofrece reporte de pagos', async () => {
+  hasPermission.mockImplementation((permiso) => permiso !== 'mensualidades.view');
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  expect(screen.queryByRole('button', { name: 'Reporte de pagos', exact: true })).not.toBeInTheDocument();
+});
+
 test('desde el dashboard consulta revisiones de recargo de todos los meses y permite abrir su detalle', async () => {
   render(<Mensualidades />, '/mensualidades?revision_recargo=true');
   expect(screen.getByRole('checkbox', { name: 'Solicitudes de revisión de recargo.' })).toBeChecked();

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mensualidadController = require('../controllers/mensualidadController');
+const paymentReportController = require('../controllers/paymentReportController');
 const conciliacionController = require('../controllers/conciliacionController');
 const { authMiddleware, permisoMiddleware } = require('../middleware/auth');
 const { ensureAlumnoOwnershipFromBody } = require('../middleware/ownership');
@@ -41,6 +42,7 @@ router.post('/adelantar', authMiddleware, ensureAlumnoOwnershipFromBody('id_alum
 router.post('/actualizar-retrasados', authMiddleware, permisoMiddleware('mensualidades.manage'), mensualidadController.actualizarRetrasados);
 // Consultar mensualidades
 router.get('/', authMiddleware, mensualidadController.getMensualidades);
+router.get('/reporte-pagos', authMiddleware, permisoMiddleware('mensualidades.view'), paymentReportController.getReportePagos);
 // Consultar inscripciones (vista separada de mensualidades)
 router.get('/inscripciones', authMiddleware, mensualidadController.getInscripciones);
 // Resumen por sede (mes en curso)
