@@ -302,6 +302,7 @@ app.use('/api/usuarios', require('./routes/usuarios'));
 app.use('/api/roles', require('./routes/roles'));
 app.use('/api/torneos', require('./routes/torneos'));
 app.use('/api/rosters', require('./routes/rosters'));
+app.use('/api/asistencias', require('./routes/asistencias'));
 app.use('/api/alumnos', require('./routes/alumnos'));
 app.use('/api/representantes', require('./routes/representantes'));
 app.use('/api/sedes', require('./routes/sedes'));

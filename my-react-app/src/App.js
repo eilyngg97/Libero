@@ -10,6 +10,7 @@ import DashboardOperativo from './components/DashboardOperativo';
 import Uniformes from './components/Uniformes';
 import DashboardUsuario from './components/DashboardUsuario';
 import PanelOpciones from './components/PanelOpciones';
+import Asistencias from './components/Asistencias';
 import PanelOpcionesUsuario from './components/PanelOpcionesUsuario';
 import Alumnos from './components/Alumnos';
 import Entrenadores from './components/Entrenadores';
@@ -359,6 +360,7 @@ function App() {
                           <Route path="dashboard" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['dashboard.view']}><DashboardEntry /></ProtectedRoute>} />
                           <Route path="sin-acceso" element={<ProtectedRoute allowedRoles={['entrenador']}><SinAccesoEntrenador /></ProtectedRoute>} />
                           <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><RequireSedeSelection><Alumnos /></RequireSedeSelection></ProtectedRoute>} />
+                          <Route path="asistencias" element={<ProtectedRoute requiredPermissions={['asistencias.view']}><Asistencias /></ProtectedRoute>} />
                           <Route path="entrenadores" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['entrenadores.view']}><Entrenadores /></ProtectedRoute>} />
                           <Route path="entrenadores-sede" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['entrenadores.view']}><RequireSedeSelection><EntrenadoresSedeStaff /></RequireSedeSelection></ProtectedRoute>} />
                           <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['horarios.view', 'horarios.manage']} requireAllPermissions={false}><Horarios /></ProtectedRoute>} />
@@ -383,7 +385,7 @@ function App() {
                             )}
                           />
                           <Route path="sedes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['sedes.view']}><Sedes /></ProtectedRoute>} />
-                          <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view', 'mensualidades.view', 'solicitudes_uniformes.view']} requireAllPermissions={false}><PanelOpciones /></ProtectedRoute>} />
+                          <Route path="panelOpciones" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view', 'mensualidades.view', 'solicitudes_uniformes.view', 'asistencias.view']} requireAllPermissions={false}><PanelOpciones /></ProtectedRoute>} />
                           <Route path="tabla-alumnos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><TablaAlumnos /></ProtectedRoute>} />
                           <Route path="alumno/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}>{React.createElement(require('./components/AlumnoDetalle').default)}</ProtectedRoute>} />
                           <Route path="alumno/editar/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}>{React.createElement(require('./components/AlumnoEditar').default)}</ProtectedRoute>} />

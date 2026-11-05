@@ -1,5 +1,7 @@
 const LEGACY_DEFAULT_PERMISSIONS = {
   admin: [
+    'asistencias.view',
+    'asistencias.manage',
     'dashboard.view',
     'dashboard.finance',
     'dashboard.stats',
@@ -49,6 +51,8 @@ const LEGACY_DEFAULT_PERMISSIONS = {
     'roles.manage'
   ],
   super_admin: [
+    'asistencias.view',
+    'asistencias.manage',
     'dashboard.view',
     'dashboard.finance',
     'dashboard.stats',
