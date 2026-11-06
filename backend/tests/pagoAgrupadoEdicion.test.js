@@ -136,6 +136,69 @@ async function eliminarGrupo(overrides = {}, usuario) {
   return res;
 }
 
+test.each([
+  ['111111', '24427', 'match_total', true],
+  ['111111', '24000', 'match_parcial', true],
+  ['999999', '1', 'sin_coincidencia_sistema', true],
+  ['111111', '24427', 'match_total', false]
+])('conciliacion identifica atletas del grupo en %s/%s/%s (detalle=%s)', async (referencia, monto, categoria, conDetalle) => {
+  const detalles = conDetalle ? [
+    { _id: 'p1', id_pago_agrupado: 'g1', id_mensualidad: datos.Mensualidad.m1, monto_esperado_usd: 10, monto_esperado_bs: 8948.88 },
+    { _id: 'p2', id_pago_agrupado: 'g1', id_mensualidad: datos.Mensualidad.m2, monto_esperado_usd: 10, monto_esperado_bs: 8948.88 },
+    { _id: 'p1', id_pago_agrupado: 'g1', id_mensualidad: datos.Mensualidad.m1, monto_esperado_usd: 10, monto_esperado_bs: 8948.88 }
+  ] : [];
+  models.PagoDetalle.find
+    .mockImplementationOnce(() => ({ select: jest.fn().mockResolvedValue([]) }))
+    .mockImplementationOnce(() => ({ select: jest.fn().mockReturnValue({
+      populate: jest.fn().mockResolvedValue(detalles)
+    }) }));
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await conciliacion.previsualizarConciliacion({ tenantId: 'test', query: { tipo_conciliacion: 'mensualidades' },
+    file: { originalname: 'estado.txt', buffer: Buffer.from(`Referencia;Monto;Fecha\n${referencia};${monto};${categoria === 'sin_coincidencia_sistema' ? '01/01/2025' : '06/10/2026'}`) }
+  }, res);
+  expect(res.status).not.toHaveBeenCalled();
+  const respuesta = res.json.mock.calls[0][0];
+  expect(respuesta[categoria][0].sistema).toMatchObject({
+    pago_agrupado_id: 'g1', alumno: conDetalle ? 'a1 Atleta / a2 Atleta' : '2 atletas', contexto: 'Pago agrupado PA-1',
+    monto_bs: 24427, monto_esperado_usd: conDetalle ? 20 : null, monto_esperado_bs: conDetalle ? 17897.76 : null
+  });
+  expect(models.PagoDetalle.find).toHaveBeenLastCalledWith({ id_pago_agrupado: { $in: ['g1'] } });
+  expect(models.PagoDetalle.create).not.toHaveBeenCalled();
+});
+
+test.each([
+  { caso: 'esperados guardados', usd: 10, bs: 8948.88, esperadoUsd: 20, esperadoBs: 17897.76 },
+  { caso: 'historico sin esperados', esperadoUsd: 20, esperadoBs: null },
+  { caso: 'esperados cero', usd: 0, bs: 0, esperadoUsd: 0, esperadoBs: 0 },
+  { caso: 'importes invalidos', usd: 'invalido', bs: 'invalido', esperadoUsd: null, esperadoBs: null },
+  { caso: 'cuota no disponible', sinCuota: true, esperadoUsd: null, esperadoBs: null },
+  { caso: 'asignacion faltante', incompleto: true, usd: 10, bs: 8948.88, esperadoUsd: null, esperadoBs: null }
+])('conciliacion no confunde transferencia de 2000 USD con esperado: $caso', async (opcion) => {
+  datos.PagoAgrupado.g1.monto_total = 2000;
+  datos.PagoAgrupado.g1.monto_total_bs = 1789775;
+  const detalles = ['m1', 'm2'].map((id, indice) => ({
+    _id: `p${indice + 1}`, id_pago_agrupado: 'g1',
+    id_mensualidad: opcion.sinCuota ? null : { ...datos.Mensualidad[id], monto_esperado: 10 },
+    monto_esperado_usd: opcion.usd, monto_esperado_bs: opcion.bs
+  }));
+  models.PagoDetalle.find
+    .mockImplementationOnce(() => ({ select: jest.fn().mockResolvedValue([]) }))
+    .mockImplementationOnce(() => ({ select: jest.fn().mockReturnValue({
+      populate: jest.fn().mockResolvedValue(opcion.incompleto ? detalles.slice(0, 1) : detalles)
+    }) }));
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await conciliacion.previsualizarConciliacion({ tenantId: 'test', query: { tipo_conciliacion: 'mensualidades' },
+    file: { originalname: 'estado.txt', buffer: Buffer.from('Referencia;Monto;Fecha\n111111;17897.75;06/10/2026') }
+  }, res);
+  expect(res.status).not.toHaveBeenCalled();
+  const respuesta = res.json.mock.calls[0][0];
+  expect(respuesta.match_parcial[0].sistema).toMatchObject({
+    monto_bs: 1789775, monto_esperado_usd: opcion.esperadoUsd, monto_esperado_bs: opcion.esperadoBs
+  });
+  expect(respuesta.pago_ids_confirmables).toEqual([]);
+  expect(models.PagoDetalle.create).not.toHaveBeenCalled();
+});
+
 test('elimina el grupo completo y recalcula ambas atletas conservando pagos ajenos', async () => {
   datos.PagoDetalle.otro = { _id: 'otro', id_mensualidad: 'm1', monto_pagado: 2 };
   const res = await eliminarGrupo();

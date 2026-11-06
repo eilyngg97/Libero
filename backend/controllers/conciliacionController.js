@@ -681,6 +681,35 @@ exports.previsualizarConciliacion = async (req, res) => {
       const pagosAgrupados = await TenantPagoAgrupado.find({ estado: 'En revision' })
         .select('_id codigo referencia telefono_pago cedula_titular monto_total monto_total_bs fecha_pago cantidad_atletas');
 
+      const detallesAgrupados = pagosAgrupados.length > 0
+        ? await TenantPagoDetalle.find({ id_pago_agrupado: { $in: pagosAgrupados.map(pago => pago._id) } })
+          .select('_id id_pago_agrupado id_mensualidad monto_esperado_usd monto_esperado_bs')
+          .populate({ path: 'id_mensualidad', select: 'id_alumno monto_esperado',
+            populate: { path: 'id_alumno', select: 'nombres apellidos' } })
+        : [];
+      const atletasPorGrupo = new Map();
+      const esperadosPorGrupo = new Map();
+      for (const detalle of detallesAgrupados) {
+        const grupoId = String(detalle.id_pago_agrupado);
+        if (!esperadosPorGrupo.has(grupoId)) esperadosPorGrupo.set(grupoId, new Map());
+        esperadosPorGrupo.get(grupoId).set(String(detalle._id), detalle);
+        const alumno = detalle.id_mensualidad?.id_alumno;
+        const nombre = `${alumno?.nombres || ''} ${alumno?.apellidos || ''}`.trim();
+        if (!alumno?._id || !nombre) continue;
+        if (!atletasPorGrupo.has(grupoId)) atletasPorGrupo.set(grupoId, new Map());
+        atletasPorGrupo.get(grupoId).set(String(alumno._id), nombre);
+      }
+      const sumarEsperadoGrupo = (pago, campo) => {
+        const detalles = [...(esperadosPorGrupo.get(String(pago._id))?.values() || [])];
+        if (!detalles.length || detalles.length < Number(pago.cantidad_atletas)) return null;
+        const montos = detalles.map(detalle => campo === 'monto_esperado_usd'
+          ? (detalle[campo] ?? detalle.id_mensualidad?.monto_esperado)
+          : detalle[campo]);
+        if (montos.some(monto => monto === null || monto === undefined
+          || !Number.isFinite(Number(monto)) || Number(monto) < 0)) return null;
+        return Math.round(montos.reduce((total, monto) => total + Number(monto), 0) * 100) / 100;
+      };
+
       sistemaRows.push(...pagosAgrupados.map((pago) => ({
         _id: pago._id,
         registro_tipo: TIPO_CONCILIACION.MENSUALIDADES,
@@ -691,10 +720,11 @@ exports.previsualizarConciliacion = async (req, res) => {
         cedula_titular: String(pago.cedula_titular || '').trim(),
         cedula_titular_cmp: cedulaComparable(pago.cedula_titular),
         monto_pagado_bs: parseMonto(pago.monto_total_bs),
-        monto_esperado_bs: parseMonto(pago.monto_total_bs),
-        monto_esperado_usd: Number(pago.monto_total),
+        monto_esperado_bs: sumarEsperadoGrupo(pago, 'monto_esperado_bs'),
+        monto_esperado_usd: sumarEsperadoGrupo(pago, 'monto_esperado_usd'),
         fecha_pago: parseFecha(pago.fecha_pago),
-        alumno: `${Number(pago.cantidad_atletas) || 2} atletas`,
+        alumno: [...(atletasPorGrupo.get(String(pago._id))?.values() || [])].join(' / ')
+          || `${Number(pago.cantidad_atletas) || 2} atletas`,
         contexto: `Pago agrupado ${pago.codigo || ''}`.trim()
       })));
     } else {

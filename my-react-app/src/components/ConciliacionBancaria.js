@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Box,
   Button,
   Checkbox,
   Chip,
@@ -843,7 +844,7 @@ export default function ConciliacionBancaria() {
                       <TableCell>{estadoChip(fila.tipo)}</TableCell>
                       <TableCell>
                         <div className="conciliacionAlumnoCell">
-                          <span>{fila.alumno}</span>
+                          <Box component="span" sx={{ maxWidth: 300, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fila.alumno}</Box>
                           {!!fila.contextoSistema && (
                             <Chip size="small" label={fila.contextoSistema} className="conciliacionContextChip" />
                           )}
