@@ -1710,14 +1710,14 @@ exports.getEstadisticasInscritosRetirados = async (req, res) => {
         ...filtroSede,
         fecha_inscripcion: { $gte: inicioAnio, $lt: finAnio }
       })
-        .select('nombres apellidos foto sede categoria fecha_inscripcion')
+        .select('nombres apellidos foto sede categoria fecha_inscripcion activo dado_de_baja estado')
         .populate('sede', 'nombre')
         .lean(),
       TenantAlumno.find({
         ...filtroSede,
         fecha_baja: { $gte: inicioAnio, $lt: finAnio }
       })
-        .select('nombres apellidos foto sede categoria fecha_baja')
+        .select('nombres apellidos foto sede categoria fecha_baja activo dado_de_baja estado')
         .populate('sede', 'nombre')
         .lean(),
       TenantHistorialEstadoAlumno.find({
@@ -1747,7 +1747,7 @@ exports.getEstadisticasInscritosRetirados = async (req, res) => {
           _id: { $in: idsReingreso },
           ...filtroSede
         })
-          .select('nombres apellidos foto sede categoria')
+          .select('nombres apellidos foto sede categoria activo dado_de_baja estado')
           .populate('sede', 'nombre')
           .lean()
       : [];
@@ -1794,7 +1794,9 @@ exports.getEstadisticasInscritosRetirados = async (req, res) => {
       apellidos: alumno.apellidos || '',
       foto: normalizarFotoEstadistica(alumno.foto),
       categoria: alumno.categoria || '-',
-      sede: alumno?.sede?.nombre || 'Sin sede'
+      sede: alumno?.sede?.nombre || 'Sin sede',
+      activo: alumno.activo !== false && alumno.dado_de_baja !== true
+        && !['baja', 'inactivo'].includes(String(alumno.estado || '').trim().toLowerCase())
     });
 
     inscritos.forEach((alumno) => {

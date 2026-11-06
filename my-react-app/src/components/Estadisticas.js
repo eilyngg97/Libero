@@ -18,6 +18,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip as MuiTooltip,
   Typography,
   useMediaQuery
 } from '@mui/material';
@@ -797,6 +798,12 @@ function Estadisticas() {
             <Box className="stats-dialog-list">
               {dialogo.items.map((alumno) => (
                 <Box key={alumno._id} className="stats-dialog-item">
+                  {typeof alumno.activo === 'boolean' && (
+                    <MuiTooltip title={alumno.activo ? 'Activo' : 'De baja'} arrow>
+                      <Box component="span" role="img" aria-label={alumno.activo ? 'Activo' : 'De baja'}
+                        sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: alumno.activo ? '#22c55e' : '#ef4444' }} />
+                    </MuiTooltip>
+                  )}
                   <Avatar src={resolveFotoAlumno(alumno.foto)} alt={alumno.nombres} sx={{ width: 44, height: 44 }}>
                     {!alumno.foto ? (alumno.nombres || '').charAt(0) : ''}
                   </Avatar>

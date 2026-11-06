@@ -26,7 +26,7 @@ function rangoMes(mes, anio) {
   return { desde: `${prefijo}-01`, hasta: `${prefijo}-${new Date(Date.UTC(anio, mes, 0)).getUTCDate()}` };
 }
 
-export default function ReportePagosMensuales({ mes, sede, onClose }) {
+export default function ReportePagosMensuales({ mes, anioInicial = new Date().getFullYear(), sede, onClose }) {
   const theme = useTheme();
   const temaReporte = createTheme(theme, { palette: {
     primary: { main: '#475569', light: '#64748b', dark: '#374151' },
@@ -37,9 +37,10 @@ export default function ReportePagosMensuales({ mes, sede, onClose }) {
   const moneda = dolar?.moneda === 'EUR' ? 'EUR' : 'USD';
   const dinero = (valor) => new Intl.NumberFormat('es-VE', { style: 'currency', currency: moneda }).format(valor || 0);
   const anioActual = new Date().getFullYear();
-  const [anio, setAnio] = useState(anioActual);
-  const [rango, setRango] = useState(() => rangoMes(mes, anioActual));
-  const [borrador, setBorrador] = useState(() => rangoMes(mes, anioActual));
+  const [anio, setAnio] = useState(anioInicial);
+  const [rango, setRango] = useState(() => rangoMes(mes, anioInicial));
+  const [borrador, setBorrador] = useState(() => rangoMes(mes, anioInicial));
+  const ultimoAnio = Math.max(anioActual + 1, anioInicial);
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -184,7 +185,7 @@ export default function ReportePagosMensuales({ mes, sede, onClose }) {
       {vista === 'pagos' && <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
         <TextField select size="small" label="Año" value={anio} sx={{ width: 110 }} onChange={(event) => {
           const value = Number(event.target.value); setAnio(value); setRango(rangoMes(mes, value)); setBorrador(rangoMes(mes, value)); setErrorAccion('');
-        }}>{Array.from({ length: anioActual - 1999 }, (_, index) => anioActual - index).map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}</TextField>
+        }}>{Array.from({ length: ultimoAnio - 1999 }, (_, index) => ultimoAnio - index).map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}</TextField>
           <TextField label="Desde" type="date" size="small" value={borrador.desde} onChange={(event) => setBorrador({ ...borrador, desde: event.target.value })}
             InputLabelProps={{ shrink: true }} inputProps={{ min: limites.desde, max: limites.hasta }} sx={{ flex: { xs: '1 1 150px', sm: '0 1 160px' }, minWidth: 0 }} />
           <TextField label="Hasta" type="date" size="small" value={borrador.hasta} onChange={(event) => setBorrador({ ...borrador, hasta: event.target.value })}
