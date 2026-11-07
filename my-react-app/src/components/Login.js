@@ -8,6 +8,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import logoImage from '../assets/logos/logo_apex.png';
 import { mediaUrl } from '../utils/mediaUrl';
+import { startSystemReminderSession } from '../utils/systemSubscription';
 
 const DEFAULT_BRANDING = {
   displayName: 'NOMBRE DE TU CLUB',
@@ -124,6 +125,7 @@ function Login({ onLogin }) {
       localStorage.setItem('token', data.token);
       localStorage.setItem('usuario', JSON.stringify(data.user));
       localStorage.setItem('rol', data.user.rol);
+      startSystemReminderSession(tenantId);
       window.dispatchEvent(new Event('auth-changed'));
       localStorage.setItem('rolActivo', data.user.rolActivo || data.user.rol);
       if (onLogin) onLogin(data);
