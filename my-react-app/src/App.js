@@ -28,6 +28,7 @@ import RosterDocumentEditor from './components/RosterDocumentEditor';
 import Sedes from './components/Sedes';
 import Login from './components/Login';
 import LandingPage from './components/LandingPage';
+import ApexLandingPage from './components/apex/ApexLandingPage';
 import Constancias from './components/Constancias';
 import ListadoSolicitudesConstancias from './components/ListadoSolicitudesConstancias';
 import GestionReposos from './components/GestionReposos';
@@ -330,6 +331,12 @@ function App() {
                         const sede = location.state?.sede || null;
                         return <SolicitudUniforme alumno={alumno} sede={sede} />;
                       }
+
+    const isLocalApexPreview = process.env.NODE_ENV === 'development'
+      && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+      && window.location.pathname.replace(/\/$/, '') === '/apex';
+
+    if (isLocalApexPreview) return <ApexLandingPage />;
 
     return (
       <SedeProvider>
