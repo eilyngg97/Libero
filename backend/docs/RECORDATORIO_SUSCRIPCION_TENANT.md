@@ -12,8 +12,6 @@ Campos bajo `suscripcion` del documento del tenant:
 ```json
 {
   "suscripcion": {
-    "plan": "Nombre del plan contratado",
-    "costo_mensual_usd": 25,
     "proximo_pago": "2026-11-10",
     "estado_solvencia": "pendiente",
     "recordatorio_pago_activo": false,
@@ -30,10 +28,44 @@ Campos bajo `suscripcion` del documento del tenant:
 }
 ```
 
-El importe y la fecha del ejemplo deben sustituirse por los reales.
+La fecha del ejemplo debe sustituirse por la real.
 Si no se especifican `datos_pago` o `contacto`, se conservan los datos de
 pago y soporte que antes estaban definidos en Mi perfil.
-No se inventa un precio cuando falta el monto; un costo cero es valido.
+El plan y el costo mensual se calculan automaticamente en cada consulta
+privada con el total de alumnos activos de la base de esa academia,
+incluyendo todas las sedes y alumnos sin sede. Se excluyen los registros
+con `activo: false` o `dado_de_baja: true`, igual que en el conteo por sede.
+
+| Alumnos activos | Plan | USD / mes |
+| --- | --- | --- |
+| 0 a 50 | Plan Inicial | 20 |
+| 51 a 100 | Plan Crecimiento | 35 |
+| 101 a 200 | Plan Profesional | 50 |
+| 201 en adelante, ilimitado | Plan Elite | 70 |
+
+Solo los tenants con `tenantId` igual a `cantevista`, `fenix` o `esporta`
+conservan la matriz antigua. Se normaliza el identificador a minusculas
+sin espacios exteriores; no se compara el nombre comercial ni coincidencias
+parciales. Los rangos y nombres de plan son los mismos:
+
+| Alumnos activos | Plan | USD / mes (matriz antigua) |
+| --- | --- | --- |
+| 0 a 50 | Plan Inicial | 15 |
+| 51 a 100 | Plan Crecimiento | 25 |
+| 101 a 200 | Plan Profesional | 40 |
+| 201 en adelante, ilimitado | Plan Elite | 50 |
+
+Al subir o bajar de rango, estas tres academias mantienen su matriz antigua.
+Las demas academias usan siempre la matriz vigente. Ambas pantallas consumen
+el precio calculado por la misma API, sin configuracion adicional en MongoDB.
+
+Los valores antiguos `suscripcion.plan` y `suscripcion.costo_mensual_usd`
+no determinan la tarifa de la API. No es necesario editarlos ni migrarlos.
+La respuesta incluye `total_alumnos_activos`; Mi perfil usa ese mismo conteo.
+Si el conteo falla, la API devuelve un error y no usa una tarifa antigua.
+El calculo es de solo lectura: no modifica MongoDB, solvencia, vencimientos
+ni el interruptor. Al consultar de nuevo tras altas o bajas cambia el plan;
+no se congelan tarifas por periodo ni se generan cobros con esta funcionalidad.
 
 ## Activar o apagar
 
@@ -61,7 +93,7 @@ La respuesta es privada, sin cache. El contexto publico omite estos campos.
 Mi perfil y el recordatorio consultan este mismo endpoint.
 
 Desplegar y reiniciar el backend actualizado y publicar el frontend.
-Despues, configurar el plan real y activar el booleano solo en los tenants
+Despues, configurar la fecha y solvencia y activar el booleano solo en los tenants
 que correspondan. Verificar con un nuevo login. Si el backend no esta
 actualizado, el recordatorio no bloquea el dashboard y Mi perfil avisa que
 no pudo consultar la suscripcion.

@@ -86,12 +86,11 @@ function MiPerfil() {
         setPerfilAcademiaError('');
         setTotalAlumnosError('');
 
-        const [suscripcion, alumnosRes] = await Promise.all([
-          fetchSystemSubscription(apiBase, token),
-          fetch(`${apiBase}/api/alumnos/count-by-sede`)
-        ]);
-
-        const alumnosData = await alumnosRes.json().catch(() => []);
+        const suscripcion = await fetchSystemSubscription(apiBase, token);
+        const total = suscripcion.total_alumnos_activos;
+        if (!Number.isSafeInteger(total) || total < 0) {
+          throw new Error('Conteo de alumnos activos no disponible');
+        }
 
         if (!isMounted) return;
 
@@ -104,13 +103,7 @@ function MiPerfil() {
           contacto: suscripcion.contacto || {}
         });
 
-        if (alumnosRes.ok && Array.isArray(alumnosData)) {
-          const total = alumnosData.reduce((acc, item) => acc + Number(item?.count || 0), 0);
-          setTotalAlumnos(Number.isFinite(total) ? total : 0);
-        } else {
-          setTotalAlumnos(0);
-          setTotalAlumnosError('No se pudo obtener el total de alumnos.');
-        }
+        setTotalAlumnos(total);
       } catch (_) {
         if (!isMounted) return;
         setPerfilAcademiaError('No se pudieron cargar los datos de plan y facturacion de la academia.');
