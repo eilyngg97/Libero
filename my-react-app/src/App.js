@@ -48,6 +48,8 @@ import TerminosCondiciones from './components/TerminosCondiciones';
 import UsuariosAccesos from './components/UsuariosAccesos';
 import CumpleanosPostGenerator from './components/CumpleanosPostGenerator';
 import SeleccionarPerfil from './components/SeleccionarPerfil';
+import DashboardEntrenador from './components/DashboardEntrenador';
+import Asistencias from './components/Asistencias';
 import { SedeProvider, useSede } from './context/SedeContext';
 import { DolarProvider } from './context/DolarContext';
 import './App.css';
@@ -65,7 +67,7 @@ function BackNavigationButton() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const rutasSinBotonVolver = ['/dashboard', '/dashboard-usuario', '/panelOpciones', '/entrenadores'];
+  const rutasSinBotonVolver = ['/dashboard', '/dashboard-usuario', '/dashboard-entrenador', '/panelOpciones', '/entrenadores'];
   const esVistaEquiposTorneo = /^\/torneos\/[^/]+\/equipos(?:\/.*)?$/.test(location.pathname);
   const mostrarBotonVolver = !rutasSinBotonVolver.includes(location.pathname) && !esVistaEquiposTorneo;
 
@@ -291,20 +293,6 @@ function LandingEntryRoute() {
   return <LandingPage />;
 }
 
-function SinAccesoEntrenador() {
-  return (
-    <Box sx={{ maxWidth: 720, p: 2, border: '1px solid #e2e8f0', borderRadius: 3, background: '#f8fafc' }}>
-      <Typography variant="h5" sx={{ fontWeight: 800, color: '#0f172a', mb: 1 }}>
-        Perfil de entrenador creado
-      </Typography>
-      <Typography sx={{ color: '#334155' }}>
-        Tu usuario rol entrenador existe correctamente, pero todavia no tiene modulos habilitados en esta version.
-      </Typography>
-    </Box>
-  );
-}
-
-
 function App() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const theme = useTheme();
@@ -357,7 +345,9 @@ function App() {
                         <SedeBreadcrumb />
                         <Routes>
                           <Route path="dashboard" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['dashboard.view']}><DashboardEntry /></ProtectedRoute>} />
-                          <Route path="sin-acceso" element={<ProtectedRoute allowedRoles={['entrenador']}><SinAccesoEntrenador /></ProtectedRoute>} />
+                          <Route path="sin-acceso" element={<Navigate to="/dashboard-entrenador" replace />} />
+                          <Route path="dashboard-entrenador" element={<ProtectedRoute allowedRoles={['entrenador']}><DashboardEntrenador /></ProtectedRoute>} />
+                          <Route path="asistencias" element={<ProtectedRoute requiredPermissions={['asistencias.view']}><Asistencias /></ProtectedRoute>} />
                           <Route path="alumnos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><RequireSedeSelection><Alumnos /></RequireSedeSelection></ProtectedRoute>} />
                           <Route path="entrenadores" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['entrenadores.view']}><Entrenadores /></ProtectedRoute>} />
                           <Route path="entrenadores-sede" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['entrenadores.view']}><RequireSedeSelection><EntrenadoresSedeStaff /></RequireSedeSelection></ProtectedRoute>} />

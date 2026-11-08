@@ -1458,6 +1458,12 @@ function GeneralConfig() {
                     </Typography>
                   </AccordionSummary>
                   <AccordionDetails sx={{ px: 2, pb: 2 }}>
+                    <FormControlLabel
+                      sx={{ mb: 1.5, '& .MuiFormControlLabel-label': { fontSize: 13, fontWeight: 700, color: '#1f2a3d' } }}
+                      label="Constancia para entrenadores"
+                      control={<Switch checked={section.template?.para_entrenadores === true} disabled={guardandoConstancias} onChange={(_, checked) => updateTemplateField(section.key, 'para_entrenadores', checked)} slotProps={{ input: { role: 'switch', 'aria-label': `Constancia para entrenadores: ${section.title}` } }} />}
+                    />
+                    {section.template?.para_entrenadores === true && (section.key === 'listado_alumnos' || /{{\s*(alumno_[a-zA-Z0-9_]+|cantidad_alumnos)\s*}}/.test(Object.values(section.key === 'retiro' && constanciasConfig.retiro_personalizado.habilitado ? constanciasConfig.retiro_personalizado.template : section.template).filter(value => typeof value === 'string').join('\n'))) && <Alert severity="warning" sx={{ mb: 2 }}>Este formato contiene datos de alumnos y no puede descargarse desde el perfil Entrenador.</Alert>}
                     {section.personalizado && (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
                         <TextField

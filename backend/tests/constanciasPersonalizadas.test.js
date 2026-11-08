@@ -51,6 +51,7 @@ jest.mock('../services/tenantModelService', () => ({
       find: mockMensualidadFind
     };
     if (name === 'Entrenador') return {
+      findOne: (filter) => ({ lean: async () => Object.values(mockEntrenadores[connection.tenantId] || {}).find(item => String(item.usuario) === String(filter.usuario)) || null }),
       find: () => ({
         select: () => ({
           sort: () => ({
@@ -122,6 +123,28 @@ test('guarda y recarga los seis campos, conserva los cinco defaults y permite re
   expect(options.body).toMatchObject([{ value: formato.id, label: 'Nuevo nombre', requisitos: { alumno: true, entrenador: false } }]);
 });
 
+test('la marca para entrenadores se conserva y no acepta valores ambiguos', () => {
+  for (const para_entrenadores of [true, false]) {
+    const marcado = { ...formato, template: { ...formato.template, para_entrenadores } };
+    expect(normalizePersonalizados([marcado])).toEqual([marcado]);
+    const doc = new TenantConfig({ constancias: { personalizados: [marcado] } });
+    expect(doc.toObject().constancias.personalizados).toEqual([marcado]);
+  }
+  expect(() => normalizePersonalizados([{ ...formato, template: { ...formato.template, para_entrenadores: 'false' } }])).toThrow(/disponibilidad/);
+  expect(normalizePersonalizados([formato])[0].template.para_entrenadores).toBeUndefined();
+});
+test('guarda y recarga la marca predeterminada preservando textos y permite apagarla', async () => {
+  const saved = await request(app).patch('/config').send({ constancias: { templates: { asistencia: { para_entrenadores: true, cuerpo: '{{asistencia_nombre}}' } } } });
+  expect(saved.status).toBe(200);
+  expect(saved.body.constancias.templates.asistencia).toMatchObject({ para_entrenadores: true, cuerpo: '{{asistencia_nombre}}' });
+  expect((await request(app).get('/config')).body.constancias.templates.asistencia.para_entrenadores).toBe(true);
+  await request(app).patch('/config').send({ constancias: { subtitulo: 'Otro subtitulo' } });
+  expect((await request(app).get('/config')).body.constancias.templates.asistencia.para_entrenadores).toBe(true);
+  const apagado = await request(app).patch('/config').send({ constancias: { templates: { asistencia: { para_entrenadores: false } } } });
+  expect(apagado.status).toBe(200);
+  expect(apagado.body.constancias.templates.asistencia).toMatchObject({ para_entrenadores: false, cuerpo: '{{asistencia_nombre}}' });
+  expect((await request(app).patch('/config').send({ constancias: { templates: { asistencia: { para_entrenadores: 'false' } } } })).status).toBe(400);
+});
 test('el esquema persiste formatos personalizados sin agregar ids a los desplegables', () => {
   const doc = new TenantConfig({ constancias: { personalizados: [formato] } });
   expect(doc.validateSync()).toBeUndefined();
@@ -231,6 +254,7 @@ describe('variables de entrenadores', () => {
     ...formato,
     template: {
       titulo: 'CONSTANCIA {{entrenador_nombre}}',
+      para_entrenadores: true,
       destinatario: '{{entrenador_apellido}}',
       cuerpo: '{{entrenador_nombre_completo}} {{entrenador_cedula}} {{entrenador_telefono}} {{entrenador_correo}} {{entrenador_direccion}} {{entrenador_especialidad}} {{entrenador_fecha_nacimiento}} {{entrenador_fecha_ingreso}}',
       nota: 'Nota {{entrenador_nombre}}',
@@ -271,6 +295,59 @@ describe('variables de entrenadores', () => {
     } finally {
       textSpy.mockRestore();
     }
+  });
+
+  test('el entrenador genera su constancia sin enviar un destinatario desde el navegador', async () => {
+    mockEntrenadores['academia-a'][entrenadorId] = { ...entrenador, usuario: '507f1f77bcf86cd799439011', estado: 'activo' };
+    const result = await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: formato.id, fechaEmision: '2026-10-15' });
+    expect(result.status).toBe(200);
+    expect(result.headers['content-type']).toMatch(/application\/pdf/);
+    expect(mockMensualidadFind).not.toHaveBeenCalled();
+  });
+  test('la marca apagada impide la descarga directa sin restringir al administrador', async () => {
+    mockEntrenadores['academia-a'][entrenadorId] = { ...entrenador, usuario: '507f1f77bcf86cd799439011', estado: 'activo' };
+    mockConfigs['academia-a'].constancias.personalizados[0] = { ...formatoEntrenador, template: { ...formatoEntrenador.template, para_entrenadores: false } };
+    expect((await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: formato.id, para_entrenadores: true })).status).toBe(403);
+    expect((await request(app).post('/pdf').send({ tipo: formato.id, entrenadorId })).status).toBe(200);
+  });
+  test('el entrenador genera un formato predeterminado marcado con sus datos propios', async () => {
+    mockEntrenadores['academia-a'][entrenadorId] = { ...entrenador, usuario: '507f1f77bcf86cd799439011', estado: 'activo' };
+    mockConfigs['academia-a'].constancias.templates = { simple: { ...formatoEntrenador.template, para_entrenadores: true } };
+    const result = await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: 'simple' });
+    expect(result.status).toBe(200);
+    expect(result.headers['content-type']).toMatch(/application\/pdf/);
+  });
+  test('la constancia de asistencia marcada usa la identidad propia y exige el evento', async () => {
+    mockEntrenadores['academia-a'][entrenadorId] = { ...entrenador, usuario: '507f1f77bcf86cd799439011', estado: 'activo' };
+    mockConfigs['academia-a'].constancias.templates = { asistencia: { para_entrenadores: true } };
+    expect((await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: 'asistencia' })).status).toBe(400);
+    const textSpy = jest.spyOn(PDFDocument.prototype, 'text');
+    try {
+      const result = await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: 'asistencia', eventoFecha: '2026-11-08', eventoHoraDesde: '16:00', eventoHoraHasta: '18:00', asistenciaPara: 'representante' });
+      expect(result.status).toBe(200);
+      const text = textSpy.mock.calls.map(([value]) => value).join(' ');
+      expect(text).toContain('LUIS GOMEZ');
+      expect(text).toContain('entrenador');
+      expect(text).not.toContain('el/la representante');
+    } finally { textSpy.mockRestore(); }
+  });
+  test('el entrenador no puede generar una constancia de otro entrenador o atleta', async () => {
+    mockEntrenadores['academia-a'][entrenadorId] = { ...entrenador, usuario: '507f1f77bcf86cd799439011', estado: 'activo' };
+    const other = await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: formato.id, entrenadorId: '507f1f77bcf86cd799439099' });
+    expect(other.status).toBe(403);
+    const alumno = await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: formato.id, alumnoId: 'alumno1' });
+    expect(alumno.status).toBe(403);
+  });
+  test('el entrenador inactivo no puede emitir constancias', async () => {
+    mockEntrenadores['academia-a'][entrenadorId] = { ...entrenador, usuario: '507f1f77bcf86cd799439011', estado: 'inactivo' };
+    const result = await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: formato.id });
+    expect(result.status).toBe(403);
+  });
+  test('el entrenador no puede usar un formato mixto con datos de alumnos', async () => {
+    mockEntrenadores['academia-a'][entrenadorId] = { ...entrenador, usuario: '507f1f77bcf86cd799439011', estado: 'activo' };
+    mockConfigs['academia-a'].constancias.personalizados[0] = { ...formatoEntrenador, template: { cuerpo: '{{entrenador_nombre}} {{alumno_nombre}}' } };
+    const result = await request(app).post('/pdf').set('x-test-role', 'entrenador').send({ tipo: formato.id });
+    expect(result.status).toBe(403);
   });
 
   test('requiere alumno y entrenador si el formato usa ambas clases de variables', async () => {

@@ -22,6 +22,8 @@ const PERMISSIONS = [
   'entrenadores.manage',
   'horarios.view',
   'horarios.manage',
+  'asistencias.view',
+  'asistencias.manage',
   'mensualidades.view',
   'mensualidades.insolventes.view',
   'mensualidades.manage',

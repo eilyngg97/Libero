@@ -21,6 +21,18 @@ function getTemplateRequirements(template = {}) {
   };
 }
 
+function normalizeTrainerAvailability(template = {}) {
+  if (template.para_entrenadores === undefined) return {};
+  if (typeof template.para_entrenadores !== 'boolean') throw new Error('La disponibilidad para entrenadores debe ser verdadera o falsa.');
+  return { para_entrenadores: template.para_entrenadores };
+}
+
+function isTrainerTemplate(tipo, template = {}) {
+  return template.para_entrenadores === true && tipo !== 'listado_alumnos'
+    && !getTemplateRequirements(template).alumno
+    && !/{{\s*cantidad_alumnos\s*}}/.test(CAMPOS_TEMPLATE.map(campo => template[campo] || '').join('\n'));
+}
+
 function normalizePersonalizados(items = []) {
   if (!Array.isArray(items)) throw new Error('Los formatos personalizados deben ser una lista.');
   const ids = new Set();
@@ -41,8 +53,9 @@ function normalizePersonalizados(items = []) {
       if (typeof value !== 'string') throw new Error(`El campo ${campo} debe ser texto.`);
       template[campo] = value.trim();
     }
+    Object.assign(template, normalizeTrainerAvailability(item.template));
     return { id: item.id, nombre: item.nombre.trim(), template };
   });
 }
 
-module.exports = { TIPOS_CONSTANCIA, esTipoPersonalizado, normalizarTipoConstancia, normalizePersonalizados, getTemplateRequirements };
+module.exports = { TIPOS_CONSTANCIA, esTipoPersonalizado, normalizarTipoConstancia, normalizePersonalizados, getTemplateRequirements, normalizeTrainerAvailability, isTrainerTemplate };

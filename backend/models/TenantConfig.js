@@ -79,6 +79,7 @@ const CategoriasSchema = new mongoose.Schema({
 }, { _id: false });
 
 const ConstanciaTemplateSchema = new mongoose.Schema({
+  para_entrenadores: { type: Boolean },
   titulo: { type: String, default: '' },
   destinatario: { type: String, default: '' },
   cuerpo: { type: String, default: '' },

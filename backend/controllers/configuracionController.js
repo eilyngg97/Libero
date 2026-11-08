@@ -7,7 +7,7 @@ const { getTenantCoreModel } = require('../models/TenantCore');
 const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { hasRequestPermission } = require('../middleware/auth');
-const { normalizePersonalizados } = require('../services/constanciaTemplateService');
+const { normalizePersonalizados, normalizeTrainerAvailability } = require('../services/constanciaTemplateService');
 
 const DEFAULT_CONFIG = {
   pagos: {
@@ -260,6 +260,7 @@ function normalizeLogosList(logos, maxItems = 3) {
 
 function normalizeTemplatePayload(template = {}, fallback = {}) {
   return {
+    ...normalizeTrainerAvailability({ para_entrenadores: template?.para_entrenadores === undefined ? fallback?.para_entrenadores : template.para_entrenadores }),
     titulo: cleanValue(template?.titulo ?? fallback?.titulo),
     destinatario: cleanValue(template?.destinatario ?? fallback?.destinatario),
     cuerpo: cleanValue(template?.cuerpo ?? fallback?.cuerpo),

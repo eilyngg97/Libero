@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useSede } from '../context/SedeContext';
 import { useNavigate } from 'react-router-dom';
-import { Box, Typography, Grid, IconButton, Select, MenuItem } from '@mui/material';
+import { Box, Typography, Grid, IconButton, Select, MenuItem, Button } from '@mui/material';
+import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
 import SchoolIcon from '@mui/icons-material/School';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import PaymentsIcon from '@mui/icons-material/Payments';
@@ -18,6 +19,7 @@ function PanelOpciones() {
     const canViewInscripciones = hasPermission('mensualidades.view');
     const canViewMensualidades = hasPermission('mensualidades.view');
     const canViewSolicitudesUniformes = hasPermission('solicitudes_uniformes.view');
+    const canViewAsistencias = hasPermission('asistencias.view');
 
     useEffect(() => {
         const fetchSedes = async () => {
@@ -218,6 +220,17 @@ function PanelOpciones() {
                         </Box>
                     </Grid>
                     )}
+                    {canViewAsistencias && (
+                    <Grid item size={{ xs: 12, sm: 6, md: 3 }}>
+                        <Button disabled={!sedeSeleccionada?._id} onClick={() => navigate('/asistencias')} sx={{ width: '100%', minHeight: theme => `calc(200px + ${theme.spacing(4)})`, p: 2, borderRadius: 3, boxShadow: 4, background: 'linear-gradient(135deg, #302b73 0%, #201d58 100%)', color: '#fff', textTransform: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', textAlign: 'left', position: 'relative', overflow: 'hidden', transition: 'transform 0.2s', '& > *:not(.bg-icon)': { position: 'relative', zIndex: 1 }, '&:hover': { transform: 'scale(1.04)' }, '&.Mui-disabled': { background: '#e8e8ed', color: '#71717e' } }}>
+                            <Box component="span" sx={{ bgcolor: 'rgba(255,255,255,0.2)', borderRadius: '50%', p: 1, mb: 1, display: 'grid', placeItems: 'center' }}><HowToRegRoundedIcon sx={{ fontSize: 32 }} /></Box>
+                            <Typography component="span" variant="h6" sx={{ fontWeight: 700 }}>Asistencias</Typography>
+                            <Typography component="span" variant="body2">{sedeSeleccionada?._id ? 'Sesiones de entrenamiento' : 'Selecciona una sede'}</Typography>
+                            <Typography component="span" variant="body2" sx={{ fontWeight: 600 }}>Ver asistencias →</Typography>
+                            <HowToRegRoundedIcon className="bg-icon" sx={{ position: 'absolute', top: 12, right: 12, fontSize: 96, opacity: 0.16 }} />
+                        </Button>
+                    </Grid>
+                    )}
                     {canViewSolicitudesUniformes && (
                     <Grid item size={{ xs: 12, sm: 6, md: 3 }}>
                         <Box sx={{
@@ -261,7 +274,7 @@ function PanelOpciones() {
                         </Box>
                     </Grid>
                     )}
-                    {!canViewAlumnos && !canViewInscripciones && !canViewMensualidades && !canViewSolicitudesUniformes && (
+                    {!canViewAlumnos && !canViewInscripciones && !canViewMensualidades && !canViewSolicitudesUniformes && !canViewAsistencias && (
                     <Grid item xs={12}>
                         <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 3, p: 2, bgcolor: '#fff' }}>
                             <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.6 }}>

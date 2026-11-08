@@ -319,6 +319,8 @@ app.use('/api/terminos-condiciones', require('./routes/terminosCondiciones'));
 app.use('/api/aspirantes', require('./routes/aspirantes'));
 app.use('/api/landing', require('./routes/landing'));
 app.use('/api/entrenadores', require('./routes/entrenadores'));
+app.use('/api/entrenador', require('./routes/entrenadorPortal'));
+app.use('/api/asistencias', require('./routes/asistencias'));
 
 app.use((err, req, res, next) => {
   const tenantTag = req?.tenantId || 'unknown';

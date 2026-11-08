@@ -173,7 +173,7 @@ function Login({ onLogin }) {
           navigate('/dashboard-usuario');
         }
       } else if (data.user.rol === 'entrenador') {
-        navigate('/sin-acceso');
+        navigate('/dashboard-entrenador');
       } else {
         navigate('/dashboard');
       }

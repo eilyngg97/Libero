@@ -39,7 +39,7 @@ function ProtectedRoute({ children, allowedRoles, requiredPermissions = [], requ
     const permisos = getStoredPermissions();
     const fallback = (() => {
       if (rol === 'usuario') return '/dashboard-usuario';
-      if (rol === 'entrenador') return '/sin-acceso';
+      if (rol === 'entrenador') return '/dashboard-entrenador';
       if (permisos.includes('dashboard.view')) return '/dashboard';
       if (permisos.includes('constancias.view')) return '/constancias';
       if (permisos.includes('recaudos.view')) return '/recaudos';

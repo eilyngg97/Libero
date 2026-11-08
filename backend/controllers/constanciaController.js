@@ -8,7 +8,8 @@ const { getTenantCoreModel } = require('../models/TenantCore');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { getTenantModel } = require('../services/tenantModelService');
 const { registrarOperacion } = require('../services/operacionService');
-const { normalizarTipoConstancia, normalizePersonalizados, getTemplateRequirements } = require('../services/constanciaTemplateService');
+const { getOwnEntrenador } = require('../services/entrenadorAccess');
+const { normalizarTipoConstancia, normalizePersonalizados, getTemplateRequirements, normalizeTrainerAvailability, isTrainerTemplate } = require('../services/constanciaTemplateService');
 
 const DEFAULT_TEMPLATES = {
   simple: {
@@ -189,6 +190,7 @@ function getNombreOperacionConstancia(tipo) {
 
 function normalizeTemplate(template = {}, fallback = {}) {
   return {
+    ...normalizeTrainerAvailability({ para_entrenadores: template?.para_entrenadores === undefined ? fallback?.para_entrenadores : template.para_entrenadores }),
     titulo: String(template?.titulo ?? fallback?.titulo ?? '').trim(),
     destinatario: String(template?.destinatario ?? fallback?.destinatario ?? '').trim(),
     cuerpo: String(template?.cuerpo ?? fallback?.cuerpo ?? '').trim(),
@@ -1040,6 +1042,18 @@ function createPdfResponseDocument(res) {
   return doc;
 }
 
+exports.getTrainerFormats = (raw = {}) => {
+  const config = normalizeConstanciasConfig(raw);
+  const nombres = { simple: 'Constancia simple', retiro: 'Carta de retiro', horario_entrenamiento: 'Constancia con horario', listado_alumnos: 'Constancia con listado de alumnos', asistencia: 'Constancia de asistencia' };
+  const formatos = Object.entries(config.templates).map(([id, template]) => ({ id, nombre: nombres[id], template }));
+  if (config.retiro_personalizado.habilitado) {
+    formatos.find(item => item.id === 'retiro').template = { ...config.retiro_personalizado.template, para_entrenadores: config.templates.retiro.para_entrenadores };
+  }
+  return [...formatos, ...normalizePersonalizados(raw.personalizados)]
+    .filter(item => isTrainerTemplate(item.id, item.template))
+    .map(item => ({ value: item.id, label: item.nombre, requisitos: { ...getTemplateRequirements(item.template), asistencia: item.id === 'asistencia' || getTemplateRequirements(item.template).asistencia } }));
+};
+
 exports.getFormatosPersonalizados = async (req, res) => {
   try {
     const { TenantConfig } = await getTenantConstanciaModels(req);
@@ -1072,7 +1086,8 @@ exports.getEntrenadoresConstancias = async (req, res) => {
 };
 
 exports.generarConstancia = async (req, res) => {
-  const { alumnoId, alumnoIds, entrenadorId, tipo, fechaEmision } = req.body;
+  const { alumnoId, alumnoIds, tipo, fechaEmision } = req.body;
+  let { entrenadorId } = req.body;
   try {
     const tenantId = String(resolveRequestTenantId(req) || '').trim().toLowerCase();
     const rol = String(req.user?.rol || '').trim().toLowerCase();
@@ -1091,14 +1106,25 @@ exports.generarConstancia = async (req, res) => {
     if (!tipoConstancia) return res.status(400).json({ error: 'Tipo de constancia invalido.' });
     const rolUsuario = String(req.user?.rol || '').trim().toLowerCase();
     const esAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
+    const esEntrenador = rolUsuario === 'entrenador';
+    if (esEntrenador) {
+      if (alumnoId || alumnoIds) {
+        return res.status(403).json({ error: 'Solo puedes generar constancias de tu perfil de entrenador.' });
+      }
+      const propio = await getOwnEntrenador(TenantEntrenador, req.user.id);
+      if (entrenadorId && String(entrenadorId) !== String(propio._id)) {
+        return res.status(403).json({ error: 'No puedes generar constancias de otro entrenador.' });
+      }
+      entrenadorId = String(propio._id);
+    }
 
-    if (tipoConstancia === 'retiro' && !esAdmin) {
+    if (tipoConstancia === 'retiro' && !esAdmin && !esEntrenador) {
       return res.status(403).json({ error: 'Solo un administrador puede generar constancia de retiro' });
     }
     if (tipoConstancia === 'listado_alumnos' && !esAdmin) {
       return res.status(403).json({ error: 'Solo un administrador puede generar constancia con listado de alumnos' });
     }
-    if (entrenadorId && !esAdmin) {
+    if (entrenadorId && !esAdmin && !esEntrenador) {
       return res.status(403).json({ error: 'Solo un administrador puede usar datos de entrenadores en constancias.' });
     }
     if (entrenadorId && !mongoose.Types.ObjectId.isValid(entrenadorId)) {
@@ -1132,11 +1158,14 @@ exports.generarConstancia = async (req, res) => {
       };
       logoAcademiaActivo = retiroCfg.incluir_logo_academia ? academiaLogoPath : null;
       logosInstitucionales = mapLogoUrlsToLocalPaths(retiroCfg.logos).filter((logoPath) => logoPath !== logoAcademiaActivo);
-      template = retiroCfg.template || DEFAULT_TEMPLATES.retiro;
+      template = { ...(retiroCfg.template || DEFAULT_TEMPLATES.retiro), para_entrenadores: constanciasCfg.templates.retiro.para_entrenadores };
     }
 
     const fechaTexto = construirTextoFecha(fechaEmision);
     const requisitos = getTemplateRequirements(template);
+    if (esEntrenador && !isTrainerTemplate(tipoConstancia, template)) {
+      return res.status(403).json({ error: 'Este formato no esta habilitado para el perfil de entrenador.' });
+    }
     if (requisitos.entrenador && !entrenadorId) {
       return res.status(400).json({ error: 'Este formato usa variables de entrenador. Selecciona un entrenador.' });
     }
@@ -1281,7 +1310,7 @@ exports.generarConstancia = async (req, res) => {
       return;
     }
 
-    if (!alumnoId && (!personalizado || !esAdmin || !entrenador || requisitos.alumno)) {
+    if (!alumnoId && ((!personalizado && !esEntrenador) || (!esAdmin && !esEntrenador) || !entrenador || requisitos.alumno)) {
       return res.status(400).json({ error: 'Selecciona un alumno para este formato.' });
     }
     const alumno = alumnoId ? await TenantAlumno.findById(alumnoId).populate('representante').populate('sede') : null;
@@ -1302,7 +1331,7 @@ exports.generarConstancia = async (req, res) => {
       return res.status(400).json({ error: 'Este formato usa horario de entrenamiento. Indica los dias y las horas de inicio y fin.' });
     }
     const personaAsistencia = alumno || { nombres: entrenador?.nombre, apellidos: entrenador?.apellido, cedula: entrenador?.cedula };
-    const asistenciaData = normalizarAsistenciaDesdeRequest(req.body, personaAsistencia, constanciasCfg);
+    const asistenciaData = normalizarAsistenciaDesdeRequest(esEntrenador ? { ...req.body, asistenciaPara: 'atleta' } : req.body, personaAsistencia, constanciasCfg);
     if ((tipoConstancia === 'asistencia' || requisitos.asistencia) && !asistenciaData.ok) {
       return res.status(400).json({ error: asistenciaData.error || 'No se pudo construir la constancia de asistencia.' });
     }
@@ -1421,6 +1450,6 @@ exports.generarConstancia = async (req, res) => {
 
     doc.end();
   } catch (err) {
-    res.status(500).json({ error: 'Error generando constancia', detalle: err.message });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Error generando constancia', detalle: err.status ? undefined : err.message });
   }
 };

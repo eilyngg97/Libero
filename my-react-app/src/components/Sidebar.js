@@ -47,7 +47,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
   } catch {}
   const dashboardPath = rol === 'usuario'
     ? '/dashboard-usuario'
-    : (rol === 'entrenador' ? '/sin-acceso' : '/dashboard');
+    : (rol === 'entrenador' ? '/dashboard-entrenador' : '/dashboard');
   const options = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: dashboardPath, onClick: handleDashboardNavigation },
   ];
@@ -76,6 +76,7 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
     options.push({ text: 'Recaudos', icon: <FolderOpenIcon />, path: '/recaudos' });
     options.push({ text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' });
   } else if (rol !== 'entrenador') {
+    if (hasPermission('asistencias.view')) options.push({ text: 'Asistencias', icon: <SportsIcon />, path: '/asistencias' });
     if (canViewConstancias) {
       options.push({ text: 'Constancias', icon: <DescriptionIcon />, path: '/constancias' });
     }
@@ -175,6 +176,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('rol');
+    localStorage.removeItem('rolActivo');
     localStorage.removeItem('usuario');
     localStorage.removeItem('tenantId');
     localStorage.removeItem('sedeSeleccionada');
@@ -184,7 +186,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
   const handleDashboardNavigation = async () => {
     const rol = String(localStorage.getItem('rolActivo') || localStorage.getItem('rol') || '').trim().toLowerCase();
     if (rol === 'entrenador') {
-      navigate('/sin-acceso');
+      navigate('/dashboard-entrenador');
       if (variant === 'temporary' && onClose) onClose();
       return;
     }

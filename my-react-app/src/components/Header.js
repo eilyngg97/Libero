@@ -10,6 +10,7 @@ import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+import SwitchAccountOutlinedIcon from '@mui/icons-material/SwitchAccountOutlined';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 
@@ -23,8 +24,9 @@ function Header({ titulo, onMenuClick }) {
   } catch (e) {
     usuario = null;
   }
-  const rolActual = String(usuario?.rol || '').trim().toLowerCase();
-  const puedeVerPerfil = rolActual === 'admin' || rolActual === 'super_admin' || rolActual === 'admin_dos';
+  const rolActual = String(localStorage.getItem('rolActivo') || usuario?.rol || '').trim().toLowerCase();
+  const puedeVerPerfil = ['admin', 'super_admin', 'admin_dos', 'entrenador'].includes(rolActual);
+  const puedeCambiarPerfil = new Set(usuario?.roles || []).size > 1;
 
   const userInitials = String(usuario?.nombre || 'Usuario')
     .trim()
@@ -43,12 +45,13 @@ function Header({ titulo, onMenuClick }) {
 
   const handleGoToProfile = () => {
     setAnchorEl(null);
-    navigate('/mi-perfil');
+    navigate(rolActual === 'entrenador' ? '/dashboard-entrenador?vista=informacion' : '/mi-perfil');
   };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('rol');
+    localStorage.removeItem('rolActivo');
     localStorage.removeItem('usuario');
     setAnchorEl(null);
     navigate('/login');
@@ -68,7 +71,7 @@ function Header({ titulo, onMenuClick }) {
           <Typography variant="subtitle1" sx={{ color: '#1e293b', fontWeight: 500, mr: 1 }}>
             {usuario && `Bienvenido, ${usuario.nombre}`}
           </Typography>
-          <IconButton onClick={handleMenuClick} sx={{ p: 0 }}>
+          <IconButton onClick={handleMenuClick} aria-label="Menu de cuenta" sx={{ p: 0 }}>
             <Avatar
               alt={usuario?.nombre || 'Usuario'}
               sx={{ width: 40, height: 40, bgcolor: '#0f172a', color: '#ffffff', fontWeight: 800, fontSize: 14 }}
@@ -85,6 +88,7 @@ function Header({ titulo, onMenuClick }) {
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             PaperProps={{ sx: { mt: 1, minWidth: 140 } }}
           >
+            {puedeCambiarPerfil && <MenuItem onClick={() => { setAnchorEl(null); navigate('/seleccionar-perfil'); }} sx={{ gap: 1 }}><SwitchAccountOutlinedIcon fontSize="small" />Cambiar perfil</MenuItem>}
             {puedeVerPerfil && (
               <MenuItem onClick={handleGoToProfile} sx={{ gap: 1 }}>
                 <PersonOutlineIcon fontSize="small" />

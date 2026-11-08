@@ -28,6 +28,9 @@ test('agrega, edita, guarda y recarga un desplegable propio sin cambiar los cinc
     const heading = screen.getByRole('button', { name: /Constancias entrenadores/ });
     const accordion = heading.closest('.MuiAccordion-root');
     const fields = within(accordion);
+    const disponibilidad = fields.getByRole('switch', { name: /Constancia para entrenadores/ });
+    expect(disponibilidad).not.toBeChecked();
+    fireEvent.click(disponibilidad);
     expect(fields.getByLabelText('Cierre')).toHaveValue(
       'Esta constancia no será válida ni tendrá efecto legal alguno si carece de la firma autógrafa y el sello húmedo de la institución/academia.'
     );
@@ -45,6 +48,7 @@ test('agrega, edita, guarda y recarga un desplegable propio sin cambiar los cinc
       nombre: 'Constancias del equipo',
       template: {
         titulo: 'Titulo nuevo', destinatario: 'Destinatario nuevo', cuerpo: 'Cuerpo nuevo',
+        para_entrenadores: true,
         nota: 'Nota nueva', lugarEmision: 'Ciudad nueva', cierre: 'Cierre nuevo'
       }
     });
@@ -54,10 +58,39 @@ test('agrega, edita, guarda y recarga un desplegable propio sin cambiar los cinc
     expect(await screen.findByText('Constancias del equipo')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Constancias del equipo/ }));
     expect(screen.getByDisplayValue('Cuerpo nuevo')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /Constancia para entrenadores: Constancias del equipo/ })).toBeChecked();
   } finally {
     global.fetch = originalFetch;
     localStorage.clear();
   }
+}, 30000);
+
+test('guarda y recarga la disponibilidad de una constancia predeterminada y permite apagarla', async () => {
+  let savedConfig = { constancias: {} };
+  const originalFetch = global.fetch;
+  global.fetch = jest.fn(async (url, options = {}) => {
+    if (options.method === 'PATCH') savedConfig = JSON.parse(options.body);
+    return { ok: true, json: async () => url.endsWith('/api/tenant/context') ? {} : savedConfig };
+  });
+  localStorage.setItem('rol', 'admin');
+  try {
+    const { unmount } = render(<GeneralConfig />);
+    fireEvent.click(await screen.findByRole('button', { name: /Constancia de asistencia/ }));
+    const disponibilidad = screen.getByRole('switch', { name: 'Constancia para entrenadores: Constancia de asistencia' });
+    expect(disponibilidad).not.toBeChecked();
+    fireEvent.click(disponibilidad);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar configuracion de constancias' }));
+    await waitFor(() => expect(savedConfig.constancias.templates.asistencia.para_entrenadores).toBe(true));
+    await screen.findByText('Configuracion de constancias actualizada.');
+    unmount();
+    render(<GeneralConfig />);
+    fireEvent.click(await screen.findByRole('button', { name: /Constancia de asistencia/ }));
+    const recargado = screen.getByRole('switch', { name: 'Constancia para entrenadores: Constancia de asistencia' });
+    expect(recargado).toBeChecked();
+    fireEvent.click(recargado);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar configuracion de constancias' }));
+    await waitFor(() => expect(savedConfig.constancias.templates.asistencia.para_entrenadores).toBe(false));
+  } finally { global.fetch = originalFetch; localStorage.clear(); }
 }, 30000);
 
 test('confirma la eliminacion, permite cancelar y conserva el formato si falla el guardado', async () => {
