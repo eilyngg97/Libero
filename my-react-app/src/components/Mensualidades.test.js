@@ -131,10 +131,6 @@ test('archivo conserva mes al pasar de pagina y pagina desde uno al reabrir', as
   const original = global.fetch.getMockImplementation();
   global.fetch.mockImplementation(async (url, options) => url.includes('/mensualidades/eliminadas')
     ? { ok: true, json: async () => ({ pagina: Number(new URLSearchParams(url.split('?')[1]).get('pagina')), total: 26, registros: [] }) }
-test('reporte de pagos utiliza el mes seleccionado y se deshabilita con Todos', async () => {
-  const original = global.fetch.getMockImplementation();
-  global.fetch.mockImplementation(async (url, options) => url.includes('/reporte-pagos?')
-    ? { ok: true, json: async () => ({ pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
     : original(url, options));
   render(<Mensualidades />);
   await screen.findByRole('button', { name: 'Ver detalle' });
@@ -154,6 +150,17 @@ test('archivo de eliminadas oculta el acceso sin permiso de gestion', async () =
   render(<Mensualidades />);
   await screen.findByRole('button', { name: 'Ver detalle' });
   expect(screen.queryByRole('button', { name: 'Mensualidades eliminadas' })).not.toBeInTheDocument();
+});
+
+test('reporte de pagos utiliza el mes seleccionado y se deshabilita con Todos', async () => {
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/reporte-pagos?')
+    ? { ok: true, json: async () => ({ pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
+    : original(url, options));
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Mes', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Octubre', exact: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Reporte de pagos', exact: true }));
   expect(await screen.findByText('No hay pagos recibidos para esta selección.')).toBeInTheDocument();
   expect(global.fetch.mock.calls.find(([url]) => url.includes('/reporte-pagos?'))[0]).toContain('mes=10');
@@ -600,4 +607,67 @@ test.each([0, 4])('solo permite registrar la diferencia pendiente de una cuota c
   await screen.findByRole('button', { name: 'Ver detalle' });
   if (pendiente > 0) expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeInTheDocument();
   else expect(screen.queryByRole('button', { name: 'Registrar pago' })).not.toBeInTheDocument();
+});
+
+test('filtro de año separa cuotas del mismo mes y permite consultar todos los años', async () => {
+  const actual = new Date().getFullYear();
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    const respuesta = await original(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [cuota] = await respuesta.json();
+    return { ok: true, json: async () => [cuota, { ...cuota, _id: 'futura', anio: String(actual + 1),
+      id_alumno: { _id: 'futuro', nombres: 'Atleta', apellidos: 'Futuro' } }] };
+  });
+  render(<Mensualidades />);
+  await screen.findByText('Ana Raga');
+  expect(screen.queryByText('Atleta Futuro')).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'Año', exact: true })).toHaveTextContent(String(actual));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Año', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: String(actual + 1), exact: true }));
+  expect(await screen.findByText('Atleta Futuro')).toBeInTheDocument();
+  expect(screen.queryByText('Ana Raga')).not.toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Año', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Todos', exact: true }));
+  expect(await screen.findByText('Ana Raga')).toBeInTheDocument();
+  expect(screen.getByText('Atleta Futuro')).toBeInTheDocument();
+});
+
+test('reporte abre el año futuro seleccionado y se bloquea con todos los años', async () => {
+  const futuro = new Date().getFullYear() + 1;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/reporte-pagos?')
+    ? { ok: true, json: async () => ({ pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
+    : original(url, options));
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Año', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: String(futuro), exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reporte de pagos', exact: true }));
+  expect(await screen.findByText('No hay pagos recibidos para esta selección.')).toBeInTheDocument();
+  const [url] = global.fetch.mock.calls.find(([ruta]) => ruta.includes('/reporte-pagos?'));
+  const params = new URLSearchParams(url.split('?')[1]);
+  expect(params.get('anio')).toBe(String(futuro));
+  expect(params.get('desde')).toMatch(new RegExp(`^${futuro}-`));
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar reporte' }));
+  await screen.findByRole('button', { name: 'Reporte de pagos', exact: true });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Año', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Todos', exact: true }));
+  expect(screen.getByRole('button', { name: 'Reporte de pagos', exact: true })).toBeDisabled();
+});
+
+test('archivo de eliminadas consulta el año seleccionado', async () => {
+  const futuro = new Date().getFullYear() + 1;
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => url.includes('/mensualidades/eliminadas')
+    ? { ok: true, json: async () => ({ pagina: 1, total: 0, registros: [] }) }
+    : original(url, options));
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Año', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: String(futuro), exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mensualidades eliminadas' }));
+  expect(await screen.findByText('Sin mensualidades eliminadas')).toBeInTheDocument();
+  const [url] = global.fetch.mock.calls.find(([ruta]) => ruta.includes('/mensualidades/eliminadas'));
+  expect(new URLSearchParams(url.split('?')[1]).get('anio')).toBe(String(futuro));
 });

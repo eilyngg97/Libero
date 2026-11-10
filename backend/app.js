@@ -12,6 +12,7 @@ const { getTenantConnectionMetrics } = require('./config/tenantBusinessConnectio
 const { authMiddleware, rolMiddleware } = require('./middleware/auth');
 const { recordRequestMetric, getTenantHealthDashboard } = require('./services/tenantHealthMetrics');
 const { getConfiguredDefaultTenantId, getFailSafeTenantId } = require('./services/tenantFallbackService');
+const { publicTenantContext } = require('./services/tenantSubscriptionService');
 
 const app = express();
 const isTestEnv = process.env.NODE_ENV === 'test';
@@ -289,7 +290,7 @@ app.get('/health', (req, res) => {
 app.get('/api/tenant/context', (req, res) => {
   res.json({
     tenantId: req.tenantId || null,
-    tenant: req.tenant || null,
+    tenant: publicTenantContext(req.tenant),
     multiTenantMode: process.env.MULTI_TENANT_MODE === 'true',
     branding: buildTenantBrandingPayload(req)
   });
@@ -298,6 +299,7 @@ app.get('/api/tenant/health', authMiddleware, rolMiddleware('admin'), (req, res)
   const health = getTenantHealthDashboard();
   return res.json(health);
 });
+app.use('/api/tenant/suscripcion', require('./routes/tenantSubscription'));
 app.use('/api/usuarios', require('./routes/usuarios'));
 app.use('/api/roles', require('./routes/roles'));
 app.use('/api/torneos', require('./routes/torneos'));

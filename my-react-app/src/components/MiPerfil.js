@@ -18,6 +18,7 @@ import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
+import { fetchSystemSubscription, formatMonthlyCost, formatSubscriptionDate } from '../utils/systemSubscription';
 
 function MiPerfil() {
   const apiBase = React.useMemo(() => (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/$/, ''), []);
@@ -30,7 +31,7 @@ function MiPerfil() {
   const [seccionActiva, setSeccionActiva] = React.useState('facturacion');
   const [cambiandoClave, setCambiandoClave] = React.useState(false);
   const [cargandoPerfilAcademia, setCargandoPerfilAcademia] = React.useState(true);
-  const [, setPerfilAcademiaError] = React.useState('');
+  const [perfilAcademiaError, setPerfilAcademiaError] = React.useState('');
   const [cargandoTotalAlumnos, setCargandoTotalAlumnos] = React.useState(true);
   const [totalAlumnos, setTotalAlumnos] = React.useState(0);
   const [, setTotalAlumnosError] = React.useState('');
@@ -40,6 +41,8 @@ function MiPerfil() {
     costoPlan: null,
     estadoSolvencia: 'pendiente',
     proximoPago: '',
+    datosPago: {},
+    contacto: {},
     pagos: {
       pago_movil: {},
       transferencia: {},
@@ -69,64 +72,11 @@ function MiPerfil() {
   React.useEffect(() => {
     let isMounted = true;
 
-    const normalizeSolvencia = (value, tenantEstado) => {
+    const normalizeSolvencia = (value) => {
       const raw = String(value || '').trim().toLowerCase();
       if (['solvente', 'al_dia', 'aldia', 'pagado', 'activo'].includes(raw)) return 'solvente';
       if (['insolvente', 'moroso', 'vencido', 'suspendido'].includes(raw)) return 'insolvente';
-      if (String(tenantEstado || '').trim().toLowerCase() === 'active') return 'solvente';
       return 'pendiente';
-    };
-
-    const parseCosto = (value) => {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-    };
-
-    const extractTenantBilling = (tenantPayload = {}) => {
-      const tenant = tenantPayload?.tenant || {};
-      const suscripcion = tenant?.suscripcion || tenant?.subscription || tenant?.billing || {};
-
-      const plan = String(
-        suscripcion?.plan ||
-        suscripcion?.nombre_plan ||
-        suscripcion?.plan_nombre ||
-        tenant?.plan ||
-        ''
-      ).trim();
-
-      const costoPlan = parseCosto(
-        suscripcion?.costo_mensual_usd ??
-        suscripcion?.monto_mensual_usd ??
-        suscripcion?.precio_mensual_usd ??
-        suscripcion?.costo ??
-        tenant?.costo_plan_usd
-      );
-
-      const estadoSolvencia = normalizeSolvencia(
-        suscripcion?.estado_solvencia || suscripcion?.solvencia || suscripcion?.estado_pago,
-        tenant?.estado
-      );
-
-      const proximoPago = String(
-        suscripcion?.proximo_pago ||
-        suscripcion?.fecha_proximo_pago ||
-        ''
-      ).trim();
-
-      return {
-        plan: plan || 'No configurado',
-        costoPlan,
-        estadoSolvencia,
-        proximoPago
-      };
-    };
-
-    const mergePagos = (pagosConfig = {}) => {
-      return {
-        pago_movil: pagosConfig?.pago_movil || {},
-        transferencia: pagosConfig?.transferencia || {},
-        deposito_usd: pagosConfig?.deposito_usd || {}
-      };
     };
 
     async function cargarResumenAcademia() {
@@ -136,37 +86,24 @@ function MiPerfil() {
         setPerfilAcademiaError('');
         setTotalAlumnosError('');
 
-        const [tenantRes, pagosRes, alumnosRes] = await Promise.all([
-          fetch(`${apiBase}/api/tenant/context`),
-          fetch(`${apiBase}/api/configuracion/pagos`),
-          fetch(`${apiBase}/api/alumnos/count-by-sede`)
-        ]);
-
-        const tenantData = await tenantRes.json().catch(() => ({}));
-        const pagosData = await pagosRes.json().catch(() => ({}));
-        const alumnosData = await alumnosRes.json().catch(() => []);
+        const suscripcion = await fetchSystemSubscription(apiBase, token);
+        const total = suscripcion.total_alumnos_activos;
+        if (!Number.isSafeInteger(total) || total < 0) {
+          throw new Error('Conteo de alumnos activos no disponible');
+        }
 
         if (!isMounted) return;
 
-        const tenantBilling = extractTenantBilling(tenantData);
-        const pagos = mergePagos(pagosData?.pagos || {});
-
         setResumenAcademia({
-          ...tenantBilling,
-          pagos
+          plan: suscripcion.plan || 'No configurado',
+          costoPlan: suscripcion.costo_mensual_usd,
+          estadoSolvencia: normalizeSolvencia(suscripcion.estado_solvencia),
+          proximoPago: suscripcion.proximo_pago,
+          datosPago: suscripcion.datos_pago || {},
+          contacto: suscripcion.contacto || {}
         });
 
-        if (!tenantRes.ok || !pagosRes.ok) {
-          setPerfilAcademiaError('No se pudieron cargar todos los datos comerciales de la academia.');
-        }
-
-        if (alumnosRes.ok && Array.isArray(alumnosData)) {
-          const total = alumnosData.reduce((acc, item) => acc + Number(item?.count || 0), 0);
-          setTotalAlumnos(Number.isFinite(total) ? total : 0);
-        } else {
-          setTotalAlumnos(0);
-          setTotalAlumnosError('No se pudo obtener el total de alumnos.');
-        }
+        setTotalAlumnos(total);
       } catch (_) {
         if (!isMounted) return;
         setPerfilAcademiaError('No se pudieron cargar los datos de plan y facturacion de la academia.');
@@ -185,7 +122,7 @@ function MiPerfil() {
     return () => {
       isMounted = false;
     };
-  }, [apiBase]);
+  }, [apiBase, token]);
 
   const userInitials = React.useMemo(() => {
     return String(usuario?.nombre || 'Usuario')
@@ -201,12 +138,7 @@ function MiPerfil() {
     setShowPasswords((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const formatDateValue = (value) => {
-    if (!value) return 'No configurado';
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return value;
-    return parsed.toLocaleDateString('es-VE');
-  };
+  const formatDateValue = formatSubscriptionDate;
 
   const solvenciaLabel =
     resumenAcademia.estadoSolvencia === 'solvente'
@@ -222,9 +154,9 @@ function MiPerfil() {
         ? { bar: '#dc2626', chipBg: '#fee2e2', chipText: '#991b1b', ring: 'rgba(220, 38, 38, 0.22)' }
         : { bar: '#d97706', chipBg: '#fef3c7', chipText: '#92400e', ring: 'rgba(217, 119, 6, 0.22)' };
 
-  const bancoPagoMovil = 'BANCAMIGA';
-  const cedulaPagoMovil = '25894044';
-  const telefonoPagoMovil = '04125163627';
+  const bancoPagoMovil = resumenAcademia.datosPago?.banco || 'No configurado';
+  const cedulaPagoMovil = resumenAcademia.datosPago?.cedula || 'No configurado';
+  const telefonoPagoMovil = resumenAcademia.datosPago?.telefono || 'No configurado';
 
   const legacyCopyText = (value) => {
     const textArea = document.createElement('textarea');
@@ -394,7 +326,7 @@ function MiPerfil() {
                        <Box>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
                             <Typography sx={{ fontSize: 32, fontWeight: 900 }}>
-                              {cargandoPerfilAcademia ? '...' : (resumenAcademia.plan || 'Plan Pro')}
+                              {cargandoPerfilAcademia ? '...' : resumenAcademia.plan}
                             </Typography>
                             <Chip 
                               label={solvenciaLabel.toUpperCase()} 
@@ -407,7 +339,7 @@ function MiPerfil() {
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: '#cbd5e1', fontSize: 14, fontWeight: 600 }}>
                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 <Typography sx={{ fontWeight: 600 }}>$</Typography>
-                                <Typography>{cargandoPerfilAcademia ? '...' : `${resumenAcademia.costoPlan || '49.99'} USD / mes`}</Typography>
+                                <Typography>{cargandoPerfilAcademia ? '...' : formatMonthlyCost(resumenAcademia.costoPlan)}</Typography>
                              </Box>
                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 <Typography component="span" sx={{ fontSize: 15, mr: 0.5 }}>🗓</Typography>
@@ -417,6 +349,8 @@ function MiPerfil() {
                        </Box>
                     </Box>
                 </Box>
+
+                {perfilAcademiaError && <Alert severity="warning" sx={{ mt: 2 }}>{perfilAcademiaError}</Alert>}
 
                 {/* DATOS DE PAGO SECTION */}
                 <Box sx={{ mt: 4 }}>
@@ -477,13 +411,13 @@ function MiPerfil() {
                       </Typography>
 
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2 }}>
-                         <Button variant="contained" sx={{ bgcolor: '#22c55e', '&:hover': { bgcolor: '#16a34a' }, textTransform: 'none', fontWeight: 700, borderRadius: 2, boxShadow: 'none', px: 2, py: 1 }}>
+                         <Button variant="contained" href={resumenAcademia.contacto?.whatsapp ? `https://wa.me/${resumenAcademia.contacto.whatsapp.replace(/\D/g, '')}` : undefined} disabled={!resumenAcademia.contacto?.whatsapp} target="_blank" rel="noopener noreferrer" sx={{ bgcolor: '#22c55e', '&:hover': { bgcolor: '#16a34a' }, textTransform: 'none', fontWeight: 700, borderRadius: 2, boxShadow: 'none', px: 2, py: 1 }}>
                            <WhatsAppIcon sx={{ mr: 1, fontSize: 18 }} />
-                           WhatsApp soporte: 0412-5163627
+                           WhatsApp soporte: {resumenAcademia.contacto?.whatsapp || 'No configurado'}
                          </Button>
-                         <Button variant="outlined" sx={{ textTransform: 'none', fontWeight: 700, color: '#475569', borderColor: '#e2e8f0', bgcolor: '#fff', borderRadius: 2, px: 2, py: 1, '&:hover':{bgcolor:'#f8fafc'} }}>
+                         <Button variant="outlined" href={resumenAcademia.contacto?.email ? `mailto:${resumenAcademia.contacto.email}` : undefined} disabled={!resumenAcademia.contacto?.email} sx={{ textTransform: 'none', fontWeight: 700, color: '#475569', borderColor: '#e2e8f0', bgcolor: '#fff', borderRadius: 2, px: 2, py: 1, '&:hover':{bgcolor:'#f8fafc'} }}>
                            <EmailOutlinedIcon sx={{ mr: 1, fontSize: 18, color: '#64748b' }} />
-                           apexsistema2026@gmail.com
+                           {resumenAcademia.contacto?.email || 'No configurado'}
                          </Button>
                       </Box>
                    </Box>

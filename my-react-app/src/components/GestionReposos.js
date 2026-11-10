@@ -562,13 +562,13 @@ const GestionReposos = () => {
             sx={{ mb: 2, width: '100%', display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1 }}
           >
             <ToggleButton value="Parcial" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, width: '100%' }}>
-              Parcial
+              Tiempo parcial
             </ToggleButton>
             <ToggleButton value="Total" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, width: '100%' }}>
-              Total
+              Mes completo
             </ToggleButton>
             <ToggleButton value="Indefinido" sx={{ textTransform: 'none', fontWeight: 700, borderColor: '#e2e8f0', '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7' }, width: '100%' }}>
-              Indefinido
+              Tiempo indefinido
             </ToggleButton>
           </ToggleButtonGroup>
           {tipoReposo === 'Parcial' && (
@@ -912,7 +912,7 @@ const GestionReposos = () => {
                     sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff' } }}
                   >
                     {['Parcial', 'Total', 'Indefinido'].map((tipo) => (
-                      <MenuItem key={tipo} value={tipo}>{tipo}</MenuItem>
+                      <MenuItem key={tipo} value={tipo}>{({ Parcial: 'Tiempo parcial', Total: 'Mes completo', Indefinido: 'Tiempo indefinido' })[tipo]}</MenuItem>
                     ))}
                   </TextField>
 

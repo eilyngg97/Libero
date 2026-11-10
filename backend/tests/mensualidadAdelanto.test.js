@@ -70,7 +70,7 @@ afterAll(async () => {
 });
 
 describe('getMensualidadesEliminadas', () => {
-  test.each([{ mes: '10' }, {}])('filtra antes de paginar y contar: %j', async (query) => {
+  test.each([{ mes: '10' }, { mes: '10', anio: '2027' }, { anio: '2027' }, {}])('filtra antes de paginar y contar: %j', async (query) => {
     const lean = jest.fn().mockResolvedValue([]);
     const limit = jest.fn().mockReturnValue({ lean });
     const skip = jest.fn().mockReturnValue({ limit });
@@ -81,7 +81,7 @@ describe('getMensualidadesEliminadas', () => {
     }[name] || {}));
     const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
     await mensualidadController.getMensualidadesEliminadas({ tenantId: 'qa', query: { ...query, pagina: '2' } }, res);
-    const esperado = query.mes ? { mes: 10 } : {};
+    const esperado = { ...(query.mes ? { mes: 10 } : {}), ...(query.anio ? { anio: 2027 } : {}) };
     expect(archivo.find).toHaveBeenCalledWith(esperado);
     expect(archivo.countDocuments).toHaveBeenCalledWith(esperado);
     expect(skip).toHaveBeenCalledWith(25);
@@ -92,6 +92,13 @@ describe('getMensualidadesEliminadas', () => {
     getTenantModel.mockReturnValue({});
     const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
     await mensualidadController.getMensualidadesEliminadas({ tenantId: 'qa', query: { mes } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test.each(['1999', '10000', 'futuro', '2027.5'])('rechaza año invalido %s', async (anio) => {
+    getTenantModel.mockReturnValue({});
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    await mensualidadController.getMensualidadesEliminadas({ tenantId: 'qa', query: { anio } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
   });
 });

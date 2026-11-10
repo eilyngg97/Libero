@@ -7,6 +7,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import Dashboard from './components/Dashboard';
 import DashboardOperativo from './components/DashboardOperativo';
+import SystemPaymentReminder from './components/SystemPaymentReminder';
 import Uniformes from './components/Uniformes';
 import DashboardUsuario from './components/DashboardUsuario';
 import PanelOpciones from './components/PanelOpciones';
@@ -306,15 +307,16 @@ function SinAccesoEntrenador() {
 }
 
 
+function DashboardEntry() {
+  const canViewFinanceAndStats = hasAllPermissions(['dashboard.finance', 'dashboard.stats']);
+  return <><SystemPaymentReminder />{canViewFinanceAndStats ? <Dashboard /> : <DashboardOperativo />}</>;
+}
+
 function App() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const adminOnly = ['admin', 'super_admin'];
-    function DashboardEntry() {
-      const canViewFinanceAndStats = hasAllPermissions(['dashboard.finance', 'dashboard.stats']);
-      return canViewFinanceAndStats ? <Dashboard /> : <DashboardOperativo />;
-    }
 
   const userOnly = ['usuario'];
   const adminAndUser = ['admin', 'super_admin', 'usuario'];

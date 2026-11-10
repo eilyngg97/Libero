@@ -110,6 +110,11 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [mensualidades, setMensualidades] = useState([]);
 	const [mensualidadesBD, setMensualidadesBD] = useState([]);
 	const [filtroMes, setFiltroMes] = useState(() => filtroRevisionRecargo ? '' : (new Date().getMonth() + 1).toString());
+	const [filtroAnio, setFiltroAnio] = useState(() => filtroRevisionRecargo ? '' : String(new Date().getFullYear()));
+	const anioActual = new Date().getFullYear();
+	const aniosDisponibles = [...new Set([anioActual - 1, anioActual, anioActual + 1,
+		...(filtroAnio ? [Number(filtroAnio)] : []),
+		...mensualidadesBD.map(m => Number(m.anio))])].filter(anio => Number.isInteger(anio) && anio >= 2000).sort((a, b) => b - a);
 	const [filtroAlumno, setFiltroAlumno] = useState('');
 	const [filtroEstado, setFiltroEstado] = useState(() => String(initialEstado || '').trim());
 	const [filtroEstadoAlumno, setFiltroEstadoAlumno] = useState('');
@@ -150,7 +155,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	const [modalAjusteSede, setModalAjusteSede] = useState(false);
 	const [ajusteNuevoMonto, setAjusteNuevoMonto] = useState('');
 	const [ajusteDescripcion, setAjusteDescripcion] = useState('');
-	const ajusteAnio = new Date().getFullYear();
+	const ajusteAnio = filtroAnio;
 	const [aplicandoAjuste, setAplicandoAjuste] = useState(false);
 	const [previewAjuste, setPreviewAjuste] = useState(null);
 	const [previewAjusteLoading, setPreviewAjusteLoading] = useState(false);
@@ -530,6 +535,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			filtradas = filtradas.filter((m) => Number(m?.monto_inscripcion || m?.monto_reingreso || 0) > 0);
 		}
 		if (filtroMes) filtradas = filtradas.filter(m => m.mes === Number(filtroMes) || m.mes === filtroMes);
+		if (filtroAnio) filtradas = filtradas.filter(m => Number(m.anio) === Number(filtroAnio));
 		if (filtroAlumno) {
 			const filtroTexto = String(filtroAlumno || '').toLowerCase().trim();
 			filtradas = filtradas.filter((m) => {
@@ -563,7 +569,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		});
 
 		setMensualidades(filtradasOrdenadas);
-	}, [filtroMes, filtroAlumno, filtroEstado, filtroEstadoAlumno, mensualidadesBD, onlyInsolventes, esVistaInscripciones]);
+	}, [filtroMes, filtroAnio, filtroAlumno, filtroEstado, filtroEstadoAlumno, mensualidadesBD, onlyInsolventes, esVistaInscripciones]);
 
 	React.useEffect(() => {
 		if (!onlyInsolventes) return;
@@ -1121,6 +1127,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			const params = new URLSearchParams({ pagina: String(pagina) });
 			if (sedeSeleccionada?._id) params.set('sede', sedeSeleccionada._id);
 			if (filtroMes) params.set('mes', filtroMes);
+			if (filtroAnio) params.set('anio', filtroAnio);
 			const res = await fetch(`${process.env.REACT_APP_API_URL}/api/mensualidades/eliminadas?${params}`, { headers: getAuthHeaders() });
 			const data = await res.json();
 			if (!res.ok) throw new Error(data?.error || 'No se pudo cargar el archivo.');
@@ -2111,11 +2118,15 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 	return (
 		<div>
 			<Typography variant="h5" sx={{ mb: 2, fontWeight: 'bold' }}>{pageTitle}</Typography>
-			{reportePagosOpen && filtroMes && <ReportePagosMensuales mes={Number(filtroMes)} sede={sedeSeleccionada} onClose={() => setReportePagosOpen(false)} />}
-			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
+			{reportePagosOpen && filtroMes && filtroAnio && <ReportePagosMensuales mes={Number(filtroMes)} anioInicial={Number(filtroAnio)} sede={sedeSeleccionada} onClose={() => setReportePagosOpen(false)} />}
+			<Box className="mensualidades-filters-row" sx={{ display: 'grid', gap: 1.5, mb: 1, gridTemplateColumns: { xs: 'minmax(0, 1fr) 100px', sm: 'repeat(2, minmax(0, 1fr))', md: 'minmax(120px, 1fr) 100px minmax(180px, 1fr) minmax(120px, 1fr) minmax(150px, 1fr)' }, '& > .MuiTextField-root:nth-of-type(n+3)': { gridColumn: { xs: '1 / -1', sm: 'auto' } } }}>
 				<TextField select label="Mes" value={filtroMes} onChange={e => setFiltroMes(e.target.value)} sx={{ minWidth: 120, width: '100%' }}>
 					<MenuItem value="">Todos</MenuItem>
 					{[...Array(12)].map((_, i) => <MenuItem key={i + 1} value={i + 1}>{meses[i]}</MenuItem>)}
+				</TextField>
+				<TextField select label="Año" value={filtroAnio} onChange={e => { setFiltroAnio(e.target.value); setPagina(0); }} sx={{ width: '100%', minWidth: 0 }}>
+					<MenuItem value="">Todos</MenuItem>
+					{aniosDisponibles.map(anio => <MenuItem key={anio} value={String(anio)}>{anio}</MenuItem>)}
 				</TextField>
 				<TextField label="Alumno o código de pago" value={filtroAlumno} onChange={e => setFiltroAlumno(e.target.value)} sx={{ minWidth: 180, width: '100%' }} />
 				<TextField
@@ -2150,6 +2161,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 							if (event.target.checked) {
 								params.set('revision_recargo', 'true');
 								setFiltroMes('');
+								setFiltroAnio('');
 								setFiltroEstado('');
 								setFiltroEstadoAlumno('');
 								setFiltroAlumno('');
@@ -2178,9 +2190,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					</Button>
 				)}
 				{!esVistaInscripciones && hasPermission('mensualidades.view') && (
-					<Tooltip title={filtroMes ? 'Pagos recibidos y hábitos de pago' : 'Selecciona un mes para consultar el reporte'}>
+					<Tooltip title={filtroMes && filtroAnio ? 'Pagos recibidos y hábitos de pago' : 'Selecciona un mes y un año para consultar el reporte'}>
 						<Box component="span" sx={{ display: 'inline-flex', width: { xs: '100%', sm: 'auto' } }}>
-							<Button variant="outlined" startIcon={<AssessmentOutlinedIcon />} disabled={!filtroMes} onClick={() => setReportePagosOpen(true)}
+								<Button variant="outlined" startIcon={<AssessmentOutlinedIcon />} disabled={!filtroMes || !filtroAnio} onClick={() => setReportePagosOpen(true)}
 								sx={{ width: { xs: '100%', sm: 'auto' }, borderRadius: '10px', fontWeight: 700, color: '#475569', borderColor: '#94a3b8',
 									'&:hover': { borderColor: '#64748b', backgroundColor: '#fdfdfd' } }}>Reporte de pagos</Button>
 						</Box>
@@ -2190,7 +2202,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					<Button
 						variant="outlined"
 						onClick={() => setModalAjusteSede(true)}
-						disabled={!sedeSeleccionada?._id || !filtroMes}
+						disabled={!sedeSeleccionada?._id || !filtroMes || !filtroAnio}
 						sx={{
 							width: { xs: '100%', sm: 'auto' },
 							borderRadius: '10px',
@@ -2278,7 +2290,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Etiquetas:</b></Typography>
 										{renderEtiquetasAlumno(m.id_alumno)}
 									</Box>
-									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}</Typography>
+									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Mes:</b> {meses[(m.mes || 1) - 1]}{!filtroAnio && ` ${m.anio}`}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Crédito aplicado:</b> {formatMontoCorto(m.credito_aplicado || 0)}</Typography>
 									<Typography sx={{ fontSize: 12.5, color: '#475569' }}><b>Recargo:</b> {formatMontoCorto(m.recargo_aplicado_usd || 0)}</Typography>
 									<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -2431,7 +2443,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 										<TableCell>
 											<Chip label={m.id_alumno ? m.id_alumno.categoria : '-'} sx={{ backgroundColor: '#fdfdfd', color: '#64748b', fontWeight: 700, fontSize: 12 }} />
 										</TableCell>
-										<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}</TableCell>
+										<TableCell sx={{ color: '#64748b' }}>{meses[(m.mes || 1) - 1]}{!filtroAnio && ` ${m.anio}`}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.credito_aplicado || 0)}</TableCell>
 										<TableCell sx={{ color: '#0f172a', fontWeight: 600 }}>{formatMontoCorto(m.recargo_aplicado_usd || 0)}</TableCell>
 										<TableCell>
@@ -3672,7 +3684,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						<Box sx={{ flex: 1, minWidth: 0 }}>
 							<Typography id="archivo-eliminadas-title" component="h2" sx={{ fontSize: 19, fontWeight: 700, lineHeight: 1.35 }}>Mensualidades eliminadas</Typography>
 							<Typography sx={{ mt: 0.75, fontSize: 13, color: '#cbd5e1', overflowWrap: 'anywhere' }}>
-								{filtroMes ? meses[Number(filtroMes) - 1] : 'Todos los meses'} · {sedeSeleccionada?.nombre || 'Todas las sedes'}
+								{filtroMes ? meses[Number(filtroMes) - 1] : 'Todos los meses'} · {filtroAnio || 'Todos los años'} · {sedeSeleccionada?.nombre || 'Todas las sedes'}
 							</Typography>
 						</Box>
 						<IconButton aria-label="Cerrar archivo" disabled={archivoLoading} onClick={() => setArchivoOpen(false)} size="small"
@@ -3686,7 +3698,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						<Box sx={{ py: 5, textAlign: 'center' }}>
 							<HistoryRoundedIcon sx={{ fontSize: 36, color: '#94a3b8', mb: 1 }} />
 							<Typography fontWeight={700}>Sin mensualidades eliminadas</Typography>
-							<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{filtroMes ? meses[Number(filtroMes) - 1] : 'Todos los meses'} · {sedeSeleccionada?.nombre || 'Todas las sedes'}</Typography>
+							<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{filtroMes ? meses[Number(filtroMes) - 1] : 'Todos los meses'} · {filtroAnio || 'Todos los años'} · {sedeSeleccionada?.nombre || 'Todas las sedes'}</Typography>
 						</Box>
 					) : archivo.registros.map((registro) => (
 						<Box component="article" aria-label={`Mensualidad eliminada de ${registro.alumno_nombre || registro.id_alumno}`} key={registro._id}
@@ -3841,7 +3853,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						<Box sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, px: 1.5, py: 1, bgcolor: '#f8fafc' }}>
 							<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
 								<Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>AÑO</Typography>
-								<Tooltip title="Año actual" arrow><LockOutlinedIcon sx={{ fontSize: 13, color: '#94a3b8' }} /></Tooltip>
+								<Tooltip title="Año seleccionado" arrow><LockOutlinedIcon sx={{ fontSize: 13, color: '#94a3b8' }} /></Tooltip>
 							</Box>
 							<Typography sx={{ mt: 0.25, fontSize: 13, fontWeight: 700, color: '#334155' }}>
 								{ajusteAnio}

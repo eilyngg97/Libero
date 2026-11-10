@@ -3111,6 +3111,13 @@ exports.getMensualidadesEliminadas = async (req, res) => {
       }
       filtro.mes = mes;
     }
+    if (req.query.anio !== undefined && req.query.anio !== '') {
+      const anio = Number(req.query.anio);
+      if (!Number.isInteger(anio) || anio < 2000 || anio > 9999) {
+        return res.status(400).json({ error: 'anio invalido' });
+      }
+      filtro.anio = anio;
+    }
     for (const campo of ['id_alumno', 'sede']) {
       if (req.query[campo]) {
         if (!mongoose.isValidObjectId(req.query[campo])) return res.status(400).json({ error: `${campo} invalido` });
