@@ -331,16 +331,26 @@ function normalizarAsistenciaDesdeRequest(reqBody = {}, alumno = {}, constancias
     : `${String(alumno?.nombres || '').toUpperCase()} ${String(alumno?.apellidos || '').toUpperCase()}`.trim();
 
   const fechaEvento = String(reqBody?.eventoFecha || '').trim();
+  const fechaHasta = String(reqBody?.eventoFechaHasta || '').trim();
   const horaDesde = String(reqBody?.eventoHoraDesde || '').trim();
   const horaHasta = String(reqBody?.eventoHoraHasta || '').trim();
   const horaDesdeFmt = formatHoraAmPm(horaDesde);
   const horaHastaFmt = formatHoraAmPm(horaHasta);
-  if (!fechaEvento || !horaDesde || !horaHasta) {
+  if (fechaEvento && fechaHasta && fechaHasta < fechaEvento) {
     return {
       ok: false,
-      error: 'Debes indicar fecha de evento y rango horario para la constancia de asistencia.'
+      error: 'La fecha hasta no puede ser anterior a la fecha desde.'
     };
   }
+  const fechaDesdeFmt = fechaEvento ? formatFechaEvento(fechaEvento) : '';
+  const fechaHastaFmt = fechaHasta ? formatFechaEvento(fechaHasta) : '';
+  const fechasResumen = fechaDesdeFmt && fechaHastaFmt && fechaEvento !== fechaHasta
+    ? `desde el dia ${fechaDesdeFmt} hasta el dia ${fechaHastaFmt}`
+    : fechaDesdeFmt ? `el dia ${fechaDesdeFmt}` : fechaHastaFmt ? `hasta el dia ${fechaHastaFmt}` : '';
+  const horarioResumen = [
+    horaDesdeFmt ? `desde las ${horaDesdeFmt}` : '',
+    horaHastaFmt ? `hasta las ${horaHastaFmt}` : ''
+  ].filter(Boolean).join(' ');
 
   const cedulaRaw = asistenciaPara === 'representante' ? String(representante?.cedula || '').trim() : String(alumno?.cedula || '').trim();
   const cedulaPersona = cedulaRaw ? `V-${cedulaRaw}` : 'SIN CEDULA';
@@ -354,7 +364,10 @@ function normalizarAsistenciaDesdeRequest(reqBody = {}, alumno = {}, constancias
       asistencia_persona_label: asistenciaPara === 'representante' ? 'el/la representante' : 'el/la atleta',
       asistencia_nombre: nombrePersona || '-',
       asistencia_cedula: cedulaPersona,
-      asistencia_dia_evento: formatFechaEvento(fechaEvento),
+      asistencia_dia_evento: fechaDesdeFmt,
+      asistencia_fecha_hasta: fechaHastaFmt,
+      asistencia_fecha_resumen: fechasResumen,
+      asistencia_horario_resumen: horarioResumen,
       asistencia_hora_desde: horaDesdeFmt,
       asistencia_hora_hasta: horaHastaFmt,
       asistencia_motivo_evento: String(reqBody?.eventoMotivo || '').trim() || 'actividad deportiva',
@@ -392,10 +405,19 @@ function construirTextoFecha(fechaEmision) {
 }
 
 function renderTemplate(text = '', variables = {}) {
-  return String(text || '').replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key) => {
+  let template = String(text || '');
+  const esPlantillaAsistencia = Boolean(variables.asistencia_tiempo && /{{\s*asistencia_/.test(template));
+  if (esPlantillaAsistencia) {
+    template = template
+      .replace(/el\s+d[ií]a\s*:?\s*{{\s*asistencia_dia_evento\s*}}/gi, () => variables.asistencia_fecha_resumen || '')
+      .replace(/(?:,?\s*el cual se llev[oó] a cabo)?(?:,\s*)?\s*desde las\s*{{\s*asistencia_hora_desde\s*}}\s*,?\s*hasta las\s*{{\s*asistencia_hora_hasta\s*}}/gi,
+        () => variables.asistencia_horario_resumen ? ` ${variables.asistencia_horario_resumen}` : '');
+  }
+  const resultado = template.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key) => {
     const value = variables[key];
     return value === undefined || value === null ? '' : String(value);
   });
+  return esPlantillaAsistencia ? resultado.replace(/[ \t]+([,.])/g, '$1').replace(/[ \t]{2,}/g, ' ') : resultado;
 }
 
 function buildConstanciaBodyRuns(text = '', variables = {}, emphasizedKeys = []) {
@@ -1371,7 +1393,7 @@ exports.generarConstancia = async (req, res) => {
     }
 
     const datosDestacados = tipoConstancia === 'asistencia'
-      ? ['asistencia_nombre', 'asistencia_cedula', 'asistencia_dia_evento', 'asistencia_hora_desde', 'asistencia_hora_hasta', 'asistencia_motivo_evento']
+      ? ['asistencia_nombre', 'asistencia_cedula', 'asistencia_dia_evento', 'asistencia_fecha_hasta', 'asistencia_hora_desde', 'asistencia_hora_hasta', 'asistencia_motivo_evento']
       : ['alumno_nombre_completo', 'alumno_cedula', 'alumno_categoria', 'entrenador_nombre_completo', 'entrenador_cedula', 'sede_nombre', 'horario_resumen'];
     const cuerpoRuns = buildConstanciaBodyRuns(cuerpoTexto, variables, datosDestacados);
 

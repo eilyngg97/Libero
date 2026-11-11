@@ -16,6 +16,7 @@ function normalizarPayloadSolicitud(body = {}, tipo = 'simple', requisitos = {})
   const payload = {
     asistenciaPara: String(body?.asistenciaPara || 'atleta').trim().toLowerCase() === 'representante' ? 'representante' : 'atleta',
     eventoFecha: String(body?.eventoFecha || '').trim(),
+    eventoFechaHasta: String(body?.eventoFechaHasta || '').trim(),
     eventoHoraDesde: String(body?.eventoHoraDesde || '').trim(),
     eventoHoraHasta: String(body?.eventoHoraHasta || '').trim(),
     eventoMotivo: String(body?.eventoMotivo || '').trim(),
@@ -34,8 +35,8 @@ function normalizarPayloadSolicitud(body = {}, tipo = 'simple', requisitos = {})
   }
 
   if (tipo === 'asistencia' || requisitos.asistencia) {
-    if (!payload.eventoFecha || !payload.eventoHoraDesde || !payload.eventoHoraHasta) {
-      throw new Error('Debes indicar fecha y horario para la constancia de asistencia.');
+    if (payload.eventoFecha && payload.eventoFechaHasta && payload.eventoFechaHasta < payload.eventoFecha) {
+      throw new Error('La fecha hasta no puede ser anterior a la fecha desde.');
     }
   }
 
@@ -225,6 +226,7 @@ exports.generarConstanciaDesdeSolicitud = async (req, res) => {
       fechaEmision: solicitud.fecha_emision,
       asistenciaPara: solicitud.payload?.asistenciaPara || 'atleta',
       eventoFecha: solicitud.payload?.eventoFecha || '',
+      eventoFechaHasta: solicitud.payload?.eventoFechaHasta || '',
       eventoHoraDesde: solicitud.payload?.eventoHoraDesde || '',
       eventoHoraHasta: solicitud.payload?.eventoHoraHasta || '',
       eventoMotivo: solicitud.payload?.eventoMotivo || '',

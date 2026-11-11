@@ -17,6 +17,7 @@ const ConstanciaSolicitudSchema = new mongoose.Schema({
   payload: {
     asistenciaPara: { type: String, enum: ['atleta', 'representante'], default: 'atleta' },
     eventoFecha: { type: String, default: '' },
+    eventoFechaHasta: { type: String, default: '' },
     eventoHoraDesde: { type: String, default: '' },
     eventoHoraHasta: { type: String, default: '' },
     eventoMotivo: { type: String, default: '' },

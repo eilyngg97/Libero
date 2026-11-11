@@ -91,6 +91,7 @@ function ListadoSolicitudesConstancias() {
     horaInicio: '',
     horaFin: '',
     eventoFecha: '',
+    eventoFechaHasta: '',
     eventoHoraDesde: '',
     eventoHoraHasta: '',
     eventoMotivo: '',
@@ -160,6 +161,7 @@ function ListadoSolicitudesConstancias() {
       horaInicio: String(solicitud?.payload?.horaInicio || ''),
       horaFin: String(solicitud?.payload?.horaFin || ''),
       eventoFecha: String(solicitud?.payload?.eventoFecha || ''),
+      eventoFechaHasta: String(solicitud?.payload?.eventoFechaHasta || ''),
       eventoHoraDesde: String(solicitud?.payload?.eventoHoraDesde || ''),
       eventoHoraHasta: String(solicitud?.payload?.eventoHoraHasta || ''),
       eventoMotivo: String(solicitud?.payload?.eventoMotivo || ''),
@@ -192,6 +194,7 @@ function ListadoSolicitudesConstancias() {
           horaInicio: payload.horaInicio,
           horaFin: payload.horaFin,
           eventoFecha: payload.eventoFecha,
+          eventoFechaHasta: payload.eventoFechaHasta,
           eventoHoraDesde: payload.eventoHoraDesde,
           eventoHoraHasta: payload.eventoHoraHasta,
           eventoMotivo: payload.eventoMotivo,
@@ -943,17 +946,27 @@ function ListadoSolicitudesConstancias() {
                 </FormControl>
                 <TextField
                   fullWidth
-                  label="Fecha evento"
+                  label="Fecha desde (opcional)"
                   type="date"
                   value={payload.eventoFecha}
                   onChange={(e) => setPayload((prev) => ({ ...prev, eventoFecha: e.target.value }))}
                   InputLabelProps={{ shrink: true }}
                   sx={inputSx}
                 />
+                <TextField
+                  fullWidth
+                  label="Fecha hasta (opcional)"
+                  type="date"
+                  value={payload.eventoFechaHasta}
+                  onChange={(e) => setPayload((prev) => ({ ...prev, eventoFechaHasta: e.target.value }))}
+                  inputProps={{ min: payload.eventoFecha || undefined }}
+                  InputLabelProps={{ shrink: true }}
+                  sx={inputSx}
+                />
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
                   <TextField
                     fullWidth
-                    label="Hora desde"
+                    label="Hora desde (opcional)"
                     type="time"
                     value={payload.eventoHoraDesde}
                     onChange={(e) => setPayload((prev) => ({ ...prev, eventoHoraDesde: e.target.value }))}
@@ -962,7 +975,7 @@ function ListadoSolicitudesConstancias() {
                   />
                   <TextField
                     fullWidth
-                    label="Hora hasta"
+                    label="Hora hasta (opcional)"
                     type="time"
                     value={payload.eventoHoraHasta}
                     onChange={(e) => setPayload((prev) => ({ ...prev, eventoHoraHasta: e.target.value }))}

@@ -107,6 +107,67 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+test.each([
+  [{}, 'estuvo presente', ['el dia', 'desde las', 'hasta las']],
+  [{ eventoFecha: '2026-11-10' }, 'el dia 10/11/2026', ['desde las', 'hasta las']],
+  [{ eventoFecha: '2026-11-10', eventoFechaHasta: '2026-11-12' }, 'desde el dia 10/11/2026 hasta el dia 12/11/2026', ['desde las']],
+  [{ eventoFechaHasta: '2026-11-12' }, 'hasta el dia 12/11/2026', ['desde las']],
+  [{ eventoHoraDesde: '10:00', eventoHoraHasta: '14:00' }, 'desde las 10:00 AM hasta las 2:00 PM', ['el dia']],
+  [{ eventoHoraDesde: '10:00' }, 'desde las 10:00 AM', ['hasta las']],
+  [{ eventoHoraHasta: '14:00' }, 'hasta las 2:00 PM', ['desde las']]
+])('asistencia admite fechas y horas opcionales: %j', async (datos, esperado, ausentes) => {
+  const textSpy = jest.spyOn(PDFDocument.prototype, 'text');
+  try {
+    const result = await request(app).post('/pdf').send({ tipo: 'asistencia', alumnoId: 'alumno1', ...datos });
+    expect(result.status).toBe(200);
+    const text = textSpy.mock.calls.map(([value]) => value).join(' ').replace(/\s+/g, ' ');
+    expect(text).toContain(esperado);
+    for (const fragmento of ausentes) expect(text).not.toContain(fragmento);
+  } finally {
+    textSpy.mockRestore();
+  }
+});
+
+test.each([
+  [{}, 'estuvo presente en amistoso.'],
+  [{ eventoHoraDesde: '10:00' }, 'estuvo presente en amistoso desde las 10:00 AM.'],
+  [{ eventoHoraHasta: '14:00' }, 'estuvo presente en amistoso hasta las 2:00 PM.'],
+  [{ eventoFecha: '2026-11-10', eventoFechaHasta: '2026-11-12', asistenciaTiempo: 'futuro' }, 'estara presente en amistoso desde el dia 10/11/2026 hasta el dia 12/11/2026.'],
+  [{ eventoFecha: '2026-11-10', eventoFechaHasta: '2026-11-10', eventoHoraDesde: '10:00', eventoHoraHasta: '14:00' }, 'estuvo presente en amistoso el dia 10/11/2026 desde las 10:00 AM hasta las 2:00 PM.']
+])('adapta plantilla guardada con dos puntos y comas: %j', async (datos, esperado) => {
+  mockConfigs['academia-a'] = { constancias: { templates: { asistencia: {
+    cuerpo: '{{asistencia_nombre}} estuvo presente en {{asistencia_motivo_evento}} el dia: {{asistencia_dia_evento}}, desde las {{asistencia_hora_desde}}, hasta las {{asistencia_hora_hasta}}.'
+  } } } };
+  const textSpy = jest.spyOn(PDFDocument.prototype, 'text');
+  try {
+    const result = await request(app).post('/pdf').send({ tipo: 'asistencia', alumnoId: 'alumno1', eventoMotivo: 'amistoso', ...datos });
+    expect(result.status).toBe(200);
+    const texto = textSpy.mock.calls.map(([value]) => value).join(' ').replace(/\s+/g, ' ').replace(/\s+([,.])/g, '$1');
+    expect(texto).toContain(esperado);
+    expect(texto).not.toMatch(/,\s*\.|{{/);
+  } finally {
+    textSpy.mockRestore();
+  }
+});
+
+test.each([{}, { eventoFecha: '2026-11-10', eventoFechaHasta: '2026-11-12' }])('solicitudes conservan fechas opcionales sin exigir horas: %j', async (datos) => {
+  const result = await request(app).post('/solicitudes')
+    .set('x-test-tenant', 'esporta').set('x-test-role', 'usuario')
+    .send({ tipo: 'asistencia', alumnoId: 'alumno1', fechaEmision: '2026-11-10', ...datos });
+  expect(result.status).toBe(201);
+  const doc = new ConstanciaSolicitud({ ...result.body.solicitud, alumno: '507f1f77bcf86cd799439012' });
+  expect(doc.validateSync()).toBeUndefined();
+  expect(doc.payload.eventoFechaHasta).toBe(datos.eventoFechaHasta || '');
+  expect(doc.payload.eventoHoraDesde).toBe('');
+  expect(doc.payload.eventoHoraHasta).toBe('');
+});
+
+test('rechaza fechas invertidas tanto en PDF como en solicitudes', async () => {
+  const body = { tipo: 'asistencia', alumnoId: 'alumno1', fechaEmision: '2026-11-10', eventoFecha: '2026-11-12', eventoFechaHasta: '2026-11-10' };
+  expect((await request(app).post('/pdf').send(body)).status).toBe(400);
+  expect((await request(app).post('/solicitudes').set('x-test-tenant', 'esporta').set('x-test-role', 'usuario').send(body)).status).toBe(400);
+});
+
 test('guarda y recarga los seis campos, conserva los cinco defaults y permite renombrar', async () => {
   const saved = await request(app).patch('/config').send({ constancias: { personalizados: [formato] } });
   expect(saved.status).toBe(200);
@@ -332,7 +393,7 @@ describe('variables de entrenadores', () => {
       eventoFecha: '2026-10-15', eventoHoraDesde: '14:00', eventoHoraHasta: '16:00', eventoMotivo: 'Capacitacion'
     };
     expect((await request(app).post('/pdf').send({ ...body, horaInicio: '' })).status).toBe(400);
-    expect((await request(app).post('/pdf').send({ ...body, eventoFecha: '' })).status).toBe(400);
+    expect((await request(app).post('/pdf').send({ ...body, eventoFecha: '', eventoHoraDesde: '', eventoHoraHasta: '' })).status).toBe(200);
     const textSpy = jest.spyOn(PDFDocument.prototype, 'text');
     try {
       const result = await request(app).post('/pdf').send(body);

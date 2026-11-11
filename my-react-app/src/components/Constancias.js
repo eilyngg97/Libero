@@ -126,6 +126,7 @@ function Constancias() {
     return `${year}-${month}-${day}`;
   });
   const [eventoHoraDesde, setEventoHoraDesde] = useState('');
+  const [eventoFechaHasta, setEventoFechaHasta] = useState('');
   const [eventoHoraHasta, setEventoHoraHasta] = useState('');
   const [eventoMotivo, setEventoMotivo] = useState('amistoso');
   const [asistenciaTiempo, setAsistenciaTiempo] = useState('pasado');
@@ -343,6 +344,7 @@ function Constancias() {
   React.useEffect(() => {
     if (!usaAsistencia) {
       setAsistenciaPara('atleta');
+      setEventoFechaHasta('');
       setEventoHoraDesde('');
       setEventoHoraHasta('');
       setEventoMotivo('amistoso');
@@ -365,6 +367,7 @@ function Constancias() {
         fechaEmision,
         asistenciaPara: usaAsistencia ? asistenciaPara : 'atleta',
         eventoFecha: usaAsistencia ? eventoFecha : '',
+        eventoFechaHasta: usaAsistencia ? eventoFechaHasta : '',
         eventoHoraDesde: usaAsistencia ? eventoHoraDesde : '',
         eventoHoraHasta: usaAsistencia ? eventoHoraHasta : '',
         eventoMotivo: usaAsistencia ? eventoMotivo : '',
@@ -700,10 +703,23 @@ function Constancias() {
                 <TextField
                   fullWidth
                   margin="normal"
-                  label="Dia del evento"
+                  label="Fecha desde (opcional)"
                   type="date"
                   value={eventoFecha}
                   onChange={(e) => setEventoFecha(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={inputSx}
+                />
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Fecha hasta (opcional)"
+                  type="date"
+                  value={eventoFechaHasta}
+                  onChange={(e) => setEventoFechaHasta(e.target.value)}
+                  inputProps={{ min: eventoFecha || undefined }}
+                  error={Boolean(eventoFecha && eventoFechaHasta && eventoFechaHasta < eventoFecha)}
+                  helperText={eventoFecha && eventoFechaHasta && eventoFechaHasta < eventoFecha ? 'La fecha hasta no puede ser anterior a la fecha desde.' : ''}
                   InputLabelProps={{ shrink: true }}
                   sx={inputSx}
                 />
@@ -722,7 +738,7 @@ function Constancias() {
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5, mt: 1 }}>
                   <TextField
                     fullWidth
-                    label="Hora desde"
+                    label="Hora desde (opcional)"
                     type="time"
                     value={eventoHoraDesde}
                     onChange={(e) => setEventoHoraDesde(e.target.value)}
@@ -731,7 +747,7 @@ function Constancias() {
                   />
                   <TextField
                     fullWidth
-                    label="Hora hasta"
+                    label="Hora hasta (opcional)"
                     type="time"
                     value={eventoHoraHasta}
                     onChange={(e) => setEventoHoraHasta(e.target.value)}
@@ -761,7 +777,7 @@ function Constancias() {
                   !tipo ||
                   (!esAdmin && validandoSolvencia) ||
                   (usaHorario && (diasEntrenamiento.length === 0 || !horaInicioEntrenamiento || !horaFinEntrenamiento)) ||
-                  (usaAsistencia && (!eventoFecha || !eventoHoraDesde || !eventoHoraHasta))
+                  (usaAsistencia && Boolean(eventoFecha && eventoFechaHasta && eventoFechaHasta < eventoFecha))
                 }
                 fullWidth
                 sx={{ fontWeight: 700, borderRadius: 2, py: 1.2 }}
