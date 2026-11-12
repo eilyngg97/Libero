@@ -137,6 +137,51 @@ async function eliminarGrupo(overrides = {}, usuario) {
 }
 
 test.each([
+  { dia: 11, total: 35, totalBs: 31556.61, recargo: 0 },
+  { dia: 16, total: 45, totalBs: 40572.78, recargo: 5 }
+])('registro agrupado respeta limite personalizado 16 aunque el global sea 6 (dia $dia)', async ({ dia, total, totalBs, recargo }) => {
+  datos.PagoDetalle = {};
+  for (const [id, monto] of [['m1', 20], ['m2', 15]]) {
+    Object.assign(datos.Mensualidad[id], { mes: 11, anio: 2026, monto_esperado: monto,
+      monto_sin_recargo_usd: monto, estatus: 'Pendiente', recargo_aplicado_usd: 0 });
+    Object.assign(datos.Mensualidad[id].id_alumno, { dia_limite_personalizado: 16,
+      aplicar_recargo_mensualidad: true, tipo_mensualidad: 'normal' });
+    models.Mensualidad.findById.mockImplementationOnce(() => {
+      const query = consulta('Mensualidad', (store) => store[id]);
+      query.populate = (path, seleccion) => {
+        if (!seleccion) return query;
+        return { then: (resolve, reject) => query.then((documento) => {
+          const campos = new Set(['_id', ...seleccion.split(' ')]);
+          documento.id_alumno = Object.fromEntries(Object.entries(documento.id_alumno)
+            .filter(([campo]) => campos.has(campo)));
+          return documento;
+        }).then(resolve, reject) };
+      };
+      return query;
+    });
+  }
+  const { aplicarRecargoMensualidadSegunConfig } = require('../controllers/mensualidadController');
+  const aplicarRecargoReal = jest.requireActual('../controllers/mensualidadController').aplicarRecargoMensualidadSegunConfig;
+  aplicarRecargoMensualidadSegunConfig.mockImplementation((mensualidad, opciones) => aplicarRecargoReal(mensualidad, {
+    ...opciones, cobroConfig: { dia_vencimiento: 6, dias_gracia: 0, recargo_usd: 5 },
+    fechaReferencia: new Date(`2026-11-${dia}T16:00:00.000Z`), persistir: false
+  }));
+  try {
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await controller.registrarPagoAgrupado(solicitud({ monto_total: total.toFixed(2), monto_total_bs: totalBs.toFixed(2),
+      fecha_pago: `2026-11-${dia}`, asignaciones: [
+        { id_mensualidad: 'm1', credito_a_aplicar: 0 }, { id_mensualidad: 'm2', credito_a_aplicar: 0 }
+      ] }), res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ monto_total: total }));
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(datos.Mensualidad.m1.recargo_aplicado_usd).toBe(recargo);
+    expect(datos.Mensualidad.m2.recargo_aplicado_usd).toBe(recargo);
+  } finally {
+    aplicarRecargoMensualidadSegunConfig.mockReset().mockResolvedValue(undefined);
+  }
+});
+
+test.each([
   ['111111', '24427', 'match_total', true],
   ['111111', '24000', 'match_parcial', true],
   ['999999', '1', 'sin_coincidencia_sistema', true],

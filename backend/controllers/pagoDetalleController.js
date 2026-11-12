@@ -351,7 +351,7 @@ exports.registrarPagoAgrupado = async (req, res) => {
 
     for (const idMensualidad of idsUnicos) {
       const mensualidad = await TenantMensualidad.findById(idMensualidad)
-        .populate('id_alumno', 'nombres apellidos usuario representante saldo_a_favor_mensualidades');
+        .populate('id_alumno', 'nombres apellidos usuario representante saldo_a_favor_mensualidades tipo_mensualidad aplicar_recargo_mensualidad dia_limite_personalizado fecha_inicio_cobro fecha_inscripcion sede');
       if (!mensualidad?.id_alumno) {
         return res.status(404).json({ error: 'Una de las mensualidades no existe' });
       }
