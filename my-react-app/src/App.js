@@ -44,6 +44,7 @@ import EstadisticasFinanzas from './components/EstadisticasFinanzas';
 import MiPerfil from './components/MiPerfil';
 import Recaudos from './components/Recaudos';
 import Egresos from './components/Egresos';
+import CobrosAdicionales from './components/CobrosAdicionales';
 import CatalogoCategoriasEgresos from './components/CatalogoCategoriasEgresos';
 import TerminosCondiciones from './components/TerminosCondiciones';
 import UsuariosAccesos from './components/UsuariosAccesos';
@@ -420,6 +421,7 @@ function App() {
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><GestionReposos /></ProtectedRoute>} />
                           <Route path="recaudos" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['recaudos.view']}><Recaudos /></ProtectedRoute>} />
                           <Route path="egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><Egresos /></ProtectedRoute>} />
+                          <Route path="cobros-adicionales" element={<ProtectedRoute allowedRoles={['admin', 'super_admin']}><CobrosAdicionales /></ProtectedRoute>} />
                           <Route path="config-catalogo-egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><CatalogoCategoriasEgresos /></ProtectedRoute>} />
                           <Route path="publicaciones/cumpleanos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['publicaciones.view', 'publicaciones.manage']} requireAllPermissions={false}><CumpleanosPostGenerator /></ProtectedRoute>} />
                           <Route path="terminos-condiciones" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['reglamento.view']}><TerminosCondiciones /></ProtectedRoute>} />
