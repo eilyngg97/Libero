@@ -109,7 +109,8 @@ function ModalPago({
   allowedMethodIds = null,
   conceptoPago = '',
   allowPartialPayment = false,
-  allowPaymentConfirmation = false
+  allowPaymentConfirmation = false,
+  preventCloseWhileSubmitting = false
 }) {
   const normalizarTelefonoPago = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
@@ -807,7 +808,7 @@ function ModalPago({
   return (
     <Dialog
       open={open}
-      onClose={() => { if (!submitting || !allowPaymentConfirmation) onClose(); }}
+      onClose={() => { if (!submitting || !(allowPaymentConfirmation || preventCloseWhileSubmitting)) onClose(); }}
       maxWidth="xs"
       fullWidth
       PaperProps={{
@@ -835,7 +836,7 @@ function ModalPago({
               {headerSubtitle}
             </Typography>
           </Box>
-          <IconButton onClick={onClose} disabled={submitting && allowPaymentConfirmation} size="small" sx={{ color: '#94a3b8' }}>
+          <IconButton onClick={onClose} disabled={submitting && (allowPaymentConfirmation || preventCloseWhileSubmitting)} size="small" sx={{ color: '#94a3b8' }}>
             <CloseIcon />
           </IconButton>
         </Box>
@@ -1611,7 +1612,7 @@ function ModalPago({
               fullWidth
               sx={{ mt: 1, color: '#64748b', fontWeight: 700 }}
               onClick={handleVolver}
-              disabled={submitting && allowPaymentConfirmation}
+              disabled={submitting && (allowPaymentConfirmation || preventCloseWhileSubmitting)}
               startIcon={<ArrowBackIosNewIcon sx={{ fontSize: 16 }} />}
             >
               Volver

@@ -18,6 +18,7 @@ import EntrenadoresSedeStaff from './components/EntrenadoresSedeStaff';
 import Horarios from './components/Horarios';
 import ListadoSolicitudesUniformes from './components/ListadoSolicitudesUniformes';
 import PagosAlumno from './components/PagosAlumno';
+import CampaniasAlumno from './components/CampaniasAlumno';
 import PagoAgrupado from './components/PagoAgrupado';
 import Mensualidades from './components/Mensualidades';
 import TablaAlumnos from './components/TablaAlumnos';
@@ -367,6 +368,7 @@ function App() {
                           <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['horarios.view', 'horarios.manage']} requireAllPermissions={false}><Horarios /></ProtectedRoute>} />
                           <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['solicitudes_uniformes.view']}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
                           <Route path="pagos-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={adminAndUser}><PagosAlumno /></ProtectedRoute>} />
+                          <Route path="campanias-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><CampaniasAlumno /></ProtectedRoute>} />
                           <Route path="pagos-agrupados" element={<ProtectedRoute allowedRoles={userOnly}><PagoAgrupado /></ProtectedRoute>} />
                           <Route
                             path="inscripciones"

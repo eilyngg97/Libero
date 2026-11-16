@@ -25,6 +25,69 @@ const token = (rol, tenantId = 'alfa', permisos = []) => jwt.sign({ rol, tenantI
 let consulta;
 const tokenPublicacion = (rol = 'admin', tenantId = 'alfa') => jwt.sign({ rol, tenantId, id: 'admin-qa' }, 'qa-campanias-secret');
 
+describe('portal representante campanas', () => {
+  const id = '110000000000000000000001';
+  const cargoId = '110000000000000000000002';
+  const alumnoId = '110000000000000000000003';
+  const ruta = `/campanias/${id}/cargos/${cargoId}/pagos`;
+  const query = (valor) => ({ select: jest.fn().mockReturnThis(), session: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(), populate: jest.fn().mockReturnThis(), lean: jest.fn(async () => valor) });
+  let models;
+  beforeEach(() => {
+    models = {
+      Alumno: { findById: jest.fn(() => query({ usuario: 'admin-qa' })) }, Representante: {},
+      CampaniaCobro: { findById: () => query({ _id: id, estado: 'abierta', publicacion: { fecha: new Date() } }) },
+      CargoCampania: { findOne: () => query({ _id: cargoId, campania: id, alumno: alumnoId,
+        monto: 10, saldo_pendiente: 10, nota_interna: 'Privada' }), find: jest.fn(() => query([])) },
+      PagoCampania: { find: () => query([]) }
+    };
+    getTenantModel.mockImplementation((connection, nombre) => models[nombre]);
+  });
+  const get = (url) => request(app).get(url).set('Authorization', `Bearer ${tokenPublicacion('usuario')}`);
+  test('consulta solo cargos propios y no expone notas internas', async () => {
+    const response = await get(ruta);
+    expect(response.status).toBe(200);
+    expect(response.body.cargo.nota_interna).toBeUndefined();
+    expect(response.body.totales.disponible).toBe(10);
+    expect(models.Alumno.findById).toHaveBeenCalledWith(alumnoId);
+  });
+  test('representante asociado puede consultar y otro usuario no', async () => {
+    models.Alumno.findById.mockImplementation(() => query({ representante: alumnoId }));
+    models.Representante.findById = () => ({ select: async () => ({ usuario: 'admin-qa' }) });
+    expect((await get(ruta)).status).toBe(200);
+    models.Representante.findById = () => ({ select: async () => ({ usuario: 'otro' }) });
+    expect((await get(ruta)).status).toBe(404);
+  });
+  test('lista vacia propia y no permite listar atletas ajenos ni ids invalidos', async () => {
+    expect((await get(`/campanias/mis-cargos?alumnoId=${alumnoId}`)).body).toEqual({ cargos: [] });
+    models.Alumno.findById.mockImplementation(() => query({ usuario: 'otro' }));
+    expect((await get(`/campanias/mis-cargos?alumnoId=${alumnoId}`)).status).toBe(404);
+    expect((await get('/campanias/mis-cargos?alumnoId=invalido')).status).toBe(400);
+  });
+  test('no admite confirmar o reportar como confirmado y valida las correcciones', async () => {
+    const auth = `Bearer ${tokenPublicacion('usuario')}`;
+    expect((await request(app).post(ruta).set('Authorization', auth).send({ estado: 'confirmado' })).status).toBe(403);
+    expect((await request(app).post(`${ruta}/${cargoId}/confirmar`).set('Authorization', auth)).status).toBe(403);
+    expect((await request(app).patch(`${ruta}/${cargoId}`).set('Authorization', auth).send({})).status).toBe(403);
+    expect((await request(app).delete(`${ruta}/${cargoId}`).set('Authorization', auth).send({})).status).toBe(400);
+  });
+  test.each([
+    ['usuario', 'admin-qa', 'en_revision', true], ['usuario', 'otro', 'en_revision', false],
+    ['admin', 'admin-qa', 'en_revision', false], ['usuario', 'admin-qa', 'confirmado', false]
+  ])('expone permiso de correccion sin revelar identidad: %s %s %s', async (rol, actor, estado, permiso) => {
+    models.CargoCampania.findOne = () => query({ _id: cargoId, campania: id, alumno: alumnoId,
+      monto: 10, saldo_pendiente: estado === 'confirmado' ? 0 : 10 });
+    models.PagoCampania.find = () => query([{ _id: cargoId, estado, monto_pagado: 10,
+      registrado_por: { id: actor, rol }, modificaciones: ['privado'], huella: 'privado' }]);
+    const response = await get(ruta);
+    expect(response.status).toBe(200);
+    expect(response.body.pagos[0]).toMatchObject({ puede_corregir: permiso, registrado_por: { rol } });
+    expect(response.body.pagos[0].registrado_por.id).toBeUndefined();
+    expect(response.body.pagos[0].modificaciones).toBeUndefined();
+    expect(response.body.pagos[0].huella).toBeUndefined();
+  });
+});
+
 describe('pagos campania validacion previa', () => {
   const ruta = '/campanias/110000000000000000000001/cargos/110000000000000000000002/pagos';
   const body = { solicitud_id: '22000000-0000-4000-8000-000000000001', version: 0, moneda: 'USD', monto_pagado: 10,
@@ -1080,6 +1143,125 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
   const corregirMongo = (method, ruta, body) => request(app)[method](ruta)
     .set('x-tenant', 'alfa').set('Authorization', `Bearer ${tokenPublicacion()}`).send(body);
 
+  const prepararCorreccionPropia = async () => {
+    const datos = await prepararPagoMongo();
+    const userId = new mongoose.Types.ObjectId();
+    await modeloReal(conexiones.alfa, 'Alumno').updateOne({ _id: datos.cargo.alumno }, { $set: { usuario: userId } });
+    const auth = `Bearer ${jwt.sign({ rol: 'usuario', id: String(userId), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+    const pedir = (method, url, body) => request(app)[method](url).set('Authorization', auth).send(body);
+    const creado = await pedir('post', datos.ruta, datos.pagoBody);
+    expect(creado.status).toBe(201);
+    return { ...datos, userId, auth, pedir, destino: `${datos.ruta}/${creado.body.pago._id}`, pagoId: creado.body.pago._id };
+  };
+
+  test('correccion propia Mongo edita y elimina con reservas, reintentos y auditoria privada', async () => {
+    const { cargo, ruta, pagoBody, Cargo, Pago, pedir, destino, pagoId, userId } = await prepararCorreccionPropia();
+    const body = { ...pagoBody, version: 1, monto_pagado: 15, monto_pagado_bs: 1500,
+      solicitud_id: '33000000-0000-4000-8000-000000000001', referencia: '654321' };
+    const editado = await pedir('patch', destino, body);
+    expect(editado.status).toBe(200);
+    expect(editado.body.cargo).toMatchObject({ saldo_pendiente: 30, __v: 2 });
+    expect(editado.body.pago).toMatchObject({ monto_pagado: 15, estado: 'en_revision', puede_corregir: true });
+    expect(editado.body.pago.registrado_por.id).toBeUndefined();
+    expect(editado.body.pago.modificaciones).toBeUndefined();
+    expect(editado.body.pago.huella).toBeUndefined();
+    expect((await pedir('patch', destino, body)).body.repetida).toBe(true);
+    expect((await pedir('get', ruta)).body.totales).toMatchObject({ en_revision: 15, saldo_pendiente: 30, disponible: 15 });
+    const auditado = await Pago.findById(pagoId).select('+modificaciones').lean();
+    expect(auditado.modificaciones).toHaveLength(1);
+    expect(auditado.modificaciones[0]).toMatchObject({ anterior: { monto_pagado: 10 }, actor: { id: String(userId), rol: 'usuario' } });
+    const borrado = await pedir('delete', destino, { version: 2 });
+    expect(borrado.status).toBe(200);
+    expect(borrado.body.pago).toMatchObject({ estado: 'eliminado', puede_corregir: false });
+    expect(borrado.body.pago.eliminado_por).toBeUndefined();
+    expect(borrado.body.pago.modificaciones).toBeUndefined();
+    expect((await pedir('delete', destino, { version: 2 })).body.repetida).toBe(true);
+    expect((await pedir('get', ruta)).body).toMatchObject({ pagos: [], totales: { en_revision: 0, disponible: 30 } });
+    expect(await Cargo.findById(cargo._id).lean()).toMatchObject({ saldo_pendiente: 30, __v: 3 });
+    expect(await Pago.findById(pagoId).lean()).toMatchObject({ estado: 'eliminado', eliminado_por: { id: String(userId), rol: 'usuario' } });
+  });
+
+  test.each(['patch', 'delete'])('correccion propia Mongo %s protege autor, ultimo, version, estado, campana y tenant', async (method) => {
+    const { ruta, pagoBody, Cargo, Pago, cargo, destino, pedir, auth, pagoId, id } = await prepararCorreccionPropia();
+    const body = method === 'patch' ? { ...pagoBody, version: 1,
+      solicitud_id: '33000000-0000-4000-8000-000000000001' } : { version: 1 };
+    const otroId = new mongoose.Types.ObjectId();
+    const rep = await modeloReal(conexiones.alfa, 'Representante').create({ nombres: 'Otro representante', apellidos: 'QA',
+      cedula: `QA-CORRECCION-${method}`, usuario: otroId });
+    await modeloReal(conexiones.alfa, 'Alumno').updateOne({ _id: cargo.alumno }, { $set: { representante: rep._id } });
+    const otro = `Bearer ${jwt.sign({ rol: 'usuario', id: String(otroId), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+    expect((await request(app)[method](destino).set('Authorization', otro).send(body)).status).toBe(403);
+    const ajeno = `Bearer ${jwt.sign({ rol: 'usuario', id: String(new mongoose.Types.ObjectId()), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+    expect((await request(app)[method](destino).set('Authorization', ajeno).send(body)).status).toBe(404);
+    expect((await request(app)[method](destino).set('x-tenant', 'beta').set('Authorization', auth).send(body)).status).toBe(403);
+    expect((await pedir(method, destino, { ...body, version: 0 })).status).toBe(409);
+    expect((await pedir('patch', destino, { ...pagoBody, version: 1, estado: 'confirmado' })).status).toBe(403);
+    const segundo = await registrarMongo(ruta, { ...pagoBody, version: 1,
+      solicitud_id: '22000000-0000-4000-8000-000000000002' });
+    expect(segundo.status).toBe(201);
+    expect((await pedir(method, destino, { ...body, version: 2 })).status).toBe(409);
+    const adminDestino = `${ruta}/${segundo.body.pago._id}`;
+    expect((await pedir(method, adminDestino, { ...body, version: 2 })).status).toBe(403);
+    expect((await corregirMongo('delete', adminDestino, { version: 2 })).status).toBe(200);
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: id }, { $set: { estado: 'cerrada' } });
+    expect((await pedir(method, destino, { ...body, version: 3 })).status).toBe(409);
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: id }, { $set: { estado: 'abierta' } });
+    expect((await registrarMongo(`${destino}/confirmar`, {})).status).toBe(200);
+    expect((await pedir(method, destino, { ...body, version: 4 })).status).toBe(409);
+    expect(await Cargo.findById(cargo._id).lean()).toMatchObject({ saldo_pendiente: 20, __v: 4 });
+    expect(await Pago.findById(pagoId).lean()).toMatchObject({ estado: 'confirmado', monto_pagado: 10, referencia: pagoBody.referencia });
+  });
+
+  test('portal representante Mongo reporta reserva propia y admin confirma sin revelar notas o auditoria', async () => {
+    const { cargo, ruta, pagoBody, Cargo, Pago, id } = await prepararPagoMongo();
+    const Alumno = modeloReal(conexiones.alfa, 'Alumno');
+    const Representante = modeloReal(conexiones.alfa, 'Representante');
+    const userId = new mongoose.Types.ObjectId();
+    const rep = await Representante.create({ nombres: 'Representante QA', apellidos: 'Temporal', cedula: 'QA-PORTAL-123', usuario: userId });
+    await Alumno.updateOne({ _id: cargo.alumno }, { $set: { representante: rep._id }, $unset: { usuario: '' } });
+    await Cargo.updateOne({ _id: cargo._id }, { $set: { nota_interna: 'Acuerdo privado' } });
+    const auth = `Bearer ${jwt.sign({ rol: 'usuario', id: String(userId), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+    const leer = (url) => request(app).get(url).set('Authorization', auth);
+    expect((await leer(`/campanias/mis-cargos?alumnoId=${cargo.alumno}`)).body.cargos).toHaveLength(1);
+    const adjuntar = () => {
+      let req = request(app).post(ruta).set('Authorization', auth);
+      for (const [campo, valor] of Object.entries(pagoBody)) req = req.field(campo, String(valor));
+      return req.attach('comprobante', Buffer.from('%PDF-1.4\nQA'), { filename: 'qa.pdf', contentType: 'application/pdf' });
+    };
+    let archivo;
+    try {
+      const creado = await adjuntar();
+      expect(creado.status).toBe(201);
+      archivo = require('path').join(__dirname, '..', 'private-uploads', 'campanias', 'alfa', require('path').basename(creado.body.pago.comprobante_url));
+      expect(creado.body.cargo).toMatchObject({ saldo_pendiente: 30, __v: 1 });
+      expect(creado.body.cargo.nota_interna).toBeUndefined();
+      expect(creado.body.pago).toMatchObject({ estado: 'en_revision', registrado_por: { rol: 'usuario' } });
+      expect(creado.body.pago.registrado_por.id).toBeUndefined();
+      expect((await Pago.findById(creado.body.pago._id)).registrado_por.id).toBe(String(userId));
+      expect((await adjuntar()).status).toBe(200);
+      expect(await Pago.countDocuments({ cargo: cargo._id })).toBe(1);
+      const listado = await leer(`/campanias/mis-cargos?alumnoId=${cargo.alumno}`);
+      expect(listado.body.cargos[0]).toMatchObject({ pago_en_revision: true, disponible: 20 });
+      expect(JSON.stringify(listado.body)).not.toMatch(/Acuerdo privado|solicitud_id|actor/);
+      const descarga = `${ruta}/${creado.body.pago._id}/comprobante`;
+      expect((await leer(descarga)).status).toBe(200);
+      expect((await request(app).get(descarga)).status).toBe(401);
+      const ajeno = `Bearer ${jwt.sign({ rol: 'usuario', id: String(new mongoose.Types.ObjectId()), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+      expect((await request(app).get(descarga).set('Authorization', ajeno)).status).toBe(404);
+      expect((await request(app).post(ruta).set('Authorization', ajeno).send(pagoBody)).status).toBe(404);
+      expect((await request(app).post(ruta).set('Authorization', auth).send({ ...pagoBody, estado: 'confirmado' })).status).toBe(403);
+      expect((await request(app).get(ruta).set('x-tenant', 'beta').set('Authorization', auth)).status).toBe(403);
+      expect((await registrarMongo(`${ruta}/${creado.body.pago._id}/confirmar`, {})).status).toBe(200);
+      const historial = await leer(ruta);
+      expect(historial.body.totales).toEqual({ confirmado: 10, en_revision: 0, saldo_pendiente: 20, disponible: 20 });
+      expect(historial.body.pagos[0].confirmado_por.id).toBeUndefined();
+      expect(await Cargo.findById(cargo._id)).toMatchObject({ saldo_pendiente: 20, estado: 'abono' });
+      await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: id }, { $set: { estado: 'cerrada' } });
+      expect((await leer(ruta)).status).toBe(200);
+      expect((await request(app).post(ruta).set('Authorization', auth).send({ ...pagoBody, version: 2 })).status).toBe(409);
+    } finally { if (archivo) await require('fs/promises').unlink(archivo).catch(() => {}); }
+  });
+
   test('pagos campania Mongo separa revision de deuda y confirma una sola vez', async () => {
     const { Cargo, Pago, cargo, ruta, pagoBody } = await prepararPagoMongo();
     const respuesta = await registrarMongo(ruta, pagoBody);
@@ -1126,7 +1308,8 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
 
   test('pagos campania Mongo valida saldo, tasa, version, abonos, roles y tenant', async () => {
     const { Cargo, cargo, ruta, pagoBody, base } = await prepararPagoMongo();
-    for (const rol of ['usuario', 'entrenador', 'asistente', 'finanzas']) expect((await registrarMongo(ruta, pagoBody, rol)).status).toBe(403);
+    for (const rol of ['entrenador', 'asistente', 'finanzas']) expect((await registrarMongo(ruta, pagoBody, rol)).status).toBe(403);
+    expect((await registrarMongo(ruta, pagoBody, 'usuario')).status).toBe(404);
     expect((await registrarMongo(ruta, pagoBody, 'admin', 'beta')).status).toBe(404);
     expect((await registrarMongo(ruta, { ...pagoBody, version: 1 })).status).toBe(409);
     expect((await registrarMongo(ruta, { ...pagoBody, monto_pagado: 31, monto_pagado_bs: 3100 })).status).toBe(409);
@@ -1199,7 +1382,7 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
       falloCargo.mockRestore();
       const primera = await adjuntar();
       expect(primera.status).toBe(201);
-      expect(primera.body.pago.comprobante_url).toMatch(/^\/uploads\/alfa\/comprobantes\/[a-f0-9-]+\.png$/);
+      expect(primera.body.pago.comprobante_url).toMatch(/^\/archivos-campania\/alfa\/[a-f0-9-]+\.png$/);
       const repetida = await adjuntar();
       expect(repetida.status).toBe(200);
       expect(repetida.body.pago.comprobante_url).toBe(primera.body.pago.comprobante_url);
@@ -1250,7 +1433,7 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
     expect((await corregirMongo('patch', destino, { ...body, monto_pagado: 21, monto_pagado_bs: 2100 })).status).toBe(409);
     expect((await corregirMongo('patch', destino, { ...body, estado: 'confirmado' })).status).toBe(400);
     expect((await corregirMongo('patch', destino, { ...body, monto_pagado_bs: 900 })).status).toBe(409);
-    expect((await request(app).delete(destino).set('Authorization', `Bearer ${tokenPublicacion('usuario')}`).send({ version: 2 })).status).toBe(403);
+    expect((await request(app).delete(destino).set('Authorization', `Bearer ${tokenPublicacion('usuario')}`).send({ version: 2 })).status).toBe(404);
     expect((await request(app).patch(destino).set('x-tenant', 'beta').set('Authorization', `Bearer ${tokenPublicacion('admin', 'beta')}`).send(body)).status).toBe(404);
   });
 
@@ -1320,7 +1503,7 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
       expect((await adjuntar(Buffer.from('falso'), 'qa.png', 'image/png')).status).toBe(400);
       const editado = await adjuntar(png, 'qa.png', 'image/png');
       expect(editado.status).toBe(200);
-      expect(editado.body.pago.comprobante_url).toMatch(/^\/uploads\/alfa\/comprobantes\/[a-f0-9-]+\.png$/);
+      expect(editado.body.pago.comprobante_url).toMatch(/^\/archivos-campania\/alfa\/[a-f0-9-]+\.png$/);
       expect((await adjuntar(png, 'qa.png', 'image/png')).body.repetida).toBe(true);
       expect(escribir).toHaveBeenCalledTimes(2);
       expect(borrar).toHaveBeenCalledTimes(1);

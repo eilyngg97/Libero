@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const actorSchema = new mongoose.Schema({
   id: { type: String, required: true },
-  rol: { type: String, enum: ['admin', 'super_admin'], required: true }
+  rol: { type: String, enum: ['admin', 'super_admin', 'usuario'], required: true }
 }, { _id: false });
 
 const PagoCampaniaSchema = new mongoose.Schema({

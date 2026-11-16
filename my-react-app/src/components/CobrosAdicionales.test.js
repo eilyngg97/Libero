@@ -1,13 +1,16 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import CobrosAdicionales from './CobrosAdicionales';
 import ProtectedRoute from './ProtectedRoute';
 import CampaniaParticipantesDialog from './CampaniaParticipantesDialog';
 import CampaniaResumenDialog from './CampaniaResumenDialog';
 import CampaniaPagoDialog from './CampaniaPagoDialog';
+import * as CampaniaPagoDialogModule from './CampaniaPagoDialog';
 import EstadoPagoChip from './EstadoPagoChip';
+import CampaniasAlumno from './CampaniasAlumno';
+import PanelOpcionesUsuario from './PanelOpcionesUsuario';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 100, moneda: 'USD' } }) }));
@@ -18,6 +21,108 @@ const originalCrypto = Object.getOwnPropertyDescriptor(window, 'crypto');
 const campania = (indice) => ({ _id: String(indice), nombre: `Viaje ${indice}`, descripcion: '',
   monto_general: 30, moneda: 'USD', estado: 'borrador', sedes: [{ _id: 'norte', nombre: 'Norte' }], vencimiento: '2026-12-15', __v: 0 });
 const responder = (campanias) => ({ ok: true, status: 200, json: async () => ({ campanias }) });
+
+describe('aviso de cobros adicionales en el panel', () => {
+  const cargo = { alumno: 'ana', estado: 'pendiente', saldo_pendiente: 30, disponible: 30,
+    pago_en_revision: false, campania: { estado: 'abierta' } };
+  const abrir = (cargos, ok = true) => {
+    localStorage.setItem('aviso-expediente-leido::ana', 'true');
+    window.fetch.mockImplementation(async (url) => ({ ok: url.includes('/mis-cargos') ? ok : true,
+      json: async () => url.includes('/mis-cargos') ? { cargos } : [] }));
+    render(<MemoryRouter initialEntries={[{ pathname: '/panel-opciones-usuario/ana',
+      state: { alumno: { _id: 'ana', nombres: 'Ana' } } }]}><PanelOpcionesUsuario /></MemoryRouter>);
+    return screen.getByRole('button', { name: /Cobros adicionales/ });
+  };
+  test('avisa de cargos pendientes y abonos con saldo propio', async () => {
+    const tarjeta = within(abrir([cargo, { ...cargo, estado: 'abono', saldo_pendiente: 10, disponible: 10 }]));
+    expect(await tarjeta.findByText('Pago pendiente')).toBeInTheDocument();
+    expect(tarjeta.getByText('Tienes 2 cobros adicionales con saldo pendiente')).toBeInTheDocument();
+    expect(window.fetch).toHaveBeenCalledWith(expect.stringContaining('/mis-cargos?alumnoId=ana'),
+      expect.objectContaining({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, cache: 'no-store' }));
+  });
+  test('distingue un pago en revision que cubre todo el saldo', async () => {
+    const tarjeta = within(abrir([{ ...cargo, disponible: 0, pago_en_revision: true }]));
+    expect(await tarjeta.findByText('Pago en revision')).toBeInTheDocument();
+    expect(tarjeta.queryByText('Pago pendiente')).not.toBeInTheDocument();
+  });
+  test('no cuenta cargos pagados, no aplicables o cancelados', async () => {
+    const tarjeta = within(abrir([{ ...cargo, estado: 'pagado', saldo_pendiente: 0, disponible: 0 },
+      { ...cargo, estado: 'no_aplica' }, { ...cargo, campania: { estado: 'cancelada' } }]));
+    expect(await tarjeta.findByText('Sin pendientes')).toBeInTheDocument();
+  });
+  test('sin cargos muestra que no hay pendientes', async () => {
+    const tarjeta = within(abrir([]));
+    expect(await tarjeta.findByText('No tienes cobros adicionales por pagar')).toBeInTheDocument();
+  });
+  test.each([false, true])('no anuncia sin pendientes ante un error o datos ajenos: %s', async (ok) => {
+    const tarjeta = within(abrir([{ ...cargo, alumno: 'otro' }], ok));
+    expect(await tarjeta.findByText('Sin datos')).toBeInTheDocument();
+    expect(tarjeta.queryByText('Sin pendientes')).not.toBeInTheDocument();
+  });
+});
+
+describe('listado representante de campanas', () => {
+  const filas = [{ _id: 'cargo1', alumno: 'ana', nombres: 'Ana', apellidos: 'QA', monto: 30, saldo_pendiente: 30,
+    moneda: 'USD', estado: 'pendiente', modalidad: 'general', permitir_abonos: true, pago_en_revision: true, disponible: 0,
+    campania: { _id: 'camp1', nombre: 'Viaje QA', moneda: 'USD', estado: 'abierta' } },
+  { _id: 'cargo2', alumno: 'ana', nombres: 'Ana', monto: 20, saldo_pendiente: 0, moneda: 'USD', estado: 'pagado',
+    permitir_abonos: false, pago_en_revision: false, disponible: 0, campania: { _id: 'camp2', nombre: 'Torneo QA', moneda: 'USD', estado: 'cerrada' } }];
+  const abrir = () => render(<MemoryRouter initialEntries={['/campanias-alumno/ana']}><Routes>
+    <Route path="/campanias-alumno/:alumnoId" element={<CampaniasAlumno />} /></Routes></MemoryRouter>);
+  test('lista cargos propios, distingue revision y bloquea pagos cubiertos o cerrados', async () => {
+    window.fetch.mockResolvedValue({ ok: true, json: async () => ({ cargos: filas }) });
+    abrir();
+    expect(await screen.findByText('Viaje QA')).toBeInTheDocument();
+    expect(screen.getByText('En revision')).toBeInTheDocument();
+    const tarjetas = within(screen.getByRole('list', { name: 'Cobros adicionales del atleta' })).getAllByRole('listitem');
+    expect(tarjetas[0]).toHaveStyle({ backgroundColor: '#fffdf8', border: '1px solid #efe7dc', borderRadius: '16px' });
+    expect(tarjetas[1]).toHaveStyle({ backgroundColor: '#f6f8ff', border: '1px solid #e5e9f5', borderRadius: '16px' });
+    expect(screen.getByRole('button', { name: 'Reportar pago de Viaje QA' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reportar pago de Torneo QA' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Buscar campaña'), { target: { value: 'Torneo' } });
+    expect(screen.queryByText('Viaje QA')).not.toBeInTheDocument();
+    expect(window.fetch.mock.calls[0][0]).toContain('/mis-cargos?alumnoId=ana');
+  });
+  test('rechaza respuestas de otro atleta y permite reintentar un error', async () => {
+    window.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ cargos: [{ ...filas[0], alumno: 'ajeno' }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ cargos: [] }) });
+    abrir();
+    expect(await screen.findByText('No se pudieron verificar los cobros del atleta.')).toBeInTheDocument();
+    expect(screen.queryByText('Viaje QA')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('No tienes cobros adicionales registrados.')).toBeInTheDocument();
+  });
+
+  test.each(['Cerrar aviso', 'Entendido'])('exige cerrar el aviso de reporte explicitamente con %s', async (cierre) => {
+    jest.spyOn(CampaniaPagoDialogModule, 'default').mockImplementation(({ onSaved }) =>
+      <button onClick={() => onSaved({})}>Enviar reporte QA</button>);
+    window.fetch.mockResolvedValue({ ok: true, json: async () => ({ cargos: [{ ...filas[0],
+      pago_en_revision: false, disponible: 30 }] }) });
+    abrir();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reportar pago de Viaje QA' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte QA' }));
+    const aviso = await screen.findByRole('alertdialog', { name: 'Pago reportado' });
+    expect(aviso).toHaveAccessibleDescription('Tu pago está pendiente de revisión. El importe se aplicará al saldo cuando sea confirmado.');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Entendido' })).toHaveFocus());
+    fireEvent.keyDown(aviso, { key: 'Escape', code: 'Escape' });
+    screen.getAllByRole('presentation', { hidden: true }).forEach((fondo) => {
+      fireEvent.mouseDown(fondo);
+      fireEvent.click(fondo);
+    });
+    expect(screen.getByRole('alertdialog', { name: 'Pago reportado' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: cierre }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog', { name: 'Pago reportado' })).not.toBeInTheDocument());
+  });
+
+  test('campana cancelada conserva consulta sin permitir nuevos pagos', async () => {
+    window.fetch.mockResolvedValue({ ok: true, json: async () => ({ cargos: [{ ...filas[0],
+      disponible: 30, pago_en_revision: false, campania: { ...filas[0].campania, estado: 'cancelada' } }] }) });
+    abrir();
+    expect(await screen.findByText('Campana cancelada')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reportar pago de Viaje QA' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Historial de Viaje QA' })).toBeEnabled();
+  });
+});
 
 test.each([
   ['pendiente', 'Pendiente', '#fff3dc', '#b45309'], ['pagado', 'Pagado', '#dff7ea', '#0f7a4a'],
@@ -55,6 +160,17 @@ describe('pagos individuales campania', () => {
     fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-CAMPANIA' } });
   };
 
+  test.each([['admin', 'Portal admin'], ['super_admin', 'Portal admin'], ['usuario', 'Portal usuario'], [undefined, 'No disponible']])(
+    'registrado por muestra el portal sin identificador para %s', async (rol, etiqueta) => {
+      preparar(jest.fn(), { ...historial([{ ...pago, registrado_por: { id: 'actor-privado-qa', rol } }]),
+        totales: { confirmado: 0, en_revision: 30, saldo_pendiente: 30, disponible: 0 } });
+      render(<CampaniaPagoDialog campania={actual} fila={fila} modo="historial" onClose={jest.fn()} onSaved={jest.fn()} />);
+      const lista = await screen.findByRole('list', { name: 'Historial de pagos del cargo' });
+      expect(within(screen.getByRole('group', { name: 'Registrado por' })).getByText(etiqueta)).toBeInTheDocument();
+      expect(within(lista).getByText(`Registrado por: ${etiqueta}`)).toBeInTheDocument();
+      expect(screen.queryByText(/actor-privado-qa/)).not.toBeInTheDocument();
+    });
+
   test('reutiliza ModalPago y registra en revision sin endpoint mensualidad', async () => {
     const onSaved = jest.fn();
     preparar(async () => json({ pago, cargo: { ...cargo, __v: 1 }, repetida: false }));
@@ -68,6 +184,71 @@ describe('pagos individuales campania', () => {
     expect(options.body.get('monto_pagado')).toBe('30.00');
     expect(options.body.get('monto_pagado_bs')).toBeNull();
     expect(options.body.get('id_mensualidad')).toBeNull();
+  });
+
+  test('representante reporta en revision sin opcion de confirmar ni datos de administrador', async () => {
+    const onSaved = jest.fn();
+    preparar(async () => json({ pago: { ...pago, registrado_por: { rol: 'usuario' } }, cargo: { ...cargo, __v: 1 }, repetida: false }));
+    await abrir({ representante: true, onSaved });
+    expect(screen.queryByRole('checkbox', { name: 'Pago confirmado' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'POST');
+    expect(options.body.get('estado')).toBe('en_revision');
+  });
+
+  test.each(['editar', 'eliminar'])('representante puede %s su ultimo reporte sin confirmar pagos ni exponer auditoria', async (accion) => {
+    const propio = { ...pago, registrado_por: { rol: 'usuario' }, puede_corregir: true };
+    const onSaved = jest.fn();
+    window.fetch.mockImplementation(async (url, options = {}) => {
+      if (options.method === 'PATCH' || options.method === 'DELETE') return json({ repetida: false,
+        cargo: { ...cargo, __v: 1 }, pago: { ...propio, monto_pagado: accion === 'editar' ? 20 : 30,
+          estado: accion === 'eliminar' ? 'eliminado' : 'en_revision', referencia: 'CORREGIDO' } });
+      if (url.includes('/api/configuracion/pagos')) return json({ pagos: { adicionales: [{ tipo: 'zelle', titular: 'QA', correo: 'qa@example.com' }] } });
+      return json({ ...historial([propio]), totales: { confirmado: 0, en_revision: 30, saldo_pendiente: 30, disponible: 0 } });
+    });
+    render(<CampaniaPagoDialog representante campania={actual} fila={fila} modo="historial" onClose={jest.fn()} onSaved={onSaved} />);
+    await screen.findByRole('button', { name: 'Editar', exact: true });
+    expect(screen.queryByRole('button', { name: /^Confirmar/ })).not.toBeInTheDocument();
+    const formularioListo = () => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
+    if (accion === 'editar') {
+      fireEvent.click(screen.getByRole('button', { name: 'Editar', exact: true }));
+      await waitFor(formularioListo);
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Monto pagado (USD)' }), { target: { value: '20' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Referencia' }), { target: { value: 'CORREGIDO' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: 'Eliminar ultimo pago' }));
+      fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Eliminar ultimo pago' })).getByRole('button', { name: 'Eliminar pago' }));
+    }
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ pago: expect.objectContaining({
+      estado: accion === 'eliminar' ? 'eliminado' : 'en_revision' }) }), false));
+    const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === (accion === 'editar' ? 'PATCH' : 'DELETE'));
+    const enviado = accion === 'editar' ? { estado: options.body.get('estado'), monto: options.body.get('monto_pagado') }
+      : JSON.parse(options.body);
+    expect(enviado).toEqual(accion === 'editar' ? { estado: 'en_revision', monto: '20.00' } : { version: 0 });
+  });
+
+  test.each(['confirmado', 'anterior', 'cerrada'])('representante no modifica un reporte %s aunque incluya permiso de autor', async (caso) => {
+    const propio = { ...pago, registrado_por: { rol: 'usuario' }, puede_corregir: true };
+    let inicial = { ...historial([propio]), totales: { confirmado: 0, en_revision: 30, saldo_pendiente: 30, disponible: 0 } };
+    if (caso === 'confirmado') inicial = { ...historial([{ ...propio, estado: 'confirmado' }], { saldo_pendiente: 0, estado: 'pagado' }),
+      totales: { confirmado: 30, en_revision: 0, saldo_pendiente: 0, disponible: 0 } };
+    if (caso === 'anterior') inicial.pagos = [{ ...propio, _id: 'pago2', monto_pagado: 15, puede_corregir: false }, { ...propio, monto_pagado: 15 }];
+    preparar(jest.fn(), inicial);
+    render(<CampaniaPagoDialog representante campania={{ ...actual, estado: caso === 'cerrada' ? 'cerrada' : 'abierta' }} fila={fila}
+      modo="historial" onClose={jest.fn()} onSaved={jest.fn()} />);
+    await screen.findByRole('list', { name: 'Historial de pagos del cargo' });
+    expect(screen.queryByRole('button', { name: /Confirmar|Editar|Eliminar/ })).not.toBeInTheDocument();
+  });
+
+  test('representante consulta historial sin permiso de correccion ni confirmacion', async () => {
+    preparar(jest.fn(), { ...historial([{ ...pago, registrado_por: { rol: 'usuario' } }], { __v: 1 }),
+      totales: { confirmado: 0, en_revision: 30, saldo_pendiente: 30, disponible: 0 } });
+    render(<CampaniaPagoDialog representante campania={actual} fila={fila} modo="historial" onClose={jest.fn()} onSaved={jest.fn()} />);
+    await screen.findByRole('list', { name: 'Historial de pagos del cargo' });
+    expect(screen.queryByRole('button', { name: /Confirmar|Editar|Eliminar/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver detalle del pago TX-CAMPANIA' })).toBeInTheDocument();
   });
 
   test('confirmacion explicita paga saldo y bloqueo de doble envio reutiliza UUID al reintentar', async () => {

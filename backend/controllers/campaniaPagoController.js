@@ -6,19 +6,49 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { ejecutarConTransaccion, aplicarSession } = require('../services/financeTransaction');
 const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
+const { userRepresentsAlumno } = require('../services/paymentOwnership');
 
 const OBJECT_ID = /^[a-f\d]{24}$/i;
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 const fallo = (status, message) => Object.assign(new Error(message), { status });
 const centimos = (monto) => Math.round(monto * 100);
 
+async function modelosPortal(req) {
+  const connection = await getTenantBusinessConnection(req.tenant || { tenantId: req.tenantId });
+  return Object.fromEntries(['CampaniaCobro', 'CargoCampania', 'PagoCampania', 'TenantConfig',
+    ...(req.user?.rol === 'usuario' ? ['Alumno', 'Representante'] : [])]
+    .map((nombre) => [nombre, getTenantModel(connection, nombre)]));
+}
+
+async function verificarPropiedad(models, req, alumnoId, session) {
+  if (req.user?.rol !== 'usuario') return;
+  if (!req.user.id) throw fallo(401, 'Inicia sesion nuevamente.');
+  const alumno = await aplicarSession(models.Alumno.findById(alumnoId).select('usuario representante'), session).lean();
+  if (!alumno || !(String(alumno.usuario || '') === String(req.user.id)
+    || await userRepresentsAlumno(req.user.id, alumno, models.Representante, session))) {
+    throw fallo(404, 'El cargo no esta disponible.');
+  }
+}
+
+function respuestaPublica(req, datos) {
+  if (req.user?.rol !== 'usuario') return datos;
+  const cargoPublico = ({ nota_interna, ...cargo }) => cargo;
+  const pagoPublico = ({ huella, modificaciones, eliminado_por, eliminado_en, registrado_por, confirmado_por, ...pago }) => ({
+    ...pago, registrado_por: registrado_por ? { rol: registrado_por.rol } : undefined,
+    confirmado_por: confirmado_por ? { rol: confirmado_por.rol } : undefined,
+    puede_corregir: pago.estado === 'en_revision' && registrado_por?.rol === 'usuario'
+      && String(registrado_por.id) === String(req.user.id)
+  });
+  return { ...datos, cargo: cargoPublico(datos.cargo),
+    ...(datos.pago ? { pago: pagoPublico(datos.pago) } : {}),
+    ...(datos.pagos ? { pagos: datos.pagos.map(pagoPublico) } : {}) };
+}
+
 async function modelos(req, identificarActor = true) {
   if (!OBJECT_ID.test(req.params.id) || !OBJECT_ID.test(req.params.cargoId)
     || (req.params.pagoId && !OBJECT_ID.test(req.params.pagoId))) throw fallo(400, 'El cargo o pago no es valido.');
   if (identificarActor && !req.user?.id) throw fallo(401, 'Inicia sesion nuevamente para identificar al administrador.');
-  const connection = await getTenantBusinessConnection(req.tenant || { tenantId: req.tenantId });
-  return Object.fromEntries(['CampaniaCobro', 'CargoCampania', 'PagoCampania', 'TenantConfig']
-    .map((nombre) => [nombre, getTenantModel(connection, nombre)]));
+  return modelosPortal(req);
 }
 
 async function cargoVigente(models, req, session, abierto = true) {
@@ -27,8 +57,30 @@ async function cargoVigente(models, req, session, abierto = true) {
   if (!campania.publicacion || (abierto && campania.estado !== 'abierta')) throw fallo(409, 'La campana no admite pagos.');
   const cargo = await aplicarSession(models.CargoCampania.findOne({ _id: req.params.cargoId, campania: req.params.id }), session).lean();
   if (!cargo) throw fallo(404, 'El cargo no existe en esta campana.');
+  await verificarPropiedad(models, req, cargo.alumno, session);
   return cargo;
 }
+
+exports.misCargos = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    if (typeof req.query.alumnoId !== 'string' || !OBJECT_ID.test(req.query.alumnoId)) throw fallo(400, 'Indica un atleta valido.');
+    const models = await modelosPortal(req);
+    await verificarPropiedad(models, req, req.query.alumnoId);
+    const cargos = await models.CargoCampania.find({ alumno: req.query.alumnoId })
+      .select('campania alumno nombres apellidos nombre_sede moneda monto saldo_pendiente estado modalidad vencimiento permitir_abonos __v')
+      .populate('campania', 'nombre descripcion moneda estado publicacion.fecha').sort({ createdAt: -1, _id: -1 }).lean();
+    const publicados = cargos.filter((cargo) => cargo.campania?.publicacion && cargo.campania.estado !== 'borrador');
+    const revisiones = publicados.length ? await models.PagoCampania.find({ cargo: { $in: publicados.map((cargo) => cargo._id) },
+      estado: 'en_revision' }).select('cargo monto_pagado').lean() : [];
+    return res.json({ cargos: publicados.map((cargo) => ({ ...cargo,
+      campania: { _id: cargo.campania._id, nombre: cargo.campania.nombre, descripcion: cargo.campania.descripcion,
+        moneda: cargo.campania.moneda, estado: cargo.campania.estado },
+      disponible: (centimos(cargo.saldo_pendiente) - revisiones.filter((pago) => String(pago.cargo) === String(cargo._id))
+        .reduce((suma, pago) => suma + centimos(pago.monto_pagado), 0)) / 100,
+      pago_en_revision: revisiones.some((pago) => String(pago.cargo) === String(cargo._id)) })) });
+  } catch (error) { return responderError(res, error); }
+};
 
 function validarRegistro(req) {
   const body = req.body || {};
@@ -108,9 +160,9 @@ async function guardarComprobante(req) {
   const tenantId = resolveRequestTenantId(req);
   if (!/^[a-zA-Z0-9_-]+$/.test(tenantId)) throw fallo(400, 'Academia no valida para el comprobante.');
   const nombre = `${randomUUID()}${path.extname(req.file.originalname).toLowerCase()}`;
-  const carpeta = path.join(__dirname, '..', 'uploads', tenantId, 'comprobantes');
+  const carpeta = path.join(__dirname, '..', 'private-uploads', 'campanias', tenantId);
   await fs.mkdir(carpeta, { recursive: true });
-  const archivo = { path: path.join(carpeta, nombre), url: `/uploads/${tenantId}/comprobantes/${nombre}` };
+  const archivo = { path: path.join(carpeta, nombre), url: `/archivos-campania/${tenantId}/${nombre}` };
   await fs.writeFile(archivo.path, req.file.buffer, { flag: 'wx' });
   return archivo;
 }
@@ -119,6 +171,7 @@ exports.registrar = async (req, res) => {
   res.set('Cache-Control', 'no-store');
   let archivoNuevo;
   try {
+    if (req.user?.rol === 'usuario' && req.body?.estado !== 'en_revision') throw fallo(403, 'Los pagos reportados deben quedar en revision.');
     const { data, huella } = validarRegistro(req);
     const models = await modelos(req);
     await models.PagoCampania.init();
@@ -159,7 +212,7 @@ exports.registrar = async (req, res) => {
       return { cargo, pago: publico, repetida: false };
     }, { obligatoria: true });
     if (resultado.repetida && archivoNuevo) await fs.unlink(archivoNuevo.path).catch(() => {});
-    return res.status(resultado.repetida ? 200 : 201).json(resultado);
+    return res.status(resultado.repetida ? 200 : 201).json(respuestaPublica(req, resultado));
   } catch (error) {
     if (archivoNuevo && !error.hasErrorLabel?.('UnknownTransactionCommitResult')) await fs.unlink(archivoNuevo.path).catch(() => {});
     return responderError(res, error);
@@ -177,9 +230,34 @@ exports.historial = async (req, res) => {
     if (centimos(confirmado) + centimos(cargo.saldo_pendiente) !== centimos(cargo.monto) || en_revision > cargo.saldo_pendiente) {
       throw fallo(409, 'No se pudo verificar el saldo y el historial del cargo.');
     }
-    return res.json({ cargo, pagos, totales: { confirmado, en_revision, saldo_pendiente: cargo.saldo_pendiente,
-      disponible: (centimos(cargo.saldo_pendiente) - centimos(en_revision)) / 100 } });
+    return res.json(respuestaPublica(req, { cargo, pagos, totales: { confirmado, en_revision, saldo_pendiente: cargo.saldo_pendiente,
+      disponible: (centimos(cargo.saldo_pendiente) - centimos(en_revision)) / 100 } }));
   } catch (error) { return responderError(res, error); }
+};
+
+exports.comprobante = async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  try {
+    const models = await modelos(req, false);
+    const cargo = await cargoVigente(models, req, null, false);
+    const pago = await models.PagoCampania.findOne({ _id: req.params.pagoId, cargo: cargo._id,
+      campania: req.params.id, estado: { $ne: 'eliminado' } }).select('comprobante_url').lean();
+    const tenantId = resolveRequestTenantId(req);
+    if (!/^[a-zA-Z0-9_-]+$/.test(tenantId)) throw fallo(404, 'Comprobante no disponible.');
+    const url = pago?.comprobante_url || '';
+    const nombre = path.basename(url);
+    if (!/^[a-f\d-]{36}\.(png|jpe?g|webp|pdf)$/i.test(nombre)) throw fallo(404, 'Comprobante no disponible.');
+    let archivo;
+    if (url === `/archivos-campania/${tenantId}/${nombre}`) archivo = path.join(__dirname, '..', 'private-uploads', 'campanias', tenantId, nombre);
+    else if (url === `/uploads/${tenantId}/comprobantes/${nombre}`) archivo = path.join(__dirname, '..', 'uploads', tenantId, 'comprobantes', nombre);
+    else throw fallo(404, 'Comprobante no disponible.');
+    const contenido = await fs.readFile(archivo);
+    res.set('Content-Disposition', `inline; filename="${nombre}"`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    return res.type(path.extname(nombre)).send(contenido);
+  } catch (error) {
+    return responderError(res, error.code === 'ENOENT' ? fallo(404, 'Comprobante no disponible.') : error);
+  }
 };
 
 exports.confirmar = async (req, res) => {
@@ -210,6 +288,9 @@ async function corregir(req, res, eliminar) {
   res.set('Cache-Control', 'no-store');
   let archivoNuevo;
   try {
+    if (req.user?.rol === 'usuario' && !eliminar && req.body?.estado !== 'en_revision') {
+      throw fallo(403, 'Solo puedes corregir pagos pendientes de revision.');
+    }
     let registro;
     if (eliminar) {
       if (Object.keys(req.body || {}).some((campo) => campo !== 'version')
@@ -223,6 +304,14 @@ async function corregir(req, res, eliminar) {
       const pago = await aplicarSession(models.PagoCampania.findOne({ _id: req.params.pagoId,
         cargo: cargo._id, campania: req.params.id }).select('+modificaciones'), session).lean();
       if (!pago) throw fallo(404, 'El pago no existe en este cargo.');
+      if (req.user.rol === 'usuario') {
+        if (pago.registrado_por?.rol !== 'usuario' || String(pago.registrado_por.id) !== String(req.user.id)) {
+          throw fallo(403, 'Solo puedes corregir los pagos que registraste.');
+        }
+        if (pago.estado !== 'en_revision' && !(eliminar && pago.estado === 'eliminado')) {
+          throw fallo(409, 'El pago ya no esta pendiente de revision. Consulta el historial.');
+        }
+      }
       const publico = ({ modificaciones, huella, ...datos }) => datos;
       if (eliminar && pago.estado === 'eliminado') return { cargo, pago: publico(pago), repetida: true };
       if (pago.estado === 'eliminado') throw fallo(409, 'El pago fue eliminado. Consulta el historial.');
@@ -275,7 +364,7 @@ async function corregir(req, res, eliminar) {
       return { cargo, pago: publico(guardado), repetida: false };
     }, { obligatoria: true });
     if (resultado.repetida && archivoNuevo) await fs.unlink(archivoNuevo.path).catch(() => {});
-    return res.json(resultado);
+    return res.json(respuestaPublica(req, resultado));
   } catch (error) {
     if (archivoNuevo && !error.hasErrorLabel?.('UnknownTransactionCommitResult')) await fs.unlink(archivoNuevo.path).catch(() => {});
     return responderError(res, error);

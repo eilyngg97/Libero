@@ -16,6 +16,12 @@ const subirComprobante = (req, res, next) => comprobante.single('comprobante')(r
 });
 
 const router = express.Router();
+router.get('/mis-cargos', authMiddleware, rolMiddleware('usuario'), pagoController.misCargos);
+router.get('/:id/cargos/:cargoId/pagos/:pagoId/comprobante', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.comprobante);
+router.get('/:id/cargos/:cargoId/pagos', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.historial);
+router.post('/:id/cargos/:cargoId/pagos', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), subirComprobante, pagoController.registrar);
+router.patch('/:id/cargos/:cargoId/pagos/:pagoId', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), subirComprobante, pagoController.editar);
+router.delete('/:id/cargos/:cargoId/pagos/:pagoId', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.eliminar);
 router.use(authMiddleware, rolMiddleware('admin', 'super_admin'));
 router.get('/opciones', controller.opciones);
 router.get('/', controller.listar);
@@ -23,11 +29,7 @@ router.post('/', controller.crear);
 router.get('/:id/participantes', controller.participantes);
 router.get('/:id/resumen', controller.resumen);
 router.get('/:id/cargos', controller.cargos);
-router.get('/:id/cargos/:cargoId/pagos', pagoController.historial);
-router.post('/:id/cargos/:cargoId/pagos', subirComprobante, pagoController.registrar);
 router.post('/:id/cargos/:cargoId/pagos/:pagoId/confirmar', pagoController.confirmar);
-router.patch('/:id/cargos/:cargoId/pagos/:pagoId', subirComprobante, pagoController.editar);
-router.delete('/:id/cargos/:cargoId/pagos/:pagoId', pagoController.eliminar);
 router.post('/:id/publicar', controller.publicar);
 router.put('/:id/participantes', controller.guardarParticipantes);
 router.patch('/:id', controller.editar);

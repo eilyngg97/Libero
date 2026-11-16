@@ -17,10 +17,12 @@ const API = process.env.REACT_APP_API_URL || window.location.origin;
 const centimos = (monto) => Math.round(monto * 100);
 const dinero = (monto) => typeof monto === 'number' && Number.isFinite(monto) && monto >= 0;
 const formato = (monto, moneda) => new Intl.NumberFormat('es-VE', { style: 'currency', currency: moneda }).format(monto);
+const portalRegistro = (pago) => pago.registrado_por?.rol === 'usuario' ? 'Portal usuario'
+  : ['admin', 'super_admin'].includes(pago.registrado_por?.rol) ? 'Portal admin' : 'No disponible';
 const estadoCargo = (cargo) => cargo.modalidad === 'no_aplica' ? 'no_aplica'
   : cargo.saldo_pendiente === 0 ? 'pagado' : cargo.saldo_pendiente === cargo.monto ? 'pendiente' : 'abono';
 
-function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved }) {
+function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = false, onClose, onSaved }) {
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState('');
   const [intento, setIntento] = useState(0);
@@ -45,6 +47,8 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
   const cerrar = () => { if (!enviando.current) { if (editando) setDescartar(true); else onClose(); } };
   const detalle = datos?.pagos.find((pago) => pago._id === detalleId) || datos?.pagos[0];
   const ultimo = detalle && detalle._id === datos?.pagos[0]?._id;
+  const puedeCorregir = (pago) => Boolean(pago && pago._id === datos?.pagos[0]?._id && campania.estado === 'abierta'
+    && (!representante || (pago.estado === 'en_revision' && pago.puede_corregir === true)));
   const enBs = ['Pago movil', 'Transferencia'].includes(editando ? draft.metodo_pago : detalle?.metodo_pago);
   const headers = () => {
     const token = localStorage.getItem('token');
@@ -111,7 +115,8 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
       || !Number.isInteger(cargo.__v) || cargo.__v < datos.cargo.__v + (data.repetida ? 0 : 1)
       || typeof data.repetida !== 'boolean' || !pago?._id || pago.cargo !== fila._id || pago.campania !== campania._id
       || pago.moneda !== campania.moneda || pago.monto_pagado !== importe || pago.estado !== estado
-      || !pago.registrado_por?.id || (estado === 'confirmado' && (!pago.confirmado_por?.id || !pago.confirmado_en))
+      || (representante ? pago.registrado_por?.rol !== 'usuario' : !pago.registrado_por?.id)
+      || (estado === 'confirmado' && (!pago.confirmado_por?.id || !pago.confirmado_en))
       || (confirmarExistente ? pago._id !== confirmando : pago.solicitud_id !== solicitud.current)
       || (!data.repetida && centimos(cargo.saldo_pendiente) !== centimos(datos.cargo.saldo_pendiente)
         - (estado === 'confirmado' ? centimos(importe) : 0))) throw new Error('No se pudo verificar el pago. Reintenta la misma solicitud o consulta el historial.');
@@ -132,7 +137,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
       if (!solicitud.current) solicitud.current = window.crypto.randomUUID();
       const body = new FormData();
       const campos = { solicitud_id: solicitud.current, version: datos.cargo.__v, moneda, monto_pagado: montoPagadoMoneda.toFixed(2),
-        fecha_pago: fechaPago, metodo_pago: metodoPago, referencia, estado: confirmarPago ? 'confirmado' : 'en_revision',
+        fecha_pago: fechaPago, metodo_pago: metodoPago, referencia, estado: !representante && confirmarPago ? 'confirmado' : 'en_revision',
         telefono_pago: telefonoPago || '', cedula_titular: cedulaTitular || '', nota: notaPago || '' };
       for (const [campo, valor] of Object.entries(campos)) body.append(campo, String(valor));
       if (montoPagadoBs != null) body.append('monto_pagado_bs', Number(montoPagadoBs).toFixed(2));
@@ -146,7 +151,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
   };
 
   const confirmar = async () => {
-    if (enviando.current) return;
+    if (enviando.current || representante) return;
     enviando.current = true; setOcupado(true); setError('');
     try {
       const pago = datos.pagos.find((item) => item._id === confirmando);
@@ -162,14 +167,15 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
 
   const verComprobante = async (pago) => {
     try {
-      if (!/^\/uploads\/[a-zA-Z0-9_-]+\/comprobantes\/[a-zA-Z0-9_.-]+\.(pdf|png|jpe?g|webp)$/.test(pago.comprobante_url || '')) throw new Error('El comprobante no es valido.');
-      const response = await fetch(`${API}${pago.comprobante_url}`, { headers: headers(), cache: 'no-store' });
+      if (!pago.comprobante_url || !pago._id) throw new Error('El comprobante no es valido.');
+      const response = await fetch(`${ruta}/${encodeURIComponent(pago._id)}/comprobante`, { headers: headers(), cache: 'no-store' });
       if (!response.ok) throw new Error('No se pudo abrir el comprobante.');
       setComprobante({ url: URL.createObjectURL(await response.blob()), pdf: pago.comprobante_url.endsWith('.pdf') });
     } catch (err) { setError(err.message); }
   };
 
   const empezarEdicion = (pago = detalle) => {
+    if (!puedeCorregir(pago) || enviando.current) return;
     setDraft({ metodo_pago: pago.metodo_pago, monto_pagado: String(pago.monto_pagado),
       monto_pagado_bs: pago.monto_pagado_bs == null ? '' : String(pago.monto_pagado_bs), fecha_pago: pago.fecha_pago,
       referencia: pago.referencia, telefono_pago: pago.telefono_pago || '', cedula_titular: pago.cedula_titular || '', nota: pago.nota || '' });
@@ -178,7 +184,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
   const cambiar = (campo, valor) => { solicitudEdicion.current = ''; setError(''); setDraft((previo) => ({ ...previo, [campo]: valor })); };
   const importeEdicion = enBs ? Math.round(Number(draft.monto_pagado_bs) * 100 / tasaEdicion) / 100 : Number(draft.monto_pagado);
   const corregir = async (borrar = false) => {
-    if (enviando.current || !ultimo || campania.estado !== 'abierta') return;
+    if (enviando.current || !puedeCorregir(detalle)) return;
     const importe = borrar ? 0 : importeEdicion;
     if (!borrar && (!dinero(importe) || importe <= 0 || (enBs && !tasaEdicion) || cargandoEdicion)) {
       setError('Revisa el importe y la tasa del pago.'); return;
@@ -214,7 +220,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
         || data.pago?._id !== anterior._id || data.pago.cargo !== fila._id || data.pago.campania !== campania._id
         || data.pago.moneda !== datos.cargo.moneda || data.pago.estado !== (borrar ? 'eliminado' : anterior.estado)
         || (!borrar && data.pago.monto_pagado !== importe)
-        || (borrar && (!data.pago.eliminado_por?.id || !data.pago.eliminado_en))
+        || (borrar && !representante && (!data.pago.eliminado_por?.id || !data.pago.eliminado_en))
         || (!data.repetida && centimos(data.cargo.saldo_pendiente) !== saldoEsperado)) {
         throw new Error('No se pudo verificar la correccion. Reintenta o consulta el historial.');
       }
@@ -232,9 +238,9 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
     {`Equivalente ${campania.moneda}: ${dinero(importeDetalle) ? `${campania.moneda === 'EUR' ? '\u20ac' : '$'}${importeDetalle.toFixed(2)} ${campania.moneda}` : '-'}`}
   </Typography>;
 
-  if (modo === 'pago' && datos && !error && datos.totales.disponible > 0) return <ModalPago open onClose={cerrar}
+  if (modo === 'pago' && campania.estado === 'abierta' && datos && !error && datos.totales.disponible > 0) return <ModalPago open onClose={cerrar}
     pago={{ id: datos.cargo._id, monto: datos.totales.disponible }} currencyCode={datos.cargo.moneda} conceptoPago="campanias"
-    disableCuotas allowPartialPayment={datos.cargo.permitir_abonos} allowPaymentConfirmation
+    disableCuotas allowPartialPayment={datos.cargo.permitir_abonos} allowPaymentConfirmation={!representante} preventCloseWhileSubmitting
     onSubmitPayment={registrar} onSuccess={() => onSaved(resultado.current)} />;
 
   return <><Dialog open onClose={cerrar} fullWidth maxWidth={false} aria-labelledby="historial-campania-titulo"
@@ -249,7 +255,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
         {detalle && <PagoTransaccionDetalle titulo={ultimo ? '\u00daltimo Pago Registrado' : 'Detalle del pago'} acciones={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             <EstadoPagoChip estado={detalle.estado === 'confirmado' ? 'pagado' : 'en revision'} label={detalle.estado === 'confirmado' ? 'Confirmado' : 'En revisi\u00f3n'} />
-            {ultimo && campania.estado === 'abierta' && <>
+            {puedeCorregir(detalle) && <>
               <Button startIcon={<EditRoundedIcon />} variant={editando ? 'outlined' : 'contained'} disabled={ocupado}
                 onClick={() => { if (editando) setEditando(false); else empezarEdicion(); }}
                 sx={estiloEditarPago(editando)}>{editando ? 'Cancelar' : 'Editar'}</Button>
@@ -271,7 +277,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
           ['Referencia', campo('Referencia', 'referencia', 'text', { maxLength: 100 })],
           ['Telefono de pago', campo('Telefono de pago', 'telefono_pago', 'text', { maxLength: 15 })],
           ['Cedula de pago', campo('Cedula de pago', 'cedula_titular', 'text', { maxLength: 20 })],
-          ['Registrado por', `${detalle.registrado_por?.rol || '-'}${detalle.registrado_por?.id ? ` (${detalle.registrado_por.id})` : ''}`],
+          ['Registrado por', portalRegistro(detalle)],
           ['Nota', editando ? <TextField fullWidth multiline minRows={2} variant="standard" value={draft.nota} disabled={ocupado}
             inputProps={{ 'aria-label': 'Nota', maxLength: 500 }} onChange={(event) => cambiar('nota', event.target.value)} /> : detalle.nota || '-'],
           ['Comprobante', <>
@@ -297,7 +303,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
             <DatoHistorialTransaccion label="Referencia" color="#4c6690" fuerte>{pago.referencia}
               <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25, fontSize: 12 }}>Tel: {pago.telefono_pago || '-'}</Typography>
               <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.25, fontSize: 12 }}>Ced: {pago.cedula_titular || '-'}</Typography>
-              <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.35, fontSize: 12 }}>Registrado por: {pago.registrado_por?.rol || '-'}</Typography>
+              <Typography sx={{ color: '#334155', fontWeight: 700, mt: 0.35, fontSize: 12 }}>Registrado por: {portalRegistro(pago)}</Typography>
             </DatoHistorialTransaccion>
             <DatoHistorialTransaccion label="Nota" fuerte>
               <Typography sx={{ color: '#334155', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: { xs: '100%', md: 180 } }} title={pago.nota || '-'}>{pago.nota || '-'}</Typography>
@@ -309,20 +315,20 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', onClose, onSaved })
                 onClick={() => setDetalleId(pago._id)} sx={{ bgcolor: '#e0f1fb', '&:hover': { bgcolor: '#d1e9f8' }, color: '#0a78b8' }}><VisibilityOutlinedIcon fontSize="small" /></IconButton></Tooltip>
               {pago.comprobante_url && <Tooltip title="Ver comprobante"><IconButton size="small" aria-label={`Ver comprobante de ${pago.referencia}`} onClick={() => verComprobante(pago)}
                 sx={{ bgcolor: '#f3f4f6', '&:hover': { bgcolor: '#e9edf3' }, color: '#4b5563' }}><AttachFileRoundedIcon fontSize="small" /></IconButton></Tooltip>}
-              {indice === 0 && campania.estado === 'abierta' && <>
+              {puedeCorregir(pago) && <>
                 <Tooltip title="Editar pago"><IconButton size="small" aria-label={`Editar pago ${pago.referencia}`} disabled={ocupado || editando}
                   onClick={() => { setDetalleId(pago._id); empezarEdicion(pago); }} sx={{ bgcolor: '#e0f1fb', '&:hover': { bgcolor: '#d1e9f8' }, color: '#0a78b8' }}><EditRoundedIcon fontSize="small" /></IconButton></Tooltip>
                 <Tooltip title="Eliminar pago"><IconButton size="small" aria-label={`Eliminar pago ${pago.referencia}`} disabled={ocupado || editando}
                   onClick={() => { setDetalleId(pago._id); setError(''); setEliminando(true); }} sx={{ bgcolor: '#fdecec', '&:hover': { bgcolor: '#fbdede' }, color: '#d32727' }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>
               </>}
-              {pago.estado === 'en_revision' && campania.estado === 'abierta' && <Tooltip title="Confirmar pago"><IconButton size="small" disabled={ocupado || editando}
+              {!representante && pago.estado === 'en_revision' && campania.estado === 'abierta' && <Tooltip title="Confirmar pago"><IconButton size="small" disabled={ocupado || editando}
                 aria-label={`Confirmar pago ${pago.referencia}`} onClick={() => setConfirmando(pago._id)}><CheckCircleOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
             </Box>
           </FilaHistorialTransaccion>)}
         </HistorialTransacciones>}
       </>}
     </DialogContent><DialogActions sx={{ px: 3, pb: 2.25, bgcolor: '#f3f5fb', justifyContent: 'flex-end' }}>
-      {detalle?.estado === 'en_revision' && campania.estado === 'abierta' && <Button variant="contained"
+      {!representante && detalle?.estado === 'en_revision' && campania.estado === 'abierta' && <Button variant="contained"
         disabled={ocupado || editando} onClick={() => setConfirmando(detalle._id)}
         sx={{ bgcolor: '#0e1334', color: '#fff', boxShadow: 'none', '&:hover': { bgcolor: '#0b102b', boxShadow: 'none' },
           borderRadius: 999, px: 2.2, fontWeight: 800 }}>Confirmar</Button>}

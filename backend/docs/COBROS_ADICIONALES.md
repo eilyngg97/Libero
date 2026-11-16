@@ -1,5 +1,97 @@
 # Cobros adicionales
 
+## Validacion de cierre del portal (2026-11-16)
+
+- El usuario reinicio el backend local tras las instrucciones para arrancar con
+    `ENABLE_SCHEDULED_JOBS=false`. GET `/health` respondio 200 con estado `ok` y 53 segundos
+    de actividad. Esta ruta no expone la variable de tareas; su valor no se verifico por API.
+- Backend: 206 pruebas de campanas aprobadas con `RUN_MONGO_CAMPANIA_TESTS=1`.
+    Las escrituras reales se limitaron a bases `libero_qa_campanias_*` temporales, eliminadas
+    por la suite. Incluye correccion propia, aislamiento, auditoria, reservas, confirmacion
+    administrativa y descarga autenticada de comprobantes.
+- Frontend: 40 pruebas enfocadas aprobadas para panel, listado y pagos individuales;
+    ESLint limpio en los cuatro archivos del recorrido. No se repitio la bateria global.
+- Navegador: dos sesiones aisladas, usuario y admin, con respuestas simuladas compartidas.
+    Se completo reporte de 30 USD, edicion a 20, eliminacion, nuevo reporte de 30 y confirmacion
+    administrativa. Resultado: saldo cero y usuario sin acciones Editar/Eliminar/Confirmar.
+    Cinco escrituras simuladas, ninguna enviada a la API de negocio; sin errores JavaScript
+    durante este recorrido. Registrado por conserva la etiqueta Portal usuario al confirmar.
+- El aviso de reporte exige cierre explicito, tiene fondo blanco y permanece abierto ante
+    Escape o clic en el fondo. Aviso e historiales de ambos portales dentro de los limites
+    de pantalla a 1365, 768 y 320 px, sin desbordamiento de pagina.
+- Comprobantes: imagen PNG simulada cargada y verificada con ancho natural de 420 px.
+    El usuario confirmo la visualizacion del PDF en Chrome externo y aporto una captura
+    con el documento renderizado. La captura no verifica por si sola la accion de cierre.
+    El navegador integrado cerro la pagina tanto con el primer archivo simulado como con
+    un PDF de prueba valido; esa limitacion de automatizacion sigue documentada.
+    Las capturas integradas pueden alterar coordenadas; no son aprobacion visual integral.
+- Sin cambios a pagos reales ni despliegue durante la validacion. La validacion del navegador
+    con respuestas simuladas no equivale a una prueba UI contra la API de negocio.
+
+## Portal del representante: consulta y pagos individuales (2026-11-16)
+
+- Acceso Cobros adicionales desde las opciones del atleta, ruta `/campanias-alumno/:alumnoId`.
+    Lista exclusivamente sus cargos publicados, con busqueda, estado, paginacion, monto, saldo,
+    vencimiento, abonos e historial. En revision tiene prioridad visual; cerradas/canceladas permiten
+    consultar pero no pagar. No aplica, saldo agotado y reserva completa bloquean nuevos reportes.
+- GET `/api/campanias-cobro/mis-cargos?alumnoId=...` requiere rol usuario e identidad autenticada.
+    La propiedad se comprueba con los modelos de la academia: usuario directo del atleta o usuario
+    del representante asociado. No usa datos de propiedad enviados por el cliente; excluye borradores,
+    notas internas, condiciones de otros atletas y auditoria de publicacion.
+- Historial y registro reutilizan GET/POST `/:id/cargos/:cargoId/pagos`. El servidor comprueba la
+    propiedad del atleta del cargo, tambien dentro de la transaccion de registro. El representante
+    solo puede enviar estado `en_revision`; intentar confirmar se rechaza, no se acepta silenciosamente.
+    Confirmar sigue siendo una operacion administrativa. PATCH/DELETE
+    `/:id/cargos/:cargoId/pagos/:pagoId` permiten corregir o eliminar exclusivamente el ultimo pago
+    activo registrado por el mismo usuario, en estado `en_revision` y con campana abierta.
+    Se comprueban propiedad del atleta, autor del pago, estado y version dentro de la transaccion;
+    no basta con tener acceso al atleta. Pagos de otro usuario o de administracion no son editables.
+    No se incorpora pago agrupado ni billetera en esta entrega.
+- El formulario existente `ModalPago` mantiene metodos, cuentas, tasas historicas, referencia,
+    comprobante y abonos segun el cargo. En modo representante no muestra Pago confirmado ni acciones
+    de confirmacion. Muestra Editar/Eliminar solo para el ultimo reporte propio autorizado mediante
+    `puede_corregir`, sin exponer IDs de actores. Mantiene bloqueo de cierre durante el envio y UUID para reintentos. Reportar
+    reserva el importe sin reducir deuda; solo la confirmacion administrativa cambia saldo y estado.
+    Corregir un reporte ajusta su reserva, no la deuda; eliminar es logico y libera la reserva.
+    Ambas operaciones conservan auditoria interna e idempotencia. Confirmado el pago, el usuario
+    ya no puede corregirlo, incluso si tenia el formulario abierto. Requiere activar el backend actualizado.
+- `PagoCampania.registrado_por` admite rol usuario y conserva su identidad para auditoria interna.
+    Las respuestas al portal omiten notas internas, huellas, modificaciones e identidades de actores;
+    el historial conserva metodo, importes, fecha, referencia, titular, nota y estado de cada pago.
+- Los comprobantes nuevos de campanas se guardan en `backend/private-uploads/campanias/<tenant>/`,
+    fuera del directorio estatico e ignorados por Git. Incluir esta carpeta en los respaldos operativos.
+    GET `/:id/cargos/:cargoId/pagos/:pagoId/comprobante` exige sesion, rol y propiedad, valida tenant,
+    cargo y pago activo antes de leer el archivo, y responde sin cache. El dialogo usa esa ruta tanto
+    para archivos nuevos como antiguos. No se migran los archivos anteriores de `uploads`: conservan
+    su ubicacion y politica estatica previa; moverlos/restringir sus URLs antiguas requiere otra tarea.
+- Verificacion: 199 pruebas backend de campanas pasan con Mongo QA temporal, incluido reporte,
+    reserva, idempotencia, descarga propia/ajena, tenant, confirmacion administrativa y campana cerrada.
+    Frontend: 22 pruebas enfocadas de pagos/listado y una adicional de campana cancelada; 54 pruebas
+    de rutas, PagosAlumno y SolicitudUniforme pasan. Los filtros y el bloqueo por reserva se repitieron
+    tras el ajuste final. ESLint limpio; compilacion aprobada con advertencias previas de otros modulos.
+- Navegador aislado con API simulada: un reporte de 30 USD genera una sola solicitud en revision,
+    mantiene la deuda y bloquea otro reporte al reservar todo el disponible. Historial sin controles
+    administrativos; sin errores JavaScript. Geometria de listado y dialogo comprobada a 1365/768/320 px,
+    sin desbordamiento de pagina. Capturas integradas recortadas: no son aprobacion visual integral.
+    El contexto QA se cerro al terminar; la navegacion reutiliza el boton Volver global.
+- Activacion requiere backend y frontend actualizados en conjunto; no se reiniciaron servicios,
+    desplegaron cambios ni registraron pagos reales. La comprobacion real se hizo solo en bases QA
+    temporales eliminadas al finalizar. Sin nuevo commit ni push en esta entrega.
+
+## Validacion posterior al commit (2026-11-16)
+
+- Bateria frontend completa: 20 suites aprobadas y una fallida; 376 pruebas aprobadas y tres
+    timeouts de 20 segundos en CobrosAdicionales (379 pruebas, 947 segundos en total).
+    Los casos afectados cubren guardar/reabrir montos por sede y dos recorridos de limpiar filtros
+    de participantes. No reportaron diferencias en aserciones; agotaron el tiempo de ejecucion.
+- Reejecucion aislada de esos tres casos, conservando el limite de 20 segundos: los tres pasan
+    (25 segundos en total). Esto apunta a lentitud durante la bateria global; no se declara que la
+    ejecucion completa haya pasado. No se modificaron pruebas ni codigo de produccion para ocultarlo.
+- Informes JSON conservados fuera del repositorio, en el directorio temporal del usuario:
+    `libero-frontend-validacion-20261116.json` y `libero-frontend-reintento-20261116.json`.
+- Sin reinicio de servicios, despliegue ni pagos reales. La comprobacion funcional con backend
+    actualizado sigue pendiente de activacion manual y debe realizarse con datos de prueba aislados.
+
 ## Validacion previa al commit (2026-11-16)
 
 - Backend completo: 757 pruebas aprobadas, 63 omitidas y un fallo; las 194 de campanas pasan,
