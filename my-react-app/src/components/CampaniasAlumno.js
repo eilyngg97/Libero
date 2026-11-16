@@ -13,6 +13,18 @@ const API = process.env.REACT_APP_API_URL || window.location.origin;
 const dinero = (valor) => typeof valor === 'number' && Number.isFinite(valor) && valor >= 0;
 const formato = (valor, moneda) => new Intl.NumberFormat('es-VE', { style: 'currency', currency: moneda }).format(valor);
 const estadoVisible = (cargo) => cargo.pago_en_revision ? 'en_revision' : cargo.estado;
+const diasDeAtraso = (cargo, ahora = Date.now()) => {
+  if (!['pendiente', 'abono'].includes(cargo.estado) || cargo.campania.estado === 'cancelada'
+    || cargo.saldo_pendiente <= 0 || (cargo.pago_en_revision && cargo.disponible === 0)
+    || typeof cargo.vencimiento !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(cargo.vencimiento)) return 0;
+  const vencimiento = new Date(`${cargo.vencimiento}T00:00:00.000Z`);
+  if (Number.isNaN(vencimiento.getTime()) || vencimiento.toISOString().slice(0, 10) !== cargo.vencimiento) return 0;
+  const partes = new Intl.DateTimeFormat('en', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(new Date(ahora));
+  const calendario = Object.fromEntries(partes.map(({ type, value }) => [type, value]));
+  const hoy = Date.UTC(Number(calendario.year), Number(calendario.month) - 1, Number(calendario.day));
+  return Math.max(0, Math.round((hoy - vencimiento.getTime()) / 86400000));
+};
 const ESTADOS = { pendiente: 'Pendiente', abono: 'Abono', en_revision: 'En revision', pagado: 'Pagado', no_aplica: 'No aplica' };
 const ESTILOS = {
   pendiente: { fondo: '#fffdf8', borde: '#efe7dc', circulo: '#fbe6cf', icono: '#b45309', etiqueta: '#f6d3ad', texto: '#8a4b08', importe: '#0f172a' },
@@ -107,6 +119,7 @@ function CampaniasAlumno() {
         {filtrados.slice(pagina * porPagina, (pagina + 1) * porPagina).map((cargo) => {
           const estadoCard = estadoVisible(cargo);
           const estilo = ESTILOS[estadoCard] || ESTILOS.pendiente;
+          const atraso = diasDeAtraso(cargo);
           return <Card component="li" key={cargo._id} sx={{ borderRadius: 4, border: `1px solid ${estilo.borde}`,
             bgcolor: estilo.fondo, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05)', minWidth: 0 }}>
             <CardContent sx={{ px: { xs: 1.8, md: 2.25 }, py: { xs: 2.4, md: 2.8 }, '&:last-child': { pb: { xs: 2.4, md: 2.8 } } }}>
@@ -122,6 +135,9 @@ function CampaniasAlumno() {
                     <Chip label={ESTADOS[estadoCard]} size="small" sx={{ height: 22, bgcolor: estilo.etiqueta, color: estilo.texto, fontWeight: 800, fontSize: 9, textTransform: 'uppercase' }} />
                   </Box>
                   <Typography sx={{ fontSize: 14, color: estilo.texto, fontWeight: 700, mt: 0.75 }}>{cargo.vencimiento ? `Vence: ${cargo.vencimiento.split('-').reverse().join('/')}` : 'Sin vencimiento'}</Typography>
+                  {atraso > 0 && <Typography sx={{ fontSize: 13, color: '#b45309', fontWeight: 700, mt: 0.5, overflowWrap: 'anywhere' }}>
+                    {`${atraso} ${atraso === 1 ? 'día' : 'días'} de atraso`}
+                  </Typography>}
                   {cargo.campania.descripcion && <Typography sx={{ fontSize: 13, color: '#64748b', mt: 0.5, overflowWrap: 'anywhere' }}>{cargo.campania.descripcion}</Typography>}
                   <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5 }}>{cargo.campania.estado === 'cancelada' ? 'Campana cancelada'
                     : cargo.campania.estado === 'cerrada' ? 'Campana cerrada' : cargo.permitir_abonos ? 'Permite abonos' : 'Pago completo'}</Typography>

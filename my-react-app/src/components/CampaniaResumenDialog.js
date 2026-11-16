@@ -13,15 +13,19 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import PaidIcon from '@mui/icons-material/Paid';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
+import PersonRemoveOutlinedIcon from '@mui/icons-material/PersonRemoveOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { tieneMontosValidos } from '../utils/campaniaMontos';
 import CampaniaPasos from './CampaniaPasos';
 import CampaniaDialog from './CampaniaDialog';
 import CampaniaPagoDialog from './CampaniaPagoDialog';
+import CampaniaCargoAjusteDialog from './CampaniaCargoAjusteDialog';
 import EstadoPagoChip from './EstadoPagoChip';
 
 const MODALIDADES = { general: 'Monto de campa\u00f1a', personalizado: 'Personalizado', no_aplica: 'No aplica' };
-const ESTADOS = { pendiente: 'Pendiente', en_revision: 'En revisi\u00f3n', abono: 'Abono', pagado: 'Pagado', no_aplica: 'No aplica' };
-const estadoVisible = (fila) => fila.pago_en_revision ? 'en_revision' : fila.estado;
+const ESTADOS = { pendiente: 'Pendiente', en_revision: 'En revisi\u00f3n', abono: 'Abono', pagado: 'Pagado', no_aplica: 'No aplica', retirado: 'Retirado' };
+const estadoVisible = (fila) => fila.retirado ? 'retirado' : fila.pago_en_revision ? 'en_revision' : fila.estado;
 const normalizar = (valor) => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const dineroValido = (valor) => typeof valor === 'number' && Number.isFinite(valor) && valor >= 0;
 const formatoMonto = (monto, moneda) => new Intl.NumberFormat('es-VE', { style: 'currency', currency: moneda }).format(monto);
@@ -49,7 +53,7 @@ const respuestaValida = (data, id, estado = 'borrador') => {
     && dineroValido(totales.subtotal_calculado) && totales.subtotal_calculado === subtotal
     && (totales.pendientes ? totales.total_esperado === null : totales.total_esperado === totales.subtotal_calculado)
     && (estado === 'borrador' || (campania.publicacion
-      && ['participantes', 'generales', 'personalizados', 'no_aplica', 'total_esperado'].every((campo) => campania.publicacion[campo] === totales[campo])
+      && ['participantes', 'generales', 'personalizados', 'no_aplica', 'total_esperado'].every((campo) => (campania.totales_cargos || campania.publicacion)[campo] === totales[campo])
       && filas.every((fila) => dineroValido(fila.saldo_pendiente) && fila.saldo_pendiente <= fila.monto
         && (fila.pago_en_revision === undefined || typeof fila.pago_en_revision === 'boolean')
         && (fila.modalidad === 'no_aplica' ? fila.estado === 'no_aplica' && fila.saldo_pendiente === 0
@@ -73,6 +77,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
   const [errorPublicacion, setErrorPublicacion] = useState('');
   const [pagoActivo, setPagoActivo] = useState(null);
   const [mensajePago, setMensajePago] = useState('');
+  const [ajusteActivo, setAjusteActivo] = useState(null);
   const enviando = useRef(false);
   const solicitud = useRef('');
   const publicacionController = useRef(null);
@@ -259,8 +264,18 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
                 <TableCell sx={{ whiteSpace: 'nowrap' }}><EstadoPagoChip
                   data-testid={`estado-cargo-${fila.alumno}`}
                   estado={estadoVisible(fila) === 'en_revision' ? 'en revision' : estadoVisible(fila) === 'no_aplica' ? 'exonerado' : estadoVisible(fila)}
-                  label={fila.pago_en_revision ? 'En revisi\u00f3n' : fila.estado === 'no_aplica' ? 'No aplica' : undefined} /></TableCell>
+                  label={fila.retirado ? 'Retirado' : fila.pago_en_revision ? 'En revisi\u00f3n' : fila.estado === 'no_aplica' ? 'No aplica' : undefined} /></TableCell>
                 <TableCell><Box sx={{ display: 'flex', gap: 0.5 }}>
+                  {fila._id && datos.campania.estado === 'abierta' && <>
+                    <Tooltip title={fila.puede_ajustar ? fila.retirado ? 'Reincorporar alumno' : 'Editar cargo' : 'El cargo tiene pagos o no admite ajustes'}><span>
+                      <IconButton aria-label={`${fila.retirado ? 'Reincorporar' : 'Editar cargo de'} ${fila.nombres} ${fila.apellidos}`}
+                        disabled={!fila.puede_ajustar} onClick={() => setAjusteActivo({ fila, accion: 'editar' })}
+                        sx={{ width: 36, height: 36, color: '#626879' }}><EditOutlinedIcon sx={{ fontSize: 19 }} /></IconButton></span></Tooltip>
+                    {!fila.retirado && <Tooltip title={fila.puede_ajustar ? 'Retirar alumno' : 'No puedes retirar un alumno con pagos'}><span>
+                      <IconButton aria-label={`Retirar a ${fila.nombres} ${fila.apellidos}`} disabled={!fila.puede_ajustar}
+                        onClick={() => setAjusteActivo({ fila, accion: 'retirar' })}
+                        sx={{ width: 36, height: 36, color: '#626879' }}><PersonRemoveOutlinedIcon sx={{ fontSize: 19 }} /></IconButton></span></Tooltip>}
+                  </>}
                   {fila._id && <Tooltip title="Historial de pagos"><IconButton aria-label={`Historial de pagos de ${fila.nombres} ${fila.apellidos}`}
                     onClick={() => setPagoActivo({ fila, modo: 'historial' })} sx={{ width: 36, height: 36, color: '#626879', '&:hover': { bgcolor: 'transparent' } }}><HistoryRoundedIcon sx={{ fontSize: 19 }} /></IconButton></Tooltip>}
                   {fila._id && datos.campania.estado === 'abierta' && fila.modalidad !== 'no_aplica' && fila.saldo_pendiente > 0
@@ -283,6 +298,8 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
     <DialogActions sx={{ px: { xs: 2.5, sm: 4 }, py: 1.75, gap: 1, borderTop: '1px solid #f0f1f5', bgcolor: '#fafafe',
       flexWrap: 'wrap', '& > :not(style) ~ :not(style)': { ml: 0 } }}>
       {!creacionGuiada && <Button onClick={cerrar} disabled={publicando} sx={{ color: '#50566e', fontSize: 12 }}>Cerrar</Button>}
+      {publicada && datos?.campania.estado === 'abierta' && !cargando && !error && <Button startIcon={<PersonAddOutlinedIcon />}
+        onClick={() => setAjusteActivo({ accion: 'agregar' })} sx={{ color: '#50566e', fontSize: 12, textTransform: 'none' }}>Agregar alumno</Button>}
       {!publicada && <Button disabled={!datos || cargando || Boolean(error) || publicando} onClick={() => onRevisar(datos.campania)} startIcon={creacionGuiada ? <ArrowBackRoundedIcon /> : <TuneRoundedIcon />}
         variant={creacionGuiada ? 'text' : 'contained'} sx={{ color: creacionGuiada ? '#50566e' : '#fff', bgcolor: creacionGuiada ? 'transparent' : '#171b4b',
           '&:hover': { bgcolor: creacionGuiada ? '#f0f1f5' : '#252b60' }, borderRadius: 1.5, boxShadow: 'none', fontSize: 12, minHeight: 40, textTransform: 'none' }}>
@@ -297,6 +314,11 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
           textTransform: 'none' }}>Publicar campaña</Button>}
     </DialogActions>
   </CampaniaDialog>
+  {ajusteActivo && datos && <CampaniaCargoAjusteDialog campania={datos.campania} {...ajusteActivo}
+    onClose={() => setAjusteActivo(null)} onSaved={() => {
+      setMensajePago(ajusteActivo.accion === 'retirar' ? 'Alumno retirado de la campaña' : 'Cargo actualizado');
+      setAjusteActivo(null); setIntento((valor) => valor + 1);
+    }} />}
   {pagoActivo && <CampaniaPagoDialog campania={campania} fila={pagoActivo.fila} modo={pagoActivo.modo}
     onClose={() => setPagoActivo(null)} onSaved={(resultado, cerrarPago = true) => {
       if (cerrarPago) setPagoActivo(null);

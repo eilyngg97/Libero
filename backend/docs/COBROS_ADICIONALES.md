@@ -1,5 +1,62 @@
 # Cobros adicionales
 
+## Vencimiento informativo en el portal (2026-11-16)
+
+- Si se indica vencimiento en la campana, el portal del representante muestra los dias
+    de atraso junto a la fecha para los cargos con saldo pendiente. Comienza en 1 el dia
+    siguiente al vencimiento, por fecha calendario de America/Caracas, no por horas transcurridas.
+- Es exclusivamente informativo: no genera recargos, intereses, pagos, bloqueos ni cambios
+    de importe. Sin fecha o con vencimiento futuro/hoy no se muestra atraso.
+- No se muestra para pagados, No aplica (incluidos retirados), campanas canceladas o un pago
+    en revision que cubra todo el saldo. Abonos, reservas parciales y campanas cerradas con
+    deuda conservan el indicador sobre el saldo pendiente.
+- Verificacion: 22 pruebas del listado del representante aprobadas, incluidas 17 nuevas
+    sobre calendario de Caracas, ano bisiesto, cambio de ano, fecha opcional, deuda parcial
+    y exclusiones. ESLint limpio en componente y pruebas. Cambio de frontend, sin escrituras
+    de negocio ni cambios a la API; no requiere reiniciar el backend.
+
+## Ajustes individuales con campana abierta (2026-11-16)
+
+- La tabla de cargos publicados permite agregar alumnos, editar la condicion de un cargo
+    y retirar alumnos. Solo administradores y superadministradores de la misma academia.
+    No permite cambiar los datos generales ni recalcular masivamente una campana publicada.
+- Un cargo pendiente puede cambiar de importe si conserva todo su saldo y no tiene pagos
+    activos confirmados ni en revision. Pendiente por si solo no basta: un pago en revision
+    reserva saldo aunque la deuda no haya cambiado. Los pagos eliminados no bloquean un ajuste,
+    pero permanecen en la auditoria. Abonos, pagados, cerradas y canceladas no admiten ajustes.
+- Condiciones: monto de campana, personalizado positivo de hasta dos decimales y No aplica.
+    Volver a monto general usa la sede congelada del cargo, no la sede actual del alumno.
+    Las altas solo admiten alumnos activos y no dados de baja de las sedes incluidas;
+    congelan sus datos actuales y generan un unico cargo, sin modificar los demas.
+- Retirar requiere confirmacion y conserva el cargo con `retirado=true`, condicion y estado
+    `no_aplica`, importe y saldo cero. No borra el alumno ni sus registros. La fila continua
+    en los conteos historicos y aparece como Retirado; puede reincorporarse editando el mismo
+    cargo y escogiendo la condicion correspondiente. No se crea un segundo cargo para el alumno.
+- GET `/:id/candidatos-cargos` devuelve los alumnos disponibles para agregar. POST
+    `/:id/ajustes-cargos` recibe `accion` (agregar/editar/retirar), `alumno`, version de campana,
+    `version_cargo` para editar/retirar, `solicitud_id` UUIDv4, condicion y nota interna.
+    Solo personalizado admite `monto`. Reintentar el mismo contenido conserva el UUID;
+    reutilizarlo para otro contenido o actor se rechaza.
+- Transaccion obligatoria en replica set: comprueba campana abierta, versiones y pagos,
+    actualiza el cargo mediante el mismo control de version que los pagos y guarda auditoria
+    privada con anterior/nuevo, actor y fecha. Un fallo revierte cargo y auditoria completos.
+    Ajuste contra reporte y dos ajustes simultaneos no pueden aplicar cambios incompatibles.
+- `publicacion` conserva los datos originales. `totales_cargos` guarda los totales vigentes,
+    leidos por API e interfaz tras los ajustes; las campanas antiguas usan la publicacion
+    como respaldo hasta su primer ajuste. No requiere migracion ni modifica mensualidades,
+    billetera, comprobantes o avisos. `ajustes_cargos` no se expone en listados ni al representante.
+- Verificacion: 225 pruebas backend de campanas aprobadas, incluidas las escrituras reales
+    exclusivas de bases Mongo QA temporales eliminadas por la suite; 55 frontend enfocadas
+    aprobadas (9 nuevas de ajustes y regresiones de pagos, resumen y publicacion).
+    No se ejecuto la bateria global del repositorio.
+- Navegador aislado con respuestas simuladas: personalizado 12.50, retiro, reincorporacion
+    general 30 y alta personalizada 18; total final 48, publicacion original 30 intacta,
+    cuatro escrituras simuladas y cero errores JavaScript. Tabla y formulario medidos a
+    1365/768/320 px sin desbordamiento de pagina ni controles fuera de pantalla. La captura
+    integrada aparece recortada y no constituye aprobacion visual integral.
+- Activacion: reiniciar manualmente el backend actualizado y recargar el frontend.
+    No se reinicio el servidor, no se desplego ni se modificaron alumnos o pagos reales.
+
 ## Validacion de cierre del portal (2026-11-16)
 
 - El usuario reinicio el backend local tras las instrucciones para arrancar con

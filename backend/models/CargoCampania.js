@@ -15,7 +15,8 @@ const CargoCampaniaSchema = new mongoose.Schema({
   estado: { type: String, enum: ['pendiente', 'abono', 'pagado', 'no_aplica'], required: true },
   nota_interna: { type: String, default: '', maxlength: 1000, select: false },
   vencimiento: { type: String, default: '' },
-  permitir_abonos: { type: Boolean, default: false }
+  permitir_abonos: { type: Boolean, default: false },
+  retirado: { type: Boolean, default: false }
 }, { timestamps: true });
 
 CargoCampaniaSchema.index({ campania: 1, alumno: 1 }, { unique: true });

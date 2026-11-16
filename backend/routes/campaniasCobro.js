@@ -29,6 +29,8 @@ router.post('/', controller.crear);
 router.get('/:id/participantes', controller.participantes);
 router.get('/:id/resumen', controller.resumen);
 router.get('/:id/cargos', controller.cargos);
+router.get('/:id/candidatos-cargos', controller.candidatosCargos);
+router.post('/:id/ajustes-cargos', controller.ajustarCargo);
 router.post('/:id/cargos/:cargoId/pagos/:pagoId/confirmar', pagoController.confirmar);
 router.post('/:id/publicar', controller.publicar);
 router.put('/:id/participantes', controller.guardarParticipantes);

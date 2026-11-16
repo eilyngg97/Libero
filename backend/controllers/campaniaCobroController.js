@@ -3,7 +3,7 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const { createHash } = require('crypto');
 
-const CAMPOS = 'nombre descripcion modalidad_monto monto_general montos_por_sede moneda sedes participantes vencimiento permitir_abonos estado publicacion createdAt updatedAt __v';
+const CAMPOS = 'nombre descripcion modalidad_monto monto_general montos_por_sede moneda sedes participantes vencimiento permitir_abonos estado publicacion totales_cargos createdAt updatedAt __v';
 const OBJECT_ID = /^[a-f\d]{24}$/i;
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 const errorPeticion = (status, message) => Object.assign(new Error(message), { status });
@@ -391,19 +391,22 @@ exports.cargos = async (req, res) => {
     if (!campania.publicacion || campania.estado === 'borrador') throw errorPeticion(409, 'Esta campana aun no tiene cargos publicados.');
     const Cargo = getTenantModel(models.connection, 'CargoCampania');
     const cargos = await Cargo.find({ campania: req.params.id })
-      .select('alumno sede nombre_sede nombres apellidos categoria modalidad moneda monto saldo_pendiente estado permitir_abonos __v +nota_interna')
+      .select('alumno sede nombre_sede nombres apellidos categoria modalidad moneda monto saldo_pendiente estado permitir_abonos retirado __v +nota_interna')
       .sort({ nombres: 1, apellidos: 1, alumno: 1 }).lean();
     const pagosEnRevision = await models.connection.db.collection('pagocampanias')
       .find({ campania: campania._id, estado: 'en_revision' }, { projection: { cargo: 1 } }).toArray();
     const cargosEnRevision = new Set(pagosEnRevision.map((pago) => String(pago.cargo)));
     const filas = cargos.map((cargo) => ({ _id: String(cargo._id), version: cargo.__v, permitir_abonos: cargo.permitir_abonos,
       pago_en_revision: cargosEnRevision.has(String(cargo._id)),
+      retirado: cargo.retirado === true, puede_ajustar: campania.estado === 'abierta'
+        && ['pendiente', 'no_aplica'].includes(cargo.estado) && cargo.saldo_pendiente === cargo.monto && !cargosEnRevision.has(String(cargo._id)),
       alumno: String(cargo.alumno), nombres: cargo.nombres, apellidos: cargo.apellidos,
       categoria: cargo.categoria, sede: { _id: String(cargo.sede), nombre: cargo.nombre_sede }, modalidad: cargo.modalidad,
       monto: cargo.monto, saldo_pendiente: cargo.saldo_pendiente, estado: cargo.estado, nota_interna: cargo.nota_interna || '', incidencias: [] }));
     const subtotal = filas.reduce((total, fila) => total + Math.round(fila.monto * 100), 0) / 100;
-    if (filas.length !== campania.publicacion.participantes || new Set(filas.map((fila) => fila.alumno)).size !== filas.length
-      || subtotal !== campania.publicacion.total_esperado || cargos.some((cargo) => cargo.moneda !== campania.moneda)) {
+    const vigentes = campania.totales_cargos || campania.publicacion;
+    if (filas.length !== vigentes.participantes || new Set(filas.map((fila) => fila.alumno)).size !== filas.length
+      || subtotal !== vigentes.total_esperado || cargos.some((cargo) => cargo.moneda !== campania.moneda)) {
       throw new Error('Cargos inconsistentes');
     }
     return res.json({ campania, filas, totales: { participantes: filas.length,
@@ -413,6 +416,121 @@ exports.cargos = async (req, res) => {
       pendientes: 0, con_observaciones: 0, subtotal_calculado: subtotal, total_esperado: subtotal } });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.status ? error.message : 'No se pudieron verificar los cargos publicados.' });
+  }
+};
+
+exports.candidatosCargos = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    if (!OBJECT_ID.test(req.params.id)) throw errorPeticion(400, 'La campana no es valida.');
+    const models = await modelos(req);
+    const actual = await models.Campania.findById(req.params.id).select(CAMPOS).lean();
+    if (!actual) throw errorPeticion(404, 'La campana no existe en esta academia.');
+    if (actual.estado !== 'abierta' || !actual.publicacion) throw errorPeticion(409, 'La campana no admite ajustes.');
+    const Alumno = getTenantModel(models.connection, 'Alumno');
+    const atletas = await Alumno.find({ sede: { $in: actual.sedes }, activo: { $ne: false }, dado_de_baja: { $ne: true },
+      _id: { $nin: actual.participantes } }).select('nombres apellidos categoria sede').populate('sede', 'nombre')
+      .sort({ apellidos: 1, nombres: 1, _id: 1 }).limit(10000).lean();
+    return res.json({ atletas });
+  } catch (error) { return responderError(res, error); }
+};
+
+exports.ajustarCargo = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const body = req.body;
+    if (!OBJECT_ID.test(req.params.id) || !body || Object.keys(body).some((key) =>
+      !['alumno', 'accion', 'modalidad', 'monto', 'nota_interna', 'version', 'version_cargo', 'solicitud_id'].includes(key))
+      || typeof body.alumno !== 'string' || !OBJECT_ID.test(body.alumno)
+      || !['agregar', 'editar', 'retirar'].includes(body.accion) || !Number.isInteger(body.version) || body.version < 0
+      || (body.accion !== 'agregar' && (!Number.isInteger(body.version_cargo) || body.version_cargo < 0))
+      || typeof body.solicitud_id !== 'string' || !UUID.test(body.solicitud_id)) {
+      throw errorPeticion(400, 'Revisa el alumno, la accion y las versiones del ajuste.');
+    }
+    if (!req.user.id) throw errorPeticion(401, 'Inicia sesion nuevamente para identificar al administrador.');
+    const alumnoId = body.alumno.toLowerCase();
+    const condicion = validarCondiciones([{ alumno: alumnoId,
+      modalidad: body.accion === 'retirar' ? 'no_aplica' : body.modalidad,
+      ...(body.monto !== undefined ? { monto: body.monto } : {}), nota_interna: body.nota_interna ?? '' }], [alumnoId])[0]
+      || { alumno: alumnoId, modalidad: 'general', nota_interna: '' };
+    const solicitudId = body.solicitud_id.toLowerCase();
+    const huella = createHash('sha256').update(JSON.stringify({ alumno: body.alumno.toLowerCase(), accion: body.accion,
+      version: body.version, version_cargo: body.version_cargo, condicion, actor: { id: req.user.id, rol: req.user.rol } })).digest('hex');
+    const models = await modelos(req);
+    const Cargo = getTenantModel(models.connection, 'CargoCampania');
+    const Pago = getTenantModel(models.connection, 'PagoCampania');
+    const Alumno = getTenantModel(models.connection, 'Alumno');
+    await Cargo.init();
+    const resultado = await ejecutarConTransaccion(models.Campania, async (session) => {
+      const actual = await aplicarSession(models.Campania.findById(req.params.id).select(`${CAMPOS} +ajustes_cargos`), session).lean();
+      if (!actual) throw errorPeticion(404, 'La campana no existe en esta academia.');
+      if (actual.estado !== 'abierta' || !actual.publicacion) throw errorPeticion(409, 'Solo puedes ajustar cargos de una campana abierta.');
+      const repetida = (actual.ajustes_cargos || []).find((ajuste) => ajuste.solicitud_id === solicitudId);
+      if (repetida) {
+        if (repetida.huella !== huella) throw errorPeticion(409, 'La solicitud ya corresponde a otro ajuste.');
+        return { cargo: await aplicarSession(Cargo.findById(repetida.cargo), session).lean(), repetida: true };
+      }
+      if (actual.__v !== body.version) throw errorPeticion(409, 'La campana cambio. Recarga sus cargos antes de ajustar.');
+      const anteriores = await aplicarSession(Cargo.find({ campania: actual._id }).select('+nota_interna'), session).lean();
+      const vigentes = actual.totales_cargos || actual.publicacion;
+      if (anteriores.length !== vigentes.participantes || anteriores.reduce((total, cargo) => total + Math.round(cargo.monto * 100), 0) !== Math.round(vigentes.total_esperado * 100)) {
+        throw errorPeticion(409, 'No se pudieron verificar los totales de los cargos.');
+      }
+      const anterior = anteriores.find((cargo) => String(cargo.alumno) === body.alumno.toLowerCase());
+      let base = anterior;
+      if (body.accion === 'agregar') {
+        if (anterior) throw errorPeticion(409, 'El alumno ya tiene un cargo. Edita el existente para reincorporarlo.');
+        if (anteriores.length >= 10000) throw errorPeticion(409, 'La campana supera el limite de participantes.');
+        const alumno = await aplicarSession(Alumno.findById(body.alumno).select('nombres apellidos categoria sede activo dado_de_baja')
+          .populate('sede', 'nombre'), session).lean();
+        if (!alumno || alumno.activo === false || alumno.dado_de_baja === true
+          || !actual.sedes.some((sede) => String(sede) === String(alumno.sede?._id))) {
+          throw errorPeticion(409, 'Selecciona un alumno activo de las sedes de esta campana.');
+        }
+        base = { campania: actual._id, alumno: alumno._id, nombres: alumno.nombres, apellidos: alumno.apellidos || '',
+          categoria: alumno.categoria || '', sede: alumno.sede._id, nombre_sede: alumno.sede.nombre,
+          moneda: actual.moneda, permitir_abonos: actual.permitir_abonos, vencimiento: actual.vencimiento };
+      } else {
+        if (!anterior) throw errorPeticion(404, 'El cargo no existe en esta campana.');
+        const pago = await aplicarSession(Pago.findOne({ campania: actual._id, cargo: anterior._id,
+          estado: { $in: ['confirmado', 'en_revision'] } }).select('_id'), session).lean();
+        if (pago || !['pendiente', 'no_aplica'].includes(anterior.estado) || anterior.saldo_pendiente !== anterior.monto) {
+          throw errorPeticion(409, 'No puedes ajustar un cargo con pagos confirmados o en revision.');
+        }
+        if (anterior.__v !== body.version_cargo) throw errorPeticion(409, 'El cargo cambio. Reabre el ajuste.');
+      }
+      const monto = condicion.modalidad === 'no_aplica' ? 0 : condicion.modalidad === 'personalizado' ? condicion.monto
+        : actual.modalidad_monto === 'por_sede' ? actual.montos_por_sede.find((precio) => String(precio.sede) === String(base.sede))?.monto : actual.monto_general;
+      if (!Number.isFinite(monto) || monto < 0 || (condicion.modalidad !== 'no_aplica' && monto <= 0)) {
+        throw errorPeticion(409, 'No hay un monto valido de campana para la sede del alumno.');
+      }
+      const cambios = { modalidad: condicion.modalidad, monto, saldo_pendiente: monto,
+        estado: condicion.modalidad === 'no_aplica' ? 'no_aplica' : 'pendiente',
+        retirado: body.accion === 'retirar', nota_interna: condicion.nota_interna };
+      let cargo;
+      if (anterior) cargo = await Cargo.findOneAndUpdate({ _id: anterior._id, __v: anterior.__v,
+        estado: anterior.estado, saldo_pendiente: anterior.saldo_pendiente }, { $set: cambios, $inc: { __v: 1 } },
+      { new: true, runValidators: true, session }).lean();
+      else [cargo] = await Cargo.insertMany([{ ...base, ...cambios }], { session });
+      if (!cargo) throw errorPeticion(409, 'El cargo cambio. Recarga antes de ajustar.');
+      const todos = [...anteriores.filter((item) => String(item.alumno) !== body.alumno.toLowerCase()), cargo];
+      const totales = { participantes: todos.length, generales: todos.filter((item) => item.modalidad === 'general').length,
+        personalizados: todos.filter((item) => item.modalidad === 'personalizado').length,
+        no_aplica: todos.filter((item) => item.modalidad === 'no_aplica').length,
+        total_esperado: todos.reduce((total, item) => total + Math.round(item.monto * 100), 0) / 100 };
+      const actor = { id: req.user.id, rol: req.user.rol };
+      const guardada = await models.Campania.findOneAndUpdate({ _id: actual._id, estado: 'abierta', __v: body.version }, {
+        $set: { totales_cargos: totales, participantes: todos.map((item) => item.alumno), actualizado_por: actor }, $inc: { __v: 1 },
+        $push: { ajustes_cargos: { solicitud_id: solicitudId, huella, accion: body.accion, cargo: cargo._id,
+          anterior: anterior || null, nuevo: { ...(cargo.toObject ? cargo.toObject() : cargo), nota_interna: cambios.nota_interna }, actor, fecha: new Date() } }
+      }, { new: true, runValidators: true, session });
+      if (!guardada) throw errorPeticion(409, 'La campana cambio. Recarga antes de ajustar.');
+      return { cargo, repetida: false };
+    }, { obligatoria: true });
+    return res.json(resultado);
+  } catch (error) {
+    return res.status(error.status || (error.code === 11000 ? 409 : 500)).json({ error: error.status ? error.message
+      : 'No se pudo ajustar el cargo. Reintenta la misma solicitud o recarga la campana.' });
   }
 };
 

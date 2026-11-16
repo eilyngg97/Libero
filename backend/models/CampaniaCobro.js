@@ -34,6 +34,14 @@ const CampaniaCobroSchema = new mongoose.Schema({
     no_aplica: { type: Number, required: true },
     total_esperado: { type: Number, required: true, min: 0 }
   }, { _id: false }), default: undefined },
+  totales_cargos: { type: new mongoose.Schema({
+    participantes: Number, generales: Number, personalizados: Number, no_aplica: Number, total_esperado: Number
+  }, { _id: false }), default: undefined },
+  ajustes_cargos: { type: [new mongoose.Schema({
+    solicitud_id: String, huella: String, accion: String, cargo: mongoose.Schema.Types.ObjectId,
+    anterior: mongoose.Schema.Types.Mixed, nuevo: mongoose.Schema.Types.Mixed,
+    actor: { id: String, rol: String }, fecha: Date
+  }, { _id: false })], default: [], select: false },
   actualizado_por: { id: String, rol: String }
 }, { timestamps: true });
 

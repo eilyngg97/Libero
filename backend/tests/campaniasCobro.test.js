@@ -25,6 +25,18 @@ const token = (rol, tenantId = 'alfa', permisos = []) => jwt.sign({ rol, tenantI
 let consulta;
 const tokenPublicacion = (rol = 'admin', tenantId = 'alfa') => jwt.sign({ rol, tenantId, id: 'admin-qa' }, 'qa-campanias-secret');
 
+describe('ajustes de cargos publicados: acceso y validacion', () => {
+  const ruta = '/campanias/110000000000000000000001/ajustes-cargos';
+  test.each(['usuario', 'entrenador', 'asistente', 'finanzas'])('deniega ajustes a %s antes de consultar', async (rol) => {
+    expect((await request(app).post(ruta).set('Authorization', `Bearer ${tokenPublicacion(rol)}`).send({})).status).toBe(403);
+    expect(getTenantBusinessConnection).not.toHaveBeenCalled();
+  });
+  test.each([{}, { accion: 'editar', alumno: 'invalido' }])('rechaza ajuste incompleto: %j', async (body) => {
+    expect((await request(app).post(ruta).set('Authorization', `Bearer ${tokenPublicacion()}`).send(body)).status).toBe(400);
+    expect(getTenantBusinessConnection).not.toHaveBeenCalled();
+  });
+});
+
 describe('portal representante campanas', () => {
   const id = '110000000000000000000001';
   const cargoId = '110000000000000000000002';
@@ -1153,6 +1165,142 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
     expect(creado.status).toBe(201);
     return { ...datos, userId, auth, pedir, destino: `${datos.ruta}/${creado.body.pago._id}`, pagoId: creado.body.pago._id };
   };
+
+  const ajusteMongo = (datos, cambios = {}) => ({ accion: 'editar', alumno: String(datos.cargo.alumno),
+    modalidad: 'personalizado', monto: 20, nota_interna: 'Acuerdo posterior QA', version: 2, version_cargo: 0,
+    solicitud_id: '33000000-0000-4000-8000-000000000001', ...cambios });
+
+  test('ajustes cargos Mongo cambia pendiente sin pagos, conserva publicacion y audita sin recalcular otros cargos', async () => {
+    const datos = await prepararPagoMongo();
+    const { cargo, Cargo, Pago, base, id } = datos;
+    const antes = await Cargo.find({ campania: id, _id: { $ne: cargo._id } }).lean();
+    const original = await modelosMongo.alfa.CampaniaCobro.findById(id).lean();
+    const ruta = `${base}/ajustes-cargos`;
+    const body = ajusteMongo(datos);
+    expect((await registrarMongo(ruta, body)).status).toBe(200);
+    expect((await registrarMongo(ruta, body)).body.repetida).toBe(true);
+    expect((await registrarMongo(ruta, { ...body, monto: 21 })).status).toBe(409);
+    expect(await Cargo.findById(cargo._id).lean()).toMatchObject({ monto: 20, saldo_pendiente: 20, estado: 'pendiente', modalidad: 'personalizado', __v: 1 });
+    expect(await Cargo.find({ campania: id, _id: { $ne: cargo._id } }).lean()).toEqual(antes);
+    expect(await Pago.countDocuments()).toBe(0);
+    const actual = await modelosMongo.alfa.CampaniaCobro.findById(id).select('+ajustes_cargos').lean();
+    expect(actual.publicacion).toEqual(original.publicacion);
+    expect(actual.totales_cargos).toMatchObject({ participantes: 3, total_esperado: 32.5 });
+    expect(actual.ajustes_cargos).toHaveLength(1);
+    expect(actual.ajustes_cargos[0]).toMatchObject({ accion: 'editar', actor: { id: 'admin-qa', rol: 'admin' },
+      anterior: { monto: 30 }, nuevo: { monto: 20 } });
+    const lectura = await peticion('get', `${base}/cargos`);
+    expect(lectura.status).toBe(200);
+    expect(lectura.body.totales.total_esperado).toBe(32.5);
+    expect(lectura.body.campania.ajustes_cargos).toBeUndefined();
+  });
+
+  test.each(['en_revision', 'confirmado'])('ajustes cargos Mongo bloquea edicion y retiro con pago %s', async (estado) => {
+    const datos = await prepararPagoMongo();
+    expect((await registrarMongo(datos.ruta, { ...datos.pagoBody, estado })).status).toBe(201);
+    const antes = await datos.Cargo.findById(datos.cargo._id).lean();
+    const campaniaAntes = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).lean();
+    expect((await registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos, { version_cargo: 1 }))).status).toBe(409);
+    expect((await registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos, { version_cargo: 1, accion: 'retirar', monto: undefined }))).status).toBe(409);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toEqual(antes);
+    expect(await modelosMongo.alfa.CampaniaCobro.findById(datos.id).lean()).toEqual(campaniaAntes);
+  });
+
+  test('ajustes cargos Mongo retira sin borrar y reincorpora con monto general de sede congelada', async () => {
+    const datos = await prepararPagoMongo();
+    const { Cargo, cargo, base, id } = datos;
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: id }, { $set: { modalidad_monto: 'por_sede', monto_general: null,
+      montos_por_sede: [{ sede: cargo.sede, monto: 30 }] } });
+    await modeloReal(conexiones.alfa, 'Alumno').updateOne({ _id: cargo.alumno }, { $set: { sede: new mongoose.Types.ObjectId() } });
+    expect((await registrarMongo(`${base}/ajustes-cargos`, ajusteMongo(datos, { accion: 'retirar', monto: undefined }))).status).toBe(200);
+    expect(await Cargo.findById(cargo._id).lean()).toMatchObject({ retirado: true, monto: 0, saldo_pendiente: 0, modalidad: 'no_aplica', estado: 'no_aplica' });
+    expect(await Cargo.countDocuments({ campania: id })).toBe(3);
+    expect((await peticion('get', `${base}/cargos`)).body.totales.total_esperado).toBe(12.5);
+    expect((await registrarMongo(`${base}/ajustes-cargos`, ajusteMongo(datos, { modalidad: 'general', monto: undefined, nota_interna: '',
+      version: 3, version_cargo: 1, solicitud_id: '33000000-0000-4000-8000-000000000002' }))).status).toBe(200);
+    expect(await Cargo.findById(cargo._id).lean()).toMatchObject({ retirado: false, monto: 30, saldo_pendiente: 30, modalidad: 'general', estado: 'pendiente', __v: 2 });
+    expect((await peticion('get', `${base}/cargos`)).body.totales.total_esperado).toBe(42.5);
+  });
+
+  test('ajustes cargos Mongo agrega solo activos elegibles y no duplica con reintento', async () => {
+    const datos = await prepararPagoMongo();
+    const { Cargo, cargo, base, id } = datos;
+    const nuevo = await crearAtletaMongo('alfa', { sede: cargo.sede });
+    const inactivo = await crearAtletaMongo('alfa', { sede: cargo.sede, activo: false });
+    const ajeno = await crearAtletaMongo('beta', { sede: sedesMongo.beta._id });
+    const opciones = await peticion('get', `${base}/candidatos-cargos`);
+    expect(opciones.status).toBe(200);
+    expect(opciones.body.atletas.map((alumno) => alumno._id)).toContain(String(nuevo._id));
+    expect(opciones.body.atletas.map((alumno) => alumno._id)).not.toContain(String(cargo.alumno));
+    expect(opciones.body.atletas.map((alumno) => alumno._id)).not.toContain(String(inactivo._id));
+    const body = ajusteMongo(datos, { accion: 'agregar', alumno: String(nuevo._id), modalidad: 'general', monto: undefined, nota_interna: '' });
+    expect((await registrarMongo(`${base}/ajustes-cargos`, { ...body, alumno: String(inactivo._id) })).status).toBe(409);
+    expect((await registrarMongo(`${base}/ajustes-cargos`, { ...body, alumno: String(ajeno._id) })).status).toBe(409);
+    expect((await registrarMongo(`${base}/ajustes-cargos`, body)).status).toBe(200);
+    expect((await registrarMongo(`${base}/ajustes-cargos`, body)).body.repetida).toBe(true);
+    expect(await Cargo.countDocuments({ campania: id })).toBe(4);
+    expect((await peticion('get', `${base}/cargos`)).body.totales).toMatchObject({ participantes: 4, total_esperado: 72.5 });
+    expect((await registrarMongo(`${base}/ajustes-cargos`, { ...body, version: 3,
+      solicitud_id: '33000000-0000-4000-8000-000000000002' })).status).toBe(409);
+  });
+
+  test.each(['cerrada', 'cancelada', 'borrador'])('ajustes cargos Mongo bloquea campana %s', async (estado) => {
+    const datos = await prepararPagoMongo();
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.id }, { $set: { estado } });
+    expect((await registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos))).status).toBe(409);
+    expect((await peticion('get', `${datos.base}/candidatos-cargos`)).status).toBe(409);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ monto: 30, __v: 0 });
+  });
+
+  test('ajustes cargos Mongo valida tenant, versiones, importe y rollback de auditoria', async () => {
+    const datos = await prepararPagoMongo();
+    const ruta = `${datos.base}/ajustes-cargos`;
+    const body = ajusteMongo(datos);
+    expect((await registrarMongo(ruta, body, 'admin', 'beta')).status).toBe(404);
+    expect((await registrarMongo(ruta, { ...body, version: 1 })).status).toBe(409);
+    expect((await registrarMongo(ruta, { ...body, version_cargo: 1 })).status).toBe(409);
+    for (const monto of [0, -1, '1.001', '1000000000', 'NaN']) {
+      expect((await registrarMongo(ruta, { ...body, monto })).status).toBe(400);
+    }
+    const fallo = jest.spyOn(modelosMongo.alfa.CampaniaCobro, 'findOneAndUpdate').mockImplementationOnce(() => { throw new Error('Fallo QA auditoria'); });
+    try { expect((await registrarMongo(ruta, body)).status).toBe(500); }
+    finally { fallo.mockRestore(); }
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ monto: 30, __v: 0 });
+    expect((await registrarMongo(ruta, body)).status).toBe(200);
+  });
+
+  test('ajustes cargos Mongo ajuste concurrente con reporte no mezcla monto y reserva', async () => {
+    const datos = await prepararPagoMongo();
+    const respuestas = await Promise.all([registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos)),
+      registrarMongo(datos.ruta, datos.pagoBody)]);
+    expect([[200, 409], [409, 201]]).toContainEqual(respuestas.map((respuesta) => respuesta.status));
+    const vigente = await datos.Cargo.findById(datos.cargo._id).lean();
+    expect(vigente).toMatchObject({ monto: respuestas[0].status === 200 ? 20 : 30, __v: 1 });
+    expect(await datos.Pago.countDocuments()).toBe(respuestas[1].status === 201 ? 1 : 0);
+  });
+
+  test('ajustes cargos Mongo permite cambiar pendiente cuando sus pagos fueron eliminados y conserva historial', async () => {
+    const datos = await prepararPagoMongo();
+    const registrado = await registrarMongo(datos.ruta, datos.pagoBody);
+    expect(registrado.status).toBe(201);
+    const pagoId = registrado.body.pago._id;
+    expect((await corregirMongo('delete', `${datos.ruta}/${pagoId}`, { version: 1 })).status).toBe(200);
+    expect((await registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos, { version_cargo: 2 }))).status).toBe(200);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ monto: 20, saldo_pendiente: 20, estado: 'pendiente', __v: 3 });
+    expect(await datos.Pago.findById(pagoId).lean()).toMatchObject({ estado: 'eliminado', monto_pagado: 10 });
+  });
+
+  test.each(['misma', 'distinta'])('ajustes cargos Mongo solicitudes concurrentes %s aplican un solo cambio', async (tipo) => {
+    const datos = await prepararPagoMongo();
+    const body = ajusteMongo(datos);
+    const segunda = tipo === 'misma' ? body : { ...body, monto: 15, solicitud_id: '33000000-0000-4000-8000-000000000002' };
+    const respuestas = await Promise.all([registrarMongo(`${datos.base}/ajustes-cargos`, body), registrarMongo(`${datos.base}/ajustes-cargos`, segunda)]);
+    expect(respuestas.map((respuesta) => respuesta.status).sort()).toEqual(tipo === 'misma' ? [200, 200] : [200, 409]);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ __v: 1 });
+    const vigente = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).select('+ajustes_cargos').lean();
+    expect(vigente.ajustes_cargos).toHaveLength(1);
+    expect(vigente.ajustes_cargos[0].nuevo.__v).toBe(1);
+  });
 
   test('correccion propia Mongo edita y elimina con reservas, reintentos y auditoria privada', async () => {
     const { cargo, ruta, pagoBody, Cargo, Pago, pedir, destino, pagoId, userId } = await prepararCorreccionPropia();
