@@ -114,7 +114,8 @@ function RosterAtletasView() {
       const eligibleParams = new URLSearchParams({
         torneoId,
         rosterId,
-        todos: 'true'
+        todos: 'true',
+        incluirInactivosRoster: 'true'
       });
       const [torneoResponse, rostersResponse, athletesResponse, solvenciasResponse] = await Promise.all([
         fetch(`${process.env.REACT_APP_API_URL}/api/torneos/${torneoId}?_t=${Date.now()}`, {
@@ -198,13 +199,15 @@ function RosterAtletasView() {
     return result;
   }, [torneo]);
 
-  const options = useMemo(() => ({
-    sexos: uniqueOptions(athletes, 'sexo'),
-    categorias: combinarCategoriasTenant(categoriasTenant, uniqueOptions(athletes, 'categoria')),
-    divisiones: uniqueOptions(athletes, 'division')
-  }), [athletes, categoriasTenant]);
+  const activeAthletes = useMemo(() => athletes.filter((athlete) => athlete.activo !== false), [athletes]);
 
-  const filteredAthletes = useMemo(() => athletes
+  const options = useMemo(() => ({
+    sexos: uniqueOptions(activeAthletes, 'sexo'),
+    categorias: combinarCategoriasTenant(categoriasTenant, uniqueOptions(activeAthletes, 'categoria')),
+    divisiones: uniqueOptions(activeAthletes, 'division')
+  }), [activeAthletes, categoriasTenant]);
+
+  const filteredAthletes = useMemo(() => activeAthletes
     .filter((athlete) => {
       const fullText = normalize(`${athlete.nombre_completo} ${athlete.cedula}`);
       if (filters.search && !fullText.includes(normalize(filters.search))) return false;
@@ -222,7 +225,7 @@ function RosterAtletasView() {
     })
     .sort((first, second) => (
       Number(selectedIds.has(getId(second))) - Number(selectedIds.has(getId(first)))
-    )), [athletes, filters, selectedIds]);
+    )), [activeAthletes, filters, selectedIds]);
 
   useEffect(() => {
     setPage(0);
@@ -344,7 +347,7 @@ function RosterAtletasView() {
           <Box sx={{ px: 1.5, pt: 1.4, pb: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
               <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>Atletas disponibles</Typography>
-              <Typography sx={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>{filteredAthletes.length} de {athletes.length} atletas</Typography>
+              <Typography sx={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>{filteredAthletes.length} de {activeAthletes.length} atletas</Typography>
             </Box>
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: '1.2fr 1fr 1fr 1fr 1fr 1fr' }, gap: 0.7, mt: 1 }}>
@@ -532,6 +535,7 @@ function RosterAtletasView() {
                     </Avatar>
                     <Box sx={{ minWidth: 0 }}>
                       <Typography noWrap sx={{ fontSize: 10.5, fontWeight: 800 }}>{athlete.nombre_completo}</Typography>
+                      {athlete.activo === false && <Chip label="Inactivo" size="small" color="warning" sx={{ height: 20, fontSize: 8.5 }} />}
                       <Typography noWrap sx={{ fontSize: 9, color: '#94a3b8' }}>{[athlete.sexo, athlete.categoria, athlete.sede_nombre].filter(Boolean).join(' · ')}</Typography>
                     </Box>
                   </Box>

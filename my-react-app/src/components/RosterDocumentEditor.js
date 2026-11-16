@@ -26,6 +26,7 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
@@ -35,7 +36,7 @@ import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { mediaUrl } from '../utils/mediaUrl';
 import useTenantCategorias, { combinarCategoriasTenant } from '../hooks/useTenantCategorias';
 
@@ -458,6 +459,9 @@ function RosterDocumentEditor() {
   }
 
   const rosterPlayers = getRosterPlayers(roster);
+  const inactivePlayers = rosterPlayers.filter((player) => (
+    player.rowType === 'alumno' && (player.activo === false || player.dado_de_baja === true)
+  ));
   const editingLoanData = (roster?.prestamos || []).find((item) => item._id === editingLoan);
   const cedulasDisponibles = rosterPlayers
     .map((player, index) => ({ player, rosterIndex: index }))
@@ -583,6 +587,56 @@ function RosterDocumentEditor() {
           </Button>
         </Stack>
       </Box>
+
+      {inactivePlayers.length > 0 && (
+        <Alert
+          severity="warning"
+          sx={{
+            mb: 1.5, px: 1.5, py: 1.25, gap: 1,
+            border: '1px solid #f5dcc7', borderLeft: '4px solid #dc5f16', borderRadius: 2.5,
+            background: 'linear-gradient(120deg, #fff7ed 0%, #fffdfb 100%)',
+            boxShadow: '0 4px 16px rgba(31, 42, 55, 0.04)',
+            alignItems: 'center',
+            '& .MuiAlert-icon': {
+              m: 0, p: 0.75, bgcolor: '#ffedd5', color: '#c35414', borderRadius: 1.5, opacity: 1
+            },
+            '& .MuiAlert-message': { p: 0, minWidth: 0, width: '100%' }
+          }}
+        >
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'flex-start', md: 'center' }, justifyContent: 'space-between', gap: 1 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75 }}>
+                <Typography component="div" sx={{ fontSize: 13, lineHeight: 1.4, fontWeight: 800, color: '#172033' }}>
+                  {inactivePlayers.length === 1
+                    ? 'Este roster contiene 1 atleta inactiva.'
+                    : `Este roster contiene ${inactivePlayers.length} atletas inactivas.`}
+                </Typography>
+                {inactivePlayers.map((player) => (
+                  <Chip
+                    key={player._id}
+                    label={`${player.nombres || ''} ${player.apellidos || ''}`.trim() || 'Sin nombre'}
+                    size="small"
+                    sx={{ maxWidth: '100%', height: 'auto', minHeight: 22, bgcolor: '#fff', color: '#9a4619', border: '1px solid #f0d2b8', fontSize: 11, fontWeight: 700, '& .MuiChip-label': { py: 0.2, whiteSpace: 'normal', overflowWrap: 'anywhere' } }}
+                  />
+                ))}
+              </Box>
+              <Typography component="div" sx={{ mt: 0.5, fontSize: 12, color: '#667085', lineHeight: 1.45 }}>
+                Si guardas o descargas el documento, estas atletas seguirán incluidas. Revisa la convocatoria antes de utilizarlo.
+              </Typography>
+            </Box>
+            <Button
+              component={Link}
+              to={`/torneos/${torneoId}/equipos/${rosterId}/atletas`}
+              size="small"
+              variant="outlined"
+              endIcon={<ArrowForwardRoundedIcon />}
+              sx={{ flexShrink: 0, bgcolor: '#fff', color: '#b54b12', borderColor: '#efc7a7', borderRadius: 1.5, px: 1.5, py: 0.5, textTransform: 'none', fontWeight: 800, '&:hover': { bgcolor: '#fff7ed', borderColor: '#dc5f16' } }}
+            >
+              Revisar convocatoria
+            </Button>
+          </Box>
+        </Alert>
+      )}
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(600px, 1.25fr) minmax(430px, .95fr)' }, gap: 2, alignItems: 'start' }}>
         <Paper ref={previewRef} elevation={0} sx={{ overflow: 'hidden', p: { xs: 1.5, md: 2.5 }, bgcolor: '#e7ecf6', border: '1px solid #dde4ef', borderRadius: 2.5, minHeight: 600 }}>

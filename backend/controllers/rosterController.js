@@ -266,6 +266,20 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
       dado_de_baja: { $ne: true }
     };
 
+    if (cleanValue(req.query?.incluirInactivosRoster).toLowerCase() === 'true') {
+      if (!mongoose.Types.ObjectId.isValid(rosterId)) {
+        return res.status(400).json({ error: 'Id de roster invalido' });
+      }
+      const roster = await Roster.findById(rosterId).select('jugadores').lean();
+      if (!roster) return res.status(404).json({ error: 'Roster no encontrado' });
+      filtroAlumnos.$or = [
+        { activo: filtroAlumnos.activo, dado_de_baja: filtroAlumnos.dado_de_baja },
+        { _id: { $in: roster.jugadores || [] } }
+      ];
+      delete filtroAlumnos.activo;
+      delete filtroAlumnos.dado_de_baja;
+    }
+
     if (torneoId && !incluirTodos) {
       if (!mongoose.Types.ObjectId.isValid(torneoId)) {
         return res.status(400).json({ error: 'torneoId invalido' });
@@ -300,7 +314,7 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
     }
 
     const alumnos = await Alumno.find(filtroAlumnos)
-      .select('nombres apellidos foto cedula fecha_nacimiento numero_franela sexo categoria division telefono sede representante')
+      .select('nombres apellidos foto cedula fecha_nacimiento numero_franela sexo categoria division telefono sede representante activo dado_de_baja')
       .populate('sede', 'nombre')
       .populate('representante', 'nombres apellidos telefono')
       .sort({ apellidos: 1, nombres: 1 })
@@ -333,6 +347,7 @@ exports.obtenerEstudiantesElegibles = async (req, res) => {
         nombres: alumno.nombres || '',
         apellidos: alumno.apellidos || '',
         nombre_completo: `${alumno.nombres || ''} ${alumno.apellidos || ''}`.trim(),
+        activo: alumno.activo !== false && alumno.dado_de_baja !== true,
         foto: alumno.foto || '',
         cedula: alumno.cedula || '',
         fecha_nacimiento: alumno.fecha_nacimiento || null,
@@ -484,7 +499,11 @@ exports.actualizarJugadoresRoster = async (req, res) => {
       dado_de_baja: { $ne: true }
     }).select('_id categoria').lean();
 
-    if (alumnos.length !== jugadores.length) {
+    const jugadoresActuales = new Set((roster.jugadores || []).map(String));
+    const soloRetiro = jugadores.length < jugadoresActuales.size
+      && jugadores.every((id) => jugadoresActuales.has(id));
+
+    if (alumnos.length !== jugadores.length && !soloRetiro) {
       return res.status(400).json({ error: 'Hay atletas no validos o inactivos en la seleccion.' });
     }
 
@@ -876,7 +895,7 @@ exports.obtenerDocumentoRoster = async (req, res) => {
     const rosterDoc = await Roster.findById(rosterId)
       .populate({
         path: 'jugadores',
-        select: 'nombres apellidos cedula fecha_nacimiento numero_franela foto foto_cedula sede representante telefono',
+        select: 'nombres apellidos cedula fecha_nacimiento numero_franela foto foto_cedula sede representante telefono activo dado_de_baja',
         populate: [
           { path: 'sede', select: 'nombre' },
           { path: 'representante', select: 'nombres apellidos telefono' }
