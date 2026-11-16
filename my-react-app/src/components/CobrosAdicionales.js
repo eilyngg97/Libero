@@ -274,6 +274,9 @@ function CobrosAdicionales() {
                       {item.sedes.find((sede) => sede?._id === precio.sede)?.nombre || 'Sede no disponible'}: {formatoMonto(precio.monto, item.moneda)}
                     </Typography>)}
                   </> : formatoMonto(item.monto_general, item.moneda)}
+                  <Typography sx={{ fontSize: 12, color: '#6b7280', mt: 0.5 }}>
+                    {item.permitir_abonos === true ? 'Permite abonos' : item.permitir_abonos === false ? 'No permite abonos' : 'Abonos: sin dato'}
+                  </Typography>
                 </TableCell>
                 <TableCell><Chip size="small" label={ESTADOS[item.estado].label}
                   sx={{ bgcolor: ESTADOS[item.estado].background, color: ESTADOS[item.estado].color, borderRadius: 1, fontWeight: 650 }} /></TableCell>

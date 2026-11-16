@@ -1,5 +1,99 @@
 # Cobros adicionales
 
+## Validacion previa al commit (2026-11-16)
+
+- Backend completo: 757 pruebas aprobadas, 63 omitidas y un fallo; las 194 de campanas pasan,
+    incluidas las pruebas Mongo en bases QA temporales. El fallo de conciliacion de pagos agrupados
+    espera 200 en previsualizacion y recibe 500; se reprodujo tambien con las fuentes del commit
+    anterior `54460ec` cargadas solo en memoria. No se modifico ese comportamiento ajeno a esta entrega.
+- Frontend: las suites observadas, incluida Mensualidades completa, pasan; no se conserva un resultado
+    final verificable de la bateria global. Su repeticion se cancelo antes de completar la validacion.
+    No se declara aprobada la bateria frontend completa.
+- ESLint de los ocho archivos frontend de esta entrega y revision de espacios pasan.
+    Compilacion de produccion aprobada con advertencias previas de EntrenadorDetalleView,
+    GeneralConfig, Browserslist y tamano del bundle.
+- Sin push, despliegue, reinicio del backend ni pagos reales. La activacion de rutas/modelos sigue
+    requiriendo reinicio manual. Las verificaciones de las secciones siguientes son historicas.
+
+## Ampliacion 4B: ficha de transaccion y correcciones administrativas
+
+- El historial reutiliza `PagoTransaccionDetalle`, el marco visual extraido de Mensualidades,
+    conservando el formulario y las acciones existentes de ese modulo. La ficha de campanas muestra
+    metodo, importe/divisa, Bs y equivalente esperado, fecha, tasa historica, referencia, telefono,
+    cedula, actor de registro, nota y comprobante. El icono de detalle permite consultar cada pago anterior.
+- Encabezado, check circular, Editar/Cancelar y Guardar cambios mantienen los estilos de Mensualidades.
+    El equivalente en la moneda del cargo aparece debajo de Monto pagado y Monto esperado.
+    El historial usa filas blancas con borde azul, icono y contador, con monto, tasa, referencia/titular,
+    nota, estado y acciones. No repite el nombre, campana o totales sobre la ficha; se cierra con la X.
+    Confirmar aparece en el pie si el pago visible esta en revision y la campana abierta, bloqueado al
+    editar; usa el dialogo de confirmacion con el mismo estilo de Mensualidades.
+- Los cargos publicados admiten filtro por estado, junto con busqueda y condicion. En revision tiene
+    prioridad sobre el estado financiero tanto en el chip como en el filtro; cambiar filtros vuelve a
+    la primera pagina. Registrar pago usa el mismo icono `Paid` de la tabla de Mensualidades.
+- Avance de cobros: barra de cargos completamente pagados, conteos excluyentes de pagados/pendientes/
+    en revision/con abono y cantidad total que falta por completar. No aplica queda fuera del porcentaje;
+    sin cargos exigibles muestra porcentaje cero. Se calcula sobre toda la campana, sin cambiar al filtrar.
+- Editar y eliminar se habilitan exclusivamente para el ultimo pago activo de una campana abierta,
+    solo admin/super_admin. Los anteriores son de solo lectura; el backend impone la misma restriccion.
+    Editar se hace dentro de la ficha, reutilizando los metodos configurados de `ModalPago` y el
+    servicio de tasa historica. No permite cambiar moneda o estado de confirmacion, ni ajustar manualmente
+    la tasa oficial. Conserva el comprobante anterior salvo reemplazo validado; cerrar pide descartar cambios.
+- PATCH `/:id/cargos/:cargoId/pagos/:pagoId` recibe los campos de registro, version actual y una UUID nueva
+    por correccion; admite comprobante multipart con los mismos limites y validaciones del registro.
+    DELETE en esa ruta recibe `{ version }`, requiere confirmacion de interfaz y marca `eliminado`:
+    el documento, sus actores y sus correcciones se conservan para auditoria, pero sale del historial activo.
+- Cada correccion guarda snapshot anterior, fecha y administrador, sin exponer huellas en las respuestas.
+    Reintentar la misma UUID no modifica dos veces; otra carga con esa UUID o una correccion posterior
+    produce conflicto. El registro original corregido/eliminado no puede recrearse al reintentar su UUID.
+- Pago y saldo/version se actualizan juntos en transaccion obligatoria. Editar un confirmado repone
+    su importe anterior y aplica el nuevo; eliminarlo repone su importe. En revision solo cambia/libera
+    la reserva. Se verifican suma confirmada, reservas, centimos, abonos, version, tenant y campana abierta.
+    El monto y los datos originales del cargo no cambian; no se mezclan con mensualidades ni uniformes.
+- Verificacion backend: 194 pruebas completas pasan, incluidas siete nuevas de correcciones Mongo
+    en bases QA temporales eliminadas al finalizar: auditoria, reservas, saldo, roles/tenant, version,
+    ultimo pago, pago completo, cierre, concurrencia, comprobantes y rollback.
+- Activacion de estas rutas/modelos requiere reinicio manual del backend; no se reinicio automaticamente
+    por los trabajos de arranque. Sin pagos reales, despliegue, commit o push.
+
+## Entrega 4B: pagos individuales administrativos reutilizados
+
+- Desde los cargos publicados, Registrar pago abre el mismo `ModalPago` usado por alumnos y uniformes.
+    Conserva seleccion de metodo, datos bancarios, fecha, referencia, comprobante y confirmacion.
+    La opcion de abono depende de la campana, no de las cuotas de mensualidad ni del esquema 50/50 de uniformes.
+    La etiqueta del pago completo se adapta al concepto sin cambiar los otros flujos.
+- El administrador marca explicitamente Pago confirmado; sin marcarlo, el registro queda en revision.
+    Solo los pagos confirmados reducen deuda. Los pagos en revision reservan su importe para impedir
+    reportes que superen el saldo, sin mostrarlos como recaudo confirmado ni marcar el cargo pagado.
+    Historial conserva el estado de cada pago y permite confirmar y ver comprobantes;
+    la API devuelve por separado confirmado, en revision, saldo pendiente y disponible para validar la operacion.
+    La consulta de cargos incluye `pago_en_revision`: Estado muestra En revision cuando existe un pago
+    por verificar, aunque la deuda siga pendiente. Al confirmar, muestra Abono o Pagado segun el saldo.
+- GET/POST `/api/campanias-cobro/:id/cargos/:cargoId/pagos` consulta historial o registra un pago.
+    POST `/:id/cargos/:cargoId/pagos/:pagoId/confirmar` confirma el importe existente, sin editarlo.
+    Todas las rutas requieren admin/super_admin y usan exclusivamente modelos de la academia solicitada.
+- `PagoCampania` guarda moneda, importes, fecha, metodo, referencia, titular, nota, comprobante,
+    estado y actores de registro/confirmacion. Indice unico cargo/solicitud_id y huella del formulario/archivo:
+    el mismo reintento devuelve el registro existente; reutilizar la clave con otros datos devuelve 409.
+    El frontend mantiene la clave en reintentos y verifica el resultado antes de actualizar la vista.
+- Registro y confirmacion requieren transacciones Mongo; pago y saldo/version del cargo cambian juntos.
+    Version compartida y reserva de importes serializan los registros concurrentes. Confirmar de nuevo
+    no descuenta dos veces. No aplica, saldo agotado, sobrepago y abonos no autorizados quedan bloqueados.
+    Nombre, sede, categoria, modalidad e importe del cargo publicado no se recalculan.
+- Pago movil/Transferencia verifican el equivalente con la tasa oficial de la fecha (USD o EUR).
+    Zelle, PayPal y Binance requieren una cuenta habilitada y moneda compatible, sin inventar bolivares.
+    Se usan cuentas generales por defecto, con el concepto campanias; nunca cuentas por campana individual.
+- Comprobante opcional JPG/PNG/WebP/PDF, maximo 5 MB, extension/MIME/firma verificados, ruta privada por
+    academia y nombre UUID. Un fallo revierte la operacion y limpia el archivo nuevo; un reintento no lo duplica.
+- Verificacion: 187 pruebas backend completas (16 nuevas de pagos, con Mongo temporal aislado),
+    26 pruebas enfocadas de resumen/publicacion/pagos (6 nuevas UI) y 53 de alumnos/uniformes pasan.
+    Lint y diagnosticos limpios, con avisos previos de Browserslist. Navegador aislado con APIs mock:
+    abono 10 en revision -> confirmacion -> pago completo de 20, saldo final 0, tres solicitudes, sin errores;
+    dialogo dentro de viewport 1365/768/320. Capturas integradas recortadas, no aprobacion visual integral.
+- Esta etapa es administrativa. Portal del representante, pagos agrupados de campanas, billetera,
+    avisos y cambios masivos quedan fuera. Edicion/eliminacion se incorporaron en la ampliacion anterior.
+    No se registraron pagos reales,
+    no se reinicio el backend, no se desplego ni se hizo commit. Reinicio manual pendiente para activar rutas/modelos.
+
 ## Entrega 4A: publicacion y cargos
 
 - Publicar campana desde el resumen, tanto en el flujo guiado como en el acceso del listado.

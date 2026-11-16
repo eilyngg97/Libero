@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Dialog, DialogTitle, DialogContent, Card, CardContent, Typography, IconButton, Box, Button, TextField, InputAdornment, MenuItem } from '@mui/material';
+import { Dialog, DialogTitle, DialogContent, Card, CardContent, Typography, IconButton, Box, Button, TextField, InputAdornment, MenuItem, Checkbox, FormControlLabel } from '@mui/material';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import CloseIcon from '@mui/icons-material/Close';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
@@ -17,7 +17,7 @@ import { ADDITIONAL_PAYMENT_METHODS } from '../utils/paymentMethod';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
-function buildMetodosFromConfig(config = {}, conceptoPago = '') {
+export function buildMetodosFromConfig(config = {}, conceptoPago = '') {
   const pagos = config?.pagos || {};
   const pagosConcepto = pagos?.por_concepto?.[conceptoPago];
   const pagosAplicables = pagosConcepto && pagosConcepto.usar_generales === false
@@ -107,7 +107,9 @@ function ModalPago({
   disableCuotas = false,
   uniformInstallmentChoice = false,
   allowedMethodIds = null,
-  conceptoPago = ''
+  conceptoPago = '',
+  allowPartialPayment = false,
+  allowPaymentConfirmation = false
 }) {
   const normalizarTelefonoPago = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
@@ -129,6 +131,7 @@ function ModalPago({
   const [solicitaRevisionRecargo, setSolicitaRevisionRecargo] = useState(false);
   const [comprobante, setComprobante] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmarPago, setConfirmarPago] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [copySuccess, setCopySuccess] = useState('');
   const [tasaPago, setTasaPago] = useState(null);
@@ -139,7 +142,7 @@ function ModalPago({
   const mostrarPasoConfirmacionCantevista = true;
   const monto = pago?.monto;
   const cuotasMensualidadHabilitadas = !disableCuotas && pago?.id_alumno?.habilitar_pago_cuotas === true;
-  const cuotasHabilitadas = cuotasMensualidadHabilitadas || uniformInstallmentChoice;
+  const cuotasHabilitadas = cuotasMensualidadHabilitadas || uniformInstallmentChoice || allowPartialPayment;
   const { dolar } = useDolar();
   const monedaDesdeProps = String(currencyCode || '').trim().toUpperCase();
   const monedaConfigurada = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
@@ -183,7 +186,7 @@ function ModalPago({
     ? metodos.filter((m) => allowedMethodIds.includes(m.id))
     : metodos;
   const metodosDisponibles = metodosPermitidos.filter((metodo) => !metodo.adicional
-    || ((typeof onSubmitPayment !== 'function' || conceptoPago === 'uniformes') && metodo.monedas.includes(moneda)));
+    || ((typeof onSubmitPayment !== 'function' || ['uniformes', 'campanias'].includes(conceptoPago)) && metodo.monedas.includes(moneda)));
   const tieneRecargoAplicado = Number(pago?.recargo_aplicado_usd || 0) > 0;
   const telefonoConfirmacionNormalizado = normalizarTelefonoPago(telefonoConfirmacionCantevista);
   const cedulaConfirmacionNormalizada = normalizarCedulaPago(cedulaConfirmacionCantevista);
@@ -267,6 +270,7 @@ function ModalPago({
       setFechaPago('');
       setReferencia('');
       setNotaPago('');
+      setConfirmarPago(false);
       setSolicitaRevisionRecargo(false);
       setComprobante(null);
       setSubmitting(false);
@@ -674,6 +678,7 @@ function ModalPago({
           montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
           montoPagadoBs: montoPagadoBsFinal === null ? null : Number(montoPagadoBsFinal.toFixed(2)),
           moneda,
+          ...(allowPaymentConfirmation ? { confirmarPago } : {}),
           metodoCobranza: uniformInstallmentChoice
             ? (preferenciaCuota === 'parcial' ? 'dos_partes_50' : 'pago_completo')
             : undefined
@@ -802,7 +807,7 @@ function ModalPago({
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={() => { if (!submitting || !allowPaymentConfirmation) onClose(); }}
       maxWidth="xs"
       fullWidth
       PaperProps={{
@@ -830,7 +835,7 @@ function ModalPago({
               {headerSubtitle}
             </Typography>
           </Box>
-          <IconButton onClick={onClose} size="small" sx={{ color: '#94a3b8' }}>
+          <IconButton onClick={onClose} disabled={submitting && allowPaymentConfirmation} size="small" sx={{ color: '#94a3b8' }}>
             <CloseIcon />
           </IconButton>
         </Box>
@@ -1182,7 +1187,7 @@ function ModalPago({
                         <PaymentsIcon sx={{ color: '#f97316' }} />
                       </Box>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                        {uniformInstallmentChoice ? 'Pagar completo' : 'Pagar Mensualidad Completa'}
+                        {uniformInstallmentChoice || allowPartialPayment ? 'Pagar completo' : 'Pagar Mensualidad Completa'}
                       </Typography>
                     </Box>
                     <ArrowForwardIosIcon sx={{ color: '#cbd5f0', fontSize: 18 }} />
@@ -1501,6 +1506,9 @@ function ModalPago({
                     onChange={(e) => setNotaPago(e.target.value.slice(0, 500))}
                     helperText={tieneRecargoAplicado ? 'Explica aqui si pagaste a tiempo y se registro tarde en sistema.' : ''}
                   />
+                  {allowPaymentConfirmation && <FormControlLabel
+                    control={<Checkbox checked={confirmarPago} disabled={submitting} onChange={(event) => setConfirmarPago(event.target.checked)} />}
+                    label="Pago confirmado" sx={{ '& .MuiFormControlLabel-label': { fontSize: 14 } }} />}
                   {tieneRecargoAplicado && (
                     <Box sx={{ mt: 0.4 }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#475569', fontSize: 14 }}>
@@ -1538,6 +1546,7 @@ function ModalPago({
                     <input
                       type="file"
                       hidden
+                      accept={allowPaymentConfirmation ? 'image/jpeg,image/png,image/webp,application/pdf' : undefined}
                       onChange={(e) => setComprobante(e.target.files?.[0] || null)}
                     />
                   </Box>
@@ -1602,6 +1611,7 @@ function ModalPago({
               fullWidth
               sx={{ mt: 1, color: '#64748b', fontWeight: 700 }}
               onClick={handleVolver}
+              disabled={submitting && allowPaymentConfirmation}
               startIcon={<ArrowBackIosNewIcon sx={{ fontSize: 16 }} />}
             >
               Volver

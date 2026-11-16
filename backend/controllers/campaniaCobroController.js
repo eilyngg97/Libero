@@ -391,9 +391,14 @@ exports.cargos = async (req, res) => {
     if (!campania.publicacion || campania.estado === 'borrador') throw errorPeticion(409, 'Esta campana aun no tiene cargos publicados.');
     const Cargo = getTenantModel(models.connection, 'CargoCampania');
     const cargos = await Cargo.find({ campania: req.params.id })
-      .select('alumno sede nombre_sede nombres apellidos categoria modalidad moneda monto saldo_pendiente estado +nota_interna')
+      .select('alumno sede nombre_sede nombres apellidos categoria modalidad moneda monto saldo_pendiente estado permitir_abonos __v +nota_interna')
       .sort({ nombres: 1, apellidos: 1, alumno: 1 }).lean();
-    const filas = cargos.map((cargo) => ({ alumno: String(cargo.alumno), nombres: cargo.nombres, apellidos: cargo.apellidos,
+    const pagosEnRevision = await models.connection.db.collection('pagocampanias')
+      .find({ campania: campania._id, estado: 'en_revision' }, { projection: { cargo: 1 } }).toArray();
+    const cargosEnRevision = new Set(pagosEnRevision.map((pago) => String(pago.cargo)));
+    const filas = cargos.map((cargo) => ({ _id: String(cargo._id), version: cargo.__v, permitir_abonos: cargo.permitir_abonos,
+      pago_en_revision: cargosEnRevision.has(String(cargo._id)),
+      alumno: String(cargo.alumno), nombres: cargo.nombres, apellidos: cargo.apellidos,
       categoria: cargo.categoria, sede: { _id: String(cargo.sede), nombre: cargo.nombre_sede }, modalidad: cargo.modalidad,
       monto: cargo.monto, saldo_pendiente: cargo.saldo_pendiente, estado: cargo.estado, nota_interna: cargo.nota_interna || '', incidencias: [] }));
     const subtotal = filas.reduce((total, fila) => total + Math.round(fila.monto * 100), 0) / 100;

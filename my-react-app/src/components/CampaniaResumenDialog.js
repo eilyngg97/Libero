@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, InputAdornment, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead,
+  IconButton, InputAdornment, LinearProgress, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead,
   TablePagination, TableRow, TextField, Tooltip, Typography, useMediaQuery, useTheme
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -11,11 +11,17 @@ import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import PaidIcon from '@mui/icons-material/Paid';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { tieneMontosValidos } from '../utils/campaniaMontos';
 import CampaniaPasos from './CampaniaPasos';
 import CampaniaDialog from './CampaniaDialog';
+import CampaniaPagoDialog from './CampaniaPagoDialog';
+import EstadoPagoChip from './EstadoPagoChip';
 
 const MODALIDADES = { general: 'Monto de campa\u00f1a', personalizado: 'Personalizado', no_aplica: 'No aplica' };
+const ESTADOS = { pendiente: 'Pendiente', en_revision: 'En revisi\u00f3n', abono: 'Abono', pagado: 'Pagado', no_aplica: 'No aplica' };
+const estadoVisible = (fila) => fila.pago_en_revision ? 'en_revision' : fila.estado;
 const normalizar = (valor) => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const dineroValido = (valor) => typeof valor === 'number' && Number.isFinite(valor) && valor >= 0;
 const formatoMonto = (monto, moneda) => new Intl.NumberFormat('es-VE', { style: 'currency', currency: moneda }).format(monto);
@@ -45,7 +51,10 @@ const respuestaValida = (data, id, estado = 'borrador') => {
     && (estado === 'borrador' || (campania.publicacion
       && ['participantes', 'generales', 'personalizados', 'no_aplica', 'total_esperado'].every((campo) => campania.publicacion[campo] === totales[campo])
       && filas.every((fila) => dineroValido(fila.saldo_pendiente) && fila.saldo_pendiente <= fila.monto
-        && (fila.modalidad === 'no_aplica' ? fila.estado === 'no_aplica' && fila.saldo_pendiente === 0 : fila.estado === 'pendiente'))));
+        && (fila.pago_en_revision === undefined || typeof fila.pago_en_revision === 'boolean')
+        && (fila.modalidad === 'no_aplica' ? fila.estado === 'no_aplica' && fila.saldo_pendiente === 0
+          : fila.saldo_pendiente === 0 ? fila.estado === 'pagado'
+            : fila.saldo_pendiente === fila.monto ? fila.estado === 'pendiente' : fila.estado === 'abono'))));
 };
 
 function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, creacionGuiada = false }) {
@@ -56,11 +65,14 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
   const [intento, setIntento] = useState(0);
   const [busqueda, setBusqueda] = useState('');
   const [modalidad, setModalidad] = useState('');
+  const [estado, setEstado] = useState('');
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(10);
   const [confirmando, setConfirmando] = useState(false);
   const [publicando, setPublicando] = useState(false);
   const [errorPublicacion, setErrorPublicacion] = useState('');
+  const [pagoActivo, setPagoActivo] = useState(null);
+  const [mensajePago, setMensajePago] = useState('');
   const enviando = useRef(false);
   const solicitud = useRef('');
   const publicacionController = useRef(null);
@@ -137,11 +149,19 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
   };
 
   const filtradas = (datos?.filas || []).filter((fila) => (!modalidad || (modalidad === 'pendientes' ? fila.monto === null : fila.modalidad === modalidad))
+    && (!publicada || !estado || estadoVisible(fila) === estado)
     && normalizar(`${fila.nombres} ${fila.apellidos} ${fila.sede?.nombre || ''}`).includes(normalizar(busqueda).trim()));
   const paginaActual = Math.min(pagina, Math.max(0, Math.ceil(filtradas.length / filasPorPagina) - 1));
+  const avance = (datos?.filas || []).filter((fila) => fila.modalidad !== 'no_aplica').reduce((conteos, fila) => {
+    conteos.total += 1;
+    const estadoFila = estadoVisible(fila);
+    if (Object.hasOwn(conteos, estadoFila)) conteos[estadoFila] += 1;
+    return conteos;
+  }, { total: 0, pagado: 0, pendiente: 0, en_revision: 0, abono: 0 });
+  const porcentajePagado = avance.total ? Math.round(avance.pagado * 100 / avance.total) : 0;
 
-  return <><CampaniaDialog open fullWidth maxWidth="lg" fullScreen={fullScreen} onClose={cerrar} aria-labelledby="resumen-campania-titulo"
-    PaperProps={{ sx: { maxWidth: 1000, borderRadius: { xs: 0, sm: 2 }, color: '#202441' } }}>
+  return <><CampaniaDialog open fullWidth maxWidth={publicada ? 'xl' : 'lg'} fullScreen={fullScreen} onClose={cerrar} aria-labelledby="resumen-campania-titulo"
+    PaperProps={{ sx: { maxWidth: publicada ? 1280 : 1000, borderRadius: { xs: 0, sm: 2 }, color: '#202441' } }}>
     <DialogTitle component="div" id="resumen-campania-cabecera" sx={{ bgcolor: '#171b4b', color: '#fff', px: { xs: 2.5, sm: 4 }, py: 2.5,
       display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 2 }}>
       <Box sx={{ minWidth: 0 }}>
@@ -169,6 +189,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
         <CircularProgress size={22} sx={{ color: '#171b4b' }} /><Typography sx={{ fontSize: 14 }}>Calculando resumen...</Typography>
       </Box>}
       {error && <Alert severity="error" action={<Button color="inherit" onClick={() => setIntento((actual) => actual + 1)}>Reintentar</Button>}>{error}</Alert>}
+      {mensajePago && <Alert severity="success" onClose={() => setMensajePago('')} sx={{ mb: 2 }}>{mensajePago}</Alert>}
       {!cargando && !error && datos && <>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 2, pb: 2.5,
           mb: 2.5, borderBottom: '1px solid #e9eaf0' }}>
@@ -185,21 +206,43 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
               </Typography>}
             </Box>)}
         </Box>
+        {publicada && <Box component="section" aria-label="Avance de cobros" sx={{ mb: 2.5, pb: 2.5, borderBottom: '1px solid #e9eaf0' }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 750, color: '#202441' }}>
+              {avance.total ? `${avance.pagado} de ${avance.total} pagados (${porcentajePagado}%)` : 'Sin cargos por cobrar'}
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: '#626879' }}>Faltan por pagar: {avance.total - avance.pagado}</Typography>
+          </Box>
+          <LinearProgress variant="determinate" value={porcentajePagado} aria-label="Porcentaje de cargos pagados"
+            sx={{ height: 8, borderRadius: 1, bgcolor: '#e8ebf2', '& .MuiLinearProgress-bar': { bgcolor: '#0f7a4a' } }} />
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mt: 1.5 }}>
+            {[[ 'Pagados', avance.pagado, '#0f7a4a'], ['Pendientes', avance.pendiente, '#b45309'],
+              ['En revisi\u00f3n', avance.en_revision, '#d4a017'], ['Con abono', avance.abono, '#6d4c41']].map(([label, cantidad, color]) =>
+              <Box key={label} role="group" aria-label={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+                <Box aria-hidden="true" sx={{ width: 8, height: 8, flexShrink: 0, borderRadius: 0.5, bgcolor: color }} />
+                <Typography sx={{ fontSize: 12, color: '#626879', overflowWrap: 'break-word' }}>{label}</Typography>
+                <Typography sx={{ fontSize: 14, fontWeight: 750, color: '#202441' }}>{cantidad}</Typography>
+              </Box>)}
+          </Box>
+        </Box>}
         {!datos.totales.participantes && <Alert severity="info" sx={{ mb: 2 }}>No hay participantes seleccionados.</Alert>}
         {datos.totales.con_observaciones > 0 && <Alert severity="warning" sx={{ mb: 2 }}>
           {`${datos.totales.con_observaciones} participante(s) con observaciones${datos.totales.pendientes ? `; ${datos.totales.pendientes} con importe pendiente` : ''}.`}
         </Alert>}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: '2fr 1fr' }, gap: 1.75, mb: 2 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: publicada ? '2fr 1fr 1fr' : '2fr 1fr' }, gap: 1.75, mb: 2 }}>
           <TextField size="small" label="Buscar atleta o sede" value={busqueda} onChange={(event) => { setBusqueda(event.target.value); setPagina(0); }}
             slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18 }} /></InputAdornment> } }} />
           <TextField select size="small" label={'Condici\u00f3n'} value={modalidad} onChange={(event) => { setModalidad(event.target.value); setPagina(0); }}>
             <MenuItem value="">Todas las condiciones</MenuItem>{Object.entries(MODALIDADES).map(([valor, etiqueta]) => <MenuItem key={valor} value={valor}>{etiqueta}</MenuItem>)}
             <MenuItem value="pendientes">Importe pendiente</MenuItem>
           </TextField>
+          {publicada && <TextField select size="small" label="Estado" value={estado} onChange={(event) => { setEstado(event.target.value); setPagina(0); }}>
+            <MenuItem value="">Todos los estados</MenuItem>{Object.entries(ESTADOS).map(([valor, etiqueta]) => <MenuItem key={valor} value={valor}>{etiqueta}</MenuItem>)}
+          </TextField>}
         </Box>
         <TableContainer sx={{ maxWidth: '100%' }}>
-          <Table size="small" aria-label="Participantes del resumen" sx={{ minWidth: 620 }}>
-            <TableHead sx={{ bgcolor: '#f5f6fa' }}><TableRow>{['Atleta', 'Sede', 'Condici\u00f3n', 'Importe', 'Nota interna'].map((titulo) =>
+          <Table size="small" aria-label="Participantes del resumen" sx={{ minWidth: publicada ? 1160 : 620 }}>
+            <TableHead sx={{ bgcolor: '#f5f6fa' }}><TableRow>{['Atleta', 'Sede', 'Condici\u00f3n', 'Importe', 'Nota interna', ...(publicada ? ['Saldo pendiente', 'Estado', 'Acciones'] : [])].map((titulo) =>
               <TableCell key={titulo} sx={{ color: '#626879', fontSize: 12, fontWeight: 750, whiteSpace: 'nowrap' }}>{titulo}</TableCell>)}
             </TableRow></TableHead>
             <TableBody>{filtradas.slice(paginaActual * filasPorPagina, (paginaActual + 1) * filasPorPagina).map((fila) => <TableRow key={fila.alumno}>
@@ -207,10 +250,24 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
                 <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{fila.nombres} {fila.apellidos}</Typography>
                 {fila.incidencias.map((incidencia, indice) => <Typography key={indice} sx={{ fontSize: 11, color: '#a33142', mt: 0.5 }}>{incidencia}</Typography>)}
               </TableCell>
-              <TableCell sx={{ fontSize: 12, maxWidth: 160, overflowWrap: 'anywhere' }}>{fila.sede?.nombre || 'Sede no disponible'}</TableCell>
+              <TableCell sx={{ fontSize: 12, minWidth: 140, maxWidth: 200, overflowWrap: 'break-word' }}>{fila.sede?.nombre || 'Sede no disponible'}</TableCell>
               <TableCell sx={{ fontSize: 12, color: fila.modalidad === 'no_aplica' ? '#a33142' : '#626879' }}>{MODALIDADES[fila.modalidad]}</TableCell>
               <TableCell sx={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fila.monto === null ? 'Por revisar' : formatoMonto(fila.monto, datos.campania.moneda)}</TableCell>
               <TableCell sx={{ fontSize: 12, minWidth: 140, maxWidth: 250, overflowWrap: 'anywhere' }}>{fila.nota_interna || '-'}</TableCell>
+              {publicada && <>
+                <TableCell sx={{ fontSize: 12, whiteSpace: 'nowrap' }}>{formatoMonto(fila.saldo_pendiente, datos.campania.moneda)}</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}><EstadoPagoChip
+                  data-testid={`estado-cargo-${fila.alumno}`}
+                  estado={estadoVisible(fila) === 'en_revision' ? 'en revision' : estadoVisible(fila) === 'no_aplica' ? 'exonerado' : estadoVisible(fila)}
+                  label={fila.pago_en_revision ? 'En revisi\u00f3n' : fila.estado === 'no_aplica' ? 'No aplica' : undefined} /></TableCell>
+                <TableCell><Box sx={{ display: 'flex', gap: 0.5 }}>
+                  {fila._id && <Tooltip title="Historial de pagos"><IconButton aria-label={`Historial de pagos de ${fila.nombres} ${fila.apellidos}`}
+                    onClick={() => setPagoActivo({ fila, modo: 'historial' })} sx={{ width: 36, height: 36, color: '#626879', '&:hover': { bgcolor: 'transparent' } }}><HistoryRoundedIcon sx={{ fontSize: 19 }} /></IconButton></Tooltip>}
+                  {fila._id && datos.campania.estado === 'abierta' && fila.modalidad !== 'no_aplica' && fila.saldo_pendiente > 0
+                    && <Tooltip title="Registrar pago"><IconButton aria-label={`Pagar cargo de ${fila.nombres} ${fila.apellidos}`}
+                      onClick={() => setPagoActivo({ fila, modo: 'pago' })} sx={{ width: 36, height: 36, color: '#626879', '&:hover': { bgcolor: 'transparent' } }}><PaidIcon fontSize="small" /></IconButton></Tooltip>}
+                </Box></TableCell>
+              </>}
             </TableRow>)}</TableBody>
           </Table>
         </TableContainer>
@@ -240,6 +297,12 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
           textTransform: 'none' }}>Publicar campaña</Button>}
     </DialogActions>
   </CampaniaDialog>
+  {pagoActivo && <CampaniaPagoDialog campania={campania} fila={pagoActivo.fila} modo={pagoActivo.modo}
+    onClose={() => setPagoActivo(null)} onSaved={(resultado, cerrarPago = true) => {
+      if (cerrarPago) setPagoActivo(null);
+      setMensajePago(resultado.pago.estado === 'confirmado' ? 'Pago confirmado' : 'Pago registrado en revision');
+      setIntento((valor) => valor + 1);
+    }} />}
   <Dialog open={confirmando} onClose={cerrarConfirmacion} fullWidth maxWidth="sm" aria-labelledby="publicar-campania-titulo"
     aria-describedby="publicar-campania-advertencia" PaperProps={{ role: 'alertdialog', sx: { borderRadius: 2, color: '#202441' } }}>
     <DialogTitle id="publicar-campania-titulo" sx={{ bgcolor: '#171b4b', color: '#fff', fontSize: 20, px: 3, py: 2 }}>Publicar campaña</DialogTitle>

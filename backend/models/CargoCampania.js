@@ -12,7 +12,7 @@ const CargoCampaniaSchema = new mongoose.Schema({
   moneda: { type: String, enum: ['USD', 'EUR'], required: true },
   monto: { type: Number, required: true, min: 0, max: 999999999.99 },
   saldo_pendiente: { type: Number, required: true, min: 0, max: 999999999.99 },
-  estado: { type: String, enum: ['pendiente', 'no_aplica'], required: true },
+  estado: { type: String, enum: ['pendiente', 'abono', 'pagado', 'no_aplica'], required: true },
   nota_interna: { type: String, default: '', maxlength: 1000, select: false },
   vencimiento: { type: String, default: '' },
   permitir_abonos: { type: Boolean, default: false }

@@ -20,6 +20,8 @@ import PaidIcon from '@mui/icons-material/Paid';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import { useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
+import EstadoPagoChip from './EstadoPagoChip';
+import PagoTransaccionDetalle, { PagoDetalleEncabezado, estiloEditarPago, estiloGuardarPago } from './PagoTransaccionDetalle';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia, ADDITIONAL_PAYMENT_METHODS, esMetodoPagoAdicional, referenciaPagoValida } from '../utils/paymentMethod';
 import { mediaUrl } from '../utils/mediaUrl';
@@ -1672,64 +1674,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		obtenerMontoInscripcionVisual(mensualidad) > 0 && obtenerMontoMensualidadVisual(mensualidad) > 0
 	);
 
-	const renderEstatusChip = (estatusRaw) => {
-		const estado = (estatusRaw || '').toLowerCase();
-		const esInsolvente = estado === 'retrasado' || estado === 'insolvente';
-		const chipSxBase = {
-			borderRadius: 999,
-			fontWeight: 700,
-			minWidth: 112,
-			justifyContent: 'center',
-			'& .MuiChip-label': {
-				px: 0.5,
-				width: '100%',
-				textAlign: 'center'
-			}
-		};
-		if (estado === 'pagado') return (
-			<Chip
-				label="Pagado"
-				sx={{ ...chipSxBase, bgcolor: '#dff7ea', color: '#0f7a4a' }}
-			/>
-		);
-		if (estado === 'pendiente') return (
-			<Chip
-				label="Pendiente"
-				sx={{ ...chipSxBase, bgcolor: '#fff3dc', color: '#b45309' }}
-			/>
-		);
-		if (esInsolvente) return (
-			<Chip
-				label="Insolvente"
-				sx={{ ...chipSxBase, bgcolor: '#ffe1e6', color: '#d32f2f' }}
-			/>
-		);
-		if (estado === 'exonerado') return (
-			<Chip
-				label="Exonerado"
-				sx={{ ...chipSxBase, bgcolor: '#e3f2fd', color: '#0288d1' }}
-			/>
-		);
-		if (estado === 'becado') return (
-			<Chip
-				label="Becado"
-				sx={{ ...chipSxBase, bgcolor: '#e0f2fe', color: '#0284c7' }}
-			/>
-		);
-		if (estado === 'abono') return (
-			<Chip
-				label="Abono"
-				sx={{ ...chipSxBase, bgcolor: '#efe9e7', color: '#6d4c41' }}
-			/>
-		);
-		if (estado === 'en revision') return (
-			<Chip
-				label="En revision"
-				sx={{ ...chipSxBase, bgcolor: '#fff6cc', color: '#b45309' }}
-			/>
-		);
-		return <Chip label={estatusRaw || '-'} variant="outlined" />;
-	};
+	const renderEstatusChip = (estatusRaw) => <EstadoPagoChip estado={estatusRaw} />;
 
 	const renderEstadoMensualidad = (mensualidad) => {
 		const pagoAgrupado = mensualidad?.pago_agrupado;
@@ -2564,21 +2509,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					}
 				}}
 			>
-				<DialogTitle sx={{ bgcolor: '#f3f5fb', color: '#0b2a57', fontWeight: 800, fontSize: 17, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-						<Typography sx={{ fontWeight: 800, fontSize: 17, color: '#0b2a57' }}>
-							{esVistaInscripciones ? 'Detalle mixto del pago -' : 'Detalle del pago -'}
-						</Typography>
-						{mensualidadDetalle?.id_alumno && (
-							<Typography sx={{ color: '#516b94', fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: { xs: 160, sm: 260 } }}>
-								{obtenerNombreAlumnoMensualidad(mensualidadDetalle)}
-							</Typography>
-						)}
-					</Box>
-					<IconButton size="small" onClick={() => setModalDetalle(false)} sx={{ color: '#6b7280' }}>
-						&times;
-					</IconButton>
-				</DialogTitle>
+				<PagoDetalleEncabezado titulo={esVistaInscripciones ? 'Detalle mixto del pago -' : 'Detalle del pago -'}
+					nombre={mensualidadDetalle?.id_alumno ? obtenerNombreAlumnoMensualidad(mensualidadDetalle) : ''}
+					onClose={() => setModalDetalle(false)} />
 				<DialogContent sx={{ bgcolor: '#f3f5fb', pt: 2.5, pb: 2.5 }}>
 					<Box
 						sx={{
@@ -2619,27 +2552,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 						<Box>
 							{detallePago ? (
 								<>
-									<Box
-										sx={{
-											position: 'relative',
-											bgcolor: '#ffffff',
-											borderRadius: 2.5,
-											border: '1px solid #e7eaf2',
-											p: { xs: 2, sm: 3 },
-											minHeight: { md: 560 },
-											'&::before': {
-												content: '""',
-												position: 'absolute',
-												top: 0,
-												left: 0,
-												right: 0,
-												height: 7,
-												borderTopLeftRadius: 10,
-												borderTopRightRadius: 10,
-												background: 'linear-gradient(90deg, #ff8a00 0%, #8a4b00 100%)'
-											}
-										}}
-									>
+									<PagoTransaccionDetalle sx={{ minHeight: { md: 560 } }}>
 											<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, justifyContent: 'space-between', flexWrap: 'wrap' }}>
 												<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 													<Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: '#dbeafe', color: '#0b2a57', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>✓</Box>
@@ -2665,7 +2578,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 															setEditandoUltimoPagoInline(true);
 														}}
 														disabled={guardandoUltimoPagoInline}
-														sx={{ borderRadius: 999, px: 2, minWidth: 108, textTransform: 'none', fontWeight: 800, bgcolor: editandoUltimoPagoInline ? 'transparent' : '#0b2a57', color: editandoUltimoPagoInline ? '#0b2a57' : '#ffffff', borderColor: '#93a7c7', '&:hover': { bgcolor: editandoUltimoPagoInline ? '#eff6ff' : '#103469' } }}
+														sx={estiloEditarPago(editandoUltimoPagoInline)}
 													>
 														{editandoUltimoPagoInline ? 'Cancelar' : 'Editar'}
 													</Button>
@@ -2927,14 +2840,14 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 											variant="contained"
 											onClick={guardarUltimoPagoInline}
 											disabled={guardandoUltimoPagoInline || !editandoUltimoPagoInline}
-											sx={{ borderRadius: 999, px: 2.2, minWidth: 118, bgcolor: '#dcfce7', color: '#166534', boxShadow: 'none', fontWeight: 800, '&:hover': { bgcolor: '#bbf7d0', boxShadow: 'none' } }}
+											sx={estiloGuardarPago}
 										>
 											{guardandoUltimoPagoInline ? 'Guardando...' : 'Guardar cambios'}
 										</Button>
 									</Box>
 									)}
 									</Box>
-									</Box>
+									</PagoTransaccionDetalle>
 								</>
 							) : (
 								<Typography sx={{ color: '#334155' }}>No hay información de pago registrada.</Typography>
