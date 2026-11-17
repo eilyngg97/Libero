@@ -16,6 +16,11 @@ const subirComprobante = (req, res, next) => comprobante.single('comprobante')(r
 });
 
 const router = express.Router();
+router.get('/cargos-agrupables', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.cargosAgrupables);
+router.post('/pagos-agrupados', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), subirComprobante, pagoController.registrarAgrupado);
+router.get('/pagos-agrupados/:grupoId', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.historialAgrupado);
+router.patch('/pagos-agrupados/:grupoId', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), subirComprobante, pagoController.editarAgrupado);
+router.delete('/pagos-agrupados/:grupoId', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.eliminarAgrupado);
 router.get('/mis-cargos', authMiddleware, rolMiddleware('usuario'), pagoController.misCargos);
 router.get('/:id/cargos/:cargoId/pagos/:pagoId/comprobante', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.comprobante);
 router.get('/:id/cargos/:cargoId/pagos', authMiddleware, rolMiddleware('admin', 'super_admin', 'usuario'), pagoController.historial);

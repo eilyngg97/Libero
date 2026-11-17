@@ -110,7 +110,8 @@ function ModalPago({
   conceptoPago = '',
   allowPartialPayment = false,
   allowPaymentConfirmation = false,
-  preventCloseWhileSubmitting = false
+  preventCloseWhileSubmitting = false,
+  initialPayment = null
 }) {
   const normalizarTelefonoPago = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
@@ -262,6 +263,17 @@ function ModalPago({
   }, [open, tasaBasePorMoneda]);
 
   useEffect(() => {
+    if (!open || !initialPayment) return;
+    setFechaPago(initialPayment.fecha_pago || '');
+    setReferencia(initialPayment.referencia || '');
+    setNotaPago(initialPayment.nota || '');
+    setTelefonoConfirmacionCantevista(normalizarTelefonoPago(initialPayment.telefono_pago));
+    const cedula = descomponerCedulaPago(initialPayment.cedula_titular || '');
+    setTipoCedulaConfirmacionCantevista(cedula.tipo || 'V');
+    setCedulaConfirmacionCantevista(cedula.numero || '');
+  }, [open, initialPayment]);
+
+  useEffect(() => {
     if (!open) {
       setMetodoSeleccionado(null);
       setMostrarConfirmacionCantevista(false);
@@ -292,6 +304,7 @@ function ModalPago({
     let cancelled = false;
 
     const loadRepresentativePhone = async () => {
+      if (initialPayment) return;
       try {
         const usuarioRaw = localStorage.getItem('usuario') || '';
         const usuario = usuarioRaw ? JSON.parse(usuarioRaw) : null;
@@ -323,7 +336,7 @@ function ModalPago({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, initialPayment]);
 
   const obtenerTextoCopiablePorClave = (clave, valor) => {
     const valorFormateado = formatearValorDetallePago(clave, valor);

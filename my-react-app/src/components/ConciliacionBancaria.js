@@ -45,7 +45,8 @@ const MONTO_TOLERANCIA_BS = 100;
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 const TIPO_CONCILIACION = {
   MENSUALIDADES: 'mensualidades',
-  UNIFORMES: 'uniformes'
+  UNIFORMES: 'uniformes',
+  CAMPANIAS: 'campanias'
 };
 
 const formatMatchPor = (value) => {
@@ -137,6 +138,7 @@ function estadoChip(tipo) {
 export default function ConciliacionBancaria() {
   const { dolar } = useDolar();
   const canViewUniformes = hasPermission('solicitudes_uniformes.view');
+  const canViewCampanias = ['admin', 'super_admin'].includes(String(localStorage.getItem('rolActivo') || localStorage.getItem('rol') || '').trim().toLowerCase());
   const [archivo, setArchivo] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -153,7 +155,6 @@ export default function ConciliacionBancaria() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const monedaActiva = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
-  const simboloMonedaActiva = monedaActiva === 'EUR' ? '€' : '$';
 
   const headers = useMemo(() => {
     const token = localStorage.getItem('token');
@@ -227,6 +228,12 @@ export default function ConciliacionBancaria() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Error al previsualizar conciliacion');
+      if (tipoConciliacion === TIPO_CONCILIACION.CAMPANIAS && (data.tipo_conciliacion !== tipoConciliacion
+        || !Array.isArray(data.match_total) || !Array.isArray(data.match_parcial) || !Array.isArray(data.pago_ids_confirmables)
+        || [...data.match_total, ...data.match_parcial].some((fila) => fila.sistema?.registro_tipo !== TIPO_CONCILIACION.CAMPANIAS
+          || !/^[a-f\d]{64}$/.test(fila.sistema.revision_pago)))) {
+        throw new Error('No se pudo verificar la conciliacion de cobros adicionales. Procesa nuevamente el archivo.');
+      }
 
       setResultado(data);
       setSuccess('Conciliacion generada correctamente.');
@@ -238,7 +245,16 @@ export default function ConciliacionBancaria() {
     }
   };
 
+  const revisionesCampanias = (ids) => tipoConciliacion === TIPO_CONCILIACION.CAMPANIAS ? {
+    revisiones: [...(resultado?.match_total || []), ...(resultado?.match_parcial || [])]
+      .filter((fila) => ids.includes(fila.sistema.pago_id))
+      .map((fila) => ({ pago_id: fila.sistema.pago_id, revision: fila.sistema.revision_pago }))
+  } : {};
+  const etiquetaRegistros = tipoConciliacion === TIPO_CONCILIACION.CAMPANIAS ? 'pagos de cobros adicionales'
+    : tipoConciliacion === TIPO_CONCILIACION.UNIFORMES ? 'pedidos de uniforme' : 'mensualidades';
+
   const confirmarTodo = async () => {
+    if (confirmando || loading) return;
     const ids = resultado?.pago_ids_confirmables || [];
     if (!ids.length) {
       setError('No hay pagos con match total para confirmar.');
@@ -256,7 +272,8 @@ export default function ConciliacionBancaria() {
         },
         body: JSON.stringify({
           pago_ids: ids,
-          tipo_conciliacion: tipoConciliacion
+          tipo_conciliacion: tipoConciliacion,
+          ...revisionesCampanias(ids)
         })
       });
 
@@ -264,8 +281,7 @@ export default function ConciliacionBancaria() {
       if (!res.ok) throw new Error(data?.error || 'Error al confirmar pagos');
 
       const actualizados = data.registros_actualizados ?? data.mensualidades_actualizadas ?? data.pedidos_actualizados ?? 0;
-      const etiqueta = tipoConciliacion === TIPO_CONCILIACION.UNIFORMES ? 'pedidos de uniforme' : 'mensualidades';
-      setSuccess(`Se actualizaron ${actualizados} ${etiqueta}.`);
+      setSuccess(`Se actualizaron ${actualizados} ${etiquetaRegistros}.`);
       setParcialesSeleccionados([]);
       if (archivo) {
         await procesarArchivo(archivo);
@@ -287,6 +303,7 @@ export default function ConciliacionBancaria() {
   };
 
   const confirmarParcialesSeleccionados = () => {
+    if (confirmando || loading) return;
     if (!parcialesSeleccionados.length) {
       setError('Selecciona al menos un match parcial para confirmar.');
       return;
@@ -317,6 +334,7 @@ export default function ConciliacionBancaria() {
   };
 
   const ejecutarConfirmacionParciales = async () => {
+    if (confirmando || loading) return;
     setDialogConfirmParcialesOpen(false);
 
     setConfirmando(true);
@@ -330,7 +348,8 @@ export default function ConciliacionBancaria() {
         },
         body: JSON.stringify({
           pago_ids: parcialesSeleccionados,
-          tipo_conciliacion: tipoConciliacion
+          tipo_conciliacion: tipoConciliacion,
+          ...revisionesCampanias(parcialesSeleccionados)
         })
       });
 
@@ -338,8 +357,7 @@ export default function ConciliacionBancaria() {
       if (!res.ok) throw new Error(data?.error || 'Error al confirmar parciales');
 
       const actualizados = data.registros_actualizados ?? data.mensualidades_actualizadas ?? data.pedidos_actualizados ?? 0;
-      const etiqueta = tipoConciliacion === TIPO_CONCILIACION.UNIFORMES ? 'pedidos de uniforme' : 'mensualidades';
-      setSuccess(`Se confirmaron ${actualizados} ${etiqueta} desde match parcial.`);
+      setSuccess(`Se confirmaron ${actualizados} ${etiquetaRegistros} desde match parcial.`);
       setParcialesSeleccionados([]);
       if (archivo) {
         await procesarArchivo(archivo);
@@ -354,6 +372,7 @@ export default function ConciliacionBancaria() {
   const onDrop = (event) => {
     event.preventDefault();
     setDragging(false);
+    if (loading || confirmando) return;
     const droppedFile = event.dataTransfer?.files?.[0];
     if (!droppedFile) return;
     if (!isAllowedFile(droppedFile)) {
@@ -373,6 +392,7 @@ export default function ConciliacionBancaria() {
       pagoAgrupadoId: row.sistema?.pago_agrupado_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
+      monedaSistema: row.sistema?.moneda || monedaActiva,
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
@@ -397,6 +417,7 @@ export default function ConciliacionBancaria() {
       pagoAgrupadoId: row.sistema?.pago_agrupado_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
+      monedaSistema: row.sistema?.moneda || monedaActiva,
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: row.excel?.referencia || '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
@@ -421,6 +442,7 @@ export default function ConciliacionBancaria() {
       pagoAgrupadoId: row.sistema?.pago_agrupado_id || '',
       alumno: row.sistema?.alumno || '-',
       contextoSistema: row.sistema?.contexto || '',
+      monedaSistema: row.sistema?.moneda || monedaActiva,
       referenciaSistema: row.sistema?.referencia || '-',
       referenciaExcel: '-',
       telefonoSistema: row.sistema?.telefono_pago || '-',
@@ -464,7 +486,7 @@ export default function ConciliacionBancaria() {
     }));
 
     return [...total, ...parcial, ...noSistema, ...noExcel];
-  }, [resultado]);
+  }, [resultado, monedaActiva]);
 
   const filasPaginadas = useMemo(() => {
     const inicio = page * rowsPerPage;
@@ -530,6 +552,7 @@ export default function ConciliacionBancaria() {
               labelId="tipo-conciliacion-label"
               value={tipoConciliacion}
               label="Tipo de conciliacion"
+              disabled={loading || confirmando}
               onChange={(event) => {
                 setTipoConciliacion(event.target.value);
                 setResultado(null);
@@ -537,6 +560,7 @@ export default function ConciliacionBancaria() {
             >
               <MenuItem value={TIPO_CONCILIACION.MENSUALIDADES}>Mensualidades</MenuItem>
               {canViewUniformes && <MenuItem value={TIPO_CONCILIACION.UNIFORMES}>Uniformes</MenuItem>}
+              {canViewCampanias && <MenuItem value={TIPO_CONCILIACION.CAMPANIAS}>Cobros adicionales</MenuItem>}
             </Select>
           </FormControl>
 
@@ -546,6 +570,7 @@ export default function ConciliacionBancaria() {
               labelId="banco-conciliacion-label"
               value={bancoConciliacion}
               label="Banco"
+              disabled={loading || confirmando}
               onChange={(event) => {
                 setBancoConciliacion(event.target.value);
                 setResultado(null);
@@ -574,10 +599,12 @@ export default function ConciliacionBancaria() {
               o haz clic para explorar tus archivos
             </Typography>
 
-            <Button variant="outlined" component="label" className="conciliacionSelectBtn">
+            <Button variant="outlined" component="label" className="conciliacionSelectBtn" disabled={loading || confirmando}>
               Seleccionar archivo
               <input
                 type="file"
+                aria-label="Archivo de conciliacion"
+                disabled={loading || confirmando}
                 hidden
                 accept=".xlsx,.xls,.txt"
                 onChange={(e) => {
@@ -606,7 +633,7 @@ export default function ConciliacionBancaria() {
             <Button
               variant="contained"
               onClick={() => procesarArchivo()}
-              disabled={!archivo || loading}
+              disabled={!archivo || loading || confirmando}
               className="conciliacionProcessBtn"
               startIcon={!loading ? <AutorenewRoundedIcon /> : null}
             >
@@ -616,7 +643,7 @@ export default function ConciliacionBancaria() {
             <Button
               variant="contained"
               onClick={confirmarTodo}
-              disabled={!resultado?.pago_ids_confirmables?.length || confirmando}
+              disabled={!resultado?.pago_ids_confirmables?.length || confirmando || loading}
               className="conciliacionConfirmBtn"
               startIcon={!confirmando ? <DoneAllRoundedIcon /> : null}
             >
@@ -626,7 +653,7 @@ export default function ConciliacionBancaria() {
             <Button
               variant="outlined"
               onClick={confirmarParcialesSeleccionados}
-              disabled={!parcialesSeleccionados.length || confirmando}
+              disabled={!parcialesSeleccionados.length || confirmando || loading}
               sx={{
                 borderRadius: 999,
                 textTransform: 'none',
@@ -749,7 +776,8 @@ export default function ConciliacionBancaria() {
                   </div>
                   <div className="conciliacionMobileRow">
                     <span className="label">Monto esperado</span>
-                    <span className="value">{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd, simboloMonedaActiva, monedaActiva)}</span>
+                    <span className="value">{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd,
+                      (fila.monedaSistema || monedaActiva) === 'EUR' ? '€' : '$', fila.monedaSistema || monedaActiva)}</span>
                   </div>
                   <div className="conciliacionMobileRow">
                     <span className="label">Monto Sistema</span>
@@ -859,7 +887,8 @@ export default function ConciliacionBancaria() {
                       <TableCell>{fila.matchPor}</TableCell>
                       <TableCell>{fila.identificadorSistema || '-'}</TableCell>
                       <TableCell>{fila.identificadorExcel || '-'}</TableCell>
-                      <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd, simboloMonedaActiva, monedaActiva)}</TableCell>
+                      <TableCell>{formatMontoEsperado(fila.montoEsperadoSistemaBs, fila.montoEsperadoSistemaUsd,
+                        (fila.monedaSistema || monedaActiva) === 'EUR' ? '€' : '$', fila.monedaSistema || monedaActiva)}</TableCell>
                       <TableCell>{formatMoney(fila.montoSistema)}</TableCell>
                       <TableCell>{formatMoney(fila.montoExcel)}</TableCell>
                       <TableCell>{formatDiferenciaMonto(fila.montoSistema, fila.montoExcel)}</TableCell>

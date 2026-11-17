@@ -1,10 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, CardActions, CardContent, Typography, Avatar, Box, Chip, CircularProgress } from '@mui/material';
+import { Alert, Button, Card, CardActions, CardContent, Typography, Avatar, Box, Chip, CircularProgress,
+  Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Tooltip } from '@mui/material';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useNavigate } from 'react-router-dom';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import { FaSackDollar } from 'react-icons/fa6';
+import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
 import { cargarAtletasPortal, cargarMensualidadesPortal } from '../utils/portalPaymentData';
+import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
 
 const normalizarDiaMes = (value) => {
   const numero = Number(value);
@@ -57,14 +63,27 @@ const buildSiguientePeriodoDesde = (mes, anio) => {
   return { mes: mesNum + 1, anio: anioNum };
 };
 
+const estiloBotonPagoAgrupado = {
+  width: { xs: '100%', sm: 240 }, maxWidth: '100%', minWidth: 0, minHeight: 44, flexShrink: 0,
+  px: 2, borderRadius: 1.5, bgcolor: '#ec3e75', color: '#fff', textTransform: 'none',
+  fontSize: 12, fontWeight: 750, boxShadow: 'none',
+  '&:hover': { bgcolor: '#d62c63', boxShadow: 'none' }
+};
+
 function DashboardUsuario() {
   const [alumnos, setAlumnos] = useState([]);
   const [resumenPagos, setResumenPagos] = useState({});
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState('');
   const [intentoCarga, setIntentoCarga] = useState(0);
+  const [pagoCobrosAbierto, setPagoCobrosAbierto] = useState(false);
+  const [mensajeCobros, setMensajeCobros] = useState('');
+  const [totalesCobros, setTotalesCobros] = useState(null);
+  const [errorCobros, setErrorCobros] = useState('');
+  const [intentoCobros, setIntentoCobros] = useState(0);
   const navigate = useNavigate();
   const apiBase = process.env.REACT_APP_API_URL || window.location.origin;
+  const token = localStorage.getItem('token');
 
   const obtenerFechaVencimientoVisible = useCallback((mensualidad, alumno) => {
     const diaLimitePersonalizado = normalizarDiaMes(alumno?.dia_limite_personalizado);
@@ -180,6 +199,57 @@ function DashboardUsuario() {
     return () => abortController.abort();
   }, [apiBase, obtenerResumenPago, intentoCarga]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setTotalesCobros(null);
+    setErrorCobros('');
+    if (alumnos.length) {
+      const cargarCobros = async () => {
+        try {
+          if (!token) throw new Error('Inicia sesion nuevamente para consultar los cobros.');
+          const identificadores = new Set();
+          const resultados = await Promise.all(alumnos.map(async (alumno) => {
+            const response = await fetch(`${apiBase}/api/campanias-cobro/mis-cargos?alumnoId=${encodeURIComponent(alumno._id)}`, {
+              headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error('No se pudo cargar el total de cobros adicionales.');
+            if (!Array.isArray(data?.cargos) || data.cargos.some((cargo) => {
+              if (!cargo?._id || identificadores.has(cargo._id) || cargo.alumno !== alumno._id
+                || !['USD', 'EUR'].includes(cargo.moneda) || cargo.campania?.moneda !== cargo.moneda
+                || !['abierta', 'cerrada', 'cancelada'].includes(cargo.campania?.estado)
+                || !['pendiente', 'abono', 'pagado', 'no_aplica'].includes(cargo.estado)
+                || typeof cargo.saldo_pendiente !== 'number' || !Number.isFinite(cargo.saldo_pendiente)
+                || cargo.saldo_pendiente < 0 || !Number.isSafeInteger(Math.round(cargo.saldo_pendiente * 100))
+                || typeof cargo.pago_en_revision !== 'boolean' || typeof cargo.disponible !== 'number' || !Number.isFinite(cargo.disponible)
+                || cargo.disponible < 0 || cargo.disponible > cargo.saldo_pendiente) return true;
+              identificadores.add(cargo._id);
+              return false;
+            })) throw new Error('No se pudo verificar el total de cobros adicionales.');
+            return data.cargos;
+          }));
+          const totales = { USD: { porPagar: 0, revision: 0, otros: 0 }, EUR: { porPagar: 0, revision: 0, otros: 0 } };
+          resultados.flat().forEach((cargo) => {
+            if (['pendiente', 'abono'].includes(cargo.estado) && cargo.campania.estado !== 'cancelada') {
+              const saldo = Math.round(cargo.saldo_pendiente * 100);
+              const revision = saldo - Math.round(cargo.disponible * 100);
+              const porPagar = cargo.campania.estado === 'abierta' && !cargo.pago_en_revision ? saldo : 0;
+              totales[cargo.moneda].porPagar += porPagar;
+              totales[cargo.moneda].revision += revision;
+              totales[cargo.moneda].otros += saldo - revision - porPagar;
+            }
+          });
+          if (Object.values(totales).some((importes) => Object.values(importes).some((importe) => !Number.isSafeInteger(importe) || importe < 0))) throw new Error('No se pudo verificar el total de cobros adicionales.');
+          if (!controller.signal.aborted) setTotalesCobros(Object.entries(totales).filter(([, importes]) => Object.values(importes).some((importe) => importe > 0)));
+        } catch (error) {
+          if (!controller.signal.aborted) setErrorCobros(error.message || 'No se pudo cargar el total de cobros adicionales.');
+        }
+      };
+      cargarCobros();
+    }
+    return () => controller.abort();
+  }, [alumnos, apiBase, intentoCobros, token]);
+
   const resumenFamiliar = useMemo(() => {
     const pendientes = alumnos
       .map((alumno) => resumenPagos[alumno._id])
@@ -206,11 +276,17 @@ function DashboardUsuario() {
   };
 
 
+  if (pagoCobrosAbierto && alumnos[0]) return <CampaniaPagoAgrupadoDialog pagina representante alumnoId={alumnos[0]._id}
+    onClose={() => setPagoCobrosAbierto(false)} onSaved={(resultado) => {
+      setPagoCobrosAbierto(false); setMensajeCobros(resultado.mensaje || 'Pago agrupado reportado');
+      setIntentoCobros((actual) => actual + 1);
+    }} />;
+
   return (
     <Box sx={{ width: '100%', maxWidth: 1040, mx: 'auto', pb: 5 }}>
       <TerminosPendientesAlert sx={{ mb: 2, mt: 1 }} />
 
-      <Box sx={{ mb: 2.25, mt: 1 }}>
+      <Box sx={{ mb: 3, mt: 1 }}>
         <Typography variant="h5" sx={{ fontWeight: 850, color: '#11132f' }}>
           Mis atletas
         </Typography>
@@ -219,61 +295,108 @@ function DashboardUsuario() {
         </Typography>
       </Box>
 
+      <Dialog open={Boolean(mensajeCobros)} disableEscapeKeyDown fullWidth maxWidth="xs"
+        aria-labelledby="cobros-agrupados-aviso-titulo" aria-describedby="cobros-agrupados-aviso-descripcion"
+        slotProps={{ paper: { role: 'alertdialog', sx: { m: 2, width: 'calc(100% - 32px)', borderRadius: 2,
+          border: '1px solid #dce8df', borderTop: '4px solid #2e7d4f', boxShadow: '0 20px 60px rgba(17,19,66,0.2)' } } }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, px: 3, pt: 2.5 }}>
+          <Box sx={{ display: 'grid', placeItems: 'center', width: 44, height: 44, flexShrink: 0, borderRadius: '50%', bgcolor: '#e8f4ec', color: '#2e7d4f' }}>
+            <CheckCircleRoundedIcon sx={{ fontSize: 26 }} />
+          </Box>
+          <DialogTitle id="cobros-agrupados-aviso-titulo" sx={{ flex: 1, minWidth: 0, p: 0, pt: 0.4, fontSize: 20, fontWeight: 800, lineHeight: 1.35, color: '#111342' }}>
+            {mensajeCobros}
+          </DialogTitle>
+          <Tooltip title="Cerrar aviso"><IconButton aria-label="Cerrar aviso de pago agrupado" size="small" onClick={() => setMensajeCobros('')}
+            sx={{ color: '#747a90', flexShrink: 0 }}><CloseRoundedIcon fontSize="small" /></IconButton></Tooltip>
+        </Box>
+        <DialogContent sx={{ px: 3, pt: 2, pb: 2.5 }}>
+          <Chip label="Pendiente de revisión" size="small" sx={{ mb: 1.5, bgcolor: '#fff3da', color: '#895a13', fontWeight: 700, borderRadius: 1 }} />
+          <Typography id="cobros-agrupados-aviso-descripcion" sx={{ color: '#555b72', fontSize: 14, lineHeight: 1.7 }}>
+            Recibimos tu reporte de pago de cobros adicionales. La academia lo revisará antes de confirmarlo.
+          </Typography>
+          <Typography sx={{ mt: 1, color: '#747a90', fontSize: 13, lineHeight: 1.6 }}>
+            El saldo pendiente se actualizará cuando el pago sea confirmado.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #eceef3' }}>
+          <Button autoFocus variant="contained" onClick={() => setMensajeCobros('')}
+            sx={{ minHeight: 42, px: 3, bgcolor: '#111342', color: '#fff', borderRadius: 1.5, textTransform: 'none', fontWeight: 750,
+              boxShadow: 'none', '&:hover': { bgcolor: '#25284f', boxShadow: 'none' } }}>Entendido</Button>
+        </DialogActions>
+      </Dialog>
+
       {cargando && <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>}
       {errorCarga && <Alert severity="error" sx={{ mb: 2 }} action={
         <Button color="inherit" size="small" onClick={() => setIntentoCarga((actual) => actual + 1)}>Reintentar</Button>
       }>{errorCarga}</Alert>}
 
-      {!cargando && !errorCarga && resumenFamiliar.atletas > 0 && (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(3, minmax(120px, auto)) 1fr' },
-            alignItems: 'center',
-            gap: { xs: 2, md: 3.5 },
-            bgcolor: '#111342',
-            borderRadius: 2,
-            px: { xs: 2, sm: 2.75 },
-            py: { xs: 2, sm: 2.1 },
-            mb: 3,
-            boxShadow: '0 12px 28px rgba(17, 19, 66, 0.16)'
-          }}
-        >
-          {[
-            ['Total pendiente', `$${resumenFamiliar.total.toFixed(2)}`, '#ffffff'],
-            ['Vencimiento', resumenFamiliar.vencimiento, '#ffffff']
-          ].map(([etiqueta, valor, color]) => (
-            <Box key={etiqueta}>
-              <Typography sx={{ color: '#aeb5d8', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {etiqueta}
-              </Typography>
-              <Typography sx={{ color, fontSize: { xs: 20, sm: 24 }, fontWeight: 850, lineHeight: 1.15, textTransform: etiqueta === 'Vencimiento' ? 'lowercase' : 'none' }}>
-                {valor}
-              </Typography>
+      {!cargando && !errorCarga && alumnos.length > 0 && (
+        <Box component="section" aria-label="Pagos familiares" sx={{ mb: 3.5, display: 'grid', gap: 1.5 }}>
+          {resumenFamiliar.atletas > 0 && (
+            <Box component="section" aria-label="Mensualidades" sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'minmax(0, 1fr) minmax(95px, auto) minmax(80px, auto) minmax(190px, auto)' },
+              alignItems: 'center', gap: { xs: 2.25, lg: 3 }, p: { xs: 2, sm: 2.5 }, bgcolor: '#111342', border: '1px solid #111342', borderRadius: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, gridColumn: { xs: '1 / -1', lg: 'auto' } }}>
+                <Box sx={{ display: 'grid', placeItems: 'center', width: 42, height: 42, flexShrink: 0, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.12)', color: '#fff' }}>
+                  <CalendarMonthOutlinedIcon fontSize="small" />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography component="h2" sx={{ fontSize: 15, fontWeight: 800, color: '#fff', lineHeight: 1.4 }}>Mensualidades</Typography>
+                  <Typography sx={{ mt: 0.25, fontSize: 12, color: '#bec5e4' }}>{resumenFamiliar.atletas} {resumenFamiliar.atletas === 1 ? 'atleta con saldo pendiente' : 'atletas con saldo pendiente'}</Typography>
+                </Box>
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ color: '#bec5e4', fontSize: 11, mb: 0.25 }}>Total pendiente</Typography>
+                <Typography sx={{ color: '#fff', fontSize: 26, fontWeight: 850, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>${resumenFamiliar.total.toFixed(2)}</Typography>
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ color: '#bec5e4', fontSize: 11, mb: 0.5 }}>Vencimiento</Typography>
+                <Typography sx={{ color: '#fff', fontSize: 15, fontWeight: 750, textTransform: 'lowercase' }}>{resumenFamiliar.vencimiento}</Typography>
+              </Box>
+              {resumenFamiliar.atletas > 1 && <Button variant="contained" endIcon={<ArrowForwardRoundedIcon />}
+                onClick={() => navigate('/pagos-agrupados')}
+                sx={{ ...estiloBotonPagoAgrupado, gridColumn: { xs: '1 / -1', lg: 'auto' }, justifySelf: 'end' }}>
+                Pagar todo junto · {resumenFamiliar.atletas} atletas
+              </Button>}
             </Box>
-          ))}
-          {resumenFamiliar.atletas > 1 && (
-          <Button
-            variant="contained"
-            endIcon={<ArrowForwardRoundedIcon />}
-            onClick={() => navigate('/pagos-agrupados')}
-            sx={{
-              gridColumn: { xs: '1 / -1', md: 'auto' },
-              justifySelf: { xs: 'stretch', md: 'end' },
-              minHeight: 46,
-              px: 2.4,
-              bgcolor: '#f04478',
-              color: '#fff',
-              borderRadius: 1.5,
-              textTransform: 'none',
-              fontWeight: 800,
-              boxShadow: 'none',
-              '&:hover': { bgcolor: '#dc3569', boxShadow: 'none' }
-            }}
-          >
-            Pagar todo junto · {resumenFamiliar.atletas} atletas
-          </Button>
           )}
+          <Box component="section" aria-label="Cobros adicionales" sx={{ display: 'grid', alignItems: 'center',
+            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'minmax(0, 1fr) minmax(95px, auto) minmax(80px, auto) minmax(190px, auto)' },
+            gap: { xs: 2.25, lg: 3 }, p: { xs: 2, sm: 2.5 }, bgcolor: '#fff', border: '1px solid #e5e7ee', boxShadow: 'inset 3px 0 0 #111342', borderRadius: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, gridColumn: { xs: '1 / -1', lg: 'auto' } }}>
+              <Box sx={{ display: 'grid', placeItems: 'center', width: 42, height: 42, flexShrink: 0, borderRadius: 1.5, bgcolor: '#eef0f7', color: '#111342' }}>
+                <FaSackDollar size={20} aria-hidden="true" focusable="false" />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography component="h2" sx={{ fontSize: 15, fontWeight: 800, color: '#111342', lineHeight: 1.4 }}>Cobros adicionales</Typography>
+                <Typography sx={{ mt: 0.25, fontSize: 12, color: '#70758a' }}>Campañas y actividades</Typography>
+              </Box>
+            </Box>
+            <Box sx={{ minWidth: 0, gridColumn: { xs: '1 / -1', lg: '2 / 4' } }}>
+              <Typography sx={{ color: '#70758a', fontSize: 11, mb: 0.25 }}>Por pagar</Typography>
+              {errorCobros ? <Alert severity="error" action={<Button color="inherit" size="small" aria-label="Reintentar cobros adicionales"
+                onClick={() => setIntentoCobros((actual) => actual + 1)}>Reintentar</Button>}>{errorCobros}</Alert>
+                : totalesCobros === null ? <Typography role="status" sx={{ color: '#70758a', fontSize: 13 }}>Cargando...</Typography>
+                  : (totalesCobros.length ? totalesCobros : [['USD', { porPagar: 0, revision: 0, otros: 0 }]]).map(([moneda, importes]) => <Box key={moneda} sx={{ overflowWrap: 'anywhere' }}>
+                    <Typography sx={{ color: '#111342', fontSize: 26, fontWeight: 850, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
+                      {new Intl.NumberFormat('en-US', { style: 'currency', currency: moneda }).format(importes.porPagar / 100)}
+                      <Box component="span" sx={{ ml: 0.5, fontSize: 11, fontWeight: 700, color: '#70758a' }}>{moneda}</Box>
+                    </Typography>
+                    {importes.revision > 0 && <Typography sx={{ color: '#895a13', fontSize: 12, mt: 0.5, lineHeight: 1.5 }}>
+                      En revisión: {new Intl.NumberFormat('en-US', { style: 'currency', currency: moneda }).format(importes.revision / 100)} {moneda}
+                    </Typography>}
+                    {importes.otros > 0 && <Tooltip title="Saldo pendiente no disponible para pago agrupado">
+                      <Typography sx={{ color: '#70758a', fontSize: 12, mt: 0.5, lineHeight: 1.5 }}>
+                        Otros saldos: {new Intl.NumberFormat('en-US', { style: 'currency', currency: moneda }).format(importes.otros / 100)} {moneda}
+                      </Typography>
+                    </Tooltip>}
+                  </Box>)}
+            </Box>
+            <Button variant="contained" endIcon={<ArrowForwardRoundedIcon />}
+              onClick={() => { setMensajeCobros(''); setPagoCobrosAbierto(true); }}
+              sx={{ ...estiloBotonPagoAgrupado, gridColumn: { xs: '1 / -1', lg: 'auto' }, justifySelf: 'end' }}>
+              Pagar todo junto · {alumnos.length} {alumnos.length === 1 ? 'atleta' : 'atletas'}
+            </Button>
+          </Box>
         </Box>
       )}
 

@@ -8,6 +8,7 @@ import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useParams } from 'react-router-dom';
 import CampaniaPagoDialog from './CampaniaPagoDialog';
+import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
 
 const API = process.env.REACT_APP_API_URL || window.location.origin;
 const dinero = (valor) => typeof valor === 'number' && Number.isFinite(valor) && valor >= 0;
@@ -44,6 +45,7 @@ function CampaniasAlumno() {
   const [pagina, setPagina] = useState(0);
   const [porPagina, setPorPagina] = useState(10);
   const [seleccion, setSeleccion] = useState(null);
+  const [agrupado, setAgrupado] = useState(false);
   const token = localStorage.getItem('token');
 
   useEffect(() => {
@@ -78,7 +80,11 @@ function CampaniasAlumno() {
   const cambiarFiltro = (setter) => (event) => { setter(event.target.value); setPagina(0); };
 
   return <Box sx={{ p: { xs: 2, md: 3 }, width: '100%', boxSizing: 'border-box', maxWidth: 1200, mx: 'auto', minWidth: 0 }}>
-    <Typography component="h1" sx={{ fontSize: 26, fontWeight: 800, color: '#0f172a' }}>Cobros adicionales</Typography>
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+      <Typography component="h1" sx={{ fontSize: 26, fontWeight: 800, color: '#0f172a' }}>Cobros adicionales</Typography>
+      <Button startIcon={<PaidIcon />} disabled={cargando || Boolean(error)} onClick={() => setAgrupado(true)}
+        sx={{ color: '#626879' }}>Pago agrupado</Button>
+    </Box>
     {cargos[0] && <Typography sx={{ mt: 0.5, color: '#64748b', overflowWrap: 'anywhere' }}>{cargos[0].nombres} {cargos[0].apellidos}</Typography>}
     <Dialog open={Boolean(aviso)} disableEscapeKeyDown fullWidth maxWidth="xs"
       aria-labelledby="pago-reportado-titulo" aria-describedby="pago-reportado-descripcion"
@@ -168,6 +174,8 @@ function CampaniasAlumno() {
     </>}
     {seleccion && <CampaniaPagoDialog representante campania={seleccion.cargo.campania} fila={seleccion.cargo} modo={seleccion.modo}
       onClose={() => setSeleccion(null)} onSaved={(_, cerrar = true) => { if (cerrar) { setSeleccion(null); setAviso('Pago reportado'); } setIntento((valor) => valor + 1); }} />}
+    {agrupado && <CampaniaPagoAgrupadoDialog representante alumnoId={alumnoId} onClose={() => setAgrupado(false)}
+      onSaved={() => { setAgrupado(false); setAviso('Pago agrupado reportado'); setIntento((valor) => valor + 1); }} />}
   </Box>;
 }
 

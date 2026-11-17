@@ -1,5 +1,82 @@
 # Cobros adicionales
 
+## Pagos agrupados (2026-11-16)
+
+- Una transferencia cubre entre 2 y 100 saldos completos de cargos abiertos publicados,
+    de una o varias campanas y atletas del mismo representante y tenant. No mezcla monedas,
+    mensualidades ni uniformes. Excluye No aplica, pagados y cualquier cargo con pago en revision;
+    no consume billetera ni genera excedentes. Los pagos individuales conservan sus abonos.
+- Portal: Pago agrupado abre los cargos autorizados de la familia, incluso si el atleta actual
+    no tiene cargos. Administracion: icono de pago agrupado en cada fila de cargos publicados.
+    La seleccion por moneda muestra atleta, campana, saldo y total antes de abrir ModalPago.
+    El representante siempre reporta en revision; administracion puede confirmar al registrar.
+- GET `/api/campanias-cobro/cargos-agrupables?alumnoId=...` devuelve solo cargos autorizados.
+    POST `/api/campanias-cobro/pagos-agrupados` recibe los datos normales del pago, `alumnoId`
+    y `cargos: [{ cargo, version }]` (JSON en multipart), sin version individual global.
+    El servidor verifica parentesco, permisos, saldos, moneda, versiones, reservas y tasa oficial.
+- Un PagoCampania por cargo conserva importe, estado y auditoria propios, enlazados por
+    `agrupacion.id` (UUID de solicitud), representante, cargos y totales de la transferencia.
+    Un indice unico parcial `grupo_solicitud_unica` sobre el reparto principal impide reutilizar
+    un UUID en grupos distintos, incluso concurrentes. Crear/verificar los indices de cada tenant
+    antes de activar en produccion; no se ejecutaron migraciones ni escrituras sobre datos reales.
+- Reparto proporcional en centimos enteros con restos mayores para Bs: la suma de asignaciones
+    siempre conserva el importe bancario real. No se convierte artificialmente Zelle/PayPal/Binance
+    a Bs. Se guarda un unico comprobante privado compartido, con el acceso autenticado existente.
+- GET/PATCH/DELETE `/api/campanias-cobro/pagos-agrupados/:grupoId` consulta, corrige o retira
+    la transferencia completa. Corregir mantiene moneda, total y reparto de saldos; admite corregir
+    metodo, fecha, referencia, datos del titular, nota y comprobante, recalculando el reparto en Bs.
+    Exige UUID nuevo y versiones de todos los cargos. Reintentar la misma correccion es idempotente.
+    El representante solo corrige sus propios reportes; administracion gestiona los pendientes.
+- Solo se corrigen/retiran grupos enteramente en revision y cuyo pago sea el ultimo activo
+    en cada cargo. Confirmados se consultan, pero no se editan ni retiran en esta entrega.
+    El retiro es logico y conserva actor/fecha e historial. Los endpoints individuales rechazan
+    cambiar un reparto aislado. El historial identifica total de transferencia y asignacion al cargo.
+- Registro, correccion, retiro y confirmacion completos son atomicos, con transaccion obligatoria
+    y control de version por cargo. Fallos, cambios o conflictos no dejan repartos parciales.
+    Un reintento o confirmacion manual simultanea con conciliacion no duplica descuentos.
+- Conciliacion muestra una sola fila por transferencia, con total bancario y contexto de todas
+    sus campanas/atletas. Confirmarla aplica todos los repartos. La huella incluye todo el grupo;
+    corregirlo invalida la previsualizacion anterior. Conserva el flujo total/parcial existente.
+- Verificacion backend: 252 pruebas de campanas y 159 de pagos agrupados de mensualidades
+    aprobadas, incluidas 15 nuevas de agrupados (concurrencia, aislamiento, rollback, correcciones,
+    comprobante y divisa). Navegador aislado con API simulada: dos hermanos/dos campanas, total
+    42,50 USD, un POST en revision, aviso explicito y cero errores JS; seleccion sin desbordamiento
+    en 1365, 768 y 320 px. No hubo confirmaciones ni reportes reales.
+- Frontend: 85 pruebas enfocadas de campanas y 20 de uniformes aprobadas en bloques, incluidas
+    7 nuevas de agrupados; lint de los 6 archivos frontend y diagnosticos limpios. La ejecucion
+    conjunta de la suite completa se interrumpio sin resultado global; no se declara aprobada.
+    En navegador tambien se verifico correccion movil conservando fecha, referencia y nota,
+    envio de versiones de ambos cargos y ausencia de opcion para confirmar desde el portal.
+- Activacion pendiente: actualizar/reiniciar backend manualmente y cargar frontend actualizado.
+    Sin commit, push ni despliegue durante esta implementacion.
+
+## Conciliacion bancaria global (2026-11-16)
+
+- Conciliacion Bancaria incorpora el tipo Cobros adicionales (`campanias`), separado de
+    mensualidades y uniformes. Reune todas las campanas de la academia sin selector ni filtro
+    obligatorio por campana; el nombre de la campana aparece como contexto de cada fila.
+- Incluye pagos en revision de campanas publicadas abiertas con importe real positivo en Bs.
+    Los pagos en divisa sin monto en Bs no se convierten artificialmente para compararlos
+    contra un estado de cuenta bancario. Cada fila conserva la moneda original del cargo.
+- Reutiliza archivos TXT/XLS/XLSX y las reglas de coincidencia existentes, incluida la
+    tolerancia de Bs 100. Confirmar Todo confirma solo coincidencias totales; los parciales
+    requieren seleccion y confirmacion explicitas. No confirma pagos sin coincidencia.
+- Previsualizar y confirmar requieren administracion/superadministracion y el permiso
+    `conciliacion.manage`. La consulta y las escrituras usan los modelos del tenant actual.
+- La confirmacion recibe `pago_ids` y `revisiones` (`pago_id`, `revision`) de la vista previa.
+    Una huella verifica que el contenido del pago no haya cambiado. El lote completo usa
+    transaccion obligatoria: un pago cambiado, eliminado o inaccesible revierte todo el lote.
+    Se comparte la confirmacion financiera individual, con control de version del cargo,
+    actor y fecha. Un reintento o confirmacion manual concurrente no descuenta dos veces.
+- Durante consultas y confirmaciones se bloquean cambios de archivo, banco y tipo, asi como
+    confirmaciones simultaneas. Al terminar se reprocesa el archivo para refrescar pendientes.
+- Verificacion: 396 pruebas backend de campanas y pagos agrupados aprobadas (12 nuevas de
+    conciliacion), 13 de compatibilidad bancaria y 9 frontend de conciliacion. ESLint y
+    diagnosticos limpios. Navegador aislado con API simulada: totales y parciales en dos
+    campanas, refresco, USD/EUR y sin desbordamiento horizontal en 1365, 768 y 320 px.
+- No se confirmaron pagos reales. Para activar, reiniciar manualmente el backend actualizado
+    y cargar el frontend actualizado; no se realizo reinicio, despliegue, commit ni push.
+
 ## Vencimiento informativo en el portal (2026-11-16)
 
 - Si se indica vencimiento en la campana, el portal del representante muestra los dias
@@ -513,7 +590,7 @@
 - Agrupados pueden incluir varias campanas y atletas del mismo representante; nunca mensualidades o uniformes en la misma operacion.
 - Cada pago tiene estado propio, independiente de la deuda. Confirmado, en revision y pendiente sin cubrir se muestran separados.
 - Reportes del representante quedan en revision. Registro administrativo explicita si confirma o deja en revision.
-- Conciliacion incorpora Cobros adicionales y filtro por campana.
+- Conciliacion incorpora Cobros adicionales globalmente, sin filtro obligatorio por campana.
 - Cuentas generales por defecto o especificas del modulo; nunca por campana.
 - Saldo individual por atleta, sin transferir entre hermanos. En campanas solo usar saldo confirmado.
 - Elegir destino del saldo entre mensualidades o campanas, sugiriendo deuda antigua; conservar origen y evitar doble consumo.
@@ -527,8 +604,8 @@
 2. Crear y editar borradores: validacion de monto, moneda, sedes y fecha calendario, sin publicar ni generar deuda (completado).
 3. Participantes: seleccion (3A), condiciones individuales (3B) y resumen previo (3C) completados, sin publicar.
 4. Publicacion, cargos y auditoria de publicacion completados (4A). Cambios masivos y auditoria de ediciones pendientes.
-5. Portal del representante y pagos individuales/agrupados reutilizando componentes actuales.
-6. Conciliacion, integracion financiera de billetera y avisos.
+5. Portal del representante y pagos individuales/agrupados reutilizando componentes actuales (completado).
+6. Conciliacion completada; integracion financiera de billetera y avisos pendientes.
 
 Antes de habilitar dinero real: verificar commit/rollback, concurrencia, idempotencia,
 aislamiento entre tenants, reparto exacto y preservacion de pagos existentes.

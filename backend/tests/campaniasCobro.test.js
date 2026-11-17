@@ -7,6 +7,7 @@ jest.mock('../config/tenantBusinessConnection', () => ({
   getTenantBusinessConnection: jest.fn(async (tenant) => ({ tenantId: tenant.tenantId }))
 }));
 jest.mock('../services/tenantModelService', () => ({ getTenantModel: jest.fn() }));
+jest.mock('../services/operacionService', () => ({ registrarOperacion: jest.fn(async () => {}) }));
 jest.mock('../services/paymentExchangeRate', () => ({ obtenerTasaPagoPorFecha: jest.fn(async () => ({ tasa: 100, fecha_tasa: '2026-11-10' })) }));
 
 const { getTenantModel } = require('../services/tenantModelService');
@@ -21,6 +22,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use('/campanias', router);
+app.use('/conciliacion', require('../routes/conciliacion'));
 const token = (rol, tenantId = 'alfa', permisos = []) => jwt.sign({ rol, tenantId, permisos }, 'qa-campanias-secret');
 let consulta;
 const tokenPublicacion = (rol = 'admin', tenantId = 'alfa') => jwt.sign({ rol, tenantId, id: 'admin-qa' }, 'qa-campanias-secret');
@@ -1165,6 +1167,361 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
     expect(creado.status).toBe(201);
     return { ...datos, userId, auth, pedir, destino: `${datos.ruta}/${creado.body.pago._id}`, pagoId: creado.body.pago._id };
   };
+
+  const prepararAgrupado = async () => {
+    const datos = await prepararPagoMongo();
+    const representante = await modeloReal(conexiones.alfa, 'Representante').create({ nombres: 'Maria', apellidos: 'Grupo QA', cedula: `GRUPO-${Date.now()}` });
+    await modeloReal(conexiones.alfa, 'Alumno').updateMany({ _id: { $in: datos.atletas.map((alumno) => alumno._id) } }, { $set: { representante: representante._id } });
+    const segundo = await datos.Cargo.findOne({ campania: datos.id, modalidad: 'personalizado' }).lean();
+    const { version, ...body } = datos.pagoBody;
+    return { ...datos, segundo, representante, agrupado: { ...body, alumnoId: String(datos.cargo.alumno),
+      monto_pagado: 42.5, monto_pagado_bs: 4250,
+      cargos: [datos.cargo, segundo].map((cargo) => ({ cargo: String(cargo._id), version: cargo.__v })) } };
+  };
+
+  test('agrupados campanias Mongo registra dos saldos completos atomicos y conserva reintento', async () => {
+    const datos = await prepararAgrupado();
+    const respuesta = await registrarMongo('/campanias/pagos-agrupados', datos.agrupado);
+    expect(respuesta.status).toBe(201);
+    expect(respuesta.body.pagos).toHaveLength(2);
+    expect(respuesta.body.pagos.map((pago) => pago.monto_pagado).sort((primero, segundo) => primero - segundo)).toEqual([12.5, 30]);
+    expect(respuesta.body.pagos.reduce((suma, pago) => suma + Math.round(pago.monto_pagado_bs * 100), 0)).toBe(425000);
+    expect(respuesta.body.pagos.every((pago) => pago.agrupacion.monto_total === 42.5 && pago.estado === 'en_revision')).toBe(true);
+    expect((await registrarMongo('/campanias/pagos-agrupados', datos.agrupado)).status).toBe(200);
+    expect(await datos.Pago.countDocuments()).toBe(2);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 30, __v: 1 });
+    expect((await registrarMongo('/campanias/pagos-agrupados', { ...datos.agrupado, referencia: '654321' })).status).toBe(409);
+  });
+
+  test('agrupados campanias Mongo concilia una transferencia y confirma todos los repartos una sola vez', async () => {
+    const datos = await prepararAgrupado();
+    expect((await registrarMongo('/campanias/pagos-agrupados', datos.agrupado)).status).toBe(201);
+    const preview = await previsualizarCampanias(Buffer.from('Referencia;Monto;Fecha\n123456;4250;10/11/2026\n'));
+    expect(preview.status).toBe(200);
+    expect(preview.body.match_total).toHaveLength(1);
+    expect(preview.body.summary.total_sistema_en_revision).toBe(1);
+    const sistema = preview.body.match_total[0].sistema;
+    expect(sistema.monto_esperado_bs).toBe(4250);
+    expect(sistema.contexto).toContain('Pago agrupado');
+    const body = { tipo_conciliacion: 'campanias', pago_ids: [sistema.pago_id],
+      revisiones: [{ pago_id: sistema.pago_id, revision: sistema.revision_pago }] };
+    expect((await registrarMongo('/conciliacion/confirmar-match-total', body)).body.registros_actualizados).toBe(2);
+    expect((await registrarMongo('/conciliacion/confirmar-match-total', body)).body.registros_actualizados).toBe(0);
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(2);
+    expect(await datos.Cargo.findById(datos.segundo._id).lean()).toMatchObject({ saldo_pendiente: 0, estado: 'pagado', __v: 2 });
+  });
+
+  test('agrupados campanias Mongo admite varias campanas y reparte cada centimo del importe real en Bs', async () => {
+    const datos = await prepararAgrupado();
+    const original = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).lean();
+    const otra = await modelosMongo.alfa.CampaniaCobro.create({ ...original, _id: new mongoose.Types.ObjectId(), nombre: 'Otra campana agrupada QA', solicitud_id: undefined });
+    await datos.Cargo.updateOne({ _id: datos.segundo._id }, { $set: { campania: otra._id } });
+    const respuesta = await registrarMongo('/campanias/pagos-agrupados', { ...datos.agrupado, monto_pagado_bs: 4250.01 });
+    expect(respuesta.status).toBe(201);
+    expect(new Set(respuesta.body.pagos.map((pago) => pago.campania)).size).toBe(2);
+    expect(respuesta.body.pagos.reduce((suma, pago) => suma + Math.round(pago.monto_pagado_bs * 100), 0)).toBe(425001);
+  });
+
+  test('agrupados campanias Mongo rechaza otro representante, mezcla de monedas, reserva y version vieja sin escrituras', async () => {
+    const datos = await prepararAgrupado();
+    const otro = new mongoose.Types.ObjectId();
+    const Alumno = modeloReal(conexiones.alfa, 'Alumno');
+    await Alumno.updateOne({ _id: datos.segundo.alumno }, { $set: { representante: otro } });
+    expect((await registrarMongo('/campanias/pagos-agrupados', datos.agrupado)).status).toBe(409);
+    await Alumno.updateOne({ _id: datos.segundo.alumno }, { $set: { representante: datos.representante._id } });
+    await datos.Cargo.updateOne({ _id: datos.segundo._id }, { $set: { moneda: 'EUR' } });
+    expect((await registrarMongo('/campanias/pagos-agrupados', datos.agrupado)).status).toBe(409);
+    await datos.Cargo.updateOne({ _id: datos.segundo._id }, { $set: { moneda: 'USD' } });
+    expect((await registrarMongo('/campanias/pagos-agrupados', { ...datos.agrupado, cargos: datos.agrupado.cargos.map((item) => ({ ...item, version: 99 })) })).status).toBe(409);
+    expect(await datos.Pago.countDocuments()).toBe(0);
+    expect((await registrarMongo(datos.ruta, datos.pagoBody)).status).toBe(201);
+    const cargos = datos.agrupado.cargos.map((item) => ({ ...item, version: item.cargo === String(datos.cargo._id) ? 1 : 0 }));
+    expect((await registrarMongo('/campanias/pagos-agrupados', { ...datos.agrupado, cargos })).status).toBe(409);
+    expect(await datos.Pago.countDocuments()).toBe(1);
+  });
+
+  test('agrupados campanias Mongo revierte el primer reparto si falla el segundo y requiere replica set', async () => {
+    const datos = await prepararAgrupado();
+    const crear = datos.Pago.create.bind(datos.Pago);
+    let cantidad = 0;
+    const fallo = jest.spyOn(datos.Pago, 'create').mockImplementation(async (...argumentos) => {
+      cantidad += 1;
+      if (cantidad === 2) throw new Error('Fallo QA segundo reparto');
+      return crear(...argumentos);
+    });
+    try { expect((await registrarMongo('/campanias/pagos-agrupados', datos.agrupado)).status).toBe(500); }
+    finally { fallo.mockRestore(); }
+    expect(await datos.Pago.countDocuments()).toBe(0);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ __v: 0, saldo_pendiente: 30 });
+    const sesion = jest.spyOn(datos.Cargo.db, 'startSession').mockResolvedValueOnce({ withTransaction: async () => {
+      throw new Error('Transaction numbers are only allowed on a replica set member or mongos');
+    }, endSession: jest.fn(async () => {}) });
+    try { expect((await registrarMongo('/campanias/pagos-agrupados', datos.agrupado)).status).toBe(503); }
+    finally { sesion.mockRestore(); }
+    expect(await datos.Pago.countDocuments()).toBe(0);
+  });
+
+  test('agrupados campanias Mongo corrige todos los repartos, invalida preview anterior y retira sin borrar historial', async () => {
+    const datos = await prepararAgrupado();
+    const creado = await registrarMongo('/campanias/pagos-agrupados', datos.agrupado);
+    const ruta = `/campanias/pagos-agrupados/${datos.agrupado.solicitud_id}`;
+    const preview = await previsualizarCampanias(Buffer.from('Referencia;Monto;Fecha\n123456;4250;10/11/2026\n'));
+    const sistema = preview.body.match_total[0].sistema;
+    const detalle = await corregirMongo('get', ruta);
+    expect(detalle.status).toBe(200);
+    expect(detalle.body.puede_corregir).toBe(true);
+    const { alumnoId, ...body } = datos.agrupado;
+    const correccion = { ...body, solicitud_id: '33000000-0000-4000-8000-000000000001', referencia: '654321',
+      cargos: detalle.body.cargos.map((cargo) => ({ cargo: cargo._id, version: cargo.__v })) };
+    expect((await corregirMongo('patch', ruta, correccion)).status).toBe(200);
+    expect((await corregirMongo('patch', ruta, correccion)).body.repetida).toBe(true);
+    expect((await registrarMongo('/conciliacion/confirmar-match-total', { tipo_conciliacion: 'campanias', pago_ids: [sistema.pago_id],
+      revisiones: [{ pago_id: sistema.pago_id, revision: sistema.revision_pago }] })).status).toBe(409);
+    const pago = creado.body.pagos[0];
+    expect((await corregirMongo('delete', `/campanias/${pago.campania}/cargos/${pago.cargo}/pagos/${pago._id}`, { version: 2 })).status).toBe(409);
+    const actualizado = await corregirMongo('get', ruta);
+    const retiro = { cargos: actualizado.body.cargos.map((cargo) => ({ cargo: cargo._id, version: cargo.__v })) };
+    expect((await corregirMongo('delete', ruta, retiro)).status).toBe(200);
+    expect((await corregirMongo('delete', ruta, retiro)).body.repetida).toBe(true);
+    expect(await datos.Pago.countDocuments({ estado: 'eliminado' })).toBe(2);
+    expect(await datos.Pago.findOne({ _id: pago._id }).select('+modificaciones').lean()).toMatchObject({
+      eliminado_por: { id: 'admin-qa', rol: 'admin' }, modificaciones: [expect.objectContaining({ anterior: expect.objectContaining({ referencia: '123456' }) })] });
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 30, __v: 3 });
+  });
+
+  test('agrupados campanias Mongo confirmacion manual atomica concurrente con conciliacion y rechazo de correccion confirmada', async () => {
+    const datos = await prepararAgrupado();
+    const creado = await registrarMongo('/campanias/pagos-agrupados', datos.agrupado);
+    const pago = creado.body.pagos[0];
+    const preview = await previsualizarCampanias(Buffer.from('Referencia;Monto;Fecha\n123456;4250;10/11/2026\n'));
+    const sistema = preview.body.match_total[0].sistema;
+    const respuestas = await Promise.all([
+      registrarMongo(`/campanias/${pago.campania}/cargos/${pago.cargo}/pagos/${pago._id}/confirmar`, {}),
+      registrarMongo('/conciliacion/confirmar-match-total', { tipo_conciliacion: 'campanias', pago_ids: [sistema.pago_id],
+        revisiones: [{ pago_id: sistema.pago_id, revision: sistema.revision_pago }] })
+    ]);
+    expect(respuestas.map((respuesta) => respuesta.status)).toEqual([200, 200]);
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(2);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 0, __v: 2 });
+    expect((await corregirMongo('delete', `/campanias/pagos-agrupados/${datos.agrupado.solicitud_id}`, {
+      cargos: datos.agrupado.cargos.map((cargo) => ({ ...cargo, version: 2 })) })).status).toBe(409);
+  });
+
+  test('agrupados campanias Mongo usuario reporta hermanos propios sin exponer grupos ajenos ni actores privados', async () => {
+    const datos = await prepararAgrupado();
+    await modeloReal(conexiones.alfa, 'CampaniaCobro').updateOne({ _id: datos.cargo.campania }, { $set: { descripcion: 'Reinscripcion temporada 2027' } });
+    const usuarioId = new mongoose.Types.ObjectId();
+    await modeloReal(conexiones.alfa, 'Representante').updateOne({ _id: datos.representante._id }, { $set: { usuario: usuarioId } });
+    const auth = `Bearer ${jwt.sign({ rol: 'usuario', id: String(usuarioId), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+    const pedir = (method, ruta, body) => request(app)[method](ruta).set('Authorization', auth).send(body);
+    const catalogo = await pedir('get', `/campanias/cargos-agrupables?alumnoId=${datos.cargo.alumno}`);
+    expect(catalogo.status).toBe(200);
+    expect(catalogo.body.cargos).toHaveLength(2);
+    expect(catalogo.body.cargos).toEqual(expect.arrayContaining([expect.objectContaining({
+      campania: expect.objectContaining({ _id: String(datos.cargo.campania), descripcion: 'Reinscripcion temporada 2027' })
+    })]));
+    expect((await pedir('post', '/campanias/pagos-agrupados', { ...datos.agrupado, estado: 'confirmado' })).status).toBe(403);
+    const creado = await pedir('post', '/campanias/pagos-agrupados', datos.agrupado);
+    expect(creado.status).toBe(201);
+    expect(JSON.stringify(creado.body)).not.toContain(String(usuarioId));
+    expect((await registrarMongo('/campanias/pagos-agrupados', datos.agrupado, 'admin', 'beta')).status).toBe(404);
+    const ruta = `/campanias/pagos-agrupados/${datos.agrupado.solicitud_id}`;
+    expect((await pedir('get', ruta)).body.puede_corregir).toBe(true);
+    const ajeno = `Bearer ${jwt.sign({ rol: 'usuario', id: String(new mongoose.Types.ObjectId()), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+    expect((await request(app).get(ruta).set('Authorization', ajeno)).status).toBe(404);
+    expect((await pedir('delete', ruta, { cargos: datos.agrupado.cargos.map((item) => ({ ...item, version: 1 })) })).status).toBe(200);
+  });
+
+  test.each(['finanzas', 'asistente', 'entrenador'])('agrupados campanias Mongo deniega %s', async (rol) => {
+    expect((await registrarMongo('/campanias/pagos-agrupados', {}, rol)).status).toBe(403);
+  });
+
+  test.each(['misma', 'distinta'])('agrupados campanias Mongo solicitudes concurrentes %s no duplican reservas', async (tipo) => {
+    const datos = await prepararAgrupado();
+    const segunda = tipo === 'misma' ? datos.agrupado : { ...datos.agrupado, solicitud_id: '44000000-0000-4000-8000-000000000001' };
+    const respuestas = await Promise.all([registrarMongo('/campanias/pagos-agrupados', datos.agrupado), registrarMongo('/campanias/pagos-agrupados', segunda)]);
+    expect(respuestas.map((respuesta) => respuesta.status).sort()).toEqual(tipo === 'misma' ? [200, 201] : [201, 409]);
+    expect(await datos.Pago.countDocuments()).toBe(2);
+  });
+
+  test('agrupados campanias Mongo UUID unico impide crear dos transferencias concurrentes sobre cargos distintos', async () => {
+    const datos = await prepararAgrupado();
+    const original = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).lean();
+    const otra = await modelosMongo.alfa.CampaniaCobro.create({ ...original, _id: new mongoose.Types.ObjectId(), nombre: 'Otro grupo QA', solicitud_id: undefined });
+    const nuevos = await datos.Cargo.create([datos.cargo, datos.segundo].map((cargo) => ({ ...cargo, _id: new mongoose.Types.ObjectId(), campania: otra._id })));
+    const otraSolicitud = { ...datos.agrupado, cargos: nuevos.map((cargo) => ({ cargo: String(cargo._id), version: 0 })) };
+    const respuestas = await Promise.all([registrarMongo('/campanias/pagos-agrupados', datos.agrupado), registrarMongo('/campanias/pagos-agrupados', otraSolicitud)]);
+    expect(respuestas.map((respuesta) => respuesta.status).sort()).toEqual([201, 409]);
+    expect(await datos.Pago.countDocuments()).toBe(2);
+    expect(await datos.Pago.countDocuments({ es_principal_grupo: true })).toBe(1);
+  });
+
+  test('agrupados campanias Mongo no inventa Bs para divisas y conserva comprobante privado compartido', async () => {
+    const datos = await prepararAgrupado();
+    const configAntes = await modelosMongo.alfa.TenantConfig.findOne({ key: 'default' }).lean();
+    await modelosMongo.alfa.TenantConfig.updateOne({ key: 'default' }, { $set: { 'pagos.adicionales': [{ tipo: 'zelle', titular: 'QA', correo: 'qa@example.com' }] } });
+    const { monto_pagado_bs, ...body } = datos.agrupado;
+    const creado = await request(app).post('/campanias/pagos-agrupados').set('Authorization', `Bearer ${tokenPublicacion()}`)
+      .field('cargos', JSON.stringify(body.cargos)).field('alumnoId', body.alumnoId).field('solicitud_id', body.solicitud_id)
+      .field('moneda', 'USD').field('monto_pagado', '42.50').field('fecha_pago', body.fecha_pago)
+      .field('metodo_pago', 'Zelle').field('referencia', 'ZELLE-GRUPO').field('estado', 'en_revision')
+      .attach('comprobante', Buffer.from('%PDF-1.4\nQA agrupado'), { filename: 'grupo.pdf', contentType: 'application/pdf' });
+    expect(creado.status).toBe(201);
+    const urls = creado.body.pagos.map((pago) => pago.comprobante_url);
+    expect(new Set(urls).size).toBe(1);
+    expect(creado.body.pagos.every((pago) => pago.monto_pagado_bs === null && pago.agrupacion.monto_total_bs === null && pago.tasa === null)).toBe(true);
+    const pago = creado.body.pagos[0];
+    try {
+      expect((await corregirMongo('get', `/campanias/${pago.campania}/cargos/${pago.cargo}/pagos/${pago._id}/comprobante`)).status).toBe(200);
+      expect((await previsualizarCampanias()).body.summary.total_sistema_en_revision).toBe(0);
+    } finally {
+      await modelosMongo.alfa.TenantConfig.updateOne({ key: 'default' }, configAntes.pagos?.adicionales
+        ? { $set: { 'pagos.adicionales': configAntes.pagos.adicionales } } : { $unset: { 'pagos.adicionales': '' } });
+      await require('fs/promises').unlink(require('path').join(__dirname, '..', 'private-uploads', 'campanias', 'alfa', require('path').basename(urls[0])));
+    }
+  });
+
+  const archivoConciliacion = Buffer.from('Referencia;Monto;Fecha\n123456;1000;10/11/2026\n654321;1000;10/11/2026\n');
+  const previsualizarCampanias = (archivo = archivoConciliacion, rol = 'admin', tenant = 'alfa', nombre = 'banco.txt') => request(app)
+    .post('/conciliacion/previsualizar?tipo_conciliacion=campanias').set('x-tenant', tenant)
+    .set('Authorization', `Bearer ${jwt.sign({ rol, id: 'admin-qa', tenantId: tenant, permisos: ['conciliacion.manage'] }, 'qa-campanias-secret')}`)
+    .attach('archivo', archivo, nombre);
+  const prepararConciliacionCampanias = async () => {
+    const datos = await prepararPagoMongo();
+    const original = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).lean();
+    const otra = await modelosMongo.alfa.CampaniaCobro.create({ ...original, _id: new mongoose.Types.ObjectId(), nombre: 'Segunda campana QA',
+      solicitud_id: undefined, participantes: [datos.atletas[1]._id],
+      publicacion: { ...original.publicacion, participantes: 1, generales: 1, personalizados: 0, no_aplica: 0, total_esperado: 30 } });
+    const segundoCargo = await datos.Cargo.create({ ...datos.cargo, _id: new mongoose.Types.ObjectId(), campania: otra._id,
+      alumno: datos.atletas[1]._id, nombres: 'Segundo', apellidos: 'QA' });
+    const primero = await registrarMongo(datos.ruta, datos.pagoBody);
+    const segundo = await registrarMongo(`/campanias/${otra._id}/cargos/${segundoCargo._id}/pagos`, { ...datos.pagoBody, referencia: '654321' });
+    expect(primero.status).toBe(201);
+    expect(segundo.status).toBe(201);
+    const preview = await previsualizarCampanias();
+    expect(preview.status).toBe(200);
+    const coincidencias = preview.body.match_total;
+    const confirmacion = { tipo_conciliacion: 'campanias', pago_ids: coincidencias.map((fila) => fila.sistema.pago_id),
+      revisiones: coincidencias.map((fila) => ({ pago_id: fila.sistema.pago_id, revision: fila.sistema.revision_pago })) };
+    return { ...datos, otra, segundoCargo, primero: primero.body.pago, segundo: segundo.body.pago, preview: preview.body, confirmacion };
+  };
+
+  test('conciliacion campanias Mongo previsualiza todas las campanas y confirma sin descontar dos veces', async () => {
+    const datos = await prepararConciliacionCampanias();
+    expect(datos.preview.summary).toMatchObject({ total_sistema_en_revision: 2, match_total: 2 });
+    expect(new Set(datos.preview.match_total.map((fila) => fila.sistema.campania_id)).size).toBe(2);
+    expect(datos.preview.match_total.map((fila) => fila.sistema.contexto)).toContain('Campaña: Segunda campana QA');
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 30 });
+    const ruta = '/conciliacion/confirmar-match-total';
+    expect((await registrarMongo(ruta, datos.confirmacion)).body).toMatchObject({ registros_actualizados: 2, tipo_conciliacion: 'campanias' });
+    expect((await registrarMongo(ruta, datos.confirmacion)).body.registros_actualizados).toBe(0);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 20, estado: 'abono', __v: 2 });
+    expect(await datos.Cargo.findById(datos.segundoCargo._id).lean()).toMatchObject({ saldo_pendiente: 20, __v: 2 });
+    expect(await datos.Pago.findById(datos.primero._id).lean()).toMatchObject({ estado: 'confirmado', registrado_por: { id: 'admin-qa' },
+      confirmado_por: { id: 'admin-qa', rol: 'admin' } });
+    expect((await previsualizarCampanias()).body.summary.total_sistema_en_revision).toBe(0);
+  });
+
+  test('conciliacion campanias Mongo parciales requieren seleccion explicita', async () => {
+    const datos = await prepararConciliacionCampanias();
+    const parcial = await previsualizarCampanias(Buffer.from('Referencia;Monto;Fecha\n123456;1500;10/11/2026\n'));
+    expect(parcial.status).toBe(200);
+    expect(parcial.body.pago_ids_confirmables).toHaveLength(0);
+    expect(parcial.body.match_parcial).toHaveLength(1);
+    const sistema = parcial.body.match_parcial[0].sistema;
+    const respuesta = await registrarMongo('/conciliacion/confirmar-match-total', { tipo_conciliacion: 'campanias',
+      pago_ids: [sistema.pago_id], revisiones: [{ pago_id: sistema.pago_id, revision: sistema.revision_pago }] });
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body.registros_actualizados).toBe(1);
+    expect(await datos.Pago.countDocuments({ estado: 'en_revision' })).toBe(1);
+  });
+
+  test('conciliacion campanias Mongo rechaza cambios posteriores, eliminados, tenant y seleccion invalida', async () => {
+    const datos = await prepararConciliacionCampanias();
+    const ruta = '/conciliacion/confirmar-match-total';
+    expect((await registrarMongo(ruta, datos.confirmacion, 'admin', 'beta')).status).toBe(404);
+    expect((await registrarMongo(ruta, { ...datos.confirmacion, revisiones: [] })).status).toBe(400);
+    expect((await registrarMongo(ruta, { ...datos.confirmacion, pago_ids: [datos.primero._id, datos.primero._id] })).status).toBe(400);
+    await datos.Pago.updateOne({ _id: datos.segundo._id }, { $set: { referencia: '999999' } });
+    expect((await registrarMongo(ruta, datos.confirmacion)).status).toBe(409);
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(0);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 30, __v: 1 });
+    await datos.Pago.updateOne({ _id: datos.segundo._id }, { $set: { referencia: '654321', estado: 'eliminado' } });
+    expect((await registrarMongo(ruta, datos.confirmacion)).status).toBe(409);
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(0);
+  });
+
+  test('conciliacion campanias Mongo revierte lote si falla un cargo y admite reintento', async () => {
+    const datos = await prepararConciliacionCampanias();
+    const original = datos.Cargo.findOneAndUpdate.bind(datos.Cargo);
+    const fallo = jest.spyOn(datos.Cargo, 'findOneAndUpdate').mockImplementationOnce((...args) => original(...args))
+      .mockImplementationOnce(() => { throw new Error('Fallo QA segundo cargo'); });
+    try { expect((await registrarMongo('/conciliacion/confirmar-match-total', datos.confirmacion)).status).toBe(500); }
+    finally { fallo.mockRestore(); }
+    expect(await datos.Pago.countDocuments({ estado: 'en_revision' })).toBe(2);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 30, __v: 1 });
+    expect((await registrarMongo('/conciliacion/confirmar-match-total', datos.confirmacion)).body.registros_actualizados).toBe(2);
+  });
+
+  test('conciliacion campanias Mongo concurrente con confirmacion manual no duplica descuentos', async () => {
+    const datos = await prepararConciliacionCampanias();
+    const respuestas = await Promise.all([registrarMongo('/conciliacion/confirmar-match-total', datos.confirmacion),
+      registrarMongo(`${datos.ruta}/${datos.primero._id}/confirmar`, {})]);
+    expect(respuestas.map((respuesta) => respuesta.status)).toEqual([200, 200]);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 20, __v: 2 });
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(2);
+  });
+
+  test('conciliacion campanias Mongo acepta Excel y conserva la moneda original de cada pago', async () => {
+    const datos = await prepararConciliacionCampanias();
+    const XLSX = require('xlsx');
+    const libro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(libro, XLSX.utils.aoa_to_sheet([
+      ['Referencia', 'Monto', 'Fecha'], ['123456', 1000, '10/11/2026'], ['654321', 1000, '10/11/2026']
+    ]), 'Banco');
+    await datos.Pago.updateOne({ _id: datos.segundo._id }, { $set: { moneda: 'EUR' } });
+    await datos.Cargo.updateOne({ _id: datos.segundoCargo._id }, { $set: { moneda: 'EUR' } });
+    const respuesta = await previsualizarCampanias(XLSX.write(libro, { type: 'buffer', bookType: 'xlsx' }), 'admin', 'alfa', 'banco.xlsx');
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body.match_total).toHaveLength(2);
+    expect(respuesta.body.match_total.map((fila) => fila.sistema.moneda).sort()).toEqual(['EUR', 'USD']);
+  });
+
+  test('conciliacion campanias Mongo excluye confirmados, eliminados, divisas sin Bs y campanas no abiertas', async () => {
+    const datos = await prepararConciliacionCampanias();
+    for (const estado of ['confirmado', 'eliminado']) {
+      await datos.Pago.updateOne({ _id: datos.segundo._id }, { $set: { estado } });
+      expect((await previsualizarCampanias()).body.summary.total_sistema_en_revision).toBe(1);
+    }
+    await datos.Pago.updateOne({ _id: datos.segundo._id }, { $set: { estado: 'en_revision', monto_pagado_bs: null, metodo_pago: 'Zelle' } });
+    expect((await previsualizarCampanias()).body.summary.total_sistema_en_revision).toBe(1);
+    await datos.Pago.updateOne({ _id: datos.segundo._id }, { $set: { monto_pagado_bs: 1000, metodo_pago: 'Transferencia' } });
+    for (const estado of ['cerrada', 'cancelada', 'borrador']) {
+      await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.otra._id }, { $set: { estado } });
+      expect((await previsualizarCampanias()).body.summary.total_sistema_en_revision).toBe(1);
+      expect((await registrarMongo('/conciliacion/confirmar-match-total', datos.confirmacion)).status).toBe(409);
+    }
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(0);
+  });
+
+  test('conciliacion campanias Mongo sin transacciones rechaza el lote sin guardar cambios', async () => {
+    const datos = await prepararConciliacionCampanias();
+    const sesion = { withTransaction: jest.fn(async () => { throw new Error('Transaction numbers are only allowed on a replica set member or mongos'); }),
+      endSession: jest.fn(async () => {}) };
+    const mock = jest.spyOn(datos.Cargo.db, 'startSession').mockResolvedValueOnce(sesion);
+    try { expect((await registrarMongo('/conciliacion/confirmar-match-total', datos.confirmacion)).status).toBe(503); }
+    finally { mock.mockRestore(); }
+    expect(await datos.Pago.countDocuments({ estado: 'en_revision' })).toBe(2);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 30, __v: 1 });
+  });
+
+  test.each(['finanzas', 'asistente', 'entrenador', 'usuario'])('conciliacion campanias Mongo deniega %s aun con permiso de conciliacion', async (rol) => {
+    const datos = await prepararConciliacionCampanias();
+    expect((await previsualizarCampanias(archivoConciliacion, rol)).status).toBe(403);
+    const auth = jwt.sign({ rol, id: 'qa', tenantId: 'alfa', permisos: ['conciliacion.manage'] }, 'qa-campanias-secret');
+    expect((await request(app).post('/conciliacion/confirmar-match-total').set('Authorization', `Bearer ${auth}`).send(datos.confirmacion)).status).toBe(403);
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(0);
+  });
 
   const ajusteMongo = (datos, cambios = {}) => ({ accion: 'editar', alumno: String(datos.cargo.alumno),
     modalidad: 'personalizado', monto: 20, nota_interna: 'Acuerdo posterior QA', version: 2, version_cargo: 0,

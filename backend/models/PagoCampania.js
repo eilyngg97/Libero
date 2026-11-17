@@ -11,6 +11,14 @@ const PagoCampaniaSchema = new mongoose.Schema({
   alumno: { type: mongoose.Schema.Types.ObjectId, ref: 'Alumno', required: true },
   solicitud_id: { type: String, required: true },
   huella: { type: String, required: true, select: false },
+  agrupacion: { type: new mongoose.Schema({
+    id: { type: String, required: true },
+    representante: { type: mongoose.Schema.Types.ObjectId, ref: 'Representante', required: true },
+    cargos: { type: [mongoose.Schema.Types.ObjectId], required: true },
+    monto_total: { type: Number, required: true, min: 0.01 },
+    monto_total_bs: { type: Number, default: null, min: 0.01 }
+  }, { _id: false }), default: undefined },
+  es_principal_grupo: { type: Boolean, default: undefined },
   moneda: { type: String, enum: ['USD', 'EUR'], required: true },
   monto_pagado: { type: Number, required: true, min: 0.01, max: 999999999.99 },
   monto_pagado_bs: { type: Number, default: null, min: 0.01 },
@@ -34,4 +42,7 @@ const PagoCampaniaSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 PagoCampaniaSchema.index({ cargo: 1, solicitud_id: 1 }, { unique: true });
+PagoCampaniaSchema.index({ 'agrupacion.id': 1 });
+PagoCampaniaSchema.index({ 'agrupacion.id': 1 }, { name: 'grupo_solicitud_unica', unique: true,
+  partialFilterExpression: { es_principal_grupo: true } });
 module.exports = mongoose.model('PagoCampania', PagoCampaniaSchema);

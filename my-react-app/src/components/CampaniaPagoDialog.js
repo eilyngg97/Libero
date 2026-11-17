@@ -9,6 +9,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import CloudUploadRoundedIcon from '@mui/icons-material/CloudUploadRounded';
 import ModalPago, { buildMetodosFromConfig } from './ModalPago';
 import EstadoPagoChip from './EstadoPagoChip';
+import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
 import PagoTransaccionDetalle, { PagoDetalleEncabezado, estiloEditarPago, estiloGuardarPago,
   HistorialTransacciones, FilaHistorialTransaccion, DatoHistorialTransaccion } from './PagoTransaccionDetalle';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
@@ -38,6 +39,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
   const [archivoEdicion, setArchivoEdicion] = useState(null);
   const [eliminando, setEliminando] = useState(false);
   const [descartar, setDescartar] = useState(false);
+  const [grupoActivo, setGrupoActivo] = useState('');
   const solicitudEdicion = useRef('');
   const enviando = useRef(false);
   const solicitud = useRef('');
@@ -47,7 +49,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
   const cerrar = () => { if (!enviando.current) { if (editando) setDescartar(true); else onClose(); } };
   const detalle = datos?.pagos.find((pago) => pago._id === detalleId) || datos?.pagos[0];
   const ultimo = detalle && detalle._id === datos?.pagos[0]?._id;
-  const puedeCorregir = (pago) => Boolean(pago && pago._id === datos?.pagos[0]?._id && campania.estado === 'abierta'
+  const puedeCorregir = (pago) => Boolean(pago && !pago.agrupacion && pago._id === datos?.pagos[0]?._id && campania.estado === 'abierta'
     && (!representante || (pago.estado === 'en_revision' && pago.puede_corregir === true)));
   const enBs = ['Pago movil', 'Transferencia'].includes(editando ? draft.metodo_pago : detalle?.metodo_pago);
   const headers = () => {
@@ -238,6 +240,9 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
     {`Equivalente ${campania.moneda}: ${dinero(importeDetalle) ? `${campania.moneda === 'EUR' ? '\u20ac' : '$'}${importeDetalle.toFixed(2)} ${campania.moneda}` : '-'}`}
   </Typography>;
 
+  if (grupoActivo) return <CampaniaPagoAgrupadoDialog grupoId={grupoActivo} representante={representante}
+    onClose={() => setGrupoActivo('')} onSaved={(data) => { setGrupoActivo(''); setIntento((valor) => valor + 1); onSaved(data, false); }} />;
+
   if (modo === 'pago' && campania.estado === 'abierta' && datos && !error && datos.totales.disponible > 0) return <ModalPago open onClose={cerrar}
     pago={{ id: datos.cargo._id, monto: datos.totales.disponible }} currencyCode={datos.cargo.moneda} conceptoPago="campanias"
     disableCuotas allowPartialPayment={datos.cargo.permitir_abonos} allowPaymentConfirmation={!representante} preventCloseWhileSubmitting
@@ -252,6 +257,13 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
       {!datos && !error && <Box role="status" sx={{ display: 'flex', gap: 1, py: 3 }}><CircularProgress size={20} />Cargando historial...</Box>}
       {datos && <>
         {!datos.pagos.length && <Alert severity="info">No hay pagos registrados.</Alert>}
+        {detalle?.agrupacion && <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 2 }}>
+          <Typography sx={{ fontSize: 14, color: '#475569', overflowWrap: 'anywhere' }}>
+            Transferencia agrupada: {formato(detalle.agrupacion.monto_total, detalle.moneda)}
+            {detalle.agrupacion.monto_total_bs != null ? ` / Bs ${detalle.agrupacion.monto_total_bs.toFixed(2)}` : ''}
+          </Typography>
+          <Button startIcon={<VisibilityOutlinedIcon />} onClick={() => setGrupoActivo(detalle.agrupacion.id)} sx={{ color: '#626879' }}>Ver transferencia</Button>
+        </Box>}
         {detalle && <PagoTransaccionDetalle titulo={ultimo ? '\u00daltimo Pago Registrado' : 'Detalle del pago'} acciones={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             <EstadoPagoChip estado={detalle.estado === 'confirmado' ? 'pagado' : 'en revision'} label={detalle.estado === 'confirmado' ? 'Confirmado' : 'En revisi\u00f3n'} />
@@ -350,7 +362,8 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
     aria-labelledby="confirmar-pago-campania-titulo" PaperProps={{ role: 'alertdialog' }}>
     <DialogTitle id="confirmar-pago-campania-titulo" sx={{ fontWeight: 800, color: '#0f172a' }}>Confirmar pago</DialogTitle>
     <DialogContent>{error && <Alert severity="error">{error}</Alert>}
-      <Typography sx={{ color: '#334155' }}>{'\u00bfEstas seguro de confirmar este pago?'}</Typography>
+      <Typography sx={{ color: '#334155' }}>{datos?.pagos.find((pago) => pago._id === confirmando)?.agrupacion
+        ? 'Se confirmaran todos los repartos de esta transferencia agrupada.' : '\u00bfEstas seguro de confirmar este pago?'}</Typography>
     </DialogContent><DialogActions><Button autoFocus disabled={ocupado} onClick={() => setConfirmando('')}>Cancelar</Button>
       <Button variant="contained" disabled={ocupado} onClick={confirmar}
         sx={{ bgcolor: '#0e1334', color: '#fff', '&:hover': { bgcolor: '#0b102b' }, boxShadow: 'none' }}>{ocupado ? 'Confirmando...' : 'Si, confirmar'}</Button></DialogActions>

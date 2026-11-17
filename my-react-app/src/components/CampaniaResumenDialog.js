@@ -12,6 +12,7 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import PaidIcon from '@mui/icons-material/Paid';
+import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import PersonRemoveOutlinedIcon from '@mui/icons-material/PersonRemoveOutlined';
@@ -20,6 +21,7 @@ import { tieneMontosValidos } from '../utils/campaniaMontos';
 import CampaniaPasos from './CampaniaPasos';
 import CampaniaDialog from './CampaniaDialog';
 import CampaniaPagoDialog from './CampaniaPagoDialog';
+import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
 import CampaniaCargoAjusteDialog from './CampaniaCargoAjusteDialog';
 import EstadoPagoChip from './EstadoPagoChip';
 
@@ -76,6 +78,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
   const [publicando, setPublicando] = useState(false);
   const [errorPublicacion, setErrorPublicacion] = useState('');
   const [pagoActivo, setPagoActivo] = useState(null);
+  const [agrupadoAlumno, setAgrupadoAlumno] = useState('');
   const [mensajePago, setMensajePago] = useState('');
   const [ajusteActivo, setAjusteActivo] = useState(null);
   const enviando = useRef(false);
@@ -281,6 +284,9 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
                   {fila._id && datos.campania.estado === 'abierta' && fila.modalidad !== 'no_aplica' && fila.saldo_pendiente > 0
                     && <Tooltip title="Registrar pago"><IconButton aria-label={`Pagar cargo de ${fila.nombres} ${fila.apellidos}`}
                       onClick={() => setPagoActivo({ fila, modo: 'pago' })} sx={{ width: 36, height: 36, color: '#626879', '&:hover': { bgcolor: 'transparent' } }}><PaidIcon fontSize="small" /></IconButton></Tooltip>}
+                  {fila._id && datos.campania.estado === 'abierta' && fila.modalidad !== 'no_aplica' && fila.saldo_pendiente > 0
+                    && <Tooltip title="Pago agrupado del representante"><IconButton aria-label={`Pago agrupado de ${fila.nombres} ${fila.apellidos}`}
+                      onClick={() => setAgrupadoAlumno(fila.alumno)} sx={{ width: 36, height: 36, color: '#626879' }}><PaymentsOutlinedIcon fontSize="small" /></IconButton></Tooltip>}
                 </Box></TableCell>
               </>}
             </TableRow>)}</TableBody>
@@ -322,9 +328,11 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
   {pagoActivo && <CampaniaPagoDialog campania={campania} fila={pagoActivo.fila} modo={pagoActivo.modo}
     onClose={() => setPagoActivo(null)} onSaved={(resultado, cerrarPago = true) => {
       if (cerrarPago) setPagoActivo(null);
-      setMensajePago(resultado.pago.estado === 'confirmado' ? 'Pago confirmado' : 'Pago registrado en revision');
+      setMensajePago(resultado.mensaje || (resultado.pago.estado === 'confirmado' ? 'Pago confirmado' : 'Pago registrado en revision'));
       setIntento((valor) => valor + 1);
     }} />}
+  {agrupadoAlumno && <CampaniaPagoAgrupadoDialog alumnoId={agrupadoAlumno} onClose={() => setAgrupadoAlumno('')}
+    onSaved={(resultado) => { setAgrupadoAlumno(''); setMensajePago(resultado.mensaje); setIntento((valor) => valor + 1); }} />}
   <Dialog open={confirmando} onClose={cerrarConfirmacion} fullWidth maxWidth="sm" aria-labelledby="publicar-campania-titulo"
     aria-describedby="publicar-campania-advertencia" PaperProps={{ role: 'alertdialog', sx: { borderRadius: 2, color: '#202441' } }}>
     <DialogTitle id="publicar-campania-titulo" sx={{ bgcolor: '#171b4b', color: '#fff', fontSize: 20, px: 3, py: 2 }}>Publicar campaña</DialogTitle>

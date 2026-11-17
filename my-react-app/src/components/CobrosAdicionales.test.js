@@ -12,6 +12,8 @@ import * as CampaniaPagoDialogModule from './CampaniaPagoDialog';
 import EstadoPagoChip from './EstadoPagoChip';
 import CampaniasAlumno from './CampaniasAlumno';
 import PanelOpcionesUsuario from './PanelOpcionesUsuario';
+import ConciliacionBancaria from './ConciliacionBancaria';
+import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 100, moneda: 'USD' } }) }));
@@ -22,6 +24,307 @@ const originalCrypto = Object.getOwnPropertyDescriptor(window, 'crypto');
 const campania = (indice) => ({ _id: String(indice), nombre: `Viaje ${indice}`, descripcion: '',
   monto_general: 30, moneda: 'USD', estado: 'borrador', sedes: [{ _id: 'norte', nombre: 'Norte' }], vencimiento: '2026-12-15', __v: 0 });
 const responder = (campanias) => ({ ok: true, status: 200, json: async () => ({ campanias }) });
+
+describe('pagos agrupados de campanias', () => {
+  const cargos = [
+    { _id: 'cargo1', alumno: 'ana', nombres: 'Ana', apellidos: 'QA', campania: { _id: 'camp1', nombre: 'Viaje QA', descripcion: 'Traslado y hospedaje para el viaje deportivo' }, moneda: 'USD', saldo_pendiente: 30, __v: 0 },
+    { _id: 'cargo2', alumno: 'luis', nombres: 'Luis', apellidos: 'QA', campania: { _id: 'camp2', nombre: 'Torneo QA', descripcion: 'Inscripcion al torneo de noviembre' }, moneda: 'USD', saldo_pendiente: 12.5, __v: 1 },
+    { _id: 'cargo3', alumno: 'ana', nombres: 'Ana', apellidos: 'QA', campania: { _id: 'camp3', nombre: 'Euro QA' }, moneda: 'EUR', saldo_pendiente: 20, __v: 0 }
+  ];
+  const json = (data, ok = true) => ({ ok, json: async () => data });
+  const montar = (props = {}) => {
+    window.fetch.mockImplementation(async (url, options = {}) => {
+      if (url.includes('/configuracion/pagos')) return json({ pagos: { adicionales: [{ tipo: 'zelle', titular: 'QA', correo: 'qa@example.com' }] } });
+      if (options.method === 'POST') return json({ repetida: false, pagos: cargos.slice(0, 2).map((cargo) => ({
+        _id: `pago-${cargo._id}`, cargo: cargo._id, campania: cargo.campania._id, moneda: 'USD', estado: options.body.get('estado'),
+        monto_pagado: cargo.saldo_pendiente, monto_pagado_bs: null, agrupacion: { id: options.body.get('solicitud_id'), monto_total: 42.5 } })) });
+      return json({ representante: 'rep1', cargos });
+    });
+    render(<CampaniaPagoAgrupadoDialog alumnoId="ana" onClose={jest.fn()} onSaved={jest.fn()} {...props} />);
+  };
+  const seleccionar = async () => {
+    const ana = await screen.findByRole('checkbox', { name: 'Seleccionar Ana QA - Viaje QA' });
+    const luis = screen.getByRole('checkbox', { name: 'Seleccionar Luis QA - Torneo QA' });
+    if (!ana.checked) fireEvent.click(ana);
+    if (!luis.checked) fireEvent.click(luis);
+  };
+  test('selecciona saldos completos de hermanos y separa monedas sin enviar pagos prematuramente', async () => {
+    montar();
+    expect(screen.getByRole('button', { name: 'Continuar al pago' })).toBeDisabled();
+    await seleccionar();
+    expect(screen.getByRole('button', { name: 'Continuar al pago' })).toBeEnabled();
+    expect(screen.getByText('2 cargos')).toBeInTheDocument();
+    expect(screen.queryByText('Euro QA')).not.toBeInTheDocument();
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Moneda del pago agrupado' }));
+    fireEvent.click(screen.getByRole('option', { name: 'EUR', exact: true }));
+    expect(screen.getByText('Euro QA')).toBeInTheDocument();
+    expect(screen.getByText('0 cargos')).toBeInTheDocument();
+  });
+  test.each([true, false])('identifica cada cargo por atleta, campana y descripcion en pagina=%s', async (pagina) => {
+    montar({ pagina, representante: true });
+    await screen.findByRole('checkbox', { name: 'Seleccionar Ana QA - Viaje QA' });
+    const [ana, luis] = within(screen.getByRole('list', { name: 'Cargos del pago agrupado' })).getAllByRole('listitem');
+    const filaAna = within(ana);
+    const filaLuis = within(luis);
+    expect(filaAna.getByText('Viaje QA')).toBeInTheDocument();
+    expect(filaAna.getByText('Traslado y hospedaje para el viaje deportivo')).toBeInTheDocument();
+    expect(filaAna.queryByText('Inscripcion al torneo de noviembre')).not.toBeInTheDocument();
+    expect(filaLuis.getByText('Torneo QA')).toBeInTheDocument();
+    expect(filaLuis.getByText('Inscripcion al torneo de noviembre')).toBeInTheDocument();
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+  test.each([true, false])('reutiliza ModalPago con un unico comprobante y estado protegido representante=%s', async (representante) => {
+    const onSaved = jest.fn(); montar({ representante, onSaved, pagina: representante }); await seleccionar();
+    fireEvent.click(screen.getByRole('button', { name: representante ? 'Continuar con el pago' : 'Continuar al pago' }));
+    fireEvent.click(await screen.findByText('Zelle', { exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ya pague' }));
+    await waitFor(() => expect(screen.getByLabelText('Monto pagado (USD)')).toHaveValue('42.50'));
+    expect(screen.queryAllByRole('checkbox', { name: 'Pago confirmado' })).toHaveLength(representante ? 0 : 1);
+    if (!representante) fireEvent.click(screen.getByRole('checkbox', { name: 'Pago confirmado' }));
+    fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-GRUPO-QA' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const [url, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'POST');
+    expect(url).toContain('/api/campanias-cobro/pagos-agrupados');
+    expect(JSON.parse(options.body.get('cargos'))).toEqual([{ cargo: 'cargo1', version: 0 }, { cargo: 'cargo2', version: 1 }]);
+    expect(options.body.get('monto_pagado')).toBe('42.50');
+    expect(options.body.get('estado')).toBe(representante ? 'en_revision' : 'confirmado');
+    expect(options.body.get('id_mensualidad')).toBeNull();
+  });
+  test('la pantalla selecciona los cargos por defecto y muestra el resumen sin abrir un dialogo', async () => {
+    const onClose = jest.fn(); montar({ pagina: true, representante: true, onClose });
+    expect(await screen.findByRole('checkbox', { name: 'Seleccionar Ana QA - Viaje QA' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Seleccionar Luis QA - Torneo QA' })).toBeChecked();
+    expect(screen.getByRole('heading', { name: 'Pagar varios atletas' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const resumen = within(screen.getByRole('complementary', { name: 'Resumen del pago adicional' }));
+    expect(screen.getByText('2 de 2 seleccionados')).toBeInTheDocument();
+    expect(resumen.getByText('Cobros adicionales (2)')).toBeInTheDocument();
+    expect(resumen.getByRole('button', { name: 'Continuar con el pago' })).toBeEnabled();
+    expect(resumen.getAllByText(/42,50/)).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar todos' }));
+    expect(screen.getByText('0 de 2 seleccionados')).toBeInTheDocument();
+    expect(resumen.getByRole('button', { name: 'Continuar con el pago' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar todos' }));
+    expect(screen.getByText('2 de 2 seleccionados')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+  test('la seleccion inicial respeta el limite de cien cargos y no incluye otra moneda', async () => {
+    const muchos = Array.from({ length: 101 }, (_, indice) => ({ ...cargos[0], _id: `cargo-${indice}` }));
+    window.fetch.mockResolvedValue(json({ representante: 'rep1', cargos: [...muchos, cargos[2]] }));
+    render(<CampaniaPagoAgrupadoDialog alumnoId="ana" pagina representante onClose={jest.fn()} onSaved={jest.fn()} />);
+    expect(await screen.findByText('100 de 101 seleccionados')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(100);
+    expect(screen.getAllByRole('checkbox', { checked: false })).toHaveLength(1);
+    expect(screen.queryByText('Euro QA')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continuar con el pago' })).toBeEnabled();
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+  test('la pantalla separa monedas y descarta la seleccion anterior al cambiar a euros', async () => {
+    montar({ pagina: true, representante: true }); await seleccionar();
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Moneda del pago agrupado' }));
+    fireEvent.click(screen.getByRole('option', { name: 'EUR', exact: true }));
+    expect(screen.getByText('Euro QA')).toBeInTheDocument();
+    expect(screen.queryByText('Viaje QA')).not.toBeInTheDocument();
+    expect(screen.getByText('0 de 1 seleccionados')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continuar con el pago' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar todos' }));
+    expect(screen.getByText('1 de 1 seleccionados')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continuar con el pago' })).toBeDisabled();
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+  const grupoId = '22000000-0000-4000-8000-000000000001';
+  const detalleGrupo = (puedeCorregir = true) => ({ cargos: cargos.slice(0, 2), puede_corregir: puedeCorregir,
+    pagos: cargos.slice(0, 2).map((cargo) => ({ _id: `pago-${cargo._id}`, cargo: cargo._id, moneda: 'USD', monto_pagado: cargo.saldo_pendiente,
+      estado: 'en_revision', metodo_pago: 'Zelle', fecha_pago: '2026-11-10', referencia: 'TX-GRUPO', agrupacion: { id: grupoId, monto_total: 42.5 } })) });
+  test.each([
+    ['en_revision', 'En revisión', true], ['confirmado', 'Confirmado', false], ['eliminado', 'Retirado', false]
+  ])('el detalle presenta total, datos bancarios y reparto con estado %s sin realizar escrituras', async (estado, etiqueta, corregible) => {
+    const datos = detalleGrupo(corregible);
+    datos.pagos = datos.pagos.map((pago, indice) => ({ ...pago, estado, metodo_pago: 'Pago movil', referencia: '272829',
+      monto_pagado_bs: indice ? 1250 : 3000, agrupacion: { ...pago.agrupacion, monto_total_bs: 4250 } }));
+    window.fetch.mockResolvedValue(json(datos));
+    const onClose = jest.fn();
+    render(<CampaniaPagoAgrupadoDialog grupoId={grupoId} onClose={onClose} onSaved={jest.fn()} />);
+    const detalle = within(await screen.findByRole('dialog', { name: 'Pago agrupado' }));
+    expect(await detalle.findByText(etiqueta)).toBeInTheDocument();
+    expect(detalle.getByRole('heading', { name: 'Pago agrupado', exact: true })).toBeInTheDocument();
+    expect(detalle.getByText('Total de la transferencia')).toBeInTheDocument();
+    expect(detalle.getByText(/USD\s*42,50/)).toBeInTheDocument();
+    expect(detalle.getByText(/Importe en bolívares:/)).toHaveTextContent('4.250,00');
+    expect(detalle.getByText('Método de pago')).toBeInTheDocument();
+    expect(detalle.getByText('Pago movil')).toBeInTheDocument();
+    expect(detalle.getByText('Referencia')).toBeInTheDocument();
+    expect(detalle.getByText('272829')).toBeInTheDocument();
+    expect(detalle.getByText('Fecha del pago')).toBeInTheDocument();
+    expect(detalle.getByText('10/11/2026')).toBeInTheDocument();
+    expect(detalle.getByRole('heading', { name: 'Reparto por atleta' })).toBeInTheDocument();
+    expect(detalle.getByText('2 atletas · 2 cargos')).toBeInTheDocument();
+    expect(detalle.queryAllByRole('button', { name: 'Corregir transferencia' })).toHaveLength(corregible ? 1 : 0);
+    expect(detalle.queryAllByRole('button', { name: 'Retirar transferencia' })).toHaveLength(corregible ? 1 : 0);
+    expect(detalle.queryByRole('button', { name: 'Cerrar', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(detalle.getByRole('button', { name: 'Cerrar pago agrupado', exact: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(window.fetch.mock.calls.some(([, options]) => ['POST', 'PATCH', 'DELETE'].includes(options?.method))).toBe(false);
+  });
+  test('retirar exige confirmacion y envia versiones de todos los cargos', async () => {
+    const onSaved = jest.fn();
+    window.fetch.mockImplementation(async (url, options = {}) => json(options.method === 'DELETE' ? { repetida: false } : detalleGrupo()));
+    render(<CampaniaPagoAgrupadoDialog grupoId={grupoId} representante onClose={jest.fn()} onSaved={onSaved} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Retirar transferencia' }));
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'DELETE')).toBe(false);
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Retirar transferencia agrupada' })).getByRole('button', { name: 'Retirar', exact: true }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ mensaje: 'Transferencia retirada' })));
+    const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'DELETE');
+    expect(JSON.parse(options.body)).toEqual({ cargos: [{ cargo: 'cargo1', version: 0 }, { cargo: 'cargo2', version: 1 }] });
+  });
+  test('corregir conserva el reparto completo y nunca permite cambiar a confirmado', async () => {
+    const onSaved = jest.fn();
+    window.fetch.mockImplementation(async (url, options = {}) => url.includes('/configuracion/pagos')
+      ? json({ pagos: { adicionales: [{ tipo: 'zelle', titular: 'QA', correo: 'qa@example.com' }] } })
+      : json(options.method === 'PATCH' ? { repetida: false } : detalleGrupo()));
+    render(<CampaniaPagoAgrupadoDialog grupoId={grupoId} onClose={jest.fn()} onSaved={onSaved} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Corregir transferencia' }));
+    fireEvent.click(await screen.findByText('Zelle', { exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ya pague' }));
+    await waitFor(() => expect(screen.getByLabelText('Monto pagado (USD)')).toHaveValue('42.50'));
+    expect(screen.getByLabelText('Referencia')).toHaveValue('TX-GRUPO');
+    expect(screen.getByLabelText(/Cu.ndo hiciste el pago/)).toHaveValue('2026-11-10');
+    expect(screen.queryByRole('checkbox', { name: 'Pago confirmado' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-CORREGIDO' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'PATCH');
+    expect(options.body.get('estado')).toBe('en_revision');
+    expect(options.body.get('monto_pagado')).toBe('42.50');
+    expect(JSON.parse(options.body.get('cargos'))).toHaveLength(2);
+  });
+  test('oculta correccion y retiro cuando la transferencia ya no es corregible', async () => {
+    window.fetch.mockResolvedValue(json(detalleGrupo(false)));
+    render(<CampaniaPagoAgrupadoDialog grupoId={grupoId} onClose={jest.fn()} onSaved={jest.fn()} />);
+    await screen.findByText('Viaje QA');
+    expect(screen.queryByRole('button', { name: 'Corregir transferencia' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retirar transferencia' })).not.toBeInTheDocument();
+  });
+  test('portal permite iniciar un pago familiar aunque el atleta actual no tenga cargos', async () => {
+    window.fetch.mockImplementation(async (url) => json(url.includes('/mis-cargos') ? { cargos: [] } : { representante: 'rep1', cargos }));
+    render(<MemoryRouter initialEntries={['/campanias-alumno/ana']}><Routes>
+      <Route path="/campanias-alumno/:alumnoId" element={<CampaniasAlumno />} /></Routes></MemoryRouter>);
+    await screen.findByText('No tienes cobros adicionales registrados.');
+    fireEvent.click(screen.getByRole('button', { name: 'Pago agrupado', exact: true }));
+    expect(await screen.findByRole('checkbox', { name: 'Seleccionar Luis QA - Torneo QA' })).toBeInTheDocument();
+    expect(window.fetch.mock.calls.some(([url]) => url.includes('/cargos-agrupables?alumnoId=ana'))).toBe(true);
+  });
+});
+
+describe('conciliacion de cobros adicionales', () => {
+  const revision = 'a'.repeat(64);
+  const coincidencia = (id, campaniaNombre, alumno = 'Ana QA', moneda = 'USD') => ({
+    tipo: 'match_total', motivo: [], match_por: 'referencia', excel: { referencia: '123456', monto_bs: 1000, fecha: '2026-11-10' },
+    sistema: { pago_id: id, registro_tipo: 'campanias', revision_pago: revision, campania_id: `camp-${id}`,
+      alumno, contexto: `Campaña: ${campaniaNombre}`, referencia: '123456', monto_bs: 1000,
+      monto_esperado_bs: 1000, monto_esperado_usd: 10, moneda, fecha: '2026-11-10' }
+  });
+  const preview = (tipo = 'campanias', parcial = false) => {
+    const filas = [coincidencia('pago1', 'Viaje QA'), coincidencia('pago2', 'Torneo QA', 'Luis QA', 'EUR')];
+    return { tipo_conciliacion: tipo, summary: { total_excel: 2, total_sistema_en_revision: 2,
+      match_total: parcial ? 1 : 2, match_parcial: parcial ? 1 : 0, sin_coincidencia_excel: 0, sin_coincidencia_sistema: 0 },
+    match_total: parcial ? [filas[0]] : filas, match_parcial: parcial ? [{ ...filas[1], tipo: 'match_parcial' }] : [],
+    sin_coincidencia_excel: [], sin_coincidencia_sistema: [], pago_ids_confirmables: parcial ? ['pago1'] : ['pago1', 'pago2'] };
+  };
+  const json = (data, ok = true) => ({ ok, json: async () => data });
+  const montar = (respuesta = preview()) => {
+    localStorage.setItem('rolActivo', 'admin');
+    let confirmado = false;
+    window.fetch.mockImplementation(async (url) => {
+      if (url.includes('/configuracion/pagos')) return json({ pagos: {} });
+      if (url.includes('/confirmar-match-total')) { confirmado = true; return json({ registros_actualizados: 2 }); }
+      return json(confirmado ? { ...respuesta, match_total: [], match_parcial: [], pago_ids_confirmables: [] } : respuesta);
+    });
+    render(<ConciliacionBancaria />);
+  };
+  const seleccionar = (nombre) => {
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Tipo de conciliacion' }));
+    fireEvent.click(screen.getByRole('option', { name: nombre, exact: true }));
+  };
+  const procesar = async () => {
+    fireEvent.change(screen.getByLabelText('Archivo de conciliacion'), { target: { files: [new File(['Referencia;Monto;Fecha'], 'banco.txt', { type: 'text/plain' })] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Procesar conciliacion' }));
+    await screen.findByText('Campaña: Viaje QA');
+  };
+
+  test('consulta todas las campanas y Confirmar Todo envia coincidencias con sus revisiones', async () => {
+    montar(); seleccionar('Cobros adicionales'); await procesar();
+    expect(screen.getByText('Campaña: Torneo QA')).toBeInTheDocument();
+    expect(screen.getByText(/EUR/)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /campaña/i })).not.toBeInTheDocument();
+    const [url] = window.fetch.mock.calls.find(([ruta]) => ruta.includes('/previsualizar'));
+    expect(url).toContain('tipo_conciliacion=campanias');
+    expect(url).not.toContain('campania_id=');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar Todo' }));
+    await waitFor(() => expect(window.fetch.mock.calls.filter(([ruta]) => ruta.includes('/previsualizar'))).toHaveLength(2));
+    const [, options] = window.fetch.mock.calls.find(([ruta]) => ruta.includes('/confirmar-match-total'));
+    expect(JSON.parse(options.body)).toEqual({ tipo_conciliacion: 'campanias', pago_ids: ['pago1', 'pago2'],
+      revisiones: [{ pago_id: 'pago1', revision }, { pago_id: 'pago2', revision }] });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar Todo' })).toBeDisabled());
+  });
+
+  test('parciales exigen seleccion y confirmacion explicitas sin incluir otras filas', async () => {
+    montar(preview('campanias', true)); seleccionar('Cobros adicionales'); await procesar();
+    expect(window.fetch.mock.calls.some(([url]) => url.includes('/confirmar-match-total'))).toBe(false);
+    fireEvent.click(within(screen.getByRole('row', { name: /Luis QA/ })).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar parciales (1)' }));
+    const dialog = screen.getByRole('dialog', { name: 'Confirmar matches parciales' });
+    expect(window.fetch.mock.calls.some(([url]) => url.includes('/confirmar-match-total'))).toBe(false);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar', exact: true }));
+    await waitFor(() => expect(window.fetch.mock.calls.some(([url]) => url.includes('/confirmar-match-total'))).toBe(true));
+    const [, options] = window.fetch.mock.calls.find(([url]) => url.includes('/confirmar-match-total'));
+    expect(JSON.parse(options.body)).toEqual({ tipo_conciliacion: 'campanias', pago_ids: ['pago2'], revisiones: [{ pago_id: 'pago2', revision }] });
+  });
+
+  test.each(['finanzas', 'asistente', 'usuario'])('oculta el nuevo tipo al rol %s', (rol) => {
+    localStorage.setItem('rolActivo', rol);
+    window.fetch.mockResolvedValue(json({ pagos: {} }));
+    render(<ConciliacionBancaria />);
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Tipo de conciliacion' }));
+    expect(screen.queryByRole('option', { name: 'Cobros adicionales' })).not.toBeInTheDocument();
+  });
+
+  test('rechaza una previsualizacion sin revisiones y no habilita confirmar', async () => {
+    const data = preview();
+    delete data.match_total[0].sistema.revision_pago;
+    montar(data); seleccionar('Cobros adicionales');
+    fireEvent.change(screen.getByLabelText('Archivo de conciliacion'), { target: { files: [new File(['QA'], 'banco.txt', { type: 'text/plain' })] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Procesar conciliacion' }));
+    expect(await screen.findByText(/No se pudo verificar la conciliacion de cobros adicionales/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar Todo' })).toBeDisabled();
+  });
+
+  test('impide cambiar tipo banco y archivo durante el procesamiento', async () => {
+    let resolver;
+    montar();
+    window.fetch.mockImplementation(async (url) => url.includes('/previsualizar') ? new Promise((resolve) => { resolver = resolve; }) : json({ pagos: {} }));
+    seleccionar('Cobros adicionales');
+    fireEvent.change(screen.getByLabelText('Archivo de conciliacion'), { target: { files: [new File(['QA'], 'banco.txt', { type: 'text/plain' })] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Procesar conciliacion' }));
+    expect(screen.getByRole('combobox', { name: 'Tipo de conciliacion' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('combobox', { name: 'Banco', exact: true })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByLabelText('Archivo de conciliacion')).toBeDisabled();
+    await act(async () => resolver(json(preview())));
+    expect(await screen.findByText('Campaña: Viaje QA')).toBeInTheDocument();
+  });
+
+  test.each([['Mensualidades', 'mensualidades'], ['Uniformes', 'uniformes']])('conserva confirmacion existente de %s', async (nombre, tipo) => {
+    montar(preview(tipo)); seleccionar(nombre); await procesar();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar Todo' }));
+    await waitFor(() => expect(window.fetch.mock.calls.some(([url]) => url.includes('/confirmar-match-total'))).toBe(true));
+    const [, options] = window.fetch.mock.calls.find(([url]) => url.includes('/confirmar-match-total'));
+    expect(JSON.parse(options.body)).toEqual({ tipo_conciliacion: tipo, pago_ids: ['pago1', 'pago2'] });
+  });
+});
 
 describe('ajustes de cargos en interfaz', () => {
   const fila = { _id: 'cargo1', alumno: 'ana', nombres: 'Ana', apellidos: 'QA', modalidad: 'general', monto: 30,
