@@ -18,6 +18,7 @@ import EntrenadoresSedeStaff from './components/EntrenadoresSedeStaff';
 import Horarios from './components/Horarios';
 import ListadoSolicitudesUniformes from './components/ListadoSolicitudesUniformes';
 import PagosAlumno from './components/PagosAlumno';
+import CampaniasAlumno from './components/CampaniasAlumno';
 import PagoAgrupado from './components/PagoAgrupado';
 import Mensualidades from './components/Mensualidades';
 import TablaAlumnos from './components/TablaAlumnos';
@@ -44,6 +45,7 @@ import EstadisticasFinanzas from './components/EstadisticasFinanzas';
 import MiPerfil from './components/MiPerfil';
 import Recaudos from './components/Recaudos';
 import Egresos from './components/Egresos';
+import CobrosAdicionales from './components/CobrosAdicionales';
 import CatalogoCategoriasEgresos from './components/CatalogoCategoriasEgresos';
 import TerminosCondiciones from './components/TerminosCondiciones';
 import UsuariosAccesos from './components/UsuariosAccesos';
@@ -366,6 +368,7 @@ function App() {
                           <Route path="horarios" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['horarios.view', 'horarios.manage']} requireAllPermissions={false}><Horarios /></ProtectedRoute>} />
                           <Route path="listado-solicitudes-uniformes" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['solicitudes_uniformes.view']}><ListadoSolicitudesUniformes /></ProtectedRoute>} />
                           <Route path="pagos-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={adminAndUser}><PagosAlumno /></ProtectedRoute>} />
+                          <Route path="campanias-alumno/:alumnoId" element={<ProtectedRoute allowedRoles={userOnly}><CampaniasAlumno /></ProtectedRoute>} />
                           <Route path="pagos-agrupados" element={<ProtectedRoute allowedRoles={userOnly}><PagoAgrupado /></ProtectedRoute>} />
                           <Route
                             path="inscripciones"
@@ -420,6 +423,7 @@ function App() {
                           <Route path="alumno/reposos/:id" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['alumnos.view']}><GestionReposos /></ProtectedRoute>} />
                           <Route path="recaudos" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['recaudos.view']}><Recaudos /></ProtectedRoute>} />
                           <Route path="egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><Egresos /></ProtectedRoute>} />
+                          <Route path="cobros-adicionales" element={<ProtectedRoute allowedRoles={['admin', 'super_admin']}><CobrosAdicionales /></ProtectedRoute>} />
                           <Route path="config-catalogo-egresos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['egresos.view']}><CatalogoCategoriasEgresos /></ProtectedRoute>} />
                           <Route path="publicaciones/cumpleanos" element={<ProtectedRoute allowedRoles={adminOnly} requiredPermissions={['publicaciones.view', 'publicaciones.manage']} requireAllPermissions={false}><CumpleanosPostGenerator /></ProtectedRoute>} />
                           <Route path="terminos-condiciones" element={<ProtectedRoute allowedRoles={adminAndUser} requiredPermissions={['reglamento.view']}><TerminosCondiciones /></ProtectedRoute>} />

@@ -8,6 +8,7 @@ my-react-app/build/
 
 # runtime uploads
 backend/uploads/
+backend/private-uploads/
 backend/backups/
 
 # misc

@@ -11,6 +11,7 @@ const { hasRequestPermission } = require('../middleware/auth');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const { MONTO_TOLERANCIA_BS, obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
 const { actualizarRevisionCredito, sincronizarCreditoAlumno, liberarCreditoOrigen } = require('../services/monthlyCredit');
+const { confirmarPagoCampania, agruparPagosCampania } = require('../services/campaniaPaymentConfirmation');
 
 function grupoModificado() {
   const error = new Error('El pago agrupado cambio. Actualiza la vista antes de continuar.');
@@ -20,7 +21,8 @@ function grupoModificado() {
 
 const TIPO_CONCILIACION = {
   MENSUALIDADES: 'mensualidades',
-  UNIFORMES: 'uniformes'
+  UNIFORMES: 'uniformes',
+  CAMPANIAS: 'campanias'
 };
 
 const BANCO_CONCILIACION = {
@@ -53,7 +55,7 @@ function resolveConciliacionModels(models = {}) {
 
 function resolveTipoConciliacion(rawTipo) {
   const tipo = String(rawTipo || TIPO_CONCILIACION.MENSUALIDADES).trim().toLowerCase();
-  if (tipo === TIPO_CONCILIACION.MENSUALIDADES || tipo === TIPO_CONCILIACION.UNIFORMES) {
+  if (Object.values(TIPO_CONCILIACION).includes(tipo)) {
     return tipo;
   }
   return null;
@@ -551,6 +553,7 @@ function buildMatchRecord({ banco, sistema, tipo, motivo = [], matchPor = '', id
       pago_id: String(sistema._id),
       registro_id: String(sistema._id),
       registro_tipo: sistema.registro_tipo || TIPO_CONCILIACION.MENSUALIDADES,
+      ...(sistema.revision_pago ? { revision_pago: sistema.revision_pago, campania_id: sistema.id_campania, moneda: sistema.moneda } : {}),
       mensualidad_id: sistema.id_mensualidad ? String(sistema.id_mensualidad) : null,
       pago_agrupado_id: sistema.id_pago_agrupado ? String(sistema.id_pago_agrupado) : null,
       pedido_id: sistema.id_pedido ? String(sistema.id_pedido) : null,
@@ -613,7 +616,7 @@ exports.previsualizarConciliacion = async (req, res) => {
     const priorizarDescripcionProvincial = bancoConciliacion === BANCO_CONCILIACION.PROVINCIAL;
     if (!tipoConciliacion) {
       return res.status(400).json({
-        error: `tipo_conciliacion invalido. Usa ${TIPO_CONCILIACION.MENSUALIDADES} o ${TIPO_CONCILIACION.UNIFORMES}`
+        error: 'tipo_conciliacion invalido. Usa mensualidades, uniformes o campanias'
       });
     }
     if (
@@ -627,6 +630,9 @@ exports.previsualizarConciliacion = async (req, res) => {
       return res.status(400).json({ error: 'Debes subir un archivo de conciliacion' });
     }
 
+    if (tipoConciliacion === TIPO_CONCILIACION.CAMPANIAS && !['admin', 'super_admin'].includes(req.user?.rol)) {
+      return res.status(403).json({ error: 'Solo administracion puede conciliar cobros adicionales.' });
+    }
     const extension = path.extname(String(req.file.originalname || '')).toLowerCase();
 
     const bancoRows = extension === '.txt'
@@ -727,6 +733,25 @@ exports.previsualizarConciliacion = async (req, res) => {
           || `${Number(pago.cantidad_atletas) || 2} atletas`,
         contexto: `Pago agrupado ${pago.codigo || ''}`.trim()
       })));
+    } else if (tipoConciliacion === TIPO_CONCILIACION.CAMPANIAS) {
+      getTenantModel(tenantModels.connection, 'CampaniaCobro');
+      getTenantModel(tenantModels.connection, 'CargoCampania');
+      const PagoCampania = getTenantModel(tenantModels.connection, 'PagoCampania');
+      const pagos = await PagoCampania.find({ estado: 'en_revision', monto_pagado_bs: { $gt: 0 } })
+        .select('_id campania cargo moneda monto_pagado monto_pagado_bs fecha_pago metodo_pago referencia telefono_pago cedula_titular agrupacion es_principal_grupo estado comprobante_url')
+        .populate('campania', 'nombre estado publicacion').populate('cargo', 'nombres apellidos').lean();
+      sistemaRows = agruparPagosCampania(pagos.filter((pago) => pago.campania?.publicacion && pago.campania.estado === 'abierta' && pago.cargo))
+        .map(({ pago, pagos: asignaciones, revision }) => ({
+          _id: pago._id, registro_tipo: TIPO_CONCILIACION.CAMPANIAS, id_campania: String(pago.campania._id),
+          revision_pago: revision, moneda: pago.moneda, referencia: normalizarReferencia(pago.referencia),
+          telefono_pago: String(pago.telefono_pago || '').trim(), telefono_pago_cmp: telefonoComparable(pago.telefono_pago),
+          cedula_titular: String(pago.cedula_titular || '').trim(), cedula_titular_cmp: cedulaComparable(pago.cedula_titular),
+          monto_pagado_bs: parseMonto(pago.agrupacion?.monto_total_bs ?? pago.monto_pagado_bs),
+          monto_esperado_bs: parseMonto(pago.agrupacion?.monto_total_bs ?? pago.monto_pagado_bs),
+          monto_esperado_usd: pago.agrupacion?.monto_total ?? pago.monto_pagado, fecha_pago: parseFecha(pago.fecha_pago),
+          alumno: [...new Set(asignaciones.map((item) => `${item.cargo.nombres || ''} ${item.cargo.apellidos || ''}`.trim()))].join(' / ') || '-',
+          contexto: pago.agrupacion ? `Pago agrupado: ${[...new Set(asignaciones.map((item) => item.campania.nombre))].join(' / ')}` : `Campaña: ${pago.campania.nombre}`
+        }));
     } else {
       const pedidosEnRevision = await TenantUniformePedido.find({ estado: 'pago_en_revision' })
         .populate('alumno', 'nombres apellidos')
@@ -974,6 +999,7 @@ exports.previsualizarConciliacion = async (req, res) => {
           pago_id: String(row._id),
           registro_id: String(row._id),
           registro_tipo: row.registro_tipo || TIPO_CONCILIACION.MENSUALIDADES,
+          ...(row.revision_pago ? { revision_pago: row.revision_pago, campania_id: row.id_campania, moneda: row.moneda } : {}),
           mensualidad_id: row.id_mensualidad ? String(row.id_mensualidad) : null,
           pago_agrupado_id: row.id_pago_agrupado ? String(row.id_pago_agrupado) : null,
           pedido_id: row.id_pedido ? String(row.id_pedido) : null,
@@ -1027,7 +1053,7 @@ exports.confirmarMatchTotal = async (req, res) => {
     const tipoConciliacion = resolveTipoConciliacion(req.body?.tipo_conciliacion);
     if (!tipoConciliacion) {
       return res.status(400).json({
-        error: `tipo_conciliacion invalido. Usa ${TIPO_CONCILIACION.MENSUALIDADES} o ${TIPO_CONCILIACION.UNIFORMES}`
+        error: 'tipo_conciliacion invalido. Usa mensualidades, uniformes o campanias'
       });
     }
     if (
@@ -1040,6 +1066,37 @@ exports.confirmarMatchTotal = async (req, res) => {
     const pagoIds = Array.isArray(req.body?.pago_ids) ? req.body.pago_ids : [];
     if (!pagoIds.length) {
       return res.status(400).json({ error: 'Debes enviar al menos un pago para confirmar' });
+    }
+
+    if (tipoConciliacion === TIPO_CONCILIACION.CAMPANIAS) {
+      if (!req.user?.id || !['admin', 'super_admin'].includes(req.user.rol)) {
+        return res.status(403).json({ error: 'Solo administracion puede confirmar cobros adicionales.' });
+      }
+      const revisiones = req.body.revisiones;
+      if (pagoIds.length > 1000 || pagoIds.some((id) => typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id))
+        || new Set(pagoIds).size !== pagoIds.length || !Array.isArray(revisiones) || revisiones.length !== pagoIds.length
+        || revisiones.some((item) => !item || !pagoIds.includes(item.pago_id) || typeof item.revision !== 'string'
+          || !/^[a-f\d]{64}$/.test(item.revision)) || new Set(revisiones.map((item) => item.pago_id)).size !== pagoIds.length) {
+        return res.status(400).json({ error: 'Revisa la seleccion y vuelve a procesar el archivo de conciliacion.' });
+      }
+      const models = Object.fromEntries(['CampaniaCobro', 'CargoCampania', 'PagoCampania']
+        .map((nombre) => [nombre, getTenantModel(tenantModels.connection, nombre)]));
+      const actualizadas = await ejecutarConTransaccion(models.CargoCampania, async (session) => {
+        const pagos = await aplicarSession(models.PagoCampania.find({ _id: { $in: pagoIds } }).sort({ _id: 1 }), session).lean();
+        if (pagos.length !== pagoIds.length) throw Object.assign(new Error('Un pago no existe en esta academia.'), { status: 404 });
+        let cantidad = 0;
+        for (const pago of pagos) {
+          const resultado = await confirmarPagoCampania(models, { campaniaId: pago.campania, cargoId: pago.cargo, pagoId: pago._id,
+            actor: req.user, revision: revisiones.find((item) => item.pago_id === String(pago._id)).revision }, session);
+          if (!resultado.repetida) cantidad += resultado.confirmados || 1;
+        }
+        return cantidad;
+      }, { obligatoria: true });
+      await registrarOperacion(req, { tipo: 'conciliacion_bancaria', nombre: 'Conciliacion bancaria',
+        detalle: `Se confirmaron ${actualizadas} pago(s) de cobros adicionales.`, entidad_tipo: 'PagoCampania',
+        metadata: { tipo_conciliacion: tipoConciliacion, registros_actualizados: actualizadas, pagos_recibidos: pagoIds.length } });
+      return res.json({ message: 'Conciliacion aplicada correctamente', tipo_conciliacion: tipoConciliacion,
+        registros_actualizados: actualizadas, pagos_recibidos: pagoIds.length });
     }
 
     if (tipoConciliacion === TIPO_CONCILIACION.UNIFORMES) {

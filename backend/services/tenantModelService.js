@@ -25,6 +25,9 @@ const ConstanciaSolicitud = require('../models/ConstanciaSolicitud');
 const Torneo = require('../models/Torneo');
 const Partido = require('../models/Partido');
 const Roster = require('../models/Roster');
+const CampaniaCobro = require('../models/CampaniaCobro');
+const CargoCampania = require('../models/CargoCampania');
+const PagoCampania = require('../models/PagoCampania');
 
 const modelSchemaMap = {
   User: User.schema,
@@ -53,7 +56,10 @@ const modelSchemaMap = {
   ConstanciaSolicitud: ConstanciaSolicitud.schema,
   Torneo: Torneo.schema,
   Partido: Partido.schema,
-  Roster: Roster.schema
+  Roster: Roster.schema,
+  CampaniaCobro: CampaniaCobro.schema,
+  CargoCampania: CargoCampania.schema,
+  PagoCampania: PagoCampania.schema
 };
 
 function getTenantModel(connection, modelName) {
