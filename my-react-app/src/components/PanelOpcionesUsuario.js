@@ -4,6 +4,7 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
 import ShoppingBagIcon from '@mui/icons-material/ShoppingBag';
+import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
@@ -70,6 +71,9 @@ function PanelOpcionesUsuario() {
   const [pedidosUniforme, setPedidosUniforme] = useState([]);
   const [uniformesLoading, setUniformesLoading] = useState(false);
   const [uniformesError, setUniformesError] = useState('');
+  const [cargosCampania, setCargosCampania] = useState([]);
+  const [campaniasLoading, setCampaniasLoading] = useState(true);
+  const [campaniasError, setCampaniasError] = useState('');
   const alumno = location.state?.alumno;
   const sede = location.state?.sede;
   const token = localStorage.getItem('token');
@@ -171,6 +175,35 @@ function PanelOpcionesUsuario() {
     };
 
     fetchPedidosUniforme();
+  }, [alumno?._id, token]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCargosCampania([]);
+    setCampaniasError('');
+    setCampaniasLoading(true);
+    const cargar = async () => {
+      try {
+        if (!alumno?._id || !token) throw new Error('Sin datos');
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/campanias-cobro/mis-cargos?alumnoId=${encodeURIComponent(alumno._id)}`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal
+        });
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data.cargos) || data.cargos.some((cargo) =>
+          cargo?.alumno !== alumno._id || !['abierta', 'cerrada', 'cancelada'].includes(cargo.campania?.estado)
+          || !['pendiente', 'abono', 'pagado', 'no_aplica'].includes(cargo.estado)
+          || !Number.isFinite(cargo.saldo_pendiente) || cargo.saldo_pendiente < 0
+          || !Number.isFinite(cargo.disponible) || cargo.disponible < 0 || cargo.disponible > cargo.saldo_pendiente
+          || typeof cargo.pago_en_revision !== 'boolean')) throw new Error('Sin datos');
+        if (!controller.signal.aborted) setCargosCampania(data.cargos);
+      } catch (error) {
+        if (!controller.signal.aborted) setCampaniasError('No se pudieron cargar tus cobros adicionales');
+      } finally {
+        if (!controller.signal.aborted) setCampaniasLoading(false);
+      }
+    };
+    cargar();
+    return () => controller.abort();
   }, [alumno?._id, token]);
 
   const obtenerFechaVencimientoVisible = useCallback((mensualidad) => {
@@ -276,6 +309,24 @@ function PanelOpcionesUsuario() {
       color: 'success'
     };
   }, [uniformesError, uniformesLoading, uniformesPendientesPago]);
+
+  const resumenCampania = useMemo(() => {
+    if (campaniasLoading) return { label: 'Cargando', detalle: 'Revisando tus cobros adicionales' };
+    if (campaniasError) return { label: 'Sin datos', detalle: campaniasError };
+    const conSaldo = cargosCampania.filter((cargo) => cargo.campania.estado !== 'cancelada'
+      && cargo.estado !== 'no_aplica' && cargo.saldo_pendiente > 0);
+    const pendientes = conSaldo.filter((cargo) => cargo.disponible > 0);
+    if (pendientes.length > 0) return {
+      label: 'Pago pendiente',
+      detalle: `Tienes ${pendientes.length} cobro${pendientes.length > 1 ? 's' : ''} adicional${pendientes.length > 1 ? 'es' : ''} con saldo pendiente`
+    };
+    const enRevision = conSaldo.filter((cargo) => cargo.pago_en_revision);
+    if (enRevision.length > 0) return {
+      label: 'Pago en revision',
+      detalle: `Tienes ${enRevision.length} cobro${enRevision.length > 1 ? 's' : ''} con pago en revision`
+    };
+    return { label: 'Sin pendientes', detalle: 'No tienes cobros adicionales por pagar' };
+  }, [campaniasError, campaniasLoading, cargosCampania]);
 
   const irAMisDatos = async () => {
     if (!alumno?._id || loadingRep) return;
@@ -599,6 +650,36 @@ function PanelOpcionesUsuario() {
                     }}
                   />
                 </Box>
+              </Grid>
+              <Grid item size={sizeTarjetaOpciones}>
+                <Button fullWidth
+                  onClick={() => navigate(`/campanias-alumno/${alumno._id}`, { state: { alumno, sede } })}
+                  sx={{ minHeight: (theme) => `calc(200px + ${theme.spacing(4)})`, p: 2, borderRadius: 3, boxShadow: 4, color: '#fff', textTransform: 'none',
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', textAlign: 'left',
+                    position: 'relative', overflow: 'hidden', transition: 'transform 0.2s',
+                    background: 'linear-gradient(135deg, #d62490 0%, #ba1b79 100%)',
+                    '& > *:not(.bg-icon)': { position: 'relative', zIndex: 1 },
+                    '&:hover': { transform: 'scale(1.04)', background: 'linear-gradient(135deg, #d62490 0%, #ba1b79 100%)' } }}>
+                  <Box sx={{ display: 'inline-flex', bgcolor: 'rgba(255,255,255,0.2)', borderRadius: '50%', p: 1, mb: 1 }}>
+                    <CampaignOutlinedIcon sx={{ fontSize: 32, color: 'white' }} />
+                  </Box>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Cobros adicionales</Typography>
+                  <Typography variant="body2">Ver y gestionar tus cobros</Typography>
+                  <Chip
+                    component="span"
+                    label={resumenCampania.label}
+                    size="small"
+                    sx={{ mt: 1, bgcolor: 'rgba(255,255,255,0.18)', color: '#ffffff', fontWeight: 800,
+                      border: '1px solid rgba(255,255,255,0.24)' }}
+                  />
+                  <Typography component="span" variant="caption" sx={{ opacity: 0.9 }}>
+                    {resumenCampania.detalle}
+                  </Typography>
+                  <CampaignOutlinedIcon
+                    className="bg-icon"
+                    sx={{ position: 'absolute', top: 12, right: 12, fontSize: 96, opacity: 0.16, color: 'white' }}
+                  />
+                </Button>
               </Grid>
             </Grid>
           </Grid>

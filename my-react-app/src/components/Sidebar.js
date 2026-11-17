@@ -88,6 +88,9 @@ function getMenuOptions(handleLogout, handleDashboardNavigation) {
     if (canViewEgresos) {
       options.push({ text: 'Egresos', icon: <AttachMoneyIcon />, path: '/egresos' });
     }
+    if (esAdminLegacy) {
+      options.push({ text: 'Cobros adicionales', icon: <AccountBalanceIcon />, path: '/cobros-adicionales' });
+    }
     if (canViewReglamento) {
       options.push({ text: 'Reglamento', icon: <GavelIcon />, path: '/terminos-condiciones' });
     }
