@@ -34,7 +34,8 @@ const formatoMonto = (monto, moneda) => new Intl.NumberFormat('es-VE', { style: 
 const respuestaValida = (data, id, estado = 'borrador') => {
   const { campania, totales, filas } = data;
   const subtotal = Array.isArray(filas) ? filas.reduce((total, fila) => total + (dineroValido(fila?.monto) ? Math.round(fila.monto * 100) : 0), 0) / 100 : null;
-  return campania?._id === id && campania.estado === estado && Number.isInteger(campania.__v) && campania.__v >= 0
+  return campania?._id === id && (estado === 'borrador' ? campania.estado === estado : ['abierta', 'cerrada', 'cancelada'].includes(campania.estado))
+    && Number.isInteger(campania.__v) && campania.__v >= 0
     && typeof campania.nombre === 'string' && ['USD', 'EUR'].includes(campania.moneda)
     && Array.isArray(campania.sedes) && Array.isArray(campania.participantes)
     && new Set(campania.participantes).size === campania.participantes.length
@@ -177,7 +178,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, crea
         <Typography component="h2" id="resumen-campania-titulo" sx={{ fontSize: 22, fontWeight: 750, lineHeight: 1.25 }}>{publicada ? 'Cargos de la campa\u00f1a' : 'Resumen previo a publicar'}</Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mt: 0.75 }}>
           <Typography sx={{ fontSize: 13, color: '#c6c8de', overflowWrap: 'anywhere', minWidth: 0 }}>{datos?.campania.nombre || campania.nombre}</Typography>
-          <Chip label={publicada ? 'Publicada' : 'Borrador'} size="small" sx={{ bgcolor: publicada ? '#eaf6ee' : '#fff6dc', color: publicada ? '#237242' : '#8a6a20', borderRadius: 1, fontWeight: 650, height: 20 }} />
+          <Chip label={publicada ? datos?.campania.estado === 'cerrada' ? 'Cerrada' : datos?.campania.estado === 'cancelada' ? 'Cancelada' : 'Publicada' : 'Borrador'} size="small" sx={{ bgcolor: publicada ? '#eaf6ee' : '#fff6dc', color: publicada ? '#237242' : '#8a6a20', borderRadius: 1, fontWeight: 650, height: 20 }} />
         </Box>
       </Box>
       <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>

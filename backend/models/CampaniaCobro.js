@@ -21,6 +21,8 @@ const CampaniaCobroSchema = new mongoose.Schema({
   vencimiento: { type: String, default: '' },
   permitir_abonos: { type: Boolean, default: false },
   estado: { type: String, enum: ['borrador', 'abierta', 'cerrada', 'cancelada'], default: 'borrador' },
+  cierre: { type: mongoose.Schema.Types.Mixed, select: false },
+  historial_cierres: { type: [mongoose.Schema.Types.Mixed], default: [], select: false },
   solicitud_id: { type: String },
   publicacion: { type: new mongoose.Schema({
     solicitud_id: { type: String, required: true },

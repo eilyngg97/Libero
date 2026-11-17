@@ -1,11 +1,14 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, configure, fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
+import { CacheProvider } from '@emotion/react';
+import createCache from '@emotion/cache';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import CobrosAdicionales from './CobrosAdicionales';
 import ProtectedRoute from './ProtectedRoute';
 import CampaniaParticipantesDialog from './CampaniaParticipantesDialog';
 import CampaniaResumenDialog from './CampaniaResumenDialog';
+import CampaniaCierreDialog from './CampaniaCierreDialog';
 import CampaniaPagoDialog from './CampaniaPagoDialog';
 import CampaniaCargoAjusteDialog from './CampaniaCargoAjusteDialog';
 import * as CampaniaPagoDialogModule from './CampaniaPagoDialog';
@@ -19,11 +22,90 @@ import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 100, moneda: 'USD' } }) }));
 jest.mock('../utils/dolarHistorico', () => ({ obtenerTasaOficialPorFecha: jest.fn(async () => 100), obtenerTasaEuroOficialPorFecha: jest.fn(async () => 100) }));
 
+configure({ asyncUtilTimeout: 5000 });
+
+let cacheEstilos;
+function EstilosDePrueba({ children }) {
+  return <CacheProvider value={cacheEstilos}>{children}</CacheProvider>;
+}
+const render = (interfaz, opciones) => renderTestingLibrary(interfaz, { wrapper: EstilosDePrueba, ...opciones });
+
 const originalFetch = window.fetch;
 const originalCrypto = Object.getOwnPropertyDescriptor(window, 'crypto');
 const campania = (indice) => ({ _id: String(indice), nombre: `Viaje ${indice}`, descripcion: '',
   monto_general: 30, moneda: 'USD', estado: 'borrador', sedes: [{ _id: 'norte', nombre: 'Norte' }], vencimiento: '2026-12-15', __v: 0 });
 const responder = (campanias) => ({ ok: true, status: 200, json: async () => ({ campanias }) });
+
+describe('cierre de campanas en interfaz', () => {
+  const actual = { ...campania(1), estado: 'abierta', participantes: ['ana'], publicacion: {}, __v: 2 };
+  const json = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
+  const resumen = (cambios = {}) => ({ campania: actual,
+    filas: [{ alumno: 'ana', monto: 30, saldo_pendiente: 30, pago_en_revision: false, ...cambios }], totales: { total_esperado: 30 } });
+  const aceptar = async () => {
+    fireEvent.change(await screen.findByRole('textbox', { name: /Motivo del cierre/ }), { target: { value: 'Cierre QA confirmado' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Acepto cerrar/ }));
+  };
+  test('exige aceptar deuda y motivo sin escribir al abrir ni cancelar', async () => {
+    const onClose = jest.fn(); window.fetch.mockResolvedValue(json(resumen()));
+    render(<CampaniaCierreDialog campania={actual} onClose={onClose} onSaved={jest.fn()} />);
+    await screen.findByRole('textbox', { name: /Motivo del cierre/ });
+    expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeDisabled();
+    await aceptar();
+    expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+  test('bloquea cerrar con pagos en revision', async () => {
+    window.fetch.mockResolvedValue(json(resumen({ pago_en_revision: true })));
+    render(<CampaniaCierreDialog campania={actual} onClose={jest.fn()} onSaved={jest.fn()} />);
+    expect(await screen.findByText(/Resuelve los pagos en revision/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeDisabled();
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+  test('el listado cierra una abierta, actualiza el estado y retira el boton', async () => {
+    window.fetch.mockImplementation(async (url, options = {}) => options.method === 'POST'
+      ? json({ campania: { ...actual, estado: 'cerrada', __v: 3 }, repetida: false })
+      : url.endsWith('/cargos') ? json(resumen()) : responder([actual]));
+    render(<CobrosAdicionales />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Cerrar campaña Viaje 1' }));
+    await aceptar(); fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }));
+    await screen.findByText('Campaña cerrada');
+    expect(screen.getByText('Cerrada')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cerrar campaña Viaje 1' })).not.toBeInTheDocument();
+    expect(window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1);
+  });
+  test('una version antigua exige actualizar saldos y no permite reenviar a ciegas', async () => {
+    window.fetch.mockResolvedValueOnce(json(resumen())).mockResolvedValueOnce(json({ error: 'La campana cambio.' }, 409));
+    render(<CampaniaCierreDialog campania={actual} onClose={jest.fn()} onSaved={jest.fn()} />);
+    await aceptar(); fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }));
+    await screen.findByText('La campana cambio.');
+    expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Actualizar saldos' })).toBeEnabled();
+  });
+  test('reintenta la misma solicitud tras fallo de red y valida el estado cerrado', async () => {
+    const onSaved = jest.fn();
+    window.fetch.mockResolvedValueOnce(json(resumen())).mockRejectedValueOnce(new Error('Red no disponible'))
+      .mockResolvedValueOnce(json({ campania: { ...actual, estado: 'cerrada', __v: 3 }, repetida: true }));
+    render(<CampaniaCierreDialog campania={actual} onClose={jest.fn()} onSaved={onSaved} />);
+    await aceptar(); fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }));
+    await screen.findByText('Red no disponible');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const posts = window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST');
+    expect(posts).toHaveLength(2); expect(posts[0][1].body).toBe(posts[1][1].body);
+    expect(JSON.parse(posts[0][1].body)).toMatchObject({ version: 2, motivo: 'Cierre QA confirmado', aceptar_saldo_pendiente: true });
+  });
+  test('rechaza una respuesta incompleta sin incorporar datos invalidos al listado', async () => {
+    const onSaved = jest.fn();
+    window.fetch.mockResolvedValueOnce(json(resumen())).mockResolvedValueOnce(json({ repetida: false,
+      campania: { _id: actual._id, estado: 'cerrada', __v: 3, moneda: 'USD' } }));
+    render(<CampaniaCierreDialog campania={actual} onClose={jest.fn()} onSaved={onSaved} />);
+    await aceptar(); fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }));
+    expect(await screen.findByText(/No se pudo verificar el cierre/)).toBeInTheDocument();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+});
 
 describe('pagos agrupados de campanias', () => {
   const cargos = [
@@ -383,6 +465,16 @@ describe('ajustes de cargos en interfaz', () => {
     expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
   });
 
+  test('el resumen acepta cierre automatico aunque se abrio con estado abierta', async () => {
+    window.fetch.mockResolvedValue(json({ campania: { ...actual, estado: 'cerrada', __v: 4 }, totales,
+      filas: [{ ...fila, puede_ajustar: false, saldo_pendiente: 0, estado: 'pagado' }] }));
+    render(<CampaniaResumenDialog campania={actual} onClose={jest.fn()} />);
+    await screen.findByRole('table');
+    expect(screen.getByText('Cerrada')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pagar cargo de Ana QA' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/No se pudo verificar el resumen/)).not.toBeInTheDocument();
+  });
+
   test('retirar exige confirmacion y cancelar no envia cambios', async () => {
     const onClose = jest.fn();
     const onSaved = jest.fn();
@@ -514,6 +606,11 @@ describe('listado representante de campanas', () => {
     permitir_abonos: false, pago_en_revision: false, disponible: 0, campania: { _id: 'camp2', nombre: 'Torneo QA', moneda: 'USD', estado: 'cerrada' } }];
   const abrir = () => render(<MemoryRouter initialEntries={['/campanias-alumno/ana']}><Routes>
     <Route path="/campanias-alumno/:alumnoId" element={<CampaniasAlumno />} /></Routes></MemoryRouter>);
+  test.each([[true, 'Permite abonos'], [false, 'Pago completo']])('identifica la modalidad de pago: %s', async (permitir_abonos, etiqueta) => {
+    window.fetch.mockResolvedValue({ ok: true, json: async () => ({ cargos: [{ ...filas[0], permitir_abonos }] }) });
+    abrir();
+    expect(await screen.findByText(`Modalidad de pago: ${etiqueta}`)).toBeInTheDocument();
+  });
   test.each([
     ['2026-11-15', '2026-11-16T03:59:59Z', null],
     ['2026-11-15', '2026-11-16T04:00:00Z', '1 día de atraso'],
@@ -663,6 +760,16 @@ describe('pagos individuales campania', () => {
       expect(within(screen.getByRole('group', { name: 'Registrado por' })).getByText(etiqueta)).toBeInTheDocument();
       expect(within(lista).getByText(`Registrado por: ${etiqueta}`)).toBeInTheDocument();
       expect(screen.queryByText(/actor-privado-qa/)).not.toBeInTheDocument();
+    });
+
+  test.each([[true, false, true], [false, false, false], [true, true, false]])(
+    'correccion de cerrada exige permiso administrativo=%s representante=%s', async (permiso, representante, editable) => {
+      preparar(jest.fn(), { ...historial([{ ...pago, estado: 'confirmado' }], { saldo_pendiente: 0, estado: 'pagado' }),
+        puede_corregir: permiso, totales: { confirmado: 30, en_revision: 0, saldo_pendiente: 0, disponible: 0 } });
+      render(<CampaniaPagoDialog campania={{ ...actual, estado: 'cerrada' }} fila={fila} representante={representante}
+        modo="historial" onClose={jest.fn()} onSaved={jest.fn()} />);
+      await screen.findByRole('list', { name: 'Historial de pagos del cargo' });
+      expect(Boolean(screen.queryByRole('button', { name: 'Editar', exact: true }))).toBe(editable);
     });
 
   test('reutiliza ModalPago y registra en revision sin endpoint mensualidad', async () => {
@@ -1079,6 +1186,7 @@ describe('pagos individuales campania', () => {
 });
 
 beforeEach(() => {
+  cacheEstilos = createCache({ key: 'campanias-qa' });
   localStorage.clear();
   localStorage.setItem('token', 'qa');
   window.fetch = jest.fn().mockResolvedValue(responder([]));
@@ -1087,6 +1195,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+  cacheEstilos.sheet.flush();
   window.fetch = originalFetch;
   if (originalCrypto) Object.defineProperty(window, 'crypto', originalCrypto);
   else delete window.crypto;
@@ -1302,16 +1412,16 @@ describe('formulario de borrador', () => {
     await waitFor(() => expect(screen.getByLabelText('Moneda de la academia')).toHaveTextContent('USD'));
   };
   const completar = async () => {
-    fireEvent.change(screen.getByRole('textbox', { name: /^Nombre/ }), { target: { value: 'Viaje nuevo' } });
-    fireEvent.change(screen.getByRole('textbox', { name: /^Monto general/ }), { target: { value: '30,50' } });
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /^Sedes participantes/ }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Norte' }));
-    fireEvent.keyDown(screen.getByRole('combobox', { name: /^Sedes participantes/ }), { key: 'Escape' });
+    fireEvent.change(screen.getByLabelText(/^Nombre/), { target: { value: 'Viaje nuevo' } });
+    fireEvent.change(screen.getByLabelText(/^Monto general/), { target: { value: '30,50' } });
+    fireEvent.mouseDown(screen.getByLabelText(/^Sedes participantes/, { selector: 'input' }));
+    fireEvent.click(within(await screen.findByRole('listbox')).getByRole('option', { name: 'Norte' }));
+    fireEvent.keyDown(screen.getByLabelText(/^Sedes participantes/, { selector: 'input' }), { key: 'Escape' });
   };
   const alternarSur = async () => {
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /^Sedes participantes/ }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Sur' }));
-    fireEvent.keyDown(screen.getByRole('combobox', { name: /^Sedes participantes/ }), { key: 'Escape' });
+    fireEvent.mouseDown(screen.getByLabelText(/^Sedes participantes/, { selector: 'input' }));
+    fireEvent.click(within(await screen.findByRole('listbox')).getByRole('option', { name: 'Sur' }));
+    fireEvent.keyDown(screen.getByLabelText(/^Sedes participantes/, { selector: 'input' }), { key: 'Escape' });
   };
 
   const prepararFlujo = () => {
@@ -1554,16 +1664,17 @@ describe('formulario de borrador', () => {
   });
 
   test('la notificacion se cierra automaticamente a los seis segundos', async () => {
-    await abrir();
-    await completar();
     jest.useFakeTimers();
     try {
+      await abrir();
+      await completar();
       fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
       expect(await screen.findByRole('status', { name: 'Confirmación de guardado' })).toHaveTextContent('Campaña creada');
       act(() => jest.advanceTimersByTime(6000));
       expect(screen.queryByRole('status', { name: 'Confirmación de guardado' })).not.toBeInTheDocument();
       expect(peticiones).toHaveLength(1);
     } finally {
+      act(() => jest.runOnlyPendingTimers());
       jest.useRealTimers();
     }
   });
@@ -1977,13 +2088,13 @@ describe('participantes de campana', () => {
   const abrirParticipantes = async () => {
     render(<CobrosAdicionales />);
     fireEvent.click(await screen.findByRole('button', { name: 'Seleccionar participantes de Viaje 1' }));
-    await screen.findByRole('checkbox', { name: 'Seleccionar Ana 1 QA' });
+    await screen.findByLabelText('Seleccionar Ana 1 QA');
   };
 
   const elegirCondicion = async (nombre, opcion) => {
-    fireEvent.click(screen.getByRole('button', { name: `Condiciones de ${nombre}`, exact: true }));
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: `Condición de ${nombre}`, exact: true }));
-    fireEvent.click(await screen.findByRole('option', { name: opcion, exact: true }));
+    fireEvent.click(screen.getByLabelText(`Condiciones de ${nombre}`, { selector: 'button' }));
+    fireEvent.mouseDown(screen.getByLabelText(`Condición de ${nombre}`));
+    fireEvent.click(within(await screen.findByRole('listbox')).getByRole('option', { name: opcion, exact: true }));
   };
   const reabrirParticipantes = async () => {
     await screen.findByText('Participantes guardados');
@@ -2231,6 +2342,7 @@ describe('participantes de campana', () => {
   });
 
   test('participantes limpiar filtros restablece todos los campos y conserva seleccion y acuerdos', async () => {
+    atletas = atletas.filter((atleta) => ['atleta-1', 'atleta-12', 'atleta-13'].includes(atleta._id));
     await abrirParticipantes();
     expect(screen.getByRole('button', { name: 'Limpiar filtros' })).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Ana 1 QA' }));

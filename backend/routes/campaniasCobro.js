@@ -38,6 +38,7 @@ router.get('/:id/candidatos-cargos', controller.candidatosCargos);
 router.post('/:id/ajustes-cargos', controller.ajustarCargo);
 router.post('/:id/cargos/:cargoId/pagos/:pagoId/confirmar', pagoController.confirmar);
 router.post('/:id/publicar', controller.publicar);
+router.post('/:id/cerrar', controller.cerrar);
 router.put('/:id/participantes', controller.guardarParticipantes);
 router.patch('/:id', controller.editar);
 router.delete('/:id', controller.eliminar);

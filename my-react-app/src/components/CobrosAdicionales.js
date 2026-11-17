@@ -14,6 +14,8 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import DeleteRoundedIcon from '@mui/icons-material/DeleteRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import CampaniaCierreDialog from './CampaniaCierreDialog';
 import CampaniaBorradorDialog from './CampaniaBorradorDialog';
 import CampaniaParticipantesDialog from './CampaniaParticipantesDialog';
 import CampaniaResumenDialog from './CampaniaResumenDialog';
@@ -53,6 +55,7 @@ function CobrosAdicionales() {
   const [creacionGuiada, setCreacionGuiada] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [porEliminar, setPorEliminar] = useState(null);
+  const [porCerrar, setPorCerrar] = useState(null);
   const [eliminando, setEliminando] = useState(false);
   const [errorEliminar, setErrorEliminar] = useState('');
   const eliminandoRef = useRef(false);
@@ -159,6 +162,7 @@ function CobrosAdicionales() {
       }} />}
     {resumen && <CampaniaResumenDialog campania={resumen} creacionGuiada={creacionGuiada} onClose={() => {
       if (creacionGuiada) setAviso({ titulo: 'Borrador guardado', nombre: resumen.nombre });
+      if (resumen.publicacion) setIntento((valor) => valor + 1);
       setResumen(null); setCreacionGuiada(false);
     }}
       onRevisar={(guardada) => { setResumen(null); setParticipantes(guardada); }}
@@ -315,6 +319,12 @@ function CobrosAdicionales() {
                     sx={{ width: 36, height: 36, color: '#475569', '&:hover': { bgcolor: 'transparent', color: '#171b4b' } }}>
                     <VisibilityRoundedIcon sx={{ fontSize: 20 }} />
                   </IconButton>
+                </Tooltip>}
+                {item.publicacion && item.estado === 'abierta' && <Tooltip title="Cerrar campaña">
+                  <IconButton aria-label={`Cerrar campaña ${item.nombre}`} disabled={!Number.isInteger(item.__v)}
+                    onClick={() => { setAviso(null); setPorCerrar(item); }} sx={{ width: 36, height: 36, color: '#626879' }}>
+                    <LockOutlinedIcon sx={{ fontSize: 20 }} />
+                  </IconButton>
                 </Tooltip>}</TableCell>
               </TableRow>)}
               {!filtradas.length && <TableRow><TableCell colSpan={6} sx={{ textAlign: 'center', py: 5 }}>
@@ -330,6 +340,11 @@ function CobrosAdicionales() {
           getItemAriaLabel={(tipo) => tipo === 'next' ? 'Página siguiente' : 'Página anterior'}
           sx={{ '& .MuiTablePagination-toolbar': { px: { xs: 0, sm: 2 } }, '& .MuiTablePagination-actions': { ml: { xs: 0, sm: 2 } } }} />
       </>}
+      {porCerrar && <CampaniaCierreDialog campania={porCerrar} onClose={() => { setPorCerrar(null); setIntento((valor) => valor + 1); }}
+        onSaved={(guardada) => {
+          setCampanias((actuales) => actuales.map((item) => item._id === guardada._id ? guardada : item));
+          setPorCerrar(null); setAviso({ titulo: 'Campaña cerrada', nombre: guardada.nombre, detalle: 'Los saldos y el historial se han conservado.' });
+        }} />}
       <Dialog open={Boolean(porEliminar)} onClose={cerrarEliminacion} fullWidth maxWidth="sm"
         aria-labelledby="eliminar-campania-titulo" aria-describedby="eliminar-campania-advertencia"
         PaperProps={{ role: 'alertdialog', sx: { borderRadius: 2, color: '#202441', m: { xs: 2, sm: 4 }, width: { xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)' } } }}>

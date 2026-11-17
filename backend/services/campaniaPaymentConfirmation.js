@@ -1,5 +1,6 @@
 const { aplicarSession } = require('./financeTransaction');
 const { createHash } = require('crypto');
+const { bloquearCampania, actualizarCierreAutomatico } = require('./campaniaClosure');
 
 const fallo = (status, message) => Object.assign(new Error(message), { status });
 const centimos = (monto) => Math.round(monto * 100);
@@ -66,7 +67,11 @@ async function confirmarPagoCampania(models, opciones, session) {
   const { campaniaId, cargoId, pagoId, revision } = opciones;
   const seleccionado = await aplicarSession(models.PagoCampania.findOne({ _id: pagoId, cargo: cargoId, campania: campaniaId }), session).lean();
   if (!seleccionado) throw fallo(404, 'El pago no existe en este cargo.');
-  if (!seleccionado.agrupacion) return confirmarAsignacion(models, opciones, session);
+  if (!seleccionado.agrupacion) {
+    const respuesta = await confirmarAsignacion(models, opciones, session);
+    if (!respuesta.repetida) await actualizarCierreAutomatico(models, [campaniaId], opciones.actor, session);
+    return respuesta;
+  }
   const pagos = await aplicarSession(models.PagoCampania.find({ 'agrupacion.id': seleccionado.agrupacion.id }).sort({ _id: 1 }), session).lean();
   validarGrupoCampania(pagos);
   if (revision !== undefined && (revision !== revisionTransferenciaCampania(pagos) || !(seleccionado.agrupacion.monto_total_bs > 0))) {
@@ -82,6 +87,7 @@ async function confirmarPagoCampania(models, opciones, session) {
     if (String(pago._id) === String(pagoId)) resultado = respuesta;
     confirmaciones.push(respuesta.pago);
   }
+  if (confirmados) await actualizarCierreAutomatico(models, pagos.map((pago) => pago.campania), opciones.actor, session);
   return { ...resultado, pagos: confirmaciones, repetida: confirmados === 0, confirmados };
 }
 
@@ -89,7 +95,6 @@ async function confirmarAsignacion(models, { campaniaId, cargoId, pagoId, actor,
   if (!actor?.id || !['admin', 'super_admin'].includes(actor.rol)) throw fallo(403, 'Solo administracion puede confirmar pagos de campanas.');
   const campania = await aplicarSession(models.CampaniaCobro.findById(campaniaId), session).lean();
   if (!campania) throw fallo(404, 'La campana no existe en esta academia.');
-  if (!campania.publicacion || campania.estado !== 'abierta') throw fallo(409, 'La campana no admite pagos.');
   let cargo = await aplicarSession(models.CargoCampania.findOne({ _id: cargoId, campania: campaniaId }), session).lean();
   if (!cargo) throw fallo(404, 'El cargo no existe en esta campana.');
   const pago = await aplicarSession(models.PagoCampania.findOne({ _id: pagoId, cargo: cargo._id, campania: campaniaId }), session).lean();
@@ -99,6 +104,8 @@ async function confirmarAsignacion(models, { campaniaId, cargoId, pagoId, actor,
   }
   if (pago.estado === 'eliminado') throw fallo(409, 'El pago fue eliminado. Consulta el historial.');
   if (pago.estado === 'confirmado') return { cargo, pago, repetida: true };
+  if (!campania.publicacion || campania.estado !== 'abierta') throw fallo(409, 'La campana no admite pagos.');
+  await bloquearCampania(models, campaniaId, session);
   if (cargo.modalidad === 'no_aplica' || pago.moneda !== cargo.moneda) throw fallo(409, 'El cargo no admite la confirmacion.');
   cargo = await actualizarCargo(models, cargo, pago.monto_pagado, session);
   const confirmado = await models.PagoCampania.findOneAndUpdate({ _id: pago._id, estado: 'en_revision' }, {

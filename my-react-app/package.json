@@ -32,6 +32,9 @@
     "recharts": "^2.7.2",
     "web-vitals": "^2.1.4"
   },
+  "devDependencies": {
+    "@emotion/cache": "^11.14.0"
+  },
   "scripts": {
     "start": "node scripts/start.js",
     "build": "react-scripts build",

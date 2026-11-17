@@ -146,7 +146,7 @@ function CampaniasAlumno() {
                   </Typography>}
                   {cargo.campania.descripcion && <Typography sx={{ fontSize: 13, color: '#64748b', mt: 0.5, overflowWrap: 'anywhere' }}>{cargo.campania.descripcion}</Typography>}
                   <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5 }}>{cargo.campania.estado === 'cancelada' ? 'Campana cancelada'
-                    : cargo.campania.estado === 'cerrada' ? 'Campana cerrada' : cargo.permitir_abonos ? 'Permite abonos' : 'Pago completo'}</Typography>
+                    : cargo.campania.estado === 'cerrada' ? 'Campana cerrada' : `Modalidad de pago: ${cargo.permitir_abonos ? 'Permite abonos' : 'Pago completo'}`}</Typography>
                 </Box>
                 <Box sx={{ gridColumn: { xs: '1 / -1', sm: 'auto' }, display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.7, minWidth: 0 }}>
                   <Typography sx={{ fontWeight: 900, fontSize: { xs: 25, md: 27 }, color: estilo.importe, lineHeight: 1.1, overflowWrap: 'anywhere', maxWidth: '100%' }}>

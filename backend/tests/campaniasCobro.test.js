@@ -27,6 +27,24 @@ const token = (rol, tenantId = 'alfa', permisos = []) => jwt.sign({ rol, tenantI
 let consulta;
 const tokenPublicacion = (rol = 'admin', tenantId = 'alfa') => jwt.sign({ rol, tenantId, id: 'admin-qa' }, 'qa-campanias-secret');
 
+describe('cierre de campanas: saldo exigible', () => {
+  const { resumenCierre } = require('../services/campaniaClosure');
+  const query = (valor) => ({ select: jest.fn().mockReturnThis(), session: jest.fn().mockReturnThis(), lean: async () => valor });
+  test.each([
+    ['pagados', [{ alumno: 'ana', modalidad: 'general', monto: 10, saldo_pendiente: 0, estado: 'pagado', moneda: 'USD' }], false, true],
+    ['pendientes', [{ alumno: 'ana', modalidad: 'general', monto: 10, saldo_pendiente: 10, estado: 'pendiente', moneda: 'USD' }], false, false],
+    ['en revision', [{ alumno: 'ana', modalidad: 'general', monto: 10, saldo_pendiente: 0, estado: 'pagado', moneda: 'USD' }], true, false],
+    ['solo no aplica', [{ alumno: 'ana', modalidad: 'no_aplica', monto: 0, saldo_pendiente: 0, estado: 'no_aplica', moneda: 'USD' }], false, false],
+    ['pagados y no aplica', [{ alumno: 'ana', modalidad: 'general', monto: 10, saldo_pendiente: 0, estado: 'pagado', moneda: 'USD' },
+      { alumno: 'luis', modalidad: 'no_aplica', monto: 0, saldo_pendiente: 0, estado: 'no_aplica', moneda: 'USD' }], false, true]
+  ])('cierre automatico con %s: %s', async (nombre, cargos, revision, completa) => {
+    const models = { CargoCampania: { find: () => query(cargos) }, PagoCampania: { findOne: () => query(revision ? {} : null) } };
+    const campania = { _id: 'campania', moneda: 'USD', publicacion: { participantes: cargos.length,
+      total_esperado: cargos.reduce((total, cargo) => total + cargo.monto, 0) } };
+    expect(await resumenCierre(models, campania)).toMatchObject({ completa, en_revision: revision });
+  });
+});
+
 describe('ajustes de cargos publicados: acceso y validacion', () => {
   const ruta = '/campanias/110000000000000000000001/ajustes-cargos';
   test.each(['usuario', 'entrenador', 'asistente', 'finanzas'])('deniega ajustes a %s antes de consultar', async (rol) => {
@@ -1209,6 +1227,25 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
     expect((await registrarMongo('/conciliacion/confirmar-match-total', body)).body.registros_actualizados).toBe(0);
     expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(2);
     expect(await datos.Cargo.findById(datos.segundo._id).lean()).toMatchObject({ saldo_pendiente: 0, estado: 'pagado', __v: 2 });
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).estado).toBe('cerrada');
+  });
+
+  test('cierre Mongo agrupado confirmado liquida dos campanas despues de todos los repartos', async () => {
+    const datos = await prepararAgrupado();
+    const original = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).lean();
+    const otra = await modelosMongo.alfa.CampaniaCobro.create({ ...original, _id: new mongoose.Types.ObjectId(), nombre: 'Segunda agrupada QA',
+      solicitud_id: undefined, participantes: [datos.segundo.alumno],
+      publicacion: { ...original.publicacion, participantes: 1, generales: 0, personalizados: 1, no_aplica: 0, total_esperado: 12.5 } });
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.id }, { $set: {
+      participantes: original.participantes.filter((id) => String(id) !== String(datos.segundo.alumno)),
+      publicacion: { ...original.publicacion, participantes: 2, personalizados: 0, total_esperado: 30 }
+    } });
+    await datos.Cargo.updateOne({ _id: datos.segundo._id }, { $set: { campania: otra._id } });
+    const respuesta = await registrarMongo('/campanias/pagos-agrupados', { ...datos.agrupado, estado: 'confirmado' });
+    expect(respuesta.status).toBe(201);
+    expect((await modelosMongo.alfa.CampaniaCobro.find({ _id: { $in: [datos.id, otra._id] } }).lean()).map((item) => item.estado)).toEqual(['cerrada', 'cerrada']);
+    expect(await datos.Pago.countDocuments({ estado: 'confirmado' })).toBe(2);
+    expect((await registrarMongo('/campanias/pagos-agrupados', { ...datos.agrupado, estado: 'confirmado' })).status).toBe(200);
   });
 
   test('agrupados campanias Mongo admite varias campanas y reparte cada centimo del importe real en Bs', async () => {
@@ -1527,6 +1564,98 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
     modalidad: 'personalizado', monto: 20, nota_interna: 'Acuerdo posterior QA', version: 2, version_cargo: 0,
     solicitud_id: '33000000-0000-4000-8000-000000000001', ...cambios });
 
+  const cierreMongo = (cambios = {}) => ({ version: 2, solicitud_id: '44000000-0000-4000-8000-000000000001',
+    motivo: 'Cierre administrativo QA', aceptar_saldo_pendiente: true, ...cambios });
+
+  test('cierre Mongo manual conserva deuda, historial, auditoria privada e idempotencia', async () => {
+    const datos = await prepararPagoMongo();
+    const antes = await datos.Cargo.find({ campania: datos.id }).lean();
+    expect((await registrarMongo(`${datos.base}/cerrar`, cierreMongo(), 'usuario')).status).toBe(403);
+    expect((await registrarMongo(`${datos.base}/cerrar`, cierreMongo(), 'admin', 'beta')).status).toBe(404);
+    expect((await registrarMongo(`${datos.base}/cerrar`, cierreMongo({ aceptar_saldo_pendiente: false }))).status).toBe(409);
+    const cerrada = await registrarMongo(`${datos.base}/cerrar`, cierreMongo());
+    expect(cerrada.status).toBe(200);
+    expect(cerrada.body.campania.estado).toBe('cerrada');
+    expect(cerrada.body.campania.cierre).toBeUndefined();
+    expect((await registrarMongo(`${datos.base}/cerrar`, cierreMongo())).body.repetida).toBe(true);
+    expect((await registrarMongo(datos.ruta, datos.pagoBody)).status).toBe(409);
+    expect(await datos.Cargo.find({ campania: datos.id }).lean()).toEqual(antes);
+    const auditada = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).select('+cierre +historial_cierres').lean();
+    expect(auditada.cierre).toMatchObject({ tipo: 'manual', saldo_pendiente: 42.5, actor: { id: 'admin-qa', rol: 'admin' } });
+    expect(auditada.historial_cierres).toHaveLength(1);
+    expect((await peticion('get', datos.ruta)).body.puede_corregir).toBe(false);
+  });
+
+  test('cierre Mongo manual bloquea revision y versiones antiguas sin alterar la campana', async () => {
+    const datos = await prepararPagoMongo();
+    expect((await registrarMongo(datos.ruta, datos.pagoBody)).status).toBe(201);
+    expect((await registrarMongo(`${datos.base}/cerrar`, cierreMongo())).status).toBe(409);
+    const response = await registrarMongo(`${datos.base}/cerrar`, cierreMongo({ version: 3 }));
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/revision/);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).estado).toBe('abierta');
+  });
+
+  test('cierre Mongo manual simultaneo con reporte no deja pagos en revision en una cerrada', async () => {
+    const datos = await prepararPagoMongo();
+    const respuestas = await Promise.all([registrarMongo(`${datos.base}/cerrar`, cierreMongo()), registrarMongo(datos.ruta, datos.pagoBody)]);
+    expect([[200, 409], [409, 201]]).toContainEqual(respuestas.map((response) => response.status));
+    const cerrada = (await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).estado === 'cerrada';
+    expect(await datos.Pago.countDocuments({ campania: datos.id, estado: 'en_revision' })).toBe(cerrada ? 0 : 1);
+  });
+
+  test.each(['confirmado', 'en_revision'])('cierre Mongo automatico tras ultimo pago %s excluye no aplica y conserva reintentos', async (estado) => {
+    const datos = await prepararPagoMongo();
+    const cargos = await datos.Cargo.find({ campania: datos.id, monto: { $gt: 0 } }).sort({ _id: 1 }).lean();
+    const registros = [];
+    for (const [indice, cargo] of cargos.entries()) {
+      const ruta = `${datos.base}/cargos/${cargo._id}/pagos`;
+      const body = { ...datos.pagoBody, estado, monto_pagado: cargo.monto, monto_pagado_bs: cargo.monto * 100,
+        solicitud_id: `22000000-0000-4000-8000-00000000000${indice + 1}` };
+      const registro = await registrarMongo(ruta, body);
+      expect(registro.status).toBe(201);
+      registros.push({ ruta, body, pagoId: registro.body.pago._id });
+      if (indice === 0 || estado === 'en_revision') expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).estado).toBe('abierta');
+    }
+    if (estado === 'en_revision') {
+      for (const registro of registros) expect((await registrarMongo(`${registro.ruta}/${registro.pagoId}/confirmar`, {})).status).toBe(200);
+    }
+    const cerrada = await modelosMongo.alfa.CampaniaCobro.findById(datos.id).select('+cierre').lean();
+    expect(cerrada).toMatchObject({ estado: 'cerrada', cierre: { tipo: 'automatico', saldo_pendiente: 0 } });
+    expect((await peticion('get', registros[1].ruta)).body.puede_corregir).toBe(true);
+    const ultimo = registros.at(-1);
+    expect((await registrarMongo(`${ultimo.ruta}/${ultimo.pagoId}/confirmar`, {})).body.repetida).toBe(true);
+    expect((await registrarMongo(ultimo.ruta, ultimo.body)).status).toBe(estado === 'confirmado' ? 200 : 409);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).__v).toBe(cerrada.__v);
+    const cargo = await datos.Cargo.findById(cargos[1]._id).lean();
+    expect((await corregirMongo('delete', `${ultimo.ruta}/${ultimo.pagoId}`, { version: cargo.__v })).status).toBe(200);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).estado).toBe('abierta');
+  });
+
+  test('cierre Mongo automatico serializa los dos pagos finales concurrentes', async () => {
+    const datos = await prepararPagoMongo();
+    const cargos = await datos.Cargo.find({ campania: datos.id, monto: { $gt: 0 } }).lean();
+    const respuestas = await Promise.all(cargos.map((cargo, indice) => registrarMongo(`${datos.base}/cargos/${cargo._id}/pagos`, {
+      ...datos.pagoBody, estado: 'confirmado', monto_pagado: cargo.monto, monto_pagado_bs: cargo.monto * 100,
+      solicitud_id: `22000000-0000-4000-8000-00000000000${indice + 1}`
+    })));
+    expect(respuestas.map((response) => response.status)).toEqual([201, 201]);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).estado).toBe('cerrada');
+    expect(await datos.Pago.countDocuments({ campania: datos.id, estado: 'confirmado' })).toBe(2);
+  });
+
+  test('cierre Mongo automatico al pasar la ultima deuda a no aplica respeta los cargos pagados', async () => {
+    const datos = await prepararPagoMongo();
+    expect((await registrarMongo(datos.ruta, { ...datos.pagoBody, estado: 'confirmado', monto_pagado: 30, monto_pagado_bs: 3000 })).status).toBe(201);
+    const restante = await datos.Cargo.findOne({ campania: datos.id, modalidad: 'personalizado' }).lean();
+    const ajuste = await registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos, {
+      version: 3, alumno: String(restante.alumno), modalidad: 'no_aplica', monto: undefined
+    }));
+    expect(ajuste.status).toBe(200);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.id)).estado).toBe('cerrada');
+    expect((await datos.Cargo.findById(datos.cargo._id)).saldo_pendiente).toBe(0);
+  });
+
   test('ajustes cargos Mongo cambia pendiente sin pagos, conserva publicacion y audita sin recalcular otros cargos', async () => {
     const datos = await prepararPagoMongo();
     const { cargo, Cargo, Pago, base, id } = datos;
@@ -1642,7 +1771,7 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
     expect(registrado.status).toBe(201);
     const pagoId = registrado.body.pago._id;
     expect((await corregirMongo('delete', `${datos.ruta}/${pagoId}`, { version: 1 })).status).toBe(200);
-    expect((await registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos, { version_cargo: 2 }))).status).toBe(200);
+    expect((await registrarMongo(`${datos.base}/ajustes-cargos`, ajusteMongo(datos, { version: 4, version_cargo: 2 }))).status).toBe(200);
     expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ monto: 20, saldo_pendiente: 20, estado: 'pendiente', __v: 3 });
     expect(await datos.Pago.findById(pagoId).lean()).toMatchObject({ estado: 'eliminado', monto_pagado: 10 });
   });

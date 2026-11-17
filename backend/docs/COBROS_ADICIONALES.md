@@ -1,5 +1,31 @@
 # Cobros adicionales
 
+## Cierre manual y automatico
+
+- Administracion y superadministracion pueden cerrar una campana publicada abierta desde
+    el icono de candado del listado. La confirmacion consulta los saldos actuales, exige un
+    motivo y, si queda deuda, aceptacion expresa. El cierre conserva cargos, saldos e historial;
+    no condona deuda ni permite nuevos pagos o ajustes. Los pagos en revision bloquean el cierre.
+- POST `/api/campanias-cobro/:id/cerrar` recibe `version`, `solicitud_id` UUIDv4, `motivo`
+    (3 a 1000 caracteres) y `aceptar_saldo_pendiente` booleano. Usa transaccion obligatoria,
+    versionado e idempotencia. La auditoria privada conserva actor, fecha, motivo y saldo.
+    Un conflicto obliga a actualizar los datos; un error de red conserva la misma solicitud.
+- El ultimo pago confirmado cierra automaticamente la campana dentro de la misma transaccion.
+    Aplica a registro confirmado, confirmacion administrativa, agrupados y conciliacion bancaria.
+    Se comprueba el grupo completo antes de cerrar las campanas que cubre. Las escrituras
+    comparten el documento de campana para serializar cierres, pagos y ajustes concurrentes.
+- Todos los cargos exigibles deben estar pagados y con saldo cero; no puede haber pagos en
+    revision. No aplica y retirados no cuentan como deuda. Una campana exclusivamente con
+    No aplica permanece abierta. Un ajuste que elimina la ultima deuda tambien reevalua el cierre.
+- Corregir o retirar el ultimo pago individual confirmado de una campana cerrada automaticamente
+    puede devolverla a abierta si reaparece deuda. Solo administracion accede a esa correccion;
+    no reabre cierres manuales. Los agrupados confirmados siguen siendo de solo consulta.
+- No se cierra por vencimiento, no se implementa cancelacion y no se modifica estado en consultas
+    GET. Las campanas ya liquidadas antes de activar esta version pueden cerrarse manualmente;
+    no se ejecuta una migracion ni un barrido sobre datos historicos.
+- Activacion del backend y despliegue a cargo del usuario. Las pruebas usan bases Mongo QA
+    temporales y API simulada; no deben registrarse pagos reales para validar esta funcionalidad.
+
 ## Pagos agrupados (2026-11-16)
 
 - Una transferencia cubre entre 2 y 100 saldos completos de cargos abiertos publicados,

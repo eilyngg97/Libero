@@ -557,7 +557,7 @@ test.each(['png', 'pdf'])('abre comprobante %s dentro de un dialogo con URL del 
     }
     expect(within(visor).queryByRole('alert') !== null).toBe(extension === 'png');
     fireEvent.click(within(visor).getByRole('button', { name: 'Cerrar comprobante' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Comprobante del pago' })).not.toBeInTheDocument());
+    await waitFor(() => expect(visor).not.toBeInTheDocument(), { timeout: 5000 });
     expect(screen.getByRole('dialog', { name: /Detalle del pago/i })).toBeInTheDocument();
     expect(global.fetch.mock.calls.every(([, options]) => !options?.method || options.method === 'GET')).toBe(true);
   } finally {

@@ -49,7 +49,8 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
   const cerrar = () => { if (!enviando.current) { if (editando) setDescartar(true); else onClose(); } };
   const detalle = datos?.pagos.find((pago) => pago._id === detalleId) || datos?.pagos[0];
   const ultimo = detalle && detalle._id === datos?.pagos[0]?._id;
-  const puedeCorregir = (pago) => Boolean(pago && !pago.agrupacion && pago._id === datos?.pagos[0]?._id && campania.estado === 'abierta'
+  const puedeCorregir = (pago) => Boolean(pago && !pago.agrupacion && pago._id === datos?.pagos[0]?._id
+    && (campania.estado === 'abierta' || (!representante && datos?.puede_corregir === true))
     && (!representante || (pago.estado === 'en_revision' && pago.puede_corregir === true)));
   const enBs = ['Pago movil', 'Transferencia'].includes(editando ? draft.metodo_pago : detalle?.metodo_pago);
   const headers = () => {

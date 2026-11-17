@@ -8,6 +8,7 @@ const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { userRepresentsAlumno } = require('../services/paymentOwnership');
 const { actualizarCargo, confirmarPagoCampania } = require('../services/campaniaPaymentConfirmation');
+const { bloquearCampania, actualizarCierreAutomatico } = require('../services/campaniaClosure');
 
 const OBJECT_ID = /^[a-f\d]{24}$/i;
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
@@ -115,6 +116,7 @@ exports.registrarAgrupado = async (req, res) => {
       }
       const total = cargos.reduce((suma, cargo) => suma + centimos(cargo.saldo_pendiente), 0);
       if (total !== centimos(data.monto_pagado)) throw fallo(409, 'El pago agrupado debe cubrir exactamente los saldos completos seleccionados.');
+      for (const id of [...new Set(cargos.map((cargo) => String(cargo.campania)))].sort()) await bloquearCampania(models, id, session);
       const tasas = await validarMetodo(models, data, session);
       const partesBs = data.monto_pagado_bs === null ? cargos.map(() => null) : repartirBs(data.monto_pagado_bs, cargos.map((cargo) => cargo.saldo_pendiente));
       if (req.file && !archivoNuevo) archivoNuevo = await guardarComprobante(req);
@@ -136,6 +138,7 @@ exports.registrarAgrupado = async (req, res) => {
         const { huella: privada, modificaciones, ...publico } = pago.toObject();
         pagos.push(publico);
       }
+      if (data.estado === 'confirmado') await actualizarCierreAutomatico(models, cargos.map((cargo) => cargo.campania), actor, session);
       return { pagos, repetida: false };
     }, { obligatoria: true });
     if (resultado.repetida && archivoNuevo) await fs.unlink(archivoNuevo.path).catch(() => {});
@@ -208,6 +211,7 @@ async function corregirAgrupado(req, res, eliminar) {
           || centimos(registro.data.monto_pagado) !== centimos(pagos[0].agrupacion.monto_total)) throw fallo(400, 'Conserva la moneda y el total del pago agrupado.');
       }
       const tasas = registro ? await validarMetodo(models, registro.data, session) : null;
+      for (const id of [...new Set(pagos.map((pago) => String(pago.campania)))].sort()) await bloquearCampania(models, id, session);
       const partes = registro?.data.monto_pagado_bs != null ? repartirBs(registro.data.monto_pagado_bs, pagos.map((pago) => pago.monto_pagado)) : pagos.map(() => null);
       if (req.file && !archivoNuevo) archivoNuevo = await guardarComprobante(req);
       for (const [indice, pago] of pagos.entries()) {
@@ -391,7 +395,7 @@ exports.registrar = async (req, res) => {
     const models = await modelos(req);
     await models.PagoCampania.init();
     const resultado = await ejecutarConTransaccion(models.CargoCampania, async (session) => {
-      let cargo = await cargoVigente(models, req, session);
+      let cargo = await cargoVigente(models, req, session, false);
       const anterior = await aplicarSession(models.PagoCampania.findOne({ cargo: cargo._id, solicitud_id: data.solicitud_id }).select('+huella'), session).lean();
       if (anterior) {
         if (anterior.huella !== huella || anterior.estado === 'eliminado' || anterior.updatedAt > anterior.createdAt) {
@@ -403,6 +407,7 @@ exports.registrar = async (req, res) => {
       if (cargo.modalidad === 'no_aplica' || cargo.saldo_pendiente <= 0 || cargo.__v !== data.version || cargo.moneda !== data.moneda) {
         throw fallo(409, 'El saldo, la moneda o la version del cargo cambio. Vuelve a abrirlo.');
       }
+      await bloquearCampania(models, req.params.id, session);
       const tasas = await validarMetodo(models, data, session);
       const pendientes = await aplicarSession(models.PagoCampania.find({ cargo: cargo._id, estado: 'en_revision' }), session).lean();
       const reservado = pendientes.reduce((suma, pago) => suma + centimos(pago.monto_pagado), 0);
@@ -424,6 +429,7 @@ exports.registrar = async (req, res) => {
         if (!cargo) throw fallo(409, 'El cargo cambio. Revisa su saldo antes de registrar el pago.');
       }
       const { huella: privada, ...publico } = pago.toObject();
+      if (data.estado === 'confirmado') await actualizarCierreAutomatico(models, [req.params.id], actor, session);
       return { cargo, pago: publico, repetida: false };
     }, { obligatoria: true });
     if (resultado.repetida && archivoNuevo) await fs.unlink(archivoNuevo.path).catch(() => {});
@@ -445,7 +451,9 @@ exports.historial = async (req, res) => {
     if (centimos(confirmado) + centimos(cargo.saldo_pendiente) !== centimos(cargo.monto) || en_revision > cargo.saldo_pendiente) {
       throw fallo(409, 'No se pudo verificar el saldo y el historial del cargo.');
     }
-    return res.json(respuestaPublica(req, { cargo, pagos, totales: { confirmado, en_revision, saldo_pendiente: cargo.saldo_pendiente,
+    const campania = req.user.rol !== 'usuario' ? await models.CampaniaCobro.findById(req.params.id).select('estado +cierre').lean() : null;
+    const puede_corregir = Boolean(campania && (campania.estado === 'abierta' || (campania.estado === 'cerrada' && campania.cierre?.tipo === 'automatico')));
+    return res.json(respuestaPublica(req, { cargo, pagos, puede_corregir, totales: { confirmado, en_revision, saldo_pendiente: cargo.saldo_pendiente,
       disponible: (centimos(cargo.saldo_pendiente) - centimos(en_revision)) / 100 } }));
   } catch (error) { return responderError(res, error); }
 };
@@ -503,7 +511,7 @@ async function corregir(req, res, eliminar) {
     } else registro = validarRegistro(req);
     const models = await modelos(req);
     const resultado = await ejecutarConTransaccion(models.CargoCampania, async (session) => {
-      let cargo = await cargoVigente(models, req, session);
+      let cargo = await cargoVigente(models, req, session, false);
       const pago = await aplicarSession(models.PagoCampania.findOne({ _id: req.params.pagoId,
         cargo: cargo._id, campania: req.params.id }).select('+modificaciones'), session).lean();
       if (!pago) throw fallo(404, 'El pago no existe en este cargo.');
@@ -527,6 +535,7 @@ async function corregir(req, res, eliminar) {
         }
         return { cargo, pago: publico(pago), repetida: true };
       }
+      await bloquearCampania(models, req.params.id, session, req.user.rol !== 'usuario');
       const activos = await aplicarSession(models.PagoCampania.find({ cargo: cargo._id,
         campania: req.params.id, estado: { $ne: 'eliminado' } }).sort({ createdAt: -1, _id: -1 }), session).lean();
       if (String(activos[0]?._id) !== String(pago._id)) throw fallo(409, 'Solo puedes modificar o eliminar el ultimo pago registrado.');
@@ -565,6 +574,7 @@ async function corregir(req, res, eliminar) {
           huella: registro.huella, anterior: publico(pago), actor: { id: req.user.id, rol: req.user.rol }, fecha: new Date() } } } : {})
       }, { new: true, runValidators: true, session }).lean();
       if (!guardado) throw fallo(409, 'El pago cambio. Reabre el historial.');
+      await actualizarCierreAutomatico(models, [req.params.id], req.user, session);
       return { cargo, pago: publico(guardado), repetida: false };
     }, { obligatoria: true });
     if (resultado.repetida && archivoNuevo) await fs.unlink(archivoNuevo.path).catch(() => {});

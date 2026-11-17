@@ -2,6 +2,7 @@ const { getTenantBusinessConnection } = require('../config/tenantBusinessConnect
 const { getTenantModel } = require('../services/tenantModelService');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const { createHash } = require('crypto');
+const { resumenCierre, actualizarCierreAutomatico } = require('../services/campaniaClosure');
 
 const CAMPOS = 'nombre descripcion modalidad_monto monto_general montos_por_sede moneda sedes participantes vencimiento permitir_abonos estado publicacion totales_cargos createdAt updatedAt __v';
 const OBJECT_ID = /^[a-f\d]{24}$/i;
@@ -381,6 +382,43 @@ exports.publicar = async (req, res) => {
   }
 };
 
+exports.cerrar = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const body = req.body;
+    if (!OBJECT_ID.test(req.params.id) || !body || Object.keys(body).some((key) => !['version', 'solicitud_id', 'motivo', 'aceptar_saldo_pendiente'].includes(key))
+      || !Number.isInteger(body.version) || body.version < 0 || typeof body.solicitud_id !== 'string' || !UUID.test(body.solicitud_id)
+      || typeof body.motivo !== 'string' || body.motivo.trim().length < 3 || body.motivo.trim().length > 1000
+      || typeof body.aceptar_saldo_pendiente !== 'boolean') throw errorPeticion(400, 'Indica version, solicitud, motivo y confirmacion del cierre.');
+    if (!req.user.id) throw errorPeticion(401, 'Inicia sesion nuevamente.');
+    const models = await modelos(req);
+    const financieros = { CampaniaCobro: models.Campania, CargoCampania: getTenantModel(models.connection, 'CargoCampania'),
+      PagoCampania: getTenantModel(models.connection, 'PagoCampania') };
+    const huella = createHash('sha256').update(JSON.stringify({ version: body.version, solicitud_id: body.solicitud_id,
+      motivo: body.motivo.trim(), aceptar_saldo_pendiente: body.aceptar_saldo_pendiente, actor: String(req.user.id), rol: req.user.rol })).digest('hex');
+    const resultado = await ejecutarConTransaccion(models.Campania, async (session) => {
+      const actual = await aplicarSession(models.Campania.findById(req.params.id).select('+cierre'), session).lean();
+      if (!actual) throw errorPeticion(404, 'La campana no existe en esta academia.');
+      if (actual.estado === 'cerrada' && actual.cierre?.solicitud_id === body.solicitud_id && actual.cierre.huella === huella) return { repetida: true };
+      if (!actual.publicacion || actual.estado !== 'abierta' || actual.__v !== body.version) throw errorPeticion(409, 'La campana cambio o ya esta cerrada. Actualiza el listado.');
+      const resumen = await resumenCierre(financieros, actual, session);
+      if (resumen.en_revision) throw errorPeticion(409, 'Resuelve los pagos en revision antes de cerrar la campana.');
+      if (resumen.saldo_pendiente > 0 && !body.aceptar_saldo_pendiente) throw errorPeticion(409, 'Confirma expresamente el cierre con saldos pendientes. Los saldos no se anulan.');
+      const cierre = { tipo: 'manual', fecha: new Date(), actor: { id: String(req.user.id), rol: req.user.rol },
+        motivo: body.motivo.trim(), solicitud_id: body.solicitud_id, huella, saldo_pendiente: resumen.saldo_pendiente };
+      const guardada = await models.Campania.findOneAndUpdate({ _id: actual._id, estado: 'abierta', __v: body.version }, {
+        $set: { estado: 'cerrada', cierre, actualizado_por: cierre.actor }, $inc: { __v: 1 }, $push: { historial_cierres: cierre }
+      }, { new: true, runValidators: true, session }).lean();
+      if (!guardada) throw errorPeticion(409, 'La campana cambio durante el cierre. Actualiza los datos.');
+      return { repetida: false };
+    }, { obligatoria: true });
+    const campania = await models.Campania.findById(req.params.id).select(CAMPOS).populate('sedes', 'nombre').lean();
+    return res.json({ ...resultado, campania });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'No se pudo cerrar la campana. Reintenta la misma solicitud.' });
+  }
+};
+
 exports.cargos = async (req, res) => {
   res.set('Cache-Control', 'no-store');
   try {
@@ -525,6 +563,8 @@ exports.ajustarCargo = async (req, res) => {
           anterior: anterior || null, nuevo: { ...(cargo.toObject ? cargo.toObject() : cargo), nota_interna: cambios.nota_interna }, actor, fecha: new Date() } }
       }, { new: true, runValidators: true, session });
       if (!guardada) throw errorPeticion(409, 'La campana cambio. Recarga antes de ajustar.');
+      await actualizarCierreAutomatico({ CampaniaCobro: models.Campania, CargoCampania: Cargo,
+        PagoCampania: getTenantModel(models.connection, 'PagoCampania') }, [actual._id], actor, session);
       return { cargo, repetida: false };
     }, { obligatoria: true });
     return res.json(resultado);
