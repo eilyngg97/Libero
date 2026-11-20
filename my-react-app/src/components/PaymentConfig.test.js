@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PaymentConfig from './PaymentConfig';
+import { buildMetodosFromConfig } from './ModalPago';
 
 const originalFetch = global.fetch;
 let saved;
@@ -72,16 +73,37 @@ test('rechaza correo invalido antes de guardar y permite cancelar quitando el me
   expect(screen.queryByRole('region', { name: 'Cuenta zelle' })).not.toBeInTheDocument();
 });
 
-test('mensualidades hereda cuentas generales o guarda cuentas propias sin modificar las generales', async () => {
-  render(<PaymentConfig />);
+test.each([['Mensualidades', 'mensualidades'], ['Cobros adicionales', 'campanias']])('%s hereda cuentas generales o guarda y recarga cuentas propias sin modificar las generales', async (nombre, concepto) => {
+  const view = render(<PaymentConfig />);
   await agregar('Zelle');
-  fireEvent.click(screen.getByRole('button', { name: 'Mensualidades' }));
+  fireEvent.click(screen.getByRole('button', { name: nombre }));
   expect(within(screen.getByRole('region', { name: 'Cuenta zelle' })).getByRole('textbox', { name: /Correo/ })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Agregar metodo' })).toBeDisabled();
   fireEvent.click(screen.getByLabelText('Usar datos generales'));
   await agregar('PayPal');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar pagos' }));
-  await waitFor(() => expect(saved.pagos.por_concepto.mensualidades.adicionales).toHaveLength(1));
-  expect(saved.pagos.por_concepto.mensualidades).toMatchObject({ usar_generales: false, adicionales: [expect.objectContaining({ tipo: 'paypal' })] });
+  await waitFor(() => expect(saved.pagos.por_concepto[concepto].adicionales).toHaveLength(1));
+  expect(saved.pagos.por_concepto[concepto]).toMatchObject({ usar_generales: false, adicionales: [expect.objectContaining({ tipo: 'paypal' })] });
   expect(saved.pagos.adicionales).toEqual([expect.objectContaining({ tipo: 'zelle' })]);
+  await screen.findByText('Pagos actualizados correctamente');
+  view.unmount();
+  render(<PaymentConfig />);
+  await screen.findByRole('button', { name: nombre });
+  fireEvent.click(screen.getByRole('button', { name: nombre }));
+  expect(screen.getByLabelText('Usar datos generales')).not.toBeChecked();
+  expect(within(screen.getByRole('region', { name: 'Cuenta paypal' })).getByRole('textbox', { name: /Correo/ })).toHaveValue('pagos@example.com');
+});
+test.each([undefined, true, false])('selector de pago de cobros adicionales usa la cuenta correspondiente con herencia=%s', (usarGenerales) => {
+  const config = { pagos: {
+    pago_movil: { telefono: '04121111111' }, transferencia: { cuenta: 'CUENTA-GENERAL' },
+    adicionales: [{ tipo: 'zelle', titular: 'General', correo: 'general@example.com' }],
+    por_concepto: { campanias: { usar_generales: usarGenerales,
+      pago_movil: { telefono: '04122222222' }, transferencia: { cuenta: 'CUENTA-COBROS' },
+      adicionales: [{ tipo: 'paypal', titular: 'Cobros', correo: 'cobros@example.com' }] } }
+  } };
+  const metodos = buildMetodosFromConfig(config, 'campanias');
+  expect(metodos.map(metodo => metodo.nombre)).toEqual(['Pago movil', 'Transferencia', usarGenerales === false ? 'PayPal' : 'Zelle']);
+  expect(metodos[0].detalles.telefono).toBe(usarGenerales === false ? '04122222222' : '04121111111');
+  expect(metodos[1].detalles.cuenta).toBe(usarGenerales === false ? 'CUENTA-COBROS' : 'CUENTA-GENERAL');
+  expect(buildMetodosFromConfig(config, 'mensualidades')[2].nombre).toBe('Zelle');
 });

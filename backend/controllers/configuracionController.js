@@ -42,6 +42,13 @@ const DEFAULT_CONFIG = {
         pago_movil: {},
         transferencia: {},
         deposito_usd: {}
+      },
+      campanias: {
+        usar_generales: true,
+        adicionales: [],
+        pago_movil: {},
+        transferencia: {},
+        deposito_usd: {}
       }
     }
   },
@@ -657,7 +664,8 @@ function normalizeConfigPayload(payload = {}) {
       },
       por_concepto: {
         mensualidades: normalizeConceptoPago(pagos?.por_concepto?.mensualidades),
-        uniformes: normalizeConceptoPago(pagos?.por_concepto?.uniformes)
+        uniformes: normalizeConceptoPago(pagos?.por_concepto?.uniformes),
+        campanias: normalizeConceptoPago(pagos?.por_concepto?.campanias)
       }
     },
     cobro: {
@@ -733,7 +741,7 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
       });
 
       pagosPatch.por_concepto = {};
-      ['mensualidades', 'uniformes'].forEach((concepto) => {
+      ['mensualidades', 'uniformes', 'campanias'].forEach((concepto) => {
         if (root.pagos.por_concepto[concepto] && typeof root.pagos.por_concepto[concepto] === 'object') {
           pagosPatch.por_concepto[concepto] = normalizeConceptoPatch(root.pagos.por_concepto[concepto]);
         }
@@ -930,7 +938,8 @@ function serializeConfig(doc) {
       },
       por_concepto: {
         mensualidades: serializeConceptoPago(pagos?.por_concepto?.mensualidades),
-        uniformes: serializeConceptoPago(pagos?.por_concepto?.uniformes)
+        uniformes: serializeConceptoPago(pagos?.por_concepto?.uniformes),
+        campanias: serializeConceptoPago(pagos?.por_concepto?.campanias)
       }
     },
     cobro: {
@@ -1000,7 +1009,8 @@ function serializePagosConfig(doc) {
       },
       por_concepto: {
         mensualidades: serializeConceptoPago(pagos?.por_concepto?.mensualidades),
-        uniformes: serializeConceptoPago(pagos?.por_concepto?.uniformes)
+        uniformes: serializeConceptoPago(pagos?.por_concepto?.uniformes),
+        campanias: serializeConceptoPago(pagos?.por_concepto?.campanias)
       }
     },
     cobro: {

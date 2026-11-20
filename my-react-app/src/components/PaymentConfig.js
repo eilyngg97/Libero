@@ -64,6 +64,13 @@ const EMPTY_CONFIG = {
         pago_movil: { banco: '', codigo_banco: '', telefono: '', cedula: '', titular: '' },
         transferencia: { banco: '', cuenta: '', titular: '', cedula: '' },
         deposito_usd: { instrucciones: '' }
+      },
+      campanias: {
+        usar_generales: true,
+        adicionales: [],
+        pago_movil: { banco: '', codigo_banco: '', telefono: '', cedula: '', titular: '' },
+        transferencia: { banco: '', cuenta: '', titular: '', cedula: '' },
+        deposito_usd: { instrucciones: '' }
       }
     }
   },
@@ -114,6 +121,18 @@ const buildConfigFromResponse = (data = {}) => ({
         transferencia: {
           ...EMPTY_CONFIG.pagos.por_concepto.uniformes.transferencia,
           ...(data?.pagos?.por_concepto?.uniformes?.transferencia || {})
+        }
+      },
+      campanias: {
+        ...EMPTY_CONFIG.pagos.por_concepto.campanias,
+        ...(data?.pagos?.por_concepto?.campanias || {}),
+        pago_movil: {
+          ...EMPTY_CONFIG.pagos.por_concepto.campanias.pago_movil,
+          ...(data?.pagos?.por_concepto?.campanias?.pago_movil || {})
+        },
+        transferencia: {
+          ...EMPTY_CONFIG.pagos.por_concepto.campanias.transferencia,
+          ...(data?.pagos?.por_concepto?.campanias?.transferencia || {})
         }
       }
     }
@@ -458,6 +477,8 @@ function PaymentConfig() {
           aria-label="Concepto de pago"
           sx={{
             width: '100%',
+            display: 'grid',
+            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: `repeat(${canViewUniformes ? 4 : 3}, minmax(0, 1fr))` },
             gap: 0.5,
             p: 0.5,
             bgcolor: '#f1f4f8',
@@ -465,7 +486,11 @@ function PaymentConfig() {
             borderRadius: 1,
             '& .MuiToggleButtonGroup-grouped': {
               flex: 1,
-              minHeight: 38,
+              minWidth: 0,
+              minHeight: 44,
+              margin: '0 !important',
+              whiteSpace: 'normal',
+              lineHeight: 1.3,
               px: { xs: 1.25, sm: 2 },
               gap: 0.8,
               border: '0 !important',
@@ -512,6 +537,10 @@ function PaymentConfig() {
               Uniformes
             </ToggleButton>
           )}
+          <ToggleButton value="campanias">
+            <RequestQuoteOutlinedIcon />
+            Cobros adicionales
+          </ToggleButton>
         </ToggleButtonGroup>
         {paymentScope !== 'generales' && (
           <Box sx={{

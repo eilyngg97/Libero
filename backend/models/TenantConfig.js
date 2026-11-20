@@ -46,7 +46,8 @@ const PagosSchema = new mongoose.Schema({
   },
   por_concepto: {
     mensualidades: { type: PaymentConceptSchema, default: () => ({}) },
-    uniformes: { type: PaymentConceptSchema, default: () => ({}) }
+    uniformes: { type: PaymentConceptSchema, default: () => ({}) },
+    campanias: { type: PaymentConceptSchema, default: () => ({}) }
   }
 }, { _id: false });
 

@@ -51,16 +51,16 @@ test.each([
   expect(model.findOneAndUpdate).not.toHaveBeenCalled();
 });
 
-test('PATCH por concepto conserva adicionales omitidos, permite desactivar y quitar sin borrar generales', async () => {
+test.each(['mensualidades', 'campanias'])('PATCH por concepto %s conserva adicionales omitidos, permite desactivar y quitar sin borrar generales', async (concepto) => {
   saved.pagos.adicionales = [cuenta()];
-  saved.pagos.por_concepto.mensualidades.adicionales = [cuenta('paypal')];
+  saved.pagos.por_concepto[concepto] = { usar_generales: true, adicionales: [cuenta('paypal')] };
   const res = response();
-  await controller.patchConfiguracionAdmin(request({ pagos: { por_concepto: { mensualidades: { usar_generales: false } } } }), res);
-  expect(saved.pagos.por_concepto.mensualidades.adicionales[0].tipo).toBe('paypal');
-  await controller.patchConfiguracionAdmin(request({ pagos: { por_concepto: { mensualidades: { adicionales: [{ ...cuenta('paypal'), habilitado: false }] } } } }), response());
-  expect(saved.pagos.por_concepto.mensualidades.adicionales[0].habilitado).toBe(false);
-  await controller.patchConfiguracionAdmin(request({ pagos: { por_concepto: { mensualidades: { adicionales: [] } } } }), response());
-  expect(saved.pagos.por_concepto.mensualidades.adicionales).toEqual([]);
+  await controller.patchConfiguracionAdmin(request({ pagos: { por_concepto: { [concepto]: { usar_generales: false } } } }), res);
+  expect(saved.pagos.por_concepto[concepto].adicionales[0].tipo).toBe('paypal');
+  await controller.patchConfiguracionAdmin(request({ pagos: { por_concepto: { [concepto]: { adicionales: [{ ...cuenta('paypal'), habilitado: false }] } } } }), response());
+  expect(saved.pagos.por_concepto[concepto].adicionales[0].habilitado).toBe(false);
+  await controller.patchConfiguracionAdmin(request({ pagos: { por_concepto: { [concepto]: { adicionales: [] } } } }), response());
+  expect(saved.pagos.por_concepto[concepto].adicionales).toEqual([]);
   expect(saved.pagos.adicionales[0].tipo).toBe('zelle');
   await controller.patchConfiguracionAdmin(request({ cobro: { recargo_usd: 4 } }), response());
   expect(saved.pagos.adicionales[0].tipo).toBe('zelle');
@@ -81,11 +81,31 @@ test('cuentas de uniformes respetan permisos de lectura y escritura', async () =
   expect(saved.pagos.por_concepto.uniformes.adicionales).toEqual([]);
 });
 
-test('esquema conserva cuentas por concepto y rechaza correos, tipos y duplicados', () => {
-  const valid = new TenantConfig({ pagos: { adicionales: [cuenta()], por_concepto: { mensualidades: { adicionales: [cuenta('paypal')] } } } });
+test.each(['mensualidades', 'campanias'])('esquema conserva cuentas por concepto %s y rechaza correos, tipos y duplicados', (concepto) => {
+  const valid = new TenantConfig({ pagos: { adicionales: [cuenta()], por_concepto: { [concepto]: { adicionales: [cuenta('paypal')] } } } });
   expect(valid.validateSync()).toBeUndefined();
-  expect(valid.toObject().pagos.por_concepto.mensualidades.adicionales[0].tipo).toBe('paypal');
+  expect(valid.toObject().pagos.por_concepto[concepto].adicionales[0].tipo).toBe('paypal');
   expect(new TenantConfig({ pagos: { adicionales: [cuenta(), cuenta()] } }).validateSync()).toBeDefined();
   expect(new TenantConfig({ pagos: { adicionales: [{ ...cuenta(), correo: 'invalido' }] } }).validateSync()).toBeDefined();
   expect(new TenantConfig({ pagos: { adicionales: [cuenta('desconocido')] } }).validateSync()).toBeDefined();
+});
+test('PATCH guarda cuentas propias de cobros adicionales y ambos GET las devuelven sin alterar otros conceptos', async () => {
+  saved.pagos.adicionales = [cuenta('zelle')];
+  const mensualidadesAntes = { ...saved.pagos.por_concepto.mensualidades };
+  const res = response();
+  await controller.patchConfiguracionAdmin(request({ pagos: { por_concepto: { campanias: {
+    usar_generales: false, adicionales: [cuenta('paypal')],
+    pago_movil: { banco: 'Banco cobros', telefono: '04120000000' },
+    transferencia: { cuenta: '01020000000000000000', titular: 'Titular cobros' }
+  } } } }), res);
+  expect(res.status).not.toHaveBeenCalled();
+  expect(saved.pagos.por_concepto.campanias).toMatchObject({ usar_generales: false, adicionales: [expect.objectContaining({ tipo: 'paypal' })], pago_movil: { telefono: '04120000000' }, transferencia: { titular: 'Titular cobros' } });
+  expect(saved.pagos.adicionales[0].tipo).toBe('zelle');
+  expect(saved.pagos.por_concepto.mensualidades).toEqual(mensualidadesAntes);
+  const admin = response();
+  await controller.getConfiguracionAdmin(request(), admin);
+  expect(admin.json.mock.calls[0][0].pagos.por_concepto.campanias).toEqual(saved.pagos.por_concepto.campanias);
+  const portal = response();
+  await controller.getConfiguracionPagos({ ...request(), user: { rol: 'usuario' } }, portal);
+  expect(portal.json.mock.calls[0][0].pagos.por_concepto.campanias).toEqual(saved.pagos.por_concepto.campanias);
 });

@@ -1,5 +1,17 @@
 # Cobros adicionales
 
+## Configuracion de metodos de pago
+
+- Configuracion de academia > Metodos de Pago > Cobros adicionales permite configurar
+    pago movil, transferencia y cuentas Zelle, PayPal o Binance propias para este concepto.
+- Por defecto, Usar datos generales mantiene las cuentas generales. Al desactivarlo se usan
+    exclusivamente los datos de `pagos.por_concepto.campanias`; no modifica mensualidades,
+    uniformes ni las cuentas generales. Volver a heredar conserva los datos personalizados.
+- La misma configuracion se aplica a pagos individuales, agrupados y su edicion, tanto en
+    administracion como en el portal. Se mantienen validaciones de moneda y metodos habilitados.
+- Para activar la persistencia del nuevo concepto, actualizar/reiniciar el backend y cargar
+    el frontend actualizado. No requiere migrar ni cambiar pagos historicos.
+
 ## Cierre manual y automatico
 
 - Administracion y superadministracion pueden cerrar una campana publicada abierta desde
