@@ -691,6 +691,7 @@ function ModalPago({
           comprobante,
           montoPagadoMoneda: Number(montoPagadoMoneda.toFixed(2)),
           montoPagadoBs: montoPagadoBsFinal === null ? null : Number(montoPagadoBsFinal.toFixed(2)),
+          tasaAplicada,
           moneda,
           ...(allowPaymentConfirmation ? { confirmarPago } : {}),
           metodoCobranza: uniformInstallmentChoice

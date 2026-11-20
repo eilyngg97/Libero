@@ -1,57 +1,618 @@
-.login-container {
+.apex-login {
+  display: grid;
+  grid-template-columns: minmax(0, 1.11fr) minmax(0, 1fr);
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f5f6fa;
+  min-height: 100svh;
+  background: #fff;
+  color: #1c1a2c;
 }
 
-.login-form {
-  background: #fff;
-  padding: 2rem 2.5rem;
-  border-radius: 10px;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+.apex-login,
+.apex-login * {
+  box-sizing: border-box;
+}
+
+.apex-login .login-hero {
   display: flex;
   flex-direction: column;
-  width: 320px;
-}
-
-.login-form h2 {
-  margin-bottom: 1.5rem;
-  color: #222;
-  text-align: center;
-}
-
-.login-form input {
-  margin-bottom: 1rem;
-  padding: 0.7rem 1rem;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  font-size: 1rem;
-}
-
-.login-form button {
-  background: #1e90ff;
+  min-width: 0;
+  padding: 44px clamp(32px, 4.4vw, 80px) 36px;
   color: #fff;
-  border: none;
-  padding: 0.8rem 0;
-  border-radius: 5px;
-  font-size: 1rem;
+  background-color: #0b0a1e;
+  background-image: radial-gradient(ellipse at 94% 52%, rgba(112, 22, 150, 0.16), transparent 44%);
+}
+
+.apex-login .login-platform-brand {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+}
+
+.apex-login .login-platform-brand img {
+  object-fit: contain;
+}
+
+.apex-login .login-platform > p {
+  margin: 14px 0 0;
+  color: #aaa7bf;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+}
+
+.apex-login .login-hero-message {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 56px 0;
+}
+
+.apex-login .login-community-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 8px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #e2dfed;
+  font-size: 10px;
+}
+
+.apex-login .login-community-badge > span {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef388d;
+}
+
+.apex-login .login-hero h2 {
+  margin: 28px 0;
+  font-size: clamp(40px, 4.3vw, 68px);
+  font-weight: 750;
+  letter-spacing: -0.055em;
+  line-height: 1.08;
+}
+
+.apex-login .login-hero h2 > span {
+  color: #ec328e;
+  background: linear-gradient(100deg, #cf27dc, #ff3b74);
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.apex-login .login-hero-description {
+  margin: 0;
+  color: #b6b2c8;
+  font-size: clamp(14px, 1.25vw, 18px);
+  line-height: 1.7;
+}
+
+.apex-login .login-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+  padding: 24px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  list-style: none;
+}
+
+.apex-login .login-features li > span {
+  display: block;
+  margin-bottom: 12px;
+  color: #c57fd7;
+  font-size: 10px;
+}
+
+.apex-login .login-features strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.apex-login .login-features p {
+  margin: 6px 0 0;
+  color: #a7a1bb;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.apex-login .login-hero-footer {
+  margin-top: 48px;
+  color: #9690ab;
+  font-size: 10px;
+}
+
+.apex-login .login-access {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 48px clamp(32px, 7.6vw, 112px) 36px;
+}
+
+.apex-login .login-access-content {
+  width: 100%;
+  max-width: 400px;
+  margin: auto;
+  padding: 44px 0 36px;
+}
+
+.apex-login .login-academy {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.apex-login .login-academy-logo {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid #eeedf1;
+  border-radius: 12px;
+}
+
+.apex-login .login-academy-logo img {
+  object-fit: contain;
+}
+
+.apex-login .login-academy-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.apex-login .login-academy-tagline {
+  margin: 4px 0 0;
+  color: #706a7d;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.apex-login h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 750;
+  letter-spacing: -0.045em;
+  line-height: 1.2;
+}
+
+.apex-login .login-intro {
+  margin: 8px 0 22px;
+  color: #777280;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.apex-login .login-session-notice {
+  margin-bottom: 20px;
+}
+
+.login-notification-toast.MuiSnackbar-root {
+  top: max(20px, env(safe-area-inset-top));
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  width: calc(100% - 32px);
+  max-width: 440px;
+  transform: translateX(-50%);
+}
+
+.login-notification.MuiAlert-root {
+  box-sizing: border-box;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid #f1dae1;
+  border-left: 3px solid #d34464;
+  border-radius: 15px;
+  background: linear-gradient(110deg, #fff5f7, #fff 75%);
+  box-shadow: 0 12px 36px rgba(34, 15, 33, 0.12), 0 2px 6px rgba(34, 15, 33, 0.04);
+  color: #482b35;
+}
+
+.login-notification .MuiAlert-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border-radius: 11px;
+  background: #fce5eb;
+  color: #be3656;
+  opacity: 1;
+}
+
+.login-notification .MuiAlert-message {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.login-notification .login-notification-title {
+  margin: 0 0 4px;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.login-notification .login-notification-description {
+  display: block;
+  color: #75626b;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.login-notification .MuiAlert-action {
+  margin: -5px -5px 0 0;
+  padding: 0;
+}
+
+.login-notification .MuiAlert-action .MuiIconButton-root {
+  width: 36px;
+  height: 36px;
+  color: #967780;
+}
+
+.login-notification .MuiAlert-action .MuiIconButton-root:hover {
+  background: #fbe9ee;
+  color: #a52e4b;
+}
+
+.login-notification.login-notification-warning {
+  border-color: #efdfc3;
+  border-left-color: #c3902f;
+  background: linear-gradient(110deg, #fff9ee, #fff 85%);
+  box-shadow: none;
+  color: #6d4c20;
+}
+
+.login-notification-warning .MuiAlert-icon {
+  background: #fbefd5;
+  color: #a47320;
+}
+
+.login-notification-warning .login-notification-description {
+  color: #786b56;
+}
+
+.apex-login .login-form {
+  width: 100%;
+}
+
+.apex-login .login-field + .login-field {
+  margin-top: 20px;
+}
+
+.apex-login .login-field > label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.apex-login .MuiOutlinedInput-root {
+  height: 44px;
+  border-radius: 8px;
+  background: #faf9fc;
+  color: #262333;
+  font-size: 13px;
+}
+
+.apex-login .MuiOutlinedInput-input {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 14px;
+}
+
+.apex-login .MuiOutlinedInput-notchedOutline {
+  border-color: #dedbe4;
+}
+
+.apex-login .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: #b521a3;
+}
+
+.apex-login .MuiInputBase-input::placeholder {
+  color: #8a8594;
+  opacity: 1;
+}
+
+.apex-login .MuiIconButton-root {
+  color: #898292;
+}
+
+.apex-login .MuiIconButton-root svg {
+  font-size: 20px;
+}
+
+.apex-login .login-text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
-  transition: background 0.2s;
 }
 
-.login-form button:disabled {
-  background: #b2d4fa;
-  cursor: not-allowed;
+.apex-login .login-text-button:hover {
+  text-decoration: underline;
 }
 
-.login-error {
-  color: #e74c3c;
-  background: #ffeaea;
-  padding: 0.5rem 1rem;
-  border-radius: 5px;
-  margin-top: 0.5rem;
+.apex-login .login-submit,
+.login-help-dialog .login-help-confirm {
+  min-height: 44px;
+  margin-top: 18px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: linear-gradient(105deg, #b61db5 0%, #d31e65 56%, #c24d13 100%);
+  box-shadow: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.apex-login .login-submit:hover,
+.login-help-dialog .login-help-confirm:hover {
+  background: linear-gradient(105deg, #a219a1 0%, #bc1b5b 56%, #ac4310 100%);
+  box-shadow: 0 4px 14px rgba(158, 27, 128, 0.15);
+}
+
+.apex-login .login-submit.Mui-disabled {
+  background: #ece8ef;
+  color: #777080;
+}
+
+.apex-login .login-submit .MuiButton-endIcon svg {
+  font-size: 18px;
+}
+
+.apex-login .login-support {
+  margin: 24px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid #efedf2;
+  color: #746d7c;
+  font-size: 11px;
+  line-height: 1.6;
   text-align: center;
-  font-size: 0.95rem;
+}
+
+.apex-login .login-access-footer {
+  color: #746d7c;
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.apex-login a:focus-visible,
+.apex-login button:focus-visible,
+.login-help-dialog button:focus-visible {
+  outline: 2px solid #b521a3;
+  outline-offset: 4px;
+}
+
+.login-help-dialog .MuiBackdrop-root {
+  background-color: rgba(8, 7, 23, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.login-help-dialog .MuiDialog-paper {
+  width: calc(100% - 40px);
+  max-width: 440px;
+  margin: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 22px;
+  background: radial-gradient(ellipse at 0 0, #fcf0fc, transparent 55%), #fff;
+  box-shadow: 0 24px 80px rgba(8, 7, 23, 0.28);
+  color: #242033;
+}
+
+.login-help-dialog .login-help-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 28px 28px 20px;
+}
+
+.login-help-dialog .login-help-heading .MuiIconButton-root {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #eee8f0;
+  background: rgba(255, 255, 255, 0.8);
+  color: #797181;
+}
+
+.login-help-dialog .MuiDialogTitle-root {
+  padding: 0;
+  font-size: 25px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  line-height: 1.3;
+}
+
+.login-help-dialog .login-help-content {
+  padding: 0 28px;
+}
+
+.login-help-dialog .login-help-content > p {
+  margin: 0;
+  color: #716979;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.login-help-dialog #login-help-description strong {
+  color: #3c3048;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.login-help-dialog .login-help-academy {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0 16px;
+  padding: 16px;
+  border: 1px solid #eee7f1;
+  border-radius: 13px;
+  background: #faf8fc;
+}
+
+.login-help-dialog .login-help-academy img {
+  flex-shrink: 0;
+  padding: 4px;
+  border: 1px solid #eee8f0;
+  border-radius: 10px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.login-help-dialog .login-help-academy span {
+  display: block;
+  margin-bottom: 5px;
+  color: #8c4c92;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.login-help-dialog .login-help-academy strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.login-help-dialog .login-help-content > .login-help-hint {
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.login-help-dialog .MuiDialogActions-root {
+  padding: 24px 28px 28px;
+}
+
+.login-help-dialog .login-help-confirm {
+  min-height: 46px;
+  margin: 0;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .apex-login {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .apex-login .login-hero {
+    padding: 28px 32px;
+  }
+
+  .apex-login .login-platform > p,
+  .apex-login .login-features,
+  .apex-login .login-hero-footer {
+    display: none;
+  }
+
+  .apex-login .login-hero-message {
+    padding: 28px 0 0;
+  }
+
+  .apex-login .login-community-badge {
+    display: none;
+  }
+
+  .apex-login .login-hero h2 {
+    margin: 0;
+    font-size: 38px;
+  }
+
+  .apex-login .login-hero h2 > br {
+    display: none;
+  }
+
+  .apex-login .login-hero h2 > span {
+    display: block;
+  }
+
+  .apex-login .login-hero-description {
+    margin-top: 16px;
+    font-size: 14px;
+  }
+
+  .apex-login .login-access {
+    padding: 28px 32px;
+  }
+
+  .apex-login .login-access-content {
+    padding: 40px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .apex-login .login-hero,
+  .apex-login .login-access {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+
+  .apex-login .login-hero h2 {
+    font-size: 26px;
+  }
+
+  .apex-login .login-hero {
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .apex-login .login-platform-brand {
+    font-size: 18px;
+  }
+
+  .apex-login .login-platform-brand img {
+    width: 26px;
+    height: 22px;
+  }
+
+  .apex-login .login-hero-message {
+    padding-top: 16px;
+  }
+
+  .apex-login .login-hero-description,
+  .apex-login .login-desktop-break {
+    display: none;
+  }
+
+  .apex-login h1 {
+    font-size: 30px;
+  }
+
+  .apex-login .login-academy-name {
+    font-size: 15px;
+  }
+
+  .apex-login .MuiOutlinedInput-root {
+    font-size: 16px;
+  }
 }

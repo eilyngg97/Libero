@@ -1,3 +1,15 @@
+const MONTO_TOLERANCIA_BS = 100;
+
+export function normalizarImportePagoCampania({ monto, montoBs, tasa, esperado, metodo }) {
+  if (['Pago movil', 'Transferencia'].includes(metodo)
+    && Number.isFinite(montoBs) && montoBs > 0 && Number.isFinite(tasa) && tasa > 0
+    && Number.isFinite(esperado) && esperado > 0
+    && Math.abs(Math.round(montoBs * 100) - Math.round(esperado * tasa * 100)) <= MONTO_TOLERANCIA_BS * 100) {
+    return esperado;
+  }
+  return monto;
+}
+
 export function tieneMontosValidos(campania) {
   const modalidad = campania.modalidad_monto === undefined ? 'unico' : campania.modalidad_monto;
   const montoValido = (monto) => typeof monto === 'number' && Number.isFinite(monto)

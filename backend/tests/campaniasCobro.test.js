@@ -27,6 +27,27 @@ const token = (rol, tenantId = 'alfa', permisos = []) => jwt.sign({ rol, tenantI
 let consulta;
 const tokenPublicacion = (rol = 'admin', tenantId = 'alfa') => jwt.sign({ rol, tenantId, id: 'admin-qa' }, 'qa-campanias-secret');
 
+describe('tolerancia en Bs de pagos de campania', () => {
+  const { validarEquivalenteCampania } = require('../services/campaniaPaymentConfirmation');
+  test.each([-100, -99.99, 0, 99.99, 100])('admite diferencia Bs %s conservando el saldo aplicado', (diferencia) => {
+    const data = { monto_pagado: 15, monto_pagado_bs: Number((13186.84 + diferencia).toFixed(2)) };
+    expect(() => validarEquivalenteCampania(data, 879.1225, 15)).not.toThrow();
+    expect(data.monto_pagado_bs).toBe(Number((13186.84 + diferencia).toFixed(2)));
+  });
+  test.each([-100.01, 100.01])('rechaza diferencia Bs %s incluso a tasas altas', (diferencia) => {
+    for (const tasa of [879.1225, 100000]) {
+      const bs = Math.round(15 * tasa * 100) / 100;
+      expect(() => validarEquivalenteCampania({ monto_pagado: 15,
+        monto_pagado_bs: Number((bs + diferencia).toFixed(2)) }, tasa, 15)).toThrow('El equivalente no coincide');
+    }
+  });
+  test('no permite falsear un abono ni eludir reservas usando otro importe esperado', () => {
+    expect(() => validarEquivalenteCampania({ monto_pagado: 5, monto_pagado_bs: 500 }, 100, 15)).not.toThrow();
+    expect(() => validarEquivalenteCampania({ monto_pagado: 5, monto_pagado_bs: 550 }, 100, 15)).toThrow();
+    expect(() => validarEquivalenteCampania({ monto_pagado: 15, monto_pagado_bs: 1400 }, 100, 10)).toThrow();
+  });
+});
+
 describe('cierre de campanas: saldo exigible', () => {
   const { resumenCierre } = require('../services/campaniaClosure');
   const query = (valor) => ({ select: jest.fn().mockReturnThis(), session: jest.fn().mockReturnThis(), lean: async () => valor });
@@ -1196,6 +1217,58 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
       monto_pagado: 42.5, monto_pagado_bs: 4250,
       cargos: [datos.cargo, segundo].map((cargo) => ({ cargo: String(cargo._id), version: cargo.__v })) } };
   };
+
+  test.each([
+    ['en_revision', -100], ['en_revision', 100], ['confirmado', -100], ['confirmado', 100]
+  ])('tolerancia campania Mongo %s Bs %s conserva Bs, confirma y revierte sin residuos', async (estado, diferencia) => {
+    const { Cargo, Pago, cargo, ruta, pagoBody } = await prepararPagoMongo();
+    await Cargo.updateOne({ _id: cargo._id }, { $set: { permitir_abonos: false } });
+    const body = { ...pagoBody, monto_pagado: 30, monto_pagado_bs: 3000 + diferencia, estado };
+    expect((await registrarMongo(ruta, { ...body, monto_pagado_bs: 3100.01 })).status).toBe(409);
+    expect((await registrarMongo(ruta, { ...body, monto_pagado_bs: 2899.99 })).status).toBe(409);
+    const creado = await registrarMongo(ruta, body);
+    expect(creado.status).toBe(201);
+    expect(creado.body.pago).toMatchObject({ monto_pagado: 30, monto_pagado_bs: 3000 + diferencia, tasa: 100, estado });
+    expect((await registrarMongo(ruta, body)).body.repetida).toBe(true);
+    const destino = `${ruta}/${creado.body.pago._id}`;
+    const correccion = { ...body, monto_pagado_bs: 3000 - diferencia, version: 1,
+      solicitud_id: '33000000-0000-4000-8000-000000000001' };
+    const editado = await corregirMongo('patch', destino, correccion);
+    expect(editado.status).toBe(200);
+    expect(editado.body.pago).toMatchObject({ monto_pagado: 30, monto_pagado_bs: 3000 - diferencia, tasa: 100 });
+    expect((await corregirMongo('patch', destino, correccion)).body.repetida).toBe(true);
+    expect((await corregirMongo('get', ruta)).status).toBe(200);
+    if (estado === 'en_revision') {
+      expect((await corregirMongo('post', `${destino}/confirmar`)).status).toBe(200);
+    }
+    const actualizado = await Cargo.findById(cargo._id).lean();
+    expect(actualizado).toMatchObject({ saldo_pendiente: 0, estado: 'pagado' });
+    expect((await corregirMongo('get', ruta)).body.totales).toMatchObject({ confirmado: 30, disponible: 0 });
+    expect((await corregirMongo('delete', destino, { version: actualizado.__v })).status).toBe(200);
+    expect(await Cargo.findById(cargo._id).lean()).toMatchObject({ saldo_pendiente: 30, estado: 'pendiente' });
+    expect(await Pago.findById(creado.body.pago._id).lean()).toMatchObject({ estado: 'eliminado', monto_pagado_bs: 3000 - diferencia });
+  });
+
+  test.each([-100, 100])('tolerancia agrupada Mongo Bs %s se aplica una sola vez al total', async (diferencia) => {
+    const datos = await prepararAgrupado();
+    const body = { ...datos.agrupado, monto_pagado_bs: 4250 + diferencia };
+    expect((await registrarMongo('/campanias/pagos-agrupados', { ...body, monto_pagado_bs: 4350.01 })).status).toBe(409);
+    const creado = await registrarMongo('/campanias/pagos-agrupados', body);
+    expect(creado.status).toBe(201);
+    expect(creado.body.pagos.reduce((suma, pago) => suma + Math.round(pago.monto_pagado_bs * 100), 0)).toBe(Math.round((4250 + diferencia) * 100));
+    const ruta = `/campanias/pagos-agrupados/${body.solicitud_id}`;
+    const { alumnoId, ...correccion } = body;
+    const editado = await corregirMongo('patch', ruta, { ...correccion, monto_pagado_bs: 4250 - diferencia,
+      solicitud_id: '33000000-0000-4000-8000-000000000001',
+      cargos: body.cargos.map((cargo) => ({ ...cargo, version: 1 })) });
+    expect(editado.status).toBe(200);
+    const pagos = (await corregirMongo('get', ruta)).body.pagos;
+    expect(pagos.reduce((suma, pago) => suma + Math.round(pago.monto_pagado_bs * 100), 0)).toBe(Math.round((4250 - diferencia) * 100));
+    const pago = pagos[0];
+    expect((await corregirMongo('post', `/campanias/${pago.campania}/cargos/${pago.cargo}/pagos/${pago._id}/confirmar`)).status).toBe(200);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ saldo_pendiente: 0 });
+    expect(await datos.Cargo.findById(datos.segundo._id).lean()).toMatchObject({ saldo_pendiente: 0 });
+  });
 
   test('agrupados campanias Mongo registra dos saldos completos atomicos y conserva reintento', async () => {
     const datos = await prepararAgrupado();

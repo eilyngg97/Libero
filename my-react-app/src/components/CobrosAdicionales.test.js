@@ -18,6 +18,7 @@ import PanelOpcionesUsuario from './PanelOpcionesUsuario';
 import ConciliacionBancaria from './ConciliacionBancaria';
 import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
 import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
+import { normalizarImportePagoCampania } from '../utils/campaniaMontos';
 
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 100, moneda: 'USD' } }) }));
 jest.mock('../utils/dolarHistorico', () => ({ obtenerTasaOficialPorFecha: jest.fn(async () => 100), obtenerTasaEuroOficialPorFecha: jest.fn(async () => 100) }));
@@ -751,6 +752,78 @@ describe('pagos individuales campania', () => {
     fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-CAMPANIA' } });
   };
 
+  test.each([-100.01, -100, 100, 100.01])('tolerancia Bs %s usa los centimos reales y no el equivalente redondeado', (diferencia) => {
+    const montoBs = Number((13186.84 + diferencia).toFixed(2));
+    const monto = Math.round(montoBs * 100 / 879.1225) / 100;
+    expect(normalizarImportePagoCampania({ monto, montoBs, tasa: 879.1225, esperado: 15, metodo: 'Pago movil' }))
+      .toBe(Math.abs(diferencia) <= 100 ? 15 : monto);
+    expect(normalizarImportePagoCampania({ monto, montoBs: null, tasa: null, esperado: 15, metodo: 'Zelle' })).toBe(monto);
+  });
+
+  test.each(['en_revision', 'confirmado'])('corrige pago %s con tolerancia sin modificar Bs recibidos ni dejar saldo residual', async (estado) => {
+    obtenerTasaOficialPorFecha.mockResolvedValue(879.1225);
+    const onSaved = jest.fn();
+    const anterior = { ...pago, estado, monto_pagado: 15, monto_pagado_bs: 13186.84, tasa: 879.1225,
+      metodo_pago: 'Pago movil', referencia: '262626' };
+    const saldo = estado === 'confirmado' ? 0 : 15;
+    const inicial = { ...historial([anterior], { monto: 15, saldo_pendiente: saldo,
+      estado: saldo === 0 ? 'pagado' : 'pendiente', __v: 1 }),
+    totales: { confirmado: 15 - saldo, en_revision: saldo, saldo_pendiente: saldo, disponible: 0 } };
+    window.fetch.mockImplementation(async (url, options = {}) => options.method === 'PATCH'
+      ? json({ cargo: { ...inicial.cargo, __v: 2 },
+        pago: { ...anterior, monto_pagado_bs: Number(options.body.get('monto_pagado_bs')) }, repetida: false })
+      : url.includes('/api/configuracion/pagos') ? json({ pagos: {} }) : json(inicial));
+    render(<CampaniaPagoDialog campania={actual} fila={{ ...fila, monto: 15 }} modo="historial"
+      onClose={jest.fn()} onSaved={onSaved} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar', exact: true }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
+    const recibido = estado === 'confirmado' ? 13086.84 : 13286.84;
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Monto pagado (Bs)' }), { target: { value: String(recibido) } });
+    expect(screen.getByText(/Se cubre el saldo con tolerancia de Bs 100/)).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Monto esperado (Bs)' })).getByText('Equivalente USD: $15.00 USD')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'PATCH');
+    expect(options.body.get('monto_pagado')).toBe('15.00');
+    expect(options.body.get('monto_pagado_bs')).toBe(recibido.toFixed(2));
+    expect(options.body.get('estado')).toBe(estado);
+    expect(onSaved.mock.calls[0][0].cargo.saldo_pendiente).toBe(saldo);
+  });
+
+  const registrarConDiferenciaBs = async (diferencia) => {
+    obtenerTasaOficialPorFecha.mockResolvedValue(100);
+    const onSaved = jest.fn();
+    preparar(async (url, options) => json({ cargo: { ...cargo, saldo_pendiente: 0, estado: 'pagado', __v: 1 },
+      pago: { ...pago, solicitud_id: options.body.get('solicitud_id'), estado: 'confirmado',
+        monto_pagado_bs: Number(options.body.get('monto_pagado_bs')),
+        confirmado_por: { id: 'admin-qa' }, confirmado_en: '2026-11-10' }, repetida: false }));
+    render(<CampaniaPagoDialog campania={actual} fila={fila} onClose={jest.fn()} onSaved={onSaved} />);
+    fireEvent.click(await screen.findByText('Transferencia', { exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ya pague' }));
+    fireEvent.change(screen.getByPlaceholderText('4125163627'), { target: { value: '4121234567' } });
+    fireEvent.change(screen.getByPlaceholderText('22188421'), { target: { value: '12345678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar', exact: true }));
+    await waitFor(() => expect(screen.getByLabelText('Monto pagado (Bs)')).toHaveValue('3000.00'));
+    fireEvent.change(screen.getByLabelText('Monto pagado (Bs)'), { target: { value: (3000 + diferencia).toFixed(2) } });
+    fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Pago confirmado' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+    return onSaved;
+  };
+  test.each([-100, 100])('registro desde ModalPago acepta diferencia Bs %s', async (diferencia) => {
+    const onSaved = await registrarConDiferenciaBs(diferencia);
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'POST');
+    expect(options.body.get('monto_pagado')).toBe('30.00');
+    expect(options.body.get('monto_pagado_bs')).toBe((3000 + diferencia).toFixed(2));
+  });
+  test.each([-100.01, 100.01])('registro desde ModalPago rechaza diferencia Bs %s', async (diferencia) => {
+    const onSaved = await registrarConDiferenciaBs(diferencia);
+    expect(await screen.findByText(/El importe supera el saldo disponible o la campana no permite abonos/)).toBeInTheDocument();
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
   test.each([['admin', 'Portal admin'], ['super_admin', 'Portal admin'], ['usuario', 'Portal usuario'], [undefined, 'No disponible']])(
     'registrado por muestra el portal sin identificador para %s', async (rol, etiqueta) => {
       preparar(jest.fn(), { ...historial([{ ...pago, registrado_por: { id: 'actor-privado-qa', rol } }]),
@@ -979,7 +1052,8 @@ describe('pagos individuales campania', () => {
     expect(screen.getByRole('button', { name: 'Guardar cambios' })).toHaveStyle({ borderRadius: '3996px', backgroundColor: '#dcfce7', color: '#166534', fontWeight: '800' });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Monto pagado (Bs)' }), { target: { value: '2000' } });
     expect(within(screen.getByRole('group', { name: 'Monto pagado (Bs)' })).getByText('Equivalente USD: $20.00 USD')).toBeInTheDocument();
-    expect(within(screen.getByRole('group', { name: 'Monto esperado (Bs)' })).getByText('Equivalente USD: $20.00 USD')).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Monto esperado (Bs)' })).getByText('Equivalente USD: $30.00 USD')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Monto esperado (Bs)' })).toHaveTextContent('3.000,00');
     fireEvent.change(screen.getByRole('textbox', { name: 'Nota' }), { target: { value: 'Nota corregida' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ cargo: expect.objectContaining({ saldo_pendiente: 10 }) }), false));
@@ -988,6 +1062,41 @@ describe('pagos individuales campania', () => {
     expect(options.body.get('monto_pagado')).toBe('20.00');
     expect(options.body.get('estado')).toBe('confirmado');
     expect(options.body.get('nota')).toBe('Nota corregida');
+  });
+
+  test('monto esperado conserva el cargo al corregir fecha e importe y permite guardar el pago exacto', async () => {
+    obtenerTasaOficialPorFecha.mockImplementation(async (fecha) => fecha === '2026-10-30' ? 889.2553 : 918.7662);
+    const onSaved = jest.fn();
+    const anterior = { ...pago, metodo_pago: 'Pago movil', referencia: '089704', monto_pagado: 10,
+      monto_pagado_bs: 9187.66, fecha_pago: '2026-11-20', tasa: 918.7662 };
+    const inicial = { ...historial([anterior], { monto: 10, saldo_pendiente: 10 }),
+      totales: { confirmado: 0, en_revision: 10, saldo_pendiente: 10, disponible: 0 } };
+    window.fetch.mockImplementation(async (url, options = {}) => options.method === 'PATCH'
+      ? json({ cargo: { ...inicial.cargo, __v: 1 }, pago: { ...anterior, monto_pagado_bs: 8892.55,
+        fecha_pago: '2026-10-30', tasa: 889.2553 }, repetida: false })
+      : url.includes('/api/configuracion/pagos') ? json({ pagos: {} }) : json(inicial));
+    render(<CampaniaPagoDialog campania={actual} fila={{ ...fila, monto: 10 }} modo="historial"
+      onClose={jest.fn()} onSaved={onSaved} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar', exact: true }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('Fecha de pago', { selector: 'input' }), { target: { value: '2026-10-30' } });
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Tasa aplicada' })).toHaveTextContent('889.2553 Bs/USD'));
+    const esperado = within(screen.getByRole('group', { name: 'Monto esperado (Bs)' }));
+    expect(esperado.getByText('Equivalente USD: $10.00 USD')).toBeInTheDocument();
+    expect(esperado.getByText(/8.892,55/)).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Monto pagado (Bs)' })).getByText('Equivalente USD: $10.33 USD')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Monto pagado (Bs)' }), { target: { value: '8900' } });
+    expect(esperado.getByText('Equivalente USD: $10.00 USD')).toBeInTheDocument();
+    expect(esperado.getByText(/8.892,55/)).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Monto pagado (Bs)' })).getByText('Equivalente USD: $10.01 USD')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Monto pagado (Bs)' }), { target: { value: '8892.55' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'PATCH');
+    expect(options.body.get('monto_pagado')).toBe('10.00');
+    expect(options.body.get('monto_pagado_bs')).toBe('8892.55');
+    expect(options.body.get('fecha_pago')).toBe('2026-10-30');
+    expect(options.body.get('estado')).toBe('en_revision');
   });
 
   test('ficha campania elimina ultimo pago con cancelar seguro y conserva reintento ante error', async () => {

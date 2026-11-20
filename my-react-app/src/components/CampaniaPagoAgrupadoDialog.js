@@ -8,6 +8,7 @@ import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import ModalPago from './ModalPago';
+import { normalizarImportePagoCampania } from '../utils/campaniaMontos';
 
 const API = process.env.REACT_APP_API_URL || window.location.origin;
 const centimos = (importe) => Math.round(importe * 100);
@@ -83,8 +84,10 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
   };
 
   const registrar = async ({ metodoPago, fechaPago, referencia, comprobante, montoPagadoMoneda,
-    montoPagadoBs, moneda: monedaPago, telefonoPago, cedulaTitular, notaPago, confirmarPago }) => {
+    montoPagadoBs, tasaAplicada, moneda: monedaPago, telefonoPago, cedulaTitular, notaPago, confirmarPago }) => {
     if (enviando.current) throw new Error('El pago ya esta en proceso.');
+    montoPagadoMoneda = normalizarImportePagoCampania({ monto: montoPagadoMoneda, montoBs: montoPagadoBs,
+      tasa: tasaAplicada, esperado: total, metodo: metodoPago });
     if (elegidos.length < 2 || !dinero(montoPagadoMoneda) || centimos(montoPagadoMoneda) !== centimos(total) || monedaPago !== moneda) {
       throw new Error('El pago debe cubrir los saldos completos seleccionados en la misma moneda.');
     }

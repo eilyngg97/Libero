@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import './Login.css';
-import { motion } from 'framer-motion';
 
-import { Box, Paper, Typography, TextField, Button, Snackbar, Alert, InputAdornment, IconButton } from '@mui/material';
+import { TextField, Button, Snackbar, Alert, AlertTitle, InputAdornment, IconButton,
+  Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
-import logoImage from '../assets/logos/logo_apex.png';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import logoImage from '../assets/logos/apex-mark.png';
 import { mediaUrl } from '../utils/mediaUrl';
 import { startSystemReminderSession } from '../utils/systemSubscription';
 
@@ -41,6 +44,7 @@ function Login({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [branding, setBranding] = useState(DEFAULT_BRANDING);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -190,199 +194,147 @@ function Login({ onLogin }) {
 
   return (
     <>
-      <Box sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-        background:
-          'radial-gradient(circle at 14% 18%, rgba(249, 115, 22, 0.18), rgba(249, 115, 22, 0) 34%), radial-gradient(circle at 88% 82%, rgba(14, 116, 144, 0.2), rgba(14, 116, 144, 0) 32%), linear-gradient(136deg, #f8fafc 0%, #eef4fb 44%, #f8fafc 100%)',
-        overflow: 'hidden',
-        px: 2,
-        py: 3
-      }}>
-        <Box
-          component={motion.div}
-          initial={{ opacity: 0, x: -30, y: -20 }}
-          animate={{ opacity: 1, x: 0, y: 0 }}
-          transition={{ duration: 0.65 }}
-          sx={{
-            position: 'absolute',
-            width: 420,
-            height: 420,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(255, 122, 0, 0.2) 0%, rgba(255, 122, 0, 0) 72%)',
-            top: -180,
-            right: -140,
-            zIndex: 0
-          }}
-        />
+      <main className="apex-login">
+        <aside className="login-hero" aria-label="APEX, gestión deportiva">
+          <header className="login-platform">
+            <div className="login-platform-brand">
+              <img src={logoImage} alt="" width="30" height="25" />
+              <span>APEX</span>
+            </div>
+            <p>GESTIÓN DEPORTIVA</p>
+          </header>
+          <div className="login-hero-message">
+            <div className="login-community-badge">
+              <span aria-hidden="true" />
+              Tu comunidad deportiva, conectada
+            </div>
+            <h2>Familias y<br />{' '}academias,<br />{' '}<span>un solo equipo.</span></h2>
+            <p className="login-hero-description">
+              Un espacio para acompañar a cada deportista<br className="login-desktop-break" />
+              {' '}y mantener al día la vida de tu academia.
+            </p>
+          </div>
+          <ul className="login-features">
+            <li><span>01</span><strong>Comunidad</strong><p>Familias y academias</p></li>
+            <li><span>02</span><strong>Pagos</strong><p>Información al día</p></li>
+            <li><span>03</span><strong>Seguimiento</strong><p>Cada avance cuenta</p></li>
+          </ul>
+          <footer className="login-hero-footer">APEX · Conectamos familias y academias.</footer>
+        </aside>
 
-        <Box
-          component={motion.div}
-          initial={{ opacity: 0, x: 30, y: 20 }}
-          animate={{ opacity: 1, x: 0, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.08 }}
-          sx={{
-            position: 'absolute',
-            width: 400,
-            height: 400,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(14, 116, 144, 0.2) 0%, rgba(14, 116, 144, 0) 72%)',
-            bottom: -180,
-            left: -120,
-            zIndex: 0
-          }}
-        />
-
-        <Paper
-          component={motion.div}
-          initial={{ opacity: 0, y: 30, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.55 }}
-          elevation={0}
-          sx={{
-            p: { xs: 2.6, sm: 3.3 },
-            width: '100%',
-            maxWidth: 430,
-            borderRadius: 5,
-            background:
-              'linear-gradient(145deg, rgba(255, 255, 255, 0.97) 0%, rgba(255, 255, 255, 0.92) 100%), radial-gradient(circle at 100% 0, rgba(249, 115, 22, 0.14), rgba(249, 115, 22, 0) 36%), radial-gradient(circle at 0 100%, rgba(14, 116, 144, 0.1), rgba(14, 116, 144, 0) 40%)',
-            border: '1px solid rgba(226, 232, 240, 0.9)',
-            boxShadow: '0 26px 54px rgba(15, 23, 42, 0.16)',
-            backdropFilter: 'blur(6px)',
-            zIndex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-              <Box
-                sx={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 2,
-                  background: '#ffffff',
-                  border: '1px solid rgba(226, 232, 240, 0.9)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 8px 16px rgba(15, 23, 42, 0.09)'
-                }}
-              >
-                <Box component="img" src={branding.logoUrl} alt={branding.displayName} sx={{ width: 34, height: 34, objectFit: 'contain' }} />
-              </Box>
-              <Box sx={{ textAlign: 'left' }}>
-                <Typography sx={{ fontWeight: 900, color: '#0f172a', letterSpacing: '0.03em', lineHeight: 1 }}>
-                  {branding.displayName}
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                  {branding.tagline}
-                </Typography>
-              </Box>
-            </Box>
-          </Box>
-
-          <Box sx={{ textAlign: 'left' }}>
-            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 0.4 }}>
-              Iniciar Sesión
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#64748b', lineHeight: 1.6 }}>
-              Entra a tu cuenta para gestionar alumnos, pagos y seguimiento académico.
-            </Typography>
-          </Box>
-
-          {!!sessionNotice && (
-            <Alert severity="warning" sx={{ borderRadius: 2 }}>
-              {sessionNotice}
-            </Alert>
-          )}
-
-          <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-            <Typography variant="caption" sx={{ color: '#475569', fontWeight: 700 }}>
-              Número de identificación
-            </Typography>
-            <TextField
-              label="Cédula"
-              variant="outlined"
-              fullWidth
-              margin="normal"
-              size="medium"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              onBlur={e => setEmail(String(e.target.value || '').trim())}
-              autoFocus
-              InputProps={{
-                sx: {
-                  borderRadius: 3,
-                  backgroundColor: '#f8fafc'
-                }
-              }}
-              InputLabelProps={{ sx: { color: '#94a3b8' } }}
-            />
-
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-              <Typography variant="caption" sx={{ color: '#475569', fontWeight: 700 }}>
-                Contraseña
-              </Typography>
-            </Box>
-
-            <TextField
-              placeholder="********"
-              type={showPassword ? 'text' : 'password'}
-              variant="outlined"
-              fullWidth
-              margin="dense"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onBlur={e => setPassword(String(e.target.value || '').trim())}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOutlinedIcon /> : <VisibilityOffOutlinedIcon />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-                sx: {
-                  borderRadius: 3,
-                  backgroundColor: '#f8fafc'
-                }
-              }}
-            />
-
-            <Button
-              type="submit"
-              variant="contained"
-              fullWidth
-              disabled={isSubmitting}
-              sx={{
-                mt: 1.2,
-                fontWeight: 800,
-                background: 'linear-gradient(95deg, #ff7a00 0%, #f05a00 100%)',
-                '&:hover': { background: 'linear-gradient(95deg, #ea580c 0%, #dc4a00 100%)' },
-                color: '#fff',
-                borderRadius: 999,
-                py: 1.15,
-                letterSpacing: '0.07em',
-                boxShadow: '0 14px 26px rgba(249, 115, 22, 0.32)'
-              }}
-            >
-              {isSubmitting ? 'Ingresando...' : 'Entrar'}
-            </Button>
-          </Box>
-        </Paper>
-      </Box>
-      <Snackbar open={openSnackbar} autoHideDuration={4000} onClose={() => setOpenSnackbar(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
-        <Alert onClose={() => setOpenSnackbar(false)} severity="error" sx={{ width: '100%' }}>
-          {error}
+        <section className="login-access" aria-labelledby="login-title">
+          <div className="login-access-content">
+            <div className="login-academy">
+              <div className="login-academy-logo">
+                <img src={branding.logoUrl} alt={branding.displayName} width="36" height="36" />
+              </div>
+              <div>
+                <p className="login-academy-name">{branding.displayName}</p>
+                <p className="login-academy-tagline">{branding.tagline}</p>
+              </div>
+            </div>
+            <h1 id="login-title">Iniciar sesión</h1>
+            <p className="login-intro">
+              Un espacio para familias, representantes,<br className="login-desktop-break" />
+              {' '}administradores y dueños de academias.
+            </p>
+            {!!sessionNotice && <Alert severity="warning" className="login-session-notice login-notification login-notification-warning">
+              <AlertTitle className="login-notification-title">Tu sesión ha finalizado</AlertTitle>
+              <span className="login-notification-description">{sessionNotice}</span>
+            </Alert>}
+            <form className="login-form" onSubmit={handleSubmit}>
+              <div className="login-field">
+                <label htmlFor="login-identification">Número de identificación</label>
+                <TextField
+                  id="login-identification"
+                  name="username"
+                  placeholder="Cédula"
+                  autoComplete="username"
+                  variant="outlined"
+                  fullWidth
+                  value={email}
+                  disabled={isSubmitting}
+                  onChange={e => setEmail(e.target.value)}
+                  onBlur={e => setEmail(String(e.target.value || '').trim())}
+                />
+              </div>
+              <div className="login-field">
+                <label htmlFor="login-password">Contraseña</label>
+                <TextField
+                  id="login-password"
+                  name="password"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  type={showPassword ? 'text' : 'password'}
+                  variant="outlined"
+                  fullWidth
+                  value={password}
+                  disabled={isSubmitting}
+                  onChange={e => setPassword(e.target.value)}
+                  onBlur={e => setPassword(String(e.target.value || '').trim())}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                          aria-pressed={showPassword}
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          disabled={isSubmitting}
+                          edge="end"
+                        >
+                          {showPassword ? <VisibilityOffOutlinedIcon /> : <VisibilityOutlinedIcon />}
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
+                />
+              </div>
+              <Button className="login-submit" type="submit" variant="contained" fullWidth disabled={isSubmitting}
+                endIcon={!isSubmitting && <ArrowForwardRoundedIcon />}>
+                {isSubmitting ? 'Ingresando...' : 'Entrar'}
+              </Button>
+            </form>
+            <p className="login-support">
+              ¿Necesitas ayuda?{' '}
+              <button type="button" className="login-text-button" onClick={() => setShowHelp(true)}>
+                Contacta al equipo de soporte.
+              </button>
+            </p>
+          </div>
+          <footer className="login-access-footer">Gestión deportiva impulsada por APEX</footer>
+        </section>
+      </main>
+      <Dialog className="login-help-dialog" open={showHelp} onClose={() => setShowHelp(false)}
+        aria-labelledby="login-help-title" aria-describedby="login-help-description" maxWidth="xs" fullWidth>
+        <div className="login-help-heading">
+          <DialogTitle id="login-help-title">Ayuda para ingresar</DialogTitle>
+          <IconButton aria-label="Cerrar ayuda" onClick={() => setShowHelp(false)}><CloseRoundedIcon /></IconButton>
+        </div>
+        <DialogContent className="login-help-content">
+          <p id="login-help-description">
+            Para recuperar tu contraseña o resolver un problema de acceso, comunícate con la administración de <strong>{branding.displayName}</strong>.
+          </p>
+          <div className="login-help-academy">
+            <img src={branding.logoUrl} alt="" width="40" height="40" />
+            <div>
+              <span>Tu equipo de apoyo</span>
+              <strong>Administración de tu academia</strong>
+            </div>
+          </div>
+          <p className="login-help-hint">El equipo de tu academia podrá ayudarte a restablecer tus credenciales.</p>
+        </DialogContent>
+        <DialogActions>
+          <Button className="login-help-confirm" variant="contained" fullWidth startIcon={<CheckRoundedIcon />}
+            onClick={() => setShowHelp(false)}>Entendido</Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar className="login-notification-toast" open={openSnackbar} autoHideDuration={4000}
+        onClose={() => setOpenSnackbar(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <Alert className="login-notification login-notification-error" onClose={() => setOpenSnackbar(false)}
+          closeText="Cerrar aviso" severity="error">
+          <AlertTitle className="login-notification-title">No pudimos iniciar sesión</AlertTitle>
+          <span className="login-notification-description">{error}</span>
         </Alert>
       </Snackbar>
     </>

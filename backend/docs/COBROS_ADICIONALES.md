@@ -1,5 +1,21 @@
 # Cobros adicionales
 
+## Monto esperado en el detalle del pago
+
+- El monto esperado corresponde al importe congelado del cargo del atleta, no al monto
+    pagado ni al equivalente recalculado del pago. Aplica al detalle y al historial individual.
+- Al editar la fecha, cambia la tasa y la conversion a Bs del monto esperado; su importe
+    en USD/EUR permanece fijo. Editar el monto pagado solo cambia el equivalente recibido.
+- Pago movil y transferencia admiten diferencias de hasta Bs 100 por arriba o por debajo
+    del saldo completo disponible, incluidos ambos limites. Se compara el monto real en Bs
+    con el saldo convertido a la tasa oficial de la fecha, redondeado a centimos.
+- Dentro de esa tolerancia se aplica el saldo exacto en USD/EUR y se conserva el monto
+    real recibido en Bs y la tasa oficial. No genera excedentes ni pequenos saldos pendientes.
+    Aplica a registro y correccion, individual y agrupado (Bs 100 por transferencia completa).
+    Confirmacion, conciliacion y eliminacion usan el importe aplicado, sin duplicar ajustes.
+- Fuera de la tolerancia se mantienen las validaciones de saldo y abonos. Los pagos
+    en divisa sin monto en Bs no tienen tolerancia. No modifica pagos historicos.
+
 ## Configuracion de metodos de pago
 
 - Configuracion de academia > Metodos de Pago > Cobros adicionales permite configurar

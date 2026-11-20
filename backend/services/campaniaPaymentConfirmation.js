@@ -1,9 +1,21 @@
 const { aplicarSession } = require('./financeTransaction');
 const { createHash } = require('crypto');
 const { bloquearCampania, actualizarCierreAutomatico } = require('./campaniaClosure');
+const { MONTO_TOLERANCIA_BS } = require('./monthlyPaymentCoverage');
 
 const fallo = (status, message) => Object.assign(new Error(message), { status });
 const centimos = (monto) => Math.round(monto * 100);
+
+function validarEquivalenteCampania(data, tasa, esperado) {
+  const aplicaSaldoCompleto = Number.isFinite(esperado) && esperado > 0
+    && centimos(data.monto_pagado) === centimos(esperado);
+  const diferenciaBs = Math.abs(centimos(data.monto_pagado_bs) - centimos(esperado * tasa));
+  if (!Number.isFinite(tasa) || tasa <= 0
+    || (aplicaSaldoCompleto ? diferenciaBs > centimos(MONTO_TOLERANCIA_BS)
+      : centimos(data.monto_pagado) !== Math.round(data.monto_pagado_bs * 100 / tasa))) {
+    throw fallo(409, 'El equivalente no coincide con la tasa oficial de la fecha. Reabre el formulario.');
+  }
+}
 
 async function actualizarCargo(models, cargo, monto, session) {
   const saldo = (centimos(cargo.saldo_pendiente) - centimos(monto)) / 100;
@@ -115,4 +127,5 @@ async function confirmarAsignacion(models, { campaniaId, cargoId, pagoId, actor,
   return { cargo, pago: confirmado, repetida: false };
 }
 
-module.exports = { actualizarCargo, confirmarPagoCampania, revisionPagoCampania, agruparPagosCampania, validarGrupoCampania };
+module.exports = { actualizarCargo, confirmarPagoCampania, revisionPagoCampania, agruparPagosCampania, validarGrupoCampania,
+  validarEquivalenteCampania };

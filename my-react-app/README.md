@@ -2,6 +2,18 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Inicio de sesion
+
+El login presenta la identidad APEX junto al nombre, logo y lema de la academia
+obtenidos de `/api/tenant/context`. En pantallas pequenas los paneles se apilan
+para conservar el formulario completo, sin desplazamiento horizontal.
+La autenticacion, seleccion de perfil y redirecciones existentes se mantienen.
+
+No se muestra un enlace al sitio web de la academia mientras esta en construccion.
+No se muestra la opcion de recuperar contrasena. El enlace de soporte muestra
+instrucciones para contactar a su administracion; no envia correos ni ejecuta un restablecimiento
+automatico. El rediseno solo requiere actualizar el frontend.
+
 ## Formatos de constancias por academia
 
 En Configuraciones > Constancias, los cinco formatos predeterminados se mantienen.

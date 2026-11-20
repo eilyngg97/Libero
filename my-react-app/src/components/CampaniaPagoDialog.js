@@ -13,6 +13,7 @@ import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
 import PagoTransaccionDetalle, { PagoDetalleEncabezado, estiloEditarPago, estiloGuardarPago,
   HistorialTransacciones, FilaHistorialTransaccion, DatoHistorialTransaccion } from './PagoTransaccionDetalle';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
+import { normalizarImportePagoCampania } from '../utils/campaniaMontos';
 
 const API = process.env.REACT_APP_API_URL || window.location.origin;
 const centimos = (monto) => Math.round(monto * 100);
@@ -126,8 +127,10 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
   };
 
   const registrar = async ({ metodoPago, fechaPago, referencia, comprobante: archivo, montoPagadoMoneda,
-    montoPagadoBs, moneda, telefonoPago, cedulaTitular, notaPago, confirmarPago }) => {
+    montoPagadoBs, tasaAplicada, moneda, telefonoPago, cedulaTitular, notaPago, confirmarPago }) => {
     if (enviando.current) throw new Error('El pago ya esta en proceso.');
+    montoPagadoMoneda = normalizarImportePagoCampania({ monto: montoPagadoMoneda, montoBs: montoPagadoBs,
+      tasa: tasaAplicada, esperado: datos.totales.disponible, metodo: metodoPago });
     if (!dinero(montoPagadoMoneda) || montoPagadoMoneda <= 0 || moneda !== datos.cargo.moneda
       || centimos(montoPagadoMoneda) > centimos(datos.totales.disponible)
       || (!datos.cargo.permitir_abonos && centimos(montoPagadoMoneda) !== centimos(datos.cargo.saldo_pendiente))) {
@@ -186,9 +189,13 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
   };
   const cambiar = (campo, valor) => { solicitudEdicion.current = ''; setError(''); setDraft((previo) => ({ ...previo, [campo]: valor })); };
   const importeEdicion = enBs ? Math.round(Number(draft.monto_pagado_bs) * 100 / tasaEdicion) / 100 : Number(draft.monto_pagado);
+  const importeAplicadoEdicion = normalizarImportePagoCampania({ monto: importeEdicion,
+    montoBs: Number(draft.monto_pagado_bs), tasa: tasaEdicion,
+    esperado: datos && detalle ? (centimos(datos.totales.disponible) + centimos(detalle.monto_pagado)) / 100 : null,
+    metodo: draft.metodo_pago });
   const corregir = async (borrar = false) => {
     if (enviando.current || !puedeCorregir(detalle)) return;
-    const importe = borrar ? 0 : importeEdicion;
+    const importe = borrar ? 0 : importeAplicadoEdicion;
     if (!borrar && (!dinero(importe) || importe <= 0 || (enBs && !tasaEdicion) || cargandoEdicion)) {
       setError('Revisa el importe y la tasa del pago.'); return;
     }
@@ -237,8 +244,8 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
       inputProps={{ 'aria-label': label, ...(tipo === 'number' ? { min: 0.01, step: 0.01 } : {}), ...extra }}
       onChange={(event) => cambiar(nombre, event.target.value)} /> : detalle?.[nombre] || '-';
   const importeDetalle = editando && dinero(importeEdicion) ? importeEdicion : detalle?.monto_pagado;
-  const equivalente = <Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
-    {`Equivalente ${campania.moneda}: ${dinero(importeDetalle) ? `${campania.moneda === 'EUR' ? '\u20ac' : '$'}${importeDetalle.toFixed(2)} ${campania.moneda}` : '-'}`}
+  const equivalente = (importe) => <Typography sx={{ mt: 0.55, fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+    {`Equivalente ${campania.moneda}: ${dinero(importe) ? `${campania.moneda === 'EUR' ? '\u20ac' : '$'}${importe.toFixed(2)} ${campania.moneda}` : '-'}`}
   </Typography>;
 
   if (grupoActivo) return <CampaniaPagoAgrupadoDialog grupoId={grupoActivo} representante={representante}
@@ -281,10 +288,10 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
             {[...new Set([draft.metodo_pago, ...metodos.map((metodo) => metodo.nombre)])].map((nombre) => <MenuItem key={nombre} value={nombre}>{nombre}</MenuItem>)}</TextField> : detalle.metodo_pago],
           [enBs ? 'Monto pagado (Bs)' : `Monto pagado (${datos.cargo.moneda})`, <>{editando
             ? campo(enBs ? 'Monto pagado (Bs)' : `Monto pagado (${datos.cargo.moneda})`, enBs ? 'monto_pagado_bs' : 'monto_pagado', 'number')
-            : formato(enBs ? detalle.monto_pagado_bs : detalle.monto_pagado, enBs ? 'VES' : datos.cargo.moneda)}{equivalente}</>],
+            : formato(enBs ? detalle.monto_pagado_bs : detalle.monto_pagado, enBs ? 'VES' : datos.cargo.moneda)}{equivalente(importeDetalle)}</>],
           [enBs ? 'Monto esperado (Bs)' : `Monto esperado (${datos.cargo.moneda})`, <>{enBs
-            ? (editando ? tasaEdicion : detalle.tasa) ? formato(importeDetalle * (editando ? tasaEdicion : detalle.tasa), 'VES') : '-'
-            : formato(importeDetalle, datos.cargo.moneda)}{equivalente}</>],
+            ? (editando ? tasaEdicion : detalle.tasa) ? formato(datos.cargo.monto * (editando ? tasaEdicion : detalle.tasa), 'VES') : '-'
+            : formato(datos.cargo.monto, datos.cargo.moneda)}{equivalente(datos.cargo.monto)}</>],
           ['Fecha de pago', campo('Fecha de pago', 'fecha_pago', 'date')],
           ['Tasa aplicada', enBs ? cargandoEdicion ? 'Actualizando...' : `${editando ? tasaEdicion ?? '-' : detalle.tasa ?? '-'} Bs/${datos.cargo.moneda}` : 'No aplica'],
           ['Referencia', campo('Referencia', 'referencia', 'text', { maxLength: 100 })],
@@ -301,6 +308,9 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
               {archivoEdicion && <Typography sx={{ fontSize: 12, overflowWrap: 'anywhere' }}>{archivoEdicion.name}</Typography>}</Box>}
           </>]
         ]}>
+          {editando && dinero(importeEdicion) && importeAplicadoEdicion !== importeEdicion && <Alert severity="info" sx={{ mt: 2 }}>
+            Se cubre el saldo con tolerancia de Bs 100. Se conserva el monto real recibido en Bs.
+          </Alert>}
           {editando && <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}><Button variant="contained"
             sx={estiloGuardarPago} disabled={ocupado || cargandoEdicion || (enBs && !tasaEdicion)} onClick={() => corregir()}>{ocupado ? 'Guardando...' : 'Guardar cambios'}</Button></Box>}
         </PagoTransaccionDetalle>}
@@ -309,7 +319,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
             <DatoHistorialTransaccion label={`Pago #${indice + 1}`} color="#0b2a57" fuerte>{pago.metodo_pago}</DatoHistorialTransaccion>
             <DatoHistorialTransaccion label="Monto" color="#0b2a57" fuerte>
               <Typography sx={{ fontWeight: 900 }}>{pago.monto_pagado_bs != null ? `Bs ${pago.monto_pagado_bs.toFixed(2)} / ` : ''}{`${pago.moneda === 'EUR' ? '\u20ac' : '$'}${pago.monto_pagado.toFixed(2)} ${pago.moneda}`}</Typography>
-              {pago.tasa && <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>Esperado: Bs {(pago.monto_pagado * pago.tasa).toFixed(2)}</Typography>}
+              {pago.tasa && <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 700, mt: 0.2 }}>Esperado: Bs {(datos.cargo.monto * pago.tasa).toFixed(2)}</Typography>}
             </DatoHistorialTransaccion>
             <DatoHistorialTransaccion label="Fecha">{new Date(`${pago.fecha_pago}T12:00:00Z`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })}</DatoHistorialTransaccion>
             <DatoHistorialTransaccion label="Tasa" fuerte>{pago.tasa ? `${pago.tasa.toFixed(2)} Bs/${pago.moneda}` : 'No aplica'}</DatoHistorialTransaccion>

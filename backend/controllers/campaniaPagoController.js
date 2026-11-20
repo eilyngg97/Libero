@@ -7,7 +7,7 @@ const { ejecutarConTransaccion, aplicarSession } = require('../services/financeT
 const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { userRepresentsAlumno } = require('../services/paymentOwnership');
-const { actualizarCargo, confirmarPagoCampania } = require('../services/campaniaPaymentConfirmation');
+const { actualizarCargo, confirmarPagoCampania, validarEquivalenteCampania } = require('../services/campaniaPaymentConfirmation');
 const { bloquearCampania, actualizarCierreAutomatico } = require('../services/campaniaClosure');
 
 const OBJECT_ID = /^[a-f\d]{24}$/i;
@@ -117,7 +117,7 @@ exports.registrarAgrupado = async (req, res) => {
       const total = cargos.reduce((suma, cargo) => suma + centimos(cargo.saldo_pendiente), 0);
       if (total !== centimos(data.monto_pagado)) throw fallo(409, 'El pago agrupado debe cubrir exactamente los saldos completos seleccionados.');
       for (const id of [...new Set(cargos.map((cargo) => String(cargo.campania)))].sort()) await bloquearCampania(models, id, session);
-      const tasas = await validarMetodo(models, data, session);
+      const tasas = await validarMetodo(models, data, session, total / 100);
       const partesBs = data.monto_pagado_bs === null ? cargos.map(() => null) : repartirBs(data.monto_pagado_bs, cargos.map((cargo) => cargo.saldo_pendiente));
       if (req.file && !archivoNuevo) archivoNuevo = await guardarComprobante(req);
       const agrupacion = { id: data.solicitud_id, representante, cargos: cargos.map((cargo) => cargo._id),
@@ -210,7 +210,7 @@ async function corregirAgrupado(req, res, eliminar) {
         if (registro.data.solicitud_id === pagos[0].solicitud_id || registro.data.moneda !== pagos[0].moneda
           || centimos(registro.data.monto_pagado) !== centimos(pagos[0].agrupacion.monto_total)) throw fallo(400, 'Conserva la moneda y el total del pago agrupado.');
       }
-      const tasas = registro ? await validarMetodo(models, registro.data, session) : null;
+      const tasas = registro ? await validarMetodo(models, registro.data, session, pagos[0].agrupacion.monto_total) : null;
       for (const id of [...new Set(pagos.map((pago) => String(pago.campania)))].sort()) await bloquearCampania(models, id, session);
       const partes = registro?.data.monto_pagado_bs != null ? repartirBs(registro.data.monto_pagado_bs, pagos.map((pago) => pago.monto_pagado)) : pagos.map(() => null);
       if (req.file && !archivoNuevo) archivoNuevo = await guardarComprobante(req);
@@ -351,13 +351,11 @@ function validarRegistro(req) {
   return { data, huella };
 }
 
-async function validarMetodo(models, data, session) {
+async function validarMetodo(models, data, session, esperado) {
   if (['Pago movil', 'Transferencia'].includes(data.metodo_pago)) {
     if (!/^\d{6,100}$/.test(data.referencia) || !data.monto_pagado_bs) throw fallo(400, 'Indica el monto en Bs y una referencia de al menos seis digitos.');
     const historico = await obtenerTasaPagoPorFecha(data.fecha_pago, data.moneda);
-    if (centimos(data.monto_pagado) !== Math.round(data.monto_pagado_bs * 100 / historico.tasa)) {
-      throw fallo(409, 'El equivalente no coincide con la tasa oficial de la fecha. Reabre el formulario.');
-    }
+    validarEquivalenteCampania(data, historico.tasa, esperado);
     return { tasa: historico.tasa, fecha_tasa: historico.fecha_tasa };
   }
   const config = await aplicarSession(models.TenantConfig.findOne({ key: 'default' }), session).lean();
@@ -408,9 +406,9 @@ exports.registrar = async (req, res) => {
         throw fallo(409, 'El saldo, la moneda o la version del cargo cambio. Vuelve a abrirlo.');
       }
       await bloquearCampania(models, req.params.id, session);
-      const tasas = await validarMetodo(models, data, session);
       const pendientes = await aplicarSession(models.PagoCampania.find({ cargo: cargo._id, estado: 'en_revision' }), session).lean();
       const reservado = pendientes.reduce((suma, pago) => suma + centimos(pago.monto_pagado), 0);
+      const tasas = await validarMetodo(models, data, session, (centimos(cargo.saldo_pendiente) - reservado) / 100);
       if (centimos(data.monto_pagado) + reservado > centimos(cargo.saldo_pendiente)
         || (!cargo.permitir_abonos && centimos(data.monto_pagado) !== centimos(cargo.saldo_pendiente))) {
         throw fallo(409, 'El importe supera el saldo disponible o la campana no permite abonos. Revisa los pagos en revision.');
@@ -559,7 +557,7 @@ async function corregir(req, res, eliminar) {
         if (centimos(datos.monto_pagado) + reservado > saldo || (!cargo.permitir_abonos && centimos(datos.monto_pagado) !== saldo)) {
           throw fallo(409, 'El importe supera el saldo disponible o la campana no permite abonos.');
         }
-        cambios = { ...datos, ...await validarMetodo(models, datos, session) };
+        cambios = { ...datos, ...await validarMetodo(models, datos, session, (saldo - reservado) / 100) };
         if (pago.estado === 'confirmado') saldo -= centimos(datos.monto_pagado);
         if (req.file && !archivoNuevo) archivoNuevo = await guardarComprobante(req);
         if (archivoNuevo) cambios.comprobante_url = archivoNuevo.url;
