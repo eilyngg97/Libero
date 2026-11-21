@@ -6,6 +6,7 @@ import {
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import PersonRemoveOutlinedIcon from '@mui/icons-material/PersonRemoveOutlined';
+import { alumnosDelCargo, detalleCobertura, titularCargo, etiquetaCobro } from '../utils/campaniaCobros';
 
 const MODALIDADES = { general: 'Monto de campa\u00f1a', personalizado: 'Personalizado', no_aplica: 'No aplica' };
 const nombre = (alumno) => `${alumno.nombres} ${alumno.apellidos || ''}`.trim();
@@ -27,6 +28,7 @@ function CampaniaCargoAjusteDialog({ campania, fila, accion, onClose, onSaved })
   const solicitud = useRef(null);
   const guardadoController = useRef(null);
   const retirando = accion === 'retirar';
+  const compartido = fila?.tipo_cobro === 'representante';
   const elegido = fila || alumno;
   const importePersonal = String(monto).replace(',', '.');
   const importeGeneral = campania.modalidad_monto === 'por_sede'
@@ -36,7 +38,8 @@ function CampaniaCargoAjusteDialog({ campania, fila, accion, onClose, onSaved })
     && (modalidad !== 'personalizado' || retirando || /^(0|[1-9]\d{0,8})(\.\d{1,2})?$/.test(importePersonal)) && nota.trim().length <= 1000;
   const cambio = alumno || modalidad !== (fila?.modalidad || 'general') || nota !== (fila?.nota_interna || '')
     || monto !== (fila?.modalidad === 'personalizado' ? String(fila.monto) : '');
-  const titulo = accion === 'agregar' ? 'Agregar alumno' : retirando ? 'Retirar alumno' : fila.retirado ? 'Reincorporar alumno' : 'Editar cargo';
+  const titulo = accion === 'agregar' ? 'Agregar alumno' : retirando ? compartido ? `Retirar ${etiquetaCobro(fila).toLowerCase()}` : 'Retirar alumno'
+    : fila.retirado ? compartido ? `Reincorporar ${etiquetaCobro(fila).toLowerCase()}` : 'Reincorporar alumno' : 'Editar cargo';
   const cerrar = () => { if (!enviando.current) { if (cambio) setDescartar(true); else onClose(); } };
 
   useEffect(() => () => guardadoController.current?.abort(), []);
@@ -85,11 +88,14 @@ function CampaniaCargoAjusteDialog({ campania, fila, accion, onClose, onSaved })
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'No se pudo guardar. Reintenta la misma solicitud.');
       const cargo = data.cargo;
-      if (!cargo?._id || cargo.campania !== campania._id || cargo.alumno !== body.alumno
+      const vinculado = data.vinculado === true && accion === 'agregar' && campania.unidad_cobro === 'representante';
+      if (!cargo?._id || cargo.campania !== campania._id || !alumnosDelCargo(cargo).includes(body.alumno)
         || (fila && cargo._id !== fila._id) || cargo.moneda !== campania.moneda
-        || cargo.modalidad !== body.modalidad || cargo.monto !== importe || cargo.saldo_pendiente !== importe
-        || cargo.estado !== (body.modalidad === 'no_aplica' ? 'no_aplica' : 'pendiente')
-        || cargo.retirado !== retirando || cargo.__v !== (fila ? fila.version + 1 : 0)) {
+        || cargo.monto !== importe || (!vinculado && (cargo.modalidad !== body.modalidad || cargo.saldo_pendiente !== importe
+          || cargo.estado !== (body.modalidad === 'no_aplica' ? 'no_aplica' : 'pendiente')))
+        || (vinculado && (cargo.tipo_cobro !== 'representante' || cargo.representante_cobro !== alumno.representante?._id
+          || !Number.isInteger(cargo.__v) || cargo.__v < 1))
+        || cargo.retirado !== retirando || (!vinculado && cargo.__v !== (fila ? fila.version + 1 : 0))) {
         throw new Error('No se pudo verificar el ajuste. Reintenta la misma solicitud o recarga los cargos.');
       }
       if (!controller.signal.aborted) onSaved();
@@ -117,9 +123,16 @@ function CampaniaCargoAjusteDialog({ campania, fila, accion, onClose, onSaved })
         getOptionLabel={(atleta) => `${nombre(atleta)} · ${atleta.sede.nombre || ''}`}
         isOptionEqualToValue={(opcion, valor) => opcion._id === valor._id}
         renderInput={(params) => <TextField {...params} label="Alumno" size="small" />}
-        sx={{ mb: 2 }} /> : <Typography sx={{ fontWeight: 700, mb: 2, overflowWrap: 'anywhere' }}>{nombre(fila)}</Typography>}
+        sx={{ mb: 2 }} /> : <Typography sx={{ fontWeight: 700, mb: 2, overflowWrap: 'anywhere' }}>{titularCargo(fila)}</Typography>}
+      {campania.unidad_cobro === 'representante' && <Alert severity="info" sx={{ mb: 2 }}>
+        {accion === 'agregar' ? 'Si el representante ya tiene un cobro, se vincula el atleta al mismo sin crear otra deuda ni cambiar sus pagos. El importe debe coincidir con el cobro existente.'
+          : compartido ? `Este ajuste afecta al cobro completo de ${titularCargo(fila)} y a sus atletas: ${detalleCobertura(fila)}.`
+            : 'Este atleta tiene un cobro individual sin representante al momento de su asignación.'}
+      </Alert>}
       {cargando && <Box role="status" sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}><CircularProgress size={18} />Cargando alumnos...</Box>}
-      {retirando ? <Alert severity="warning" sx={{ mb: 2 }}>{'Se anular\u00e1 el cargo del alumno sin borrar su historial.'}</Alert>
+      {retirando ? <Alert severity="warning" sx={{ mb: 2 }}>{compartido
+        ? 'Se anulará el cobro por representante para los atletas indicados, sin borrar su historial.'
+        : 'Se anulará el cargo del alumno sin borrar su historial.'}</Alert>
         : <TextField select fullWidth size="small" label={'Condici\u00f3n del cargo'} value={modalidad} disabled={guardando}
           onChange={(event) => setModalidad(event.target.value)} sx={{ mb: 2 }}>
           {Object.entries(MODALIDADES).map(([valor, etiqueta]) => <MenuItem key={valor} value={valor}>{etiqueta}</MenuItem>)}

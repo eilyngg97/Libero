@@ -9,6 +9,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import ModalPago from './ModalPago';
 import { normalizarImportePagoCampania } from '../utils/campaniaMontos';
+import { alumnosDelCargo, detalleCobertura, titularCargo, etiquetaCobro } from '../utils/campaniaCobros';
 
 const API = process.env.REACT_APP_API_URL || window.location.origin;
 const centimos = (importe) => Math.round(importe * 100);
@@ -166,14 +167,15 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
                 boxShadow: seleccion.includes(cargo._id) ? '0 5px 14px rgba(17,19,66,0.06)' : 'none', bgcolor: '#fff', minWidth: 0 }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: { xs: 0.7, sm: 1.1 }, alignItems: 'center' }}>
                 <Checkbox checked={seleccion.includes(cargo._id)} onChange={() => cambiar(cargo._id)} disabled={!seleccion.includes(cargo._id) && seleccion.length >= 100}
-                  inputProps={{ 'aria-label': `Seleccionar ${cargo.nombres} ${cargo.apellidos} - ${cargo.campania.nombre}` }}
+                  inputProps={{ 'aria-label': `Seleccionar ${titularCargo(cargo)} - ${cargo.campania.nombre}` }}
                   sx={{ p: 0.4, color: '#c6cada', '&.Mui-checked': { color: '#ef3f78' } }} />
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
                   <Avatar variant="rounded" sx={{ width: 40, height: 40, flexShrink: 0, bgcolor: '#eceefe', color: '#111342', fontSize: 12, fontWeight: 850, borderRadius: 1.25 }}>
                     {`${String(cargo.nombres || '').charAt(0)}${String(cargo.apellidos || '').charAt(0)}`.toUpperCase()}
                   </Avatar>
                   <Box sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                    <Typography sx={{ color: '#17182f', fontWeight: 800, fontSize: 13.5, lineHeight: 1.2 }}>{cargo.nombres} {cargo.apellidos}</Typography>
+                    <Typography sx={{ color: '#17182f', fontWeight: 800, fontSize: 13.5, lineHeight: 1.2 }}>{titularCargo(cargo)}</Typography>
+                    {cargo.tipo_cobro === 'representante' && <Typography sx={{ fontSize: 12, color: '#656b81', mt: 0.5 }}>{etiquetaCobro(cargo)} · {detalleCobertura(cargo)}</Typography>}
                     <Typography sx={{ color: '#343950', fontSize: 12.5, fontWeight: 750, mt: 0.5 }}>{cargo.campania.nombre}</Typography>
                     {cargo.campania.descripcion && <Typography sx={{ color: '#656b81', fontSize: 12, lineHeight: 1.5, mt: 0.35, whiteSpace: 'pre-line' }}>{cargo.campania.descripcion}</Typography>}
                   </Box>
@@ -248,7 +250,7 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mt: 2.5, mb: 0.5 }}>
             <Typography component="h3" sx={{ color: '#24283f', fontSize: 14, fontWeight: 800 }}>Reparto por atleta</Typography>
             <Typography sx={{ color: '#7a8094', fontSize: 12 }}>
-              {new Set(filas.map((cargo) => cargo.alumno)).size} {new Set(filas.map((cargo) => cargo.alumno)).size === 1 ? 'atleta' : 'atletas'} · {filas.length} cargos
+              {new Set(filas.flatMap(alumnosDelCargo)).size} {new Set(filas.flatMap(alumnosDelCargo)).size === 1 ? 'atleta' : 'atletas'} · {filas.length} cargos
             </Typography>
           </Box>
         </>}
@@ -260,8 +262,9 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
             </Avatar>}
             {!grupoId && <Checkbox checked={seleccion.includes(cargo._id)} onChange={() => cambiar(cargo._id)}
               disabled={!seleccion.includes(cargo._id) && seleccion.length >= 100}
-              inputProps={{ 'aria-label': `Seleccionar ${cargo.nombres} ${cargo.apellidos} - ${cargo.campania.nombre}` }} sx={{ color: '#737780', '&.Mui-checked': { color: '#626879' } }} />}
-            <Box sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}><Typography sx={{ fontWeight: 700, fontSize: 14 }}>{cargo.nombres} {cargo.apellidos}</Typography>
+              inputProps={{ 'aria-label': `Seleccionar ${titularCargo(cargo)} - ${cargo.campania.nombre}` }} sx={{ color: '#737780', '&.Mui-checked': { color: '#626879' } }} />}
+            <Box sx={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}><Typography sx={{ fontWeight: 700, fontSize: 14 }}>{titularCargo(cargo)}</Typography>
+              {cargo.tipo_cobro === 'representante' && <Typography sx={{ fontSize: 12, color: '#656b81', mt: 0.5 }}>{etiquetaCobro(cargo)} · {detalleCobertura(cargo)}</Typography>}
               <Typography sx={{ color: '#343950', fontSize: 13, fontWeight: 750 }}>{cargo.campania.nombre}</Typography>
               {cargo.campania.descripcion && <Typography sx={{ color: '#656b81', fontSize: 12, lineHeight: 1.5, mt: 0.35, whiteSpace: 'pre-line' }}>{cargo.campania.descripcion}</Typography>}</Box>
             <Typography sx={{ color: '#111342', fontSize: 15, fontWeight: 800, maxWidth: '42%', overflowWrap: 'anywhere', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formato(grupoId

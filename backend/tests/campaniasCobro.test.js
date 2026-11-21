@@ -78,6 +78,29 @@ describe('ajustes de cargos publicados: acceso y validacion', () => {
   });
 });
 
+describe('conversion de campanas: acceso y validacion', () => {
+  const ruta = '/campanias/110000000000000000000001/conversion-representante';
+  test.each(['usuario', 'entrenador', 'asistente', 'finanzas'])('deniega vista previa y conversion a %s', async (rol) => {
+    for (const method of ['get', 'post']) {
+      expect((await request(app)[method](ruta).set('Authorization', `Bearer ${tokenPublicacion(rol)}`).send({})).status).toBe(403);
+    }
+    expect(getTenantBusinessConnection).not.toHaveBeenCalled();
+  });
+  test.each([{}, { version: 0, revision: 'incorrecta', solicitud_id: '22000000-0000-4000-8000-000000000001' },
+    { version: 0, revision: 'a'.repeat(64), solicitud_id: '22000000-0000-4000-8000-000000000001', monto: 1 }])
+  ('rechaza solicitud invalida sin consultar ni escribir: %j', async (body) => {
+    expect((await request(app).post(ruta).set('Authorization', `Bearer ${tokenPublicacion()}`).send(body)).status).toBe(400);
+    expect(getTenantBusinessConnection).not.toHaveBeenCalled();
+  });
+  test('exige actor identificado y transacciones para confirmar', async () => {
+    const body = { version: 1, revision: 'a'.repeat(64), solicitud_id: '22000000-0000-4000-8000-000000000001' };
+    expect((await request(app).post(ruta).set('Authorization', `Bearer ${token('admin')}`).send(body)).status).toBe(401);
+    expect(getTenantBusinessConnection).not.toHaveBeenCalled();
+    getTenantModel.mockImplementation((connection, nombre) => nombre === 'CargoCampania' ? { init: jest.fn() } : {});
+    expect((await request(app).post(ruta).set('Authorization', `Bearer ${tokenPublicacion()}`).send(body)).status).toBe(503);
+  });
+});
+
 describe('portal representante campanas', () => {
   const id = '110000000000000000000001';
   const cargoId = '110000000000000000000002';
@@ -147,6 +170,13 @@ describe('pagos campania validacion previa', () => {
     monto_pagado_bs: 1000, fecha_pago: '2026-11-10', metodo_pago: 'Transferencia', referencia: '123456', estado: 'en_revision' };
   test('rechaza escritura sin actor identificado', async () => {
     expect((await request(app).post(ruta).set('Authorization', `Bearer ${token('admin')}`).send(body)).status).toBe(401);
+    expect(getTenantBusinessConnection).not.toHaveBeenCalled();
+  });
+  test.each(['post', 'patch'])('efectivo campania no permite %s desde el portal usuario ni accede a datos', async (method) => {
+    const destino = method === 'post' ? ruta : `${ruta}/110000000000000000000003`;
+    const { monto_pagado_bs, ...efectivo } = body;
+    expect((await request(app)[method](destino).set('Authorization', `Bearer ${tokenPublicacion('usuario')}`)
+      .send({ ...efectivo, metodo_pago: 'Efectivo', referencia: '' })).status).toBe(403);
     expect(getTenantBusinessConnection).not.toHaveBeenCalled();
   });
   test('sin transacciones devuelve 503 y no crea pagos', async () => {
@@ -1218,6 +1248,43 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
       cargos: [datos.cargo, segundo].map((cargo) => ({ cargo: String(cargo._id), version: cargo.__v })) } };
   };
 
+  test.each([['admin', 'USD', 30], ['super_admin', 'EUR', 15]])(
+    'efectivo campania Mongo %s registra %s sin referencia ni tasa y permite corregir y eliminar', async (rol, moneda, monto) => {
+      const datos = await prepararPagoMongo();
+      await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.id }, { $set: { moneda } });
+      await datos.Cargo.updateMany({ campania: datos.id }, { $set: { moneda, permitir_abonos: true } });
+      const { monto_pagado_bs, ...campos } = datos.pagoBody;
+      const body = { ...campos, moneda, monto_pagado: monto, metodo_pago: 'Efectivo', referencia: '', estado: 'confirmado',
+        nota: 'Recibido en efectivo' };
+      const creada = await registrarMongo(datos.ruta, body, rol);
+      expect(creada.status).toBe(201);
+      expect(creada.body.pago).toMatchObject({ moneda, monto_pagado: monto, monto_pagado_bs: null,
+        metodo_pago: 'Efectivo', referencia: '', tasa: null, fecha_tasa: '', estado: 'confirmado',
+        registrado_por: { rol }, confirmado_por: { rol }, nota: 'Recibido en efectivo', comprobante_url: '' });
+      expect(creada.body.cargo).toMatchObject({ monto: 30, saldo_pendiente: 30 - monto, estado: monto === 30 ? 'pagado' : 'abono' });
+      expect(require('../services/paymentExchangeRate').obtenerTasaPagoPorFecha).not.toHaveBeenCalled();
+      expect((await registrarMongo(datos.ruta, body, rol)).body.repetida).toBe(true);
+      expect(await datos.Pago.countDocuments({ cargo: datos.cargo._id })).toBe(1);
+      const destino = `${datos.ruta}/${creada.body.pago._id}`;
+      const editada = await corregirMongo('patch', destino, { ...body, version: 1, monto_pagado: 10,
+        solicitud_id: require('crypto').randomUUID(), referencia: '' });
+      expect(editada.status).toBe(200);
+      expect(editada.body.pago).toMatchObject({ monto_pagado: 10, referencia: '', tasa: null, monto_pagado_bs: null });
+      expect(editada.body.cargo.saldo_pendiente).toBe(20);
+      expect((await corregirMongo('delete', destino, { version: 2 })).status).toBe(200);
+      expect(await datos.Cargo.findById(datos.cargo._id).lean()).toMatchObject({ estado: 'pendiente', saldo_pendiente: 30 });
+    });
+
+  test('efectivo campania Mongo rechaza montos en Bs sin registrar pagos', async () => {
+    const datos = await prepararPagoMongo();
+    const antes = await datos.Cargo.findById(datos.cargo._id).lean();
+    const respuesta = await registrarMongo(datos.ruta, { ...datos.pagoBody, metodo_pago: 'Efectivo', referencia: '' });
+    expect(respuesta.status).toBe(400);
+    expect(respuesta.body.error).toMatch(/sin monto en Bs/);
+    expect(await datos.Pago.countDocuments({ cargo: datos.cargo._id })).toBe(0);
+    expect(await datos.Cargo.findById(datos.cargo._id).lean()).toEqual(antes);
+  });
+
   test.each([
     ['en_revision', -100], ['en_revision', 100], ['confirmado', -100], ['confirmado', 100]
   ])('tolerancia campania Mongo %s Bs %s conserva Bs, confirma y revierte sin residuos', async (estado, diferencia) => {
@@ -2215,5 +2282,887 @@ suiteMongo('borradores en Mongo temporal aislado', () => {
       expect(escribir).toHaveBeenCalledTimes(2);
       expect(borrar).toHaveBeenCalledTimes(1);
     } finally { falloPago.mockRestore(); mkdir.mockRestore(); escribir.mockRestore(); borrar.mockRestore(); }
+  });
+
+  const prepararFamiliaMongo = async ({ unidad = 'representante', distintasSedes = false, monto = 10 } = {}) => {
+    const sede = await modelosMongo.alfa.Sede.create({ nombre: `Familia QA ${new mongoose.Types.ObjectId()}`, direccion: 'Temporal', costo: 20 });
+    const otraSede = distintasSedes
+      ? await modelosMongo.alfa.Sede.create({ nombre: `Familia segunda sede QA ${new mongoose.Types.ObjectId()}`, direccion: 'Temporal', costo: 20 }) : sede;
+    const Representante = modeloReal(conexiones.alfa, 'Representante');
+    const usuario = new mongoose.Types.ObjectId();
+    const representante = await Representante.create({ nombres: 'Maria', apellidos: 'Familia QA',
+      cedula: new mongoose.Types.ObjectId().toString(), usuario });
+    const atletas = await Promise.all([
+      crearAtletaMongo('alfa', { nombres: 'Ana', sede: sede._id, representante: representante._id }),
+      crearAtletaMongo('alfa', { nombres: 'Luis', sede: otraSede._id, representante: representante._id }),
+      crearAtletaMongo('alfa', { nombres: 'Eva', sede: sede._id }),
+      crearAtletaMongo('alfa', { nombres: 'Leo', sede: sede._id })
+    ]);
+    const creada = await peticion('post', '/campanias', { ...datosMongo(), unidad_cobro: unidad,
+      solicitud_id: require('crypto').randomUUID(), monto_general: distintasSedes ? null : monto,
+      modalidad_monto: distintasSedes ? 'por_sede' : 'unico',
+      sedes: [...new Set([String(sede._id), String(otraSede._id)])],
+      montos_por_sede: distintasSedes ? [{ sede: String(sede._id), monto: 10 }, { sede: String(otraSede._id), monto: 20 }] : [] });
+    expect(creada.status).toBe(201);
+    const base = `/campanias/${creada.body.campania._id}`;
+    const resumen = await peticion('get', `${base}/resumen`);
+    expect(resumen.status).toBe(200);
+    const publicar = async (preview = resumen.body) => {
+      const resultado = await publicarMongo(base, { version: preview.campania.__v, revision: preview.revision,
+        solicitud_id: require('crypto').randomUUID() });
+      return resultado;
+    };
+    const auth = `Bearer ${jwt.sign({ rol: 'usuario', id: String(usuario), tenantId: 'alfa' }, 'qa-campanias-secret')}`;
+    const propio = (method, ruta, body) => request(app)[method](ruta).set('Authorization', auth).send(body);
+    return { base, atletas, representante, usuario, propio, publicar, resumen: resumen.body,
+      Cargo: modeloReal(conexiones.alfa, 'CargoCampania'), Alumno: modeloReal(conexiones.alfa, 'Alumno'),
+      Pago: modeloReal(conexiones.alfa, 'PagoCampania'), Representante };
+  };
+
+  test('familias Mongo publica un cobro compartido y dos individuales sin representante, sin duplicar saldos', async () => {
+    const datos = await prepararFamiliaMongo();
+    expect(datos.resumen.totales).toMatchObject({ participantes: 4, cobros: 3, representantes: 1, individuales: 2, total_esperado: 30 });
+    const familia = datos.resumen.filas.find((fila) => fila.tipo_cobro === 'representante');
+    expect(familia.atletas_cubiertos.map((atleta) => atleta.nombres).sort()).toEqual(['Ana', 'Luis']);
+    expect(familia).toMatchObject({ nombre_representante: 'Maria Familia QA', monto: 10 });
+    expect((await datos.publicar()).status).toBe(201);
+    const cargos = await peticion('get', `${datos.base}/cargos`);
+    expect(cargos.status).toBe(200);
+    expect(cargos.body.totales).toMatchObject(datos.resumen.totales);
+    const cargo = await datos.Cargo.findOne({ campania: datos.resumen.campania._id, tipo_cobro: 'representante' }).lean();
+    await expect(datos.Cargo.create({ ...cargo, _id: new mongoose.Types.ObjectId(),
+      alumno: new mongoose.Types.ObjectId() })).rejects.toMatchObject({ code: 11000 });
+    expect(await datos.Cargo.countDocuments({ campania: cargo.campania })).toBe(3);
+  });
+
+  test('familias Mongo conserva campañas antiguas por atleta, incluso con hermanos', async () => {
+    const datos = await prepararFamiliaMongo({ unidad: 'atleta' });
+    await modelosMongo.alfa.CampaniaCobro.collection.updateOne({ _id: new mongoose.Types.ObjectId(datos.resumen.campania._id) },
+      { $unset: { unidad_cobro: '' } });
+    const preview = (await peticion('get', `${datos.base}/resumen`)).body;
+    expect(preview.filas).toHaveLength(4);
+    expect(preview.totales).toMatchObject({ participantes: 4, total_esperado: 40 });
+    expect((await datos.publicar(preview)).status).toBe(201);
+    expect((await peticion('get', `${datos.base}/cargos`)).body.filas).toHaveLength(4);
+  });
+
+  test('familias Mongo editar datos sin enviar la nueva unidad conserva el cobro familiar', async () => {
+    const datos = await prepararFamiliaMongo();
+    const { solicitud_id, ...body } = datosMongo();
+    const respuesta = await peticion('patch', datos.base, { ...body, version: 0, nombre: 'Familia editada',
+      monto_general: 10, sedes: datos.resumen.campania.sedes.map((sede) => sede._id) });
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body.campania.unidad_cobro).toBe('representante');
+    expect((await peticion('get', `${datos.base}/resumen`)).body.totales).toMatchObject({ participantes: 4, cobros: 3, total_esperado: 30 });
+  });
+
+  test('familias Mongo bloquea importes distintos entre sedes y permite unificarlos explícitamente', async () => {
+    const datos = await prepararFamiliaMongo({ distintasSedes: true });
+    expect(datos.resumen.totales).toMatchObject({ pendientes: 1, con_observaciones: 1, total_esperado: null });
+    expect((await datos.publicar()).status).toBe(409);
+    expect(await datos.Cargo.countDocuments({ campania: datos.resumen.campania._id })).toBe(0);
+    const condiciones = datos.atletas.slice(0, 2).map((atleta) => ({
+      alumno: String(atleta._id), modalidad: 'personalizado', monto: 15, nota_interna: 'Acuerdo familiar'
+    }));
+    expect((await peticion('put', `${datos.base}/participantes`, { version: 0,
+      participantes: datos.atletas.map((atleta) => String(atleta._id)), condiciones_participantes: condiciones })).status).toBe(200);
+    const preview = (await peticion('get', `${datos.base}/resumen`)).body;
+    expect(preview.totales).toMatchObject({ pendientes: 0, con_observaciones: 0, total_esperado: 35, cobros: 3 });
+    expect((await datos.publicar(preview)).status).toBe(201);
+  });
+
+  test('familias Mongo detecta cambios de representante entre resumen y publicación', async () => {
+    const datos = await prepararFamiliaMongo();
+    await datos.Alumno.updateOne({ _id: datos.atletas[1]._id }, { $unset: { representante: '' } });
+    expect((await datos.publicar()).status).toBe(409);
+    expect(await datos.Cargo.countDocuments({ campania: datos.resumen.campania._id })).toBe(0);
+    const preview = (await peticion('get', `${datos.base}/resumen`)).body;
+    expect(preview.totales).toMatchObject({ cobros: 4, individuales: 3, total_esperado: 40 });
+    expect((await datos.publicar(preview)).status).toBe(201);
+  });
+
+  test('familias Mongo comparte reserva, confirmación e historial entre hermanos y conserva propietario congelado', async () => {
+    const datos = await prepararFamiliaMongo();
+    expect((await datos.publicar()).status).toBe(201);
+    const listar = (atleta) => datos.propio('get', `/campanias/mis-cargos?alumnoId=${atleta._id}`);
+    const primero = await listar(datos.atletas[0]);
+    const segundo = await listar(datos.atletas[1]);
+    expect(primero.status).toBe(200);
+    expect(segundo.body.cargos[0]._id).toBe(primero.body.cargos[0]._id);
+    const cargo = primero.body.cargos[0];
+    const ruta = `${datos.base}/cargos/${cargo._id}/pagos`;
+    const body = { solicitud_id: require('crypto').randomUUID(), version: 0, moneda: 'USD', monto_pagado: 5,
+      monto_pagado_bs: 500, fecha_pago: '2026-11-10', metodo_pago: 'Transferencia', referencia: '919191', estado: 'en_revision' };
+    const pago = await datos.propio('post', ruta, body);
+    expect(pago.status).toBe(201);
+    for (const atleta of datos.atletas.slice(0, 2)) {
+      expect((await listar(atleta)).body.cargos[0]).toMatchObject({ _id: cargo._id, pago_en_revision: true, disponible: 5, saldo_pendiente: 10 });
+    }
+    expect((await corregirMongo('post', `${ruta}/${pago.body.pago._id}/confirmar`)).status).toBe(200);
+    for (const atleta of datos.atletas.slice(0, 2)) {
+      expect((await listar(atleta)).body.cargos[0]).toMatchObject({ estado: 'abono', saldo_pendiente: 5 });
+    }
+    const otroUsuario = new mongoose.Types.ObjectId();
+    const otro = await datos.Representante.create({ nombres: 'Maria', apellidos: 'Familia QA',
+      cedula: new mongoose.Types.ObjectId().toString(), usuario: otroUsuario });
+    await datos.Alumno.updateMany({ _id: { $in: datos.atletas.slice(0, 2).map((atleta) => atleta._id) } },
+      { $set: { representante: otro._id } });
+    expect((await datos.propio('get', ruta)).status).toBe(200);
+    const otroAuth = jwt.sign({ rol: 'usuario', id: String(otroUsuario), tenantId: 'alfa' }, 'qa-campanias-secret');
+    expect((await request(app).get(ruta).set('Authorization', `Bearer ${otroAuth}`)).status).toBe(404);
+    expect((await request(app).get(`/campanias/mis-cargos?alumnoId=${datos.atletas[0]._id}`)
+      .set('Authorization', `Bearer ${otroAuth}`)).body.cargos).toEqual([]);
+    expect((await peticion('get', `${datos.base}/cargos`)).body.filas.find((fila) => fila._id === cargo._id).atletas_cubiertos).toHaveLength(2);
+    expect((await corregirMongo('delete', `${ruta}/${pago.body.pago._id}`, { version: 2 })).status).toBe(200);
+    expect(await datos.Cargo.findById(cargo._id).lean()).toMatchObject({ saldo_pendiente: 10, estado: 'pendiente' });
+  });
+
+  test('familias Mongo agregar un hermano vincula al cargo con pagos sin duplicar deuda y reintenta idempotentemente', async () => {
+    const datos = await prepararFamiliaMongo();
+    expect((await datos.publicar()).status).toBe(201);
+    const cargo = await datos.Cargo.findOne({ campania: datos.resumen.campania._id, tipo_cobro: 'representante' }).lean();
+    const ruta = `${datos.base}/cargos/${cargo._id}/pagos`;
+    expect((await registrarMongo(ruta, { solicitud_id: require('crypto').randomUUID(), version: 0, moneda: 'USD', monto_pagado: 5,
+      monto_pagado_bs: 500, fecha_pago: '2026-11-10', metodo_pago: 'Transferencia', referencia: '929292', estado: 'confirmado' })).status).toBe(201);
+    const nuevo = await crearAtletaMongo('alfa', { nombres: 'Hermanito', sede: cargo.sede, representante: datos.representante._id });
+    const actual = await modelosMongo.alfa.CampaniaCobro.findById(cargo.campania).lean();
+    const body = { accion: 'agregar', alumno: String(nuevo._id), version: actual.__v, modalidad: 'general',
+      nota_interna: '', solicitud_id: require('crypto').randomUUID() };
+    const respuesta = await corregirMongo('post', `${datos.base}/ajustes-cargos`, body);
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toMatchObject({ vinculado: true, cargo: { _id: String(cargo._id), monto: 10, saldo_pendiente: 5, estado: 'abono' } });
+    expect(respuesta.body.cargo.atletas_cubiertos).toHaveLength(3);
+    expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, body)).body).toMatchObject({ repetida: true, vinculado: true });
+    const resumen = await peticion('get', `${datos.base}/cargos`);
+    expect(resumen.status).toBe(200);
+    expect(resumen.body.totales).toMatchObject({ participantes: 5, cobros: 3, total_esperado: 30 });
+    expect(await datos.Pago.countDocuments({ campania: cargo.campania })).toBe(1);
+  });
+
+  test('familias Mongo agrupa dos campañas del representante una sola vez por cargo y confirma ambos saldos', async () => {
+    const datos = await prepararFamiliaMongo();
+    expect((await datos.publicar()).status).toBe(201);
+    const segunda = await peticion('post', '/campanias', { ...datosMongo(), unidad_cobro: 'representante',
+      monto_general: 10, solicitud_id: require('crypto').randomUUID(), sedes: datos.resumen.campania.sedes.map((sede) => sede._id) });
+    const base = `/campanias/${segunda.body.campania._id}`;
+    const preview = (await peticion('get', `${base}/resumen`)).body;
+    expect((await publicarMongo(base, { version: 0, revision: preview.revision, solicitud_id: require('crypto').randomUUID() })).status).toBe(201);
+    const agrupables = await datos.propio('get', `/campanias/cargos-agrupables?alumnoId=${datos.atletas[1]._id}`);
+    expect(agrupables.status).toBe(200);
+    expect(agrupables.body.cargos).toHaveLength(2);
+    expect(agrupables.body.cargos.every((cargo) => cargo.atletas_cubiertos.length === 2)).toBe(true);
+    const body = { alumnoId: String(datos.atletas[1]._id), solicitud_id: require('crypto').randomUUID(), moneda: 'USD',
+      monto_pagado: 20, monto_pagado_bs: 2000, fecha_pago: '2026-11-10', metodo_pago: 'Transferencia',
+      referencia: '939393', estado: 'en_revision',
+      cargos: agrupables.body.cargos.map((cargo) => ({ cargo: cargo._id, version: cargo.__v })) };
+    const pago = await datos.propio('post', '/campanias/pagos-agrupados', body);
+    expect(pago.status).toBe(201);
+    expect(pago.body.pagos).toHaveLength(2);
+    const historial = await datos.propio('get', `/campanias/pagos-agrupados/${body.solicitud_id}`);
+    expect(historial.status).toBe(200);
+    expect(historial.body.cargos).toHaveLength(2);
+    const primero = pago.body.pagos[0];
+    expect((await corregirMongo('post', `/campanias/${primero.campania}/cargos/${primero.cargo}/pagos/${primero._id}/confirmar`)).status).toBe(200);
+    expect((await datos.Cargo.find({ _id: { $in: body.cargos.map((item) => item.cargo) } }).lean())
+      .every((cargo) => cargo.estado === 'pagado' && cargo.saldo_pendiente === 0)).toBe(true);
+  });
+
+  const prepararConversionMongo = async ({ monto = 10 } = {}) => {
+    const datos = await prepararFamiliaMongo({ unidad: 'atleta', monto });
+    expect((await datos.publicar()).status).toBe(201);
+    const rutaConversion = `${datos.base}/conversion-representante`;
+    const preview = await peticion('get', rutaConversion);
+    expect(preview.status).toBe(200);
+    const body = { version: preview.body.campania.__v, revision: preview.body.revision,
+      solicitud_id: require('crypto').randomUUID() };
+    const originales = await datos.Cargo.find({ campania: datos.resumen.campania._id }).select('+nota_interna').sort({ alumno: 1 }).lean();
+    const pagoBody = { solicitud_id: require('crypto').randomUUID(), version: 0, moneda: 'USD', monto_pagado: 5,
+      monto_pagado_bs: 500, fecha_pago: '2026-11-10', metodo_pago: 'Transferencia', referencia: '949494', estado: 'en_revision' };
+    return { ...datos, rutaConversion, preview: preview.body, body, originales, pagoBody,
+      rutaPago: `${datos.base}/cargos/${originales[0]._id}/pagos` };
+  };
+
+  test('conversion Mongo muestra el cambio, conserva importes congelados y deja auditoria sin pagos', async () => {
+    const datos = await prepararConversionMongo();
+    expect(datos.preview).toMatchObject({ antes: { cobros: 4, total_esperado: 40 },
+      totales: { participantes: 4, cobros: 3, total_esperado: 30, representantes: 1, individuales: 2 } });
+    expect(await datos.Cargo.find({ campania: datos.resumen.campania._id }).select('+nota_interna').sort({ alumno: 1 }).lean()).toEqual(datos.originales);
+    const original = await modelosMongo.alfa.CampaniaCobro.findById(datos.resumen.campania._id).lean();
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: original._id }, { $set: { monto_general: 99 } });
+    const respuesta = await corregirMongo('post', datos.rutaConversion, datos.body);
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toMatchObject({ repetida: false, campania: { estado: 'abierta', unidad_cobro: 'representante',
+      totales_cargos: { participantes: 4, cobros: 3, total_esperado: 30 } } });
+    expect(respuesta.body.campania.publicacion).toEqual(JSON.parse(JSON.stringify(original.publicacion)));
+    expect(respuesta.body.campania.conversion_representante).toBeUndefined();
+    const auditada = await modelosMongo.alfa.CampaniaCobro.findById(original._id).select('+conversion_representante').lean();
+    expect(auditada.conversion_representante).toMatchObject({ solicitud_id: datos.body.solicitud_id, version: datos.body.version,
+      revision: datos.body.revision, actor: { id: 'admin-qa', rol: 'admin' }, antes: { total_esperado: 40 }, despues: { total_esperado: 30 } });
+    expect(auditada.conversion_representante.cargos_anteriores).toEqual(datos.originales);
+    const cargos = await peticion('get', `${datos.base}/cargos`);
+    expect(cargos.status).toBe(200);
+    expect(cargos.body.filas).toHaveLength(3);
+    expect(cargos.body.filas.find((fila) => fila.tipo_cobro === 'representante').atletas_cubiertos).toHaveLength(2);
+    expect(cargos.body.filas.every((fila) => fila.monto === 10 && fila.saldo_pendiente === 10 && fila.version === 1)).toBe(true);
+    expect(await datos.Pago.countDocuments({ campania: original._id })).toBe(0);
+    const reintento = await corregirMongo('post', datos.rutaConversion, datos.body);
+    expect(reintento.status).toBe(200);
+    expect(reintento.body.repetida).toBe(true);
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, solicitud_id: require('crypto').randomUUID() })).status).toBe(409);
+    expect((await datos.propio('get', `/campanias/mis-cargos?alumnoId=${datos.atletas[1]._id}`)).body.cargos).toHaveLength(1);
+  });
+
+  test.each(['en_revision', 'confirmado', 'eliminado'])('conversion Mongo conserva toda la familia con pago parcial %s y convierte el resto', async (estado) => {
+    const datos = await prepararConversionMongo();
+    const creado = await registrarMongo(datos.rutaPago, { ...datos.pagoBody, estado: estado === 'confirmado' ? 'confirmado' : 'en_revision' });
+    expect(creado.status).toBe(201);
+    if (estado === 'eliminado') {
+      expect((await corregirMongo('delete', `${datos.rutaPago}/${creado.body.pago._id}`, { version: 1 })).status).toBe(200);
+    }
+    const familia = datos.atletas.slice(0, 2).map((atleta) => atleta._id);
+    const antes = await datos.Cargo.find({ campania: datos.resumen.campania._id, alumno: { $in: familia } })
+      .select('+nota_interna').sort({ alumno: 1 }).lean();
+    const pagos = await datos.Pago.find({ campania: datos.resumen.campania._id }).select('+modificaciones +huella').lean();
+    const versionActual = await modelosMongo.alfa.CampaniaCobro.findById(datos.resumen.campania._id).lean();
+    const lectura = await peticion('get', datos.rutaConversion);
+    expect(lectura.status).toBe(200);
+    expect(lectura.body.totales).toMatchObject({ conservados: 2, cobros: 4, individuales: 2, total_esperado: 40, con_observaciones: 0 });
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: versionActual.__v,
+      revision: lectura.body.revision })).status).toBe(200);
+    expect(await datos.Cargo.find({ campania: versionActual._id, alumno: { $in: familia } })
+      .select('+nota_interna').sort({ alumno: 1 }).lean()).toEqual(antes);
+    expect(await datos.Pago.find({ campania: versionActual._id }).select('+modificaciones +huella').lean()).toEqual(pagos);
+    const cargos = await peticion('get', `${datos.base}/cargos`);
+    expect(cargos.status).toBe(200);
+    expect(cargos.body.filas.filter((fila) => fila.preservado_conversion)).toHaveLength(2);
+    expect(cargos.body.filas.filter((fila) => fila.tipo_cobro === 'individual_sin_representante')).toHaveLength(2);
+  });
+
+  test.each([
+    ['en_revision', true, 'pagos en revision'],
+    ['en_revision', false, 'pagos en revision'],
+    ['eliminado', true, 'pagos eliminados en su historial'],
+    ['abono', true, 'abonos confirmados'],
+    ['pagado', true, 'pagos confirmados']
+  ])('conversion Mongo describe cargo individual %s con representante %s sin inventar cobertura familiar', async (estado, conRepresentante, motivo) => {
+    const datos = await prepararConversionMongo();
+    const fuente = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[0]._id));
+    await datos.Alumno.updateOne({ _id: datos.atletas[conRepresentante ? 1 : 0]._id }, { $unset: { representante: '' } });
+    const ruta = `${datos.base}/cargos/${fuente._id}/pagos`;
+    const creado = await registrarMongo(ruta, { ...datos.pagoBody, monto_pagado: estado === 'pagado' ? 10 : 5,
+      monto_pagado_bs: estado === 'pagado' ? 1000 : 500,
+      estado: ['abono', 'pagado'].includes(estado) ? 'confirmado' : 'en_revision' });
+    expect(creado.status).toBe(201);
+    if (estado === 'eliminado') {
+      expect((await corregirMongo('delete', `${ruta}/${creado.body.pago._id}`, { version: 1 })).status).toBe(200);
+    }
+    const anterior = await datos.Cargo.findById(fuente._id).select('+nota_interna').lean();
+    const pagos = await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').lean();
+    const lectura = await peticion('get', datos.rutaConversion);
+    expect(lectura.status).toBe(200);
+    const fila = lectura.body.filas.find((item) => item._id === String(fuente._id));
+    expect(fila.motivo_conservacion).toBe(`Cargo individual conservado sin cambios: tiene ${motivo}. Solo corresponde a este atleta.`);
+    expect(fila).toMatchObject({ preservado_conversion: true, monto: 10, saldo_pendiente: anterior.saldo_pendiente });
+    expect(lectura.body.filas.some((item) => item.cobertura_familiar)).toBe(false);
+    const convertida = await corregirMongo('post', datos.rutaConversion, { ...datos.body,
+      version: lectura.body.campania.__v, revision: lectura.body.revision });
+    expect(convertida.status).toBe(200);
+    expect(await datos.Cargo.findById(fuente._id).select('+nota_interna').lean()).toEqual(anterior);
+    expect(await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').lean()).toEqual(pagos);
+    const resumen = await peticion('get', `${datos.base}/cargos`);
+    expect(resumen.status).toBe(200);
+    expect(resumen.body.filas.find((item) => item._id === String(fuente._id)).motivo_conservacion).toBe(fila.motivo_conservacion);
+  });
+
+  test('conversion Mongo permite conservar conflictos o unificar importes antes de convertir', async () => {
+    const datos = await prepararConversionMongo();
+    const cargoLuis = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[1]._id));
+    const version = datos.body.version;
+    expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, { accion: 'editar', alumno: String(cargoLuis.alumno),
+      modalidad: 'personalizado', monto: 20, nota_interna: '', version, version_cargo: 0, solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+    const conflicto = await peticion('get', datos.rutaConversion);
+    expect(conflicto.status).toBe(200);
+    expect(conflicto.body.totales).toMatchObject({ pendientes: 0, con_observaciones: 0, conservados: 2, total_esperado: 50 });
+    expect(conflicto.body.filas.filter((fila) => fila.preservado_conversion)).toHaveLength(2);
+    expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, { accion: 'editar', alumno: String(cargoLuis.alumno),
+      modalidad: 'general', nota_interna: '', version: version + 1, version_cargo: 1, solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+    const unificada = (await peticion('get', datos.rutaConversion)).body;
+    expect(unificada.totales).toMatchObject({ total_esperado: 30, pendientes: 0 });
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: unificada.campania.__v, revision: unificada.revision })).status).toBe(200);
+  });
+
+  test.each([1, 2])('conversion Mongo un cargo pagado en %i transacciones cubre al hermano sin tocar origen y protege sus pagos', async (cuotas) => {
+    const datos = await prepararConversionMongo();
+    const fuente = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[0]._id));
+    const hermano = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[1]._id));
+    const ruta = `${datos.base}/cargos/${fuente._id}/pagos`;
+    let pago;
+    for (let indice = 0; indice < cuotas; indice += 1) {
+      pago = await registrarMongo(ruta, { ...datos.pagoBody, solicitud_id: require('crypto').randomUUID(),
+        version: indice, monto_pagado: 10 / cuotas, monto_pagado_bs: 1000 / cuotas, estado: 'confirmado' });
+      expect(pago.status).toBe(201);
+    }
+    const anterior = await datos.Cargo.findById(fuente._id).select('+nota_interna').lean();
+    const pagos = await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean();
+    const preview = (await peticion('get', datos.rutaConversion)).body;
+    expect(preview.totales).toMatchObject({ participantes: 4, cobros: 4, conservados: 1, cubiertos: 1,
+      generales: 3, no_aplica: 0, total_esperado: 30 });
+    const body = { ...datos.body, version: preview.campania.__v, revision: preview.revision };
+    expect((await corregirMongo('post', datos.rutaConversion, body)).status).toBe(200);
+    expect((await corregirMongo('post', datos.rutaConversion, body)).body.repetida).toBe(true);
+    expect(await datos.Cargo.findById(fuente._id).select('+nota_interna').lean()).toEqual(anterior);
+    expect(await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean()).toEqual(pagos);
+    expect(await datos.Cargo.findById(hermano._id).lean()).toMatchObject({ tipo_cobro: 'cubierto_por_representante',
+      cobertura_familiar: { cargo: fuente._id }, monto: 0, saldo_pendiente: 0, estado: 'no_aplica' });
+    const lista = await peticion('get', `${datos.base}/cargos`);
+    expect(lista.status).toBe(200);
+    expect(lista.body.filas.find((fila) => fila._id === String(hermano._id))).toMatchObject({ puede_ajustar: false,
+      cobertura_familiar: { cargo: String(fuente._id) } });
+    const portal = await datos.propio('get', `/campanias/mis-cargos?alumnoId=${hermano.alumno}`);
+    expect(portal.status).toBe(200);
+    expect(portal.body.cargos[0]).toMatchObject({ tipo_cobro: 'cubierto_por_representante', disponible: 0,
+      cobertura_familiar: { cargo: String(fuente._id) } });
+    expect((await corregirMongo('delete', `${ruta}/${pago.body.pago._id}`, { version: cuotas })).body.error).toMatch(/cubre a otros atletas/);
+    const reduccion = await corregirMongo('patch', `${ruta}/${pago.body.pago._id}`, { ...datos.pagoBody,
+      version: cuotas, solicitud_id: require('crypto').randomUUID(), estado: 'confirmado', monto_pagado: 1, monto_pagado_bs: 100 });
+    expect(reduccion.status).toBe(409);
+    expect(reduccion.body.error).toMatch(/cubre a otros atletas/);
+    const metadata = await corregirMongo('patch', `${ruta}/${pago.body.pago._id}`, { ...datos.pagoBody,
+      version: cuotas, solicitud_id: require('crypto').randomUUID(), estado: 'confirmado',
+      monto_pagado: 10 / cuotas, monto_pagado_bs: 1000 / cuotas, referencia: '959595' });
+    expect(metadata.status).toBe(200);
+    expect(metadata.body.cargo).toMatchObject({ monto: 10, saldo_pendiente: 0, estado: 'pagado' });
+    const actual = await modelosMongo.alfa.CampaniaCobro.findById(fuente.campania).lean();
+    const ajuste = { accion: 'editar', alumno: String(hermano.alumno), version: actual.__v, version_cargo: 1,
+      modalidad: 'general', nota_interna: '', solicitud_id: require('crypto').randomUUID() };
+    expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, ajuste)).status).toBe(409);
+    const nuevo = await crearAtletaMongo('alfa', { nombres: 'Otro hermano', sede: fuente.sede, representante: datos.representante._id });
+    expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, { ...ajuste, accion: 'agregar', alumno: String(nuevo._id),
+      solicitud_id: require('crypto').randomUUID(), version_cargo: undefined })).status).toBe(409);
+    for (const cargo of await datos.Cargo.find({ campania: fuente.campania, saldo_pendiente: { $gt: 0 } }).lean()) {
+      const resultado = await registrarMongo(`${datos.base}/cargos/${cargo._id}/pagos`, { ...datos.pagoBody,
+        version: cargo.__v, solicitud_id: require('crypto').randomUUID(), estado: 'confirmado', monto_pagado: 10, monto_pagado_bs: 1000 });
+      expect(resultado.status).toBe(201);
+    }
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(fuente.campania).lean()).estado).toBe('cerrada');
+  });
+
+  test.each(['varios_pagados', 'importe_distinto'])('conversion Mongo conserva familias ambiguas %s sin eliminar deudas ni pagos', async (caso) => {
+    const datos = await prepararConversionMongo();
+    const familia = datos.originales.filter((cargo) => datos.atletas.slice(0, 2).some((atleta) => String(atleta._id) === String(cargo.alumno)));
+    if (caso === 'importe_distinto') {
+      expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, { accion: 'editar', alumno: String(familia[1].alumno),
+        modalidad: 'personalizado', monto: 20, nota_interna: '', version: datos.body.version, version_cargo: 0,
+        solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+    }
+    for (const cargo of caso === 'varios_pagados' ? familia : familia.slice(0, 1)) {
+      expect((await registrarMongo(`${datos.base}/cargos/${cargo._id}/pagos`, { ...datos.pagoBody,
+        solicitud_id: require('crypto').randomUUID(), estado: 'confirmado', monto_pagado: 10, monto_pagado_bs: 1000 })).status).toBe(201);
+    }
+    const antes = await datos.Cargo.find({ _id: { $in: familia.map((cargo) => cargo._id) } }).select('+nota_interna').sort({ alumno: 1 }).lean();
+    const pagos = await datos.Pago.find({ campania: datos.resumen.campania._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean();
+    const preview = (await peticion('get', datos.rutaConversion)).body;
+    expect(preview.totales).toMatchObject({ conservados: 2, individuales: 2, pendientes: 0, con_observaciones: 0 });
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: preview.campania.__v, revision: preview.revision })).status).toBe(200);
+    expect(await datos.Cargo.find({ _id: { $in: familia.map((cargo) => cargo._id) } }).select('+nota_interna').sort({ alumno: 1 }).lean()).toEqual(antes);
+    expect(await datos.Pago.find({ campania: datos.resumen.campania._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean()).toEqual(pagos);
+    expect(await datos.Cargo.countDocuments({ campania: datos.resumen.campania._id, tipo_cobro: 'cubierto_por_representante' })).toBe(0);
+  });
+
+  test('conversion Mongo rechaza cambios de representante o version posteriores a la vista previa y aisla academia', async () => {
+    const datos = await prepararConversionMongo();
+    expect((await publicarMongo(datos.base, datos.body, 'beta')).status).toBe(404);
+    const ajena = await request(app).post(datos.rutaConversion).set('x-tenant', 'beta')
+      .set('Authorization', `Bearer ${tokenPublicacion('admin', 'beta')}`).send(datos.body);
+    expect(ajena.status).toBe(404);
+    await datos.Alumno.updateOne({ _id: datos.atletas[1]._id }, { $unset: { representante: '' } });
+    const obsoleta = await corregirMongo('post', datos.rutaConversion, datos.body);
+    expect(obsoleta.status).toBe(409);
+    expect(obsoleta.body.error).toMatch(/representantes cambiaron/);
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: datos.body.version + 1 })).status).toBe(409);
+    expect(await datos.Cargo.countDocuments({ campania: datos.resumen.campania._id })).toBe(4);
+  });
+
+  test('conversion Mongo revierte la actualizacion y eliminacion de cargos si falla la transaccion', async () => {
+    const datos = await prepararConversionMongo();
+    const originalDelete = datos.Cargo.deleteMany.bind(datos.Cargo);
+    const simulado = jest.spyOn(datos.Cargo, 'deleteMany').mockImplementationOnce(async (...args) => {
+      await originalDelete(...args);
+      throw new Error('Fallo QA despues de eliminar cargos absorbidos');
+    });
+    try { expect((await corregirMongo('post', datos.rutaConversion, datos.body)).status).toBe(500); }
+    finally { simulado.mockRestore(); }
+    expect(await datos.Cargo.find({ campania: datos.resumen.campania._id }).select('+nota_interna').sort({ alumno: 1 }).lean()).toEqual(datos.originales);
+    const actual = await modelosMongo.alfa.CampaniaCobro.findById(datos.resumen.campania._id).select('+conversion_representante').lean();
+    expect(actual.unidad_cobro).toBe('atleta');
+    expect(actual.conversion_representante).toBeUndefined();
+    expect(actual.__v).toBe(datos.body.version);
+    expect((await corregirMongo('post', datos.rutaConversion, datos.body)).status).toBe(200);
+  });
+
+  test('conversion Mongo solicitudes concurrentes identicas convierten una sola vez', async () => {
+    const datos = await prepararConversionMongo();
+    const respuestas = await Promise.all([corregirMongo('post', datos.rutaConversion, datos.body), corregirMongo('post', datos.rutaConversion, datos.body)]);
+    expect(respuestas.map((item) => item.status)).toEqual([200, 200]);
+    expect(respuestas.filter((item) => item.body.repetida)).toHaveLength(1);
+    expect(await datos.Cargo.countDocuments({ campania: datos.resumen.campania._id })).toBe(3);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.resumen.campania._id).lean()).__v).toBe(datos.body.version + 1);
+  });
+
+  test('conversion Mongo competir con un pago nunca elimina un cargo con historial', async () => {
+    const datos = await prepararConversionMongo();
+    const luis = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[1]._id));
+    const rutaPago = `${datos.base}/cargos/${luis._id}/pagos`;
+    const [convertida, pago] = await Promise.all([
+      corregirMongo('post', datos.rutaConversion, datos.body), registrarMongo(rutaPago, datos.pagoBody)
+    ]);
+    expect([convertida.status === 200, pago.status === 201].filter(Boolean)).toHaveLength(1);
+    const actual = await modelosMongo.alfa.CampaniaCobro.findById(datos.resumen.campania._id).lean();
+    if (pago.status === 201) {
+      expect(convertida.status).toBe(409);
+      expect(actual.unidad_cobro).toBe('atleta');
+      expect(await datos.Cargo.countDocuments({ campania: actual._id })).toBe(4);
+      expect(await datos.Cargo.findById(luis._id).lean()).toMatchObject({ saldo_pendiente: 10 });
+    } else {
+      expect([404, 409]).toContain(pago.status);
+      expect(actual.unidad_cobro).toBe('representante');
+      expect(await datos.Pago.countDocuments({ campania: actual._id })).toBe(0);
+    }
+  });
+
+  const prepararCoberturaMongo = async ({ cuotas = 1, confirmar = true, monto = 10, pagado = monto } = {}) => {
+    const datos = await prepararConversionMongo({ monto });
+    const fuente = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[0]._id));
+    const hermano = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[1]._id));
+    const ruta = `${datos.base}/cargos/${fuente._id}/pagos`;
+    const pagos = [];
+    for (let indice = 0; indice < cuotas; indice += 1) {
+      const pago = await registrarMongo(ruta, { ...datos.pagoBody, solicitud_id: require('crypto').randomUUID(),
+        version: indice, monto_pagado: pagado / cuotas, monto_pagado_bs: pagado * 100 / cuotas, estado: 'en_revision' });
+      expect(pago.status).toBe(201);
+      pagos.push(pago.body.pago);
+    }
+    const conversion = (await peticion('get', datos.rutaConversion)).body;
+    expect(conversion.totales.conservados).toBe(2);
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: conversion.campania.__v,
+      revision: conversion.revision })).status).toBe(200);
+    if (confirmar) for (const pago of pagos) {
+      expect((await corregirMongo('post', `${ruta}/${pago._id}/confirmar`)).status).toBe(200);
+    }
+    const rutaCobertura = `${datos.base}/cargos/${fuente._id}/cobertura-familiar`;
+    const lectura = await peticion('get', rutaCobertura);
+    if (confirmar) expect(lectura.status).toBe(200);
+    const bodyCobertura = confirmar ? { version: lectura.body.campania.__v, revision: lectura.body.revision,
+      solicitud_id: require('crypto').randomUUID() } : null;
+    return { ...datos, fuente, hermano, ruta, pagos, rutaCobertura, lectura, bodyCobertura };
+  };
+
+  test.each([1, 2])('cobertura manual Mongo comparte %i pagos confirmados y su ciclo de correccion eliminacion y repago', async (cuotas) => {
+    const datos = await prepararCoberturaMongo({ cuotas });
+    const fuente = await datos.Cargo.findById(datos.fuente._id).select('+nota_interna').lean();
+    const pagos = await datos.Pago.find({ campania: fuente.campania }).select('+modificaciones +huella').sort({ _id: 1 }).lean();
+    const hermano = await datos.Cargo.findById(datos.hermano._id).select('+nota_interna').lean();
+    expect(hermano).toMatchObject({ tipo_cobro: 'atleta', monto: 10, saldo_pendiente: 10 });
+    const campaniaAntes = await modelosMongo.alfa.CampaniaCobro.findById(fuente.campania).select('+conversion_representante').lean();
+    expect(datos.lectura.body).toMatchObject({ fuente: { _id: String(fuente._id), monto: 10, saldo_pendiente: 0 },
+      hermanos: [{ _id: String(hermano._id), monto: 10, saldo_pendiente: 10 }],
+      antes: { conservados: 2, total_esperado: 40 }, despues: { cobros: 3, representantes: 1, total_esperado: 30 } });
+    expect(datos.lectura.body.anteriores).toBeUndefined();
+    const lista = await peticion('get', `${datos.base}/cargos`);
+    expect(lista.body.filas.find((cargo) => cargo._id === String(fuente._id)).puede_revisar_cobertura).toBe(true);
+    const respuesta = await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura);
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toMatchObject({ repetida: false, fuente: String(fuente._id), cubiertos: [String(hermano._id)],
+      campania: { __v: campaniaAntes.__v + 1, totales_cargos: { total_esperado: 30, cobros: 3, representantes: 1 } } });
+    expect(respuesta.body.campania.coberturas_familiares).toBeUndefined();
+    const compartido = await datos.Cargo.findById(fuente._id).select('+nota_interna').lean();
+    expect(compartido).toMatchObject({ ...fuente, tipo_cobro: 'representante', __v: fuente.__v + 1, updatedAt: compartido.updatedAt });
+    expect(compartido.atletas_cubiertos.map((atleta) => String(atleta.alumno))).toEqual([String(fuente.alumno), String(hermano.alumno)]);
+    expect(await datos.Pago.find({ campania: fuente.campania }).select('+modificaciones +huella').sort({ _id: 1 }).lean()).toEqual(pagos);
+    expect(await datos.Cargo.findById(hermano._id).lean()).toBeNull();
+    const actual = await modelosMongo.alfa.CampaniaCobro.findById(fuente.campania)
+      .select('+conversion_representante +coberturas_familiares').lean();
+    expect(actual.publicacion).toEqual(campaniaAntes.publicacion);
+    expect(actual.conversion_representante).toEqual(campaniaAntes.conversion_representante);
+    expect(actual.coberturas_familiares).toHaveLength(1);
+    expect(actual.coberturas_familiares[0]).toMatchObject({ actor: { id: 'admin-qa', rol: 'admin' },
+      solicitud_id: datos.bodyCobertura.solicitud_id, cargos_anteriores: expect.arrayContaining([fuente, hermano]) });
+    const resumen = await peticion('get', `${datos.base}/cargos`);
+    expect(resumen.status).toBe(200);
+    expect(resumen.body.totales).toMatchObject({ cobros: 3, representantes: 1, no_aplica: 0, total_esperado: 30 });
+    expect(resumen.body.filas.find((cargo) => cargo._id === String(hermano._id))).toBeUndefined();
+    expect(resumen.body.filas.find((cargo) => cargo._id === String(fuente._id)).puede_revisar_cobertura).toBe(false);
+    const ver = async (atleta) => {
+      const vista = await datos.propio('get', `/campanias/mis-cargos?alumnoId=${atleta}`);
+      expect(vista.status).toBe(200); return vista.body.cargos[0];
+    };
+    for (const atleta of [fuente.alumno, hermano.alumno]) {
+      expect(await ver(atleta)).toMatchObject({ _id: String(fuente._id), tipo_cobro: 'representante', monto: 10, disponible: 0, estado: 'pagado' });
+    }
+    expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).body.repetida).toBe(true);
+    expect(await datos.Cargo.findById(fuente._id).select('+nota_interna').lean()).toEqual(compartido);
+    const reduccion = await corregirMongo('patch', `${datos.ruta}/${datos.pagos[cuotas - 1]._id}`, { ...datos.pagoBody,
+      estado: 'confirmado', version: compartido.__v, monto_pagado: 1, monto_pagado_bs: 100, solicitud_id: require('crypto').randomUUID() });
+    expect(reduccion.status).toBe(200);
+    for (const atleta of [fuente.alumno, hermano.alumno]) expect(await ver(atleta))
+      .toMatchObject({ saldo_pendiente: 10 / cuotas - 1, estado: 'abono' });
+    expect((await corregirMongo('delete', `${datos.ruta}/${datos.pagos[cuotas - 1]._id}`, { version: compartido.__v + 1 })).status).toBe(200);
+    for (const atleta of [fuente.alumno, hermano.alumno]) expect(await ver(atleta))
+      .toMatchObject({ saldo_pendiente: 10 / cuotas, estado: cuotas === 1 ? 'pendiente' : 'abono' });
+    expect((await peticion('get', `${datos.base}/cargos`)).body.totales.total_esperado).toBe(30);
+    const agrupables = await datos.propio('get', `/campanias/cargos-agrupables?alumnoId=${hermano.alumno}`);
+    expect(agrupables.status).toBe(200);
+    expect(agrupables.body.cargos.filter((cargo) => cargo._id === String(fuente._id))).toHaveLength(1);
+    expect((await registrarMongo(datos.ruta, { ...datos.pagoBody, version: compartido.__v + 2,
+      monto_pagado: 10 / cuotas, monto_pagado_bs: 1000 / cuotas, estado: 'confirmado',
+      solicitud_id: require('crypto').randomUUID() })).status).toBe(201);
+    for (const atleta of [fuente.alumno, hermano.alumno]) expect(await ver(atleta))
+      .toMatchObject({ saldo_pendiente: 0, estado: 'pagado' });
+  });
+
+  test.each([1, 2])('cobertura manual Mongo comparte un abono de 15 sobre 20 en %i cuotas y deja una sola deuda de 5', async (cuotas) => {
+    const datos = await prepararCoberturaMongo({ monto: 20, pagado: 15, cuotas });
+    const fuente = await datos.Cargo.findById(datos.fuente._id).select('+nota_interna').lean();
+    const pagos = await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean();
+    expect(datos.lectura.body.fuente).toMatchObject({ monto: 20, saldo_pendiente: 5, estado: 'abono' });
+    const lista = await peticion('get', `${datos.base}/cargos`);
+    expect(lista.body.filas.find((cargo) => cargo._id === String(fuente._id)).puede_revisar_cobertura).toBe(true);
+    const aplicada = await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura);
+    expect(aplicada.status).toBe(200);
+    expect(aplicada.body.campania).toMatchObject({ estado: 'abierta', totales_cargos: { cobros: 3, total_esperado: 60 } });
+    const compartido = await datos.Cargo.findById(fuente._id).select('+nota_interna').lean();
+    expect(compartido).toMatchObject({ ...fuente, tipo_cobro: 'representante', __v: fuente.__v + 1, updatedAt: compartido.updatedAt });
+    expect(await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean()).toEqual(pagos);
+    expect(await datos.Cargo.findById(datos.hermano._id).lean()).toBeNull();
+    const ver = async (atleta) => {
+      const portal = await datos.propio('get', `/campanias/mis-cargos?alumnoId=${atleta}`);
+      expect(portal.status).toBe(200);
+      expect(portal.body.cargos).toHaveLength(1);
+      return portal.body.cargos[0];
+    };
+    for (const atleta of [fuente.alumno, datos.hermano.alumno]) {
+      expect(await ver(atleta)).toMatchObject({ _id: String(fuente._id), estado: 'abono', monto: 20, saldo_pendiente: 5, disponible: 5 });
+      const agrupables = await datos.propio('get', `/campanias/cargos-agrupables?alumnoId=${atleta}`);
+      expect(agrupables.status).toBe(200);
+      expect(agrupables.body.cargos).toHaveLength(1);
+      expect(agrupables.body.cargos[0]).toMatchObject({ _id: String(fuente._id), saldo_pendiente: 5 });
+    }
+    const repago = await datos.propio('post', datos.ruta, { ...datos.pagoBody, version: compartido.__v,
+      monto_pagado: 5, monto_pagado_bs: 500, solicitud_id: require('crypto').randomUUID() });
+    expect(repago.status).toBe(201);
+    for (const atleta of [fuente.alumno, datos.hermano.alumno]) expect(await ver(atleta))
+      .toMatchObject({ saldo_pendiente: 5, disponible: 0, pago_en_revision: true });
+    expect((await corregirMongo('post', `${datos.ruta}/${repago.body.pago._id}/confirmar`)).status).toBe(200);
+    for (const atleta of [fuente.alumno, datos.hermano.alumno]) expect(await ver(atleta))
+      .toMatchObject({ estado: 'pagado', saldo_pendiente: 0 });
+    for (const pago of [repago.body.pago, ...[...datos.pagos].reverse()]) {
+      const actual = await datos.Cargo.findById(fuente._id).lean();
+      expect((await corregirMongo('delete', `${datos.ruta}/${pago._id}`, { version: actual.__v })).status).toBe(200);
+    }
+    for (const atleta of [fuente.alumno, datos.hermano.alumno]) expect(await ver(atleta))
+      .toMatchObject({ estado: 'pendiente', saldo_pendiente: 20, monto: 20 });
+    const pendientes = (await peticion('get', `${datos.base}/cargos`)).body;
+    expect(pendientes.filas.reduce((total, cargo) => total + cargo.saldo_pendiente, 0)).toBe(60);
+    expect(pendientes.filas).toHaveLength(3);
+  });
+
+  test('cobertura manual Mongo no une un abono confirmado si aun tiene otro pago en revision', async () => {
+    const datos = await prepararCoberturaMongo({ monto: 20, pagado: 15 });
+    const fuente = await datos.Cargo.findById(datos.fuente._id).lean();
+    expect((await registrarMongo(datos.ruta, { ...datos.pagoBody, version: fuente.__v,
+      monto_pagado: 5, monto_pagado_bs: 500, solicitud_id: require('crypto').randomUUID() })).status).toBe(201);
+    expect((await peticion('get', datos.rutaCobertura)).status).toBe(409);
+    const lista = (await peticion('get', `${datos.base}/cargos`)).body;
+    expect(lista.filas.find((cargo) => cargo._id === String(fuente._id)).puede_revisar_cobertura).toBe(false);
+    const anteriores = await datos.Cargo.find({ campania: fuente.campania }).sort({ _id: 1 }).lean();
+    expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(409);
+    expect(await datos.Cargo.find({ campania: fuente.campania }).sort({ _id: 1 }).lean()).toEqual(anteriores);
+  });
+
+  test('cobertura manual Mongo admite varios hermanos de distintas sedes sin duplicar importe ni tocar otros grupos', async () => {
+    const datos = await prepararConversionMongo();
+    const sede = await modelosMongo.alfa.Sede.create({ nombre: 'Otra sede para hermano', direccion: 'QA', costo: 20 });
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.resumen.campania._id }, { $addToSet: { sedes: sede._id } });
+    const nuevo = await crearAtletaMongo('alfa', { nombres: 'Hermano adicional', sede: sede._id, representante: datos.representante._id });
+    expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, { accion: 'agregar', alumno: String(nuevo._id),
+      version: datos.body.version, modalidad: 'general', nota_interna: '', solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+    const fuente = datos.originales.find((cargo) => String(cargo.alumno) === String(datos.atletas[0]._id));
+    const ruta = `${datos.base}/cargos/${fuente._id}/pagos`;
+    const pago = await registrarMongo(ruta, { ...datos.pagoBody, monto_pagado: 10, monto_pagado_bs: 1000 });
+    expect(pago.status).toBe(201);
+    const conversion = (await peticion('get', datos.rutaConversion)).body;
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: conversion.campania.__v,
+      revision: conversion.revision })).status).toBe(200);
+    expect((await corregirMongo('post', `${ruta}/${pago.body.pago._id}/confirmar`)).status).toBe(200);
+    const otros = await datos.Cargo.find({ campania: fuente.campania, alumno: { $in: datos.atletas.slice(2).map((atleta) => atleta._id) } })
+      .select('+nota_interna').sort({ _id: 1 }).lean();
+    const rutaCobertura = `${datos.base}/cargos/${fuente._id}/cobertura-familiar`;
+    const lectura = await peticion('get', rutaCobertura);
+    expect(lectura.status).toBe(200);
+    expect(lectura.body.hermanos).toHaveLength(2);
+    expect((await corregirMongo('post', rutaCobertura, { version: lectura.body.campania.__v, revision: lectura.body.revision,
+      solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+    expect(await datos.Cargo.find({ campania: fuente.campania, alumno: { $in: datos.atletas.slice(2).map((atleta) => atleta._id) } })
+      .select('+nota_interna').sort({ _id: 1 }).lean()).toEqual(otros);
+    expect((await peticion('get', `${datos.base}/cargos`)).body.totales).toMatchObject({ participantes: 5, cobros: 3,
+      representantes: 1, total_esperado: 30 });
+  });
+
+  test.each(['en_revision', 'saldo_inconsistente', 'eliminado'])('cobertura manual Mongo rechaza origen %s y no escribe', async (estado) => {
+    const datos = await prepararCoberturaMongo({ confirmar: false });
+    if (estado === 'saldo_inconsistente') {
+      const pago = datos.pagos[0];
+      expect((await corregirMongo('patch', `${datos.ruta}/${pago._id}`, { ...datos.pagoBody, version: 1,
+        solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+      expect((await corregirMongo('post', `${datos.ruta}/${pago._id}/confirmar`)).status).toBe(200);
+      await datos.Cargo.updateOne({ _id: datos.fuente._id }, { $set: { saldo_pendiente: 4 } });
+    } else if (estado === 'eliminado') {
+      expect((await corregirMongo('delete', `${datos.ruta}/${datos.pagos[0]._id}`, { version: 1 })).status).toBe(200);
+    }
+    const antes = await datos.Cargo.find({ campania: datos.fuente.campania }).select('+nota_interna').sort({ _id: 1 }).lean();
+    expect((await peticion('get', datos.rutaCobertura)).status).toBe(409);
+    const actual = await modelosMongo.alfa.CampaniaCobro.findById(datos.fuente.campania).lean();
+    expect((await corregirMongo('post', datos.rutaCobertura, { version: actual.__v, revision: 'a'.repeat(64),
+      solicitud_id: require('crypto').randomUUID() })).status).toBe(409);
+    expect(await datos.Cargo.find({ campania: datos.fuente.campania }).select('+nota_interna').sort({ _id: 1 }).lean()).toEqual(antes);
+  });
+
+  test.each(['en_revision', 'abono', 'pagado', 'eliminado', 'importe', 'modalidad', 'retirado', 'representante', 'sin_representante'])
+  ('cobertura manual Mongo rechaza hermano %s conservando toda la familia', async (caso) => {
+    const datos = await prepararCoberturaMongo();
+    const hermano = await datos.Cargo.findById(datos.hermano._id).lean();
+    if (['en_revision', 'abono', 'pagado', 'eliminado'].includes(caso)) {
+      const ruta = `${datos.base}/cargos/${hermano._id}/pagos`;
+      const pago = await registrarMongo(ruta, { ...datos.pagoBody, version: hermano.__v, solicitud_id: require('crypto').randomUUID(),
+        monto_pagado: caso === 'pagado' ? 10 : 5, monto_pagado_bs: caso === 'pagado' ? 1000 : 500,
+        estado: ['abono', 'pagado'].includes(caso) ? 'confirmado' : 'en_revision' });
+      expect(pago.status).toBe(201);
+      if (caso === 'eliminado') expect((await corregirMongo('delete', `${ruta}/${pago.body.pago._id}`, { version: hermano.__v + 1 })).status).toBe(200);
+    } else if (['representante', 'sin_representante'].includes(caso)) {
+      await datos.Alumno.updateOne({ _id: hermano.alumno }, caso === 'representante'
+        ? { $set: { representante: new mongoose.Types.ObjectId() } } : { $unset: { representante: '' } });
+    } else {
+      expect((await corregirMongo('post', `${datos.base}/ajustes-cargos`, { accion: caso === 'retirado' ? 'retirar' : 'editar',
+        alumno: String(hermano.alumno), version: datos.bodyCobertura.version, version_cargo: hermano.__v,
+        modalidad: 'personalizado', ...(caso !== 'retirado' ? { monto: caso === 'importe' ? 20 : 10 } : {}),
+        nota_interna: '', solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+    }
+    const antes = await datos.Cargo.find({ campania: hermano.campania }).select('+nota_interna').sort({ _id: 1 }).lean();
+    expect((await peticion('get', datos.rutaCobertura)).status).toBe(409);
+    expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(409);
+    expect(await datos.Cargo.find({ campania: hermano.campania }).select('+nota_interna').sort({ _id: 1 }).lean()).toEqual(antes);
+  });
+
+  test('cobertura manual Mongo rechaza origen sin representante, ajeno, campanas no abiertas y datos inconsistentes', async () => {
+    const datos = await prepararCoberturaMongo();
+    await datos.Alumno.updateOne({ _id: datos.fuente.alumno }, { $unset: { representante: '' } });
+    expect((await peticion('get', datos.rutaCobertura)).status).toBe(409);
+    await datos.Alumno.updateOne({ _id: datos.fuente.alumno }, { $set: { representante: datos.representante._id } });
+    for (const estado of ['cerrada', 'cancelada', 'borrador']) {
+      await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.fuente.campania }, { $set: { estado } });
+      expect((await peticion('get', datos.rutaCobertura)).status).toBe(409);
+      expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(409);
+    }
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.fuente.campania }, { $set: { estado: 'abierta', unidad_cobro: 'atleta' } });
+    expect((await peticion('get', datos.rutaCobertura)).status).toBe(409);
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: datos.fuente.campania }, { $set: { unidad_cobro: 'representante', 'totales_cargos.total_esperado': 99 } });
+    expect((await peticion('get', datos.rutaCobertura)).status).toBe(409);
+    expect((await peticion('get', `${datos.base}/cargos/${new mongoose.Types.ObjectId()}/cobertura-familiar`)).status).toBe(409);
+    expect((await peticion('get', `${datos.base}/cargos/invalid/cobertura-familiar`)).status).toBe(400);
+  });
+
+  test('cobertura manual Mongo limita permisos, valida cuerpo y aisla academias', async () => {
+    const datos = await prepararCoberturaMongo();
+    for (const rol of ['usuario', 'entrenador']) {
+      for (const method of ['get', 'post']) {
+        expect((await request(app)[method](datos.rutaCobertura).set('Authorization', `Bearer ${tokenPublicacion(rol)}`)
+          .send(method === 'post' ? datos.bodyCobertura : undefined)).status).toBe(403);
+      }
+    }
+    expect((await request(app).get(datos.rutaCobertura)).status).toBe(401);
+    expect((await peticion('get', datos.rutaCobertura, undefined, 'beta')).status).toBe(404);
+    expect((await request(app).post(datos.rutaCobertura).set('x-tenant', 'beta')
+      .set('Authorization', `Bearer ${tokenPublicacion('admin', 'beta')}`).send(datos.bodyCobertura)).status).toBe(404);
+    for (const body of [{ ...datos.bodyCobertura, monto: 0 }, { ...datos.bodyCobertura, revision: 'falsa' },
+      { ...datos.bodyCobertura, version: '1' }, { ...datos.bodyCobertura, solicitud_id: 'invalida' }]) {
+      expect((await corregirMongo('post', datos.rutaCobertura, body)).status).toBe(400);
+    }
+    expect((await request(app).post(datos.rutaCobertura).set('Authorization', `Bearer ${tokenPublicacion('super_admin')}`)
+      .send(datos.bodyCobertura)).status).toBe(200);
+  });
+
+  test.each([5, 10])('cobertura manual Mongo admite origen con %i confirmado e historial eliminado sin cambiar ningun pago', async (pagado) => {
+    const datos = await prepararCoberturaMongo({ confirmar: false });
+    expect((await corregirMongo('delete', `${datos.ruta}/${datos.pagos[0]._id}`, { version: 1 })).status).toBe(200);
+    expect((await registrarMongo(datos.ruta, { ...datos.pagoBody, version: 2, monto_pagado: pagado, monto_pagado_bs: pagado * 100,
+      estado: 'confirmado', solicitud_id: require('crypto').randomUUID() })).status).toBe(201);
+    const fuente = await datos.Cargo.findById(datos.fuente._id).lean();
+    expect(fuente.estado).toBe(pagado === 10 ? 'pagado' : 'abono');
+    const preview = await peticion('get', datos.rutaCobertura);
+    expect(preview.status).toBe(200);
+    const pagos = await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean();
+    expect((await corregirMongo('post', datos.rutaCobertura, { version: preview.body.campania.__v, revision: preview.body.revision,
+      solicitud_id: require('crypto').randomUUID() })).status).toBe(200);
+    expect(await datos.Pago.find({ cargo: fuente._id }).select('+modificaciones +huella').sort({ _id: 1 }).lean()).toEqual(pagos);
+    expect(await datos.Cargo.findById(fuente._id).lean()).toMatchObject({
+      tipo_cobro: 'representante', estado: fuente.estado, monto: 10, saldo_pendiente: 10 - pagado });
+  });
+
+  test('cobertura manual Mongo detecta cambios sin version en pagos o representante desde la vista previa', async () => {
+    const datos = await prepararCoberturaMongo();
+    await datos.Pago.updateOne({ _id: datos.pagos[0]._id }, { $set: { referencia: '999991' } });
+    expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(409);
+    const preview = (await peticion('get', datos.rutaCobertura)).body;
+    await datos.Representante.updateOne({ _id: datos.representante._id }, { $set: { nombres: 'Representante actualizado' } });
+    expect((await corregirMongo('post', datos.rutaCobertura, { ...datos.bodyCobertura,
+      revision: preview.revision })).status).toBe(409);
+    expect(await datos.Cargo.countDocuments({ campania: datos.fuente.campania, tipo_cobro: 'cubierto_por_representante' })).toBe(0);
+  });
+
+  test('cobertura manual Mongo revierte todo si falla despues de actualizar el origen y permite reintentar', async () => {
+    const datos = await prepararCoberturaMongo();
+    const anteriores = await datos.Cargo.find({ campania: datos.fuente.campania }).select('+nota_interna').sort({ _id: 1 }).lean();
+    const campania = await modelosMongo.alfa.CampaniaCobro.findById(datos.fuente.campania).select('+coberturas_familiares').lean();
+    const original = datos.Cargo.findOneAndUpdate.bind(datos.Cargo);
+    const simulado = jest.spyOn(datos.Cargo, 'findOneAndUpdate').mockImplementationOnce((...args) => ({
+      lean: async () => { await original(...args).lean(); throw new Error('Fallo QA despues de actualizar origen'); }
+    }));
+    try { expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(500); }
+    finally { simulado.mockRestore(); }
+    expect(await datos.Cargo.find({ campania: datos.fuente.campania }).select('+nota_interna').sort({ _id: 1 }).lean()).toEqual(anteriores);
+    expect(await modelosMongo.alfa.CampaniaCobro.findById(datos.fuente.campania).select('+coberturas_familiares').lean()).toEqual(campania);
+    expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(200);
+  });
+
+  test('cobertura manual Mongo restaura los cargos absorbidos y el origen si falla despues de eliminar hermanos', async () => {
+    const datos = await prepararCoberturaMongo();
+    const anteriores = await datos.Cargo.find({ campania: datos.fuente.campania }).select('+nota_interna').sort({ _id: 1 }).lean();
+    const campania = await modelosMongo.alfa.CampaniaCobro.findById(datos.fuente.campania).select('+coberturas_familiares').lean();
+    const pagos = await datos.Pago.find({ campania: datos.fuente.campania }).select('+modificaciones +huella').sort({ _id: 1 }).lean();
+    const original = datos.Cargo.deleteMany.bind(datos.Cargo);
+    const simulado = jest.spyOn(datos.Cargo, 'deleteMany').mockImplementationOnce(async (...args) => {
+      await original(...args);
+      throw new Error('Fallo QA despues de absorber hermanos');
+    });
+    try { expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(500); }
+    finally { simulado.mockRestore(); }
+    expect(await datos.Cargo.find({ campania: datos.fuente.campania }).select('+nota_interna').sort({ _id: 1 }).lean()).toEqual(anteriores);
+    expect(await modelosMongo.alfa.CampaniaCobro.findById(datos.fuente.campania).select('+coberturas_familiares').lean()).toEqual(campania);
+    expect(await datos.Pago.find({ campania: datos.fuente.campania }).select('+modificaciones +huella').sort({ _id: 1 }).lean()).toEqual(pagos);
+    expect((await corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)).status).toBe(200);
+  });
+
+  test('cobertura manual Mongo serializa solicitudes simultaneas y rechaza reusar UUID con otro cuerpo o actor', async () => {
+    const datos = await prepararCoberturaMongo();
+    const respuestas = await Promise.all([corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura),
+      corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura)]);
+    expect(respuestas.map((respuesta) => respuesta.status)).toEqual([200, 200]);
+    expect(respuestas.filter((respuesta) => respuesta.body.repetida)).toHaveLength(1);
+    expect((await corregirMongo('post', datos.rutaCobertura, { ...datos.bodyCobertura, revision: 'b'.repeat(64) })).status).toBe(409);
+    expect((await request(app).post(datos.rutaCobertura).set('Authorization', `Bearer ${tokenPublicacion('super_admin')}`)
+      .send(datos.bodyCobertura)).status).toBe(409);
+    expect((await corregirMongo('post', datos.rutaCobertura, { ...datos.bodyCobertura,
+      solicitud_id: require('crypto').randomUUID() })).status).toBe(409);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(datos.fuente.campania).select('+coberturas_familiares').lean())
+      .coberturas_familiares).toHaveLength(1);
+  });
+
+  test('cobertura manual Mongo competir con pago del hermano no deja pagos en cargo cubierto', async () => {
+    const datos = await prepararCoberturaMongo();
+    const [cobertura, pago] = await Promise.all([
+      corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura),
+      registrarMongo(`${datos.base}/cargos/${datos.hermano._id}/pagos`, { ...datos.pagoBody,
+        version: datos.hermano.__v, solicitud_id: require('crypto').randomUUID() })
+    ]);
+    expect([cobertura.status === 200, pago.status === 201].filter(Boolean)).toHaveLength(1);
+    const hermano = await datos.Cargo.findById(datos.hermano._id).lean();
+    if (cobertura.status === 200) {
+      expect(hermano).toBeNull();
+      expect(await datos.Pago.countDocuments({ cargo: datos.hermano._id })).toBe(0);
+    } else {
+      expect(cobertura.status).toBe(409);
+      expect(hermano.tipo_cobro).toBe('atleta');
+      expect(hermano.monto).toBe(10);
+    }
+  });
+
+  test('cobertura manual Mongo cierra, reabre al eliminar el pago familiar y cierra al confirmar repago', async () => {
+    const datos = await prepararCoberturaMongo();
+    for (const cargo of await datos.Cargo.find({ campania: datos.fuente.campania,
+      alumno: { $in: datos.atletas.slice(2).map((atleta) => atleta._id) } }).lean()) {
+      expect((await registrarMongo(`${datos.base}/cargos/${cargo._id}/pagos`, { ...datos.pagoBody,
+        version: cargo.__v, estado: 'confirmado', monto_pagado: 10, monto_pagado_bs: 1000,
+        solicitud_id: require('crypto').randomUUID() })).status).toBe(201);
+    }
+    const preview = (await peticion('get', datos.rutaCobertura)).body;
+    const body = { ...datos.bodyCobertura, version: preview.campania.__v, revision: preview.revision };
+    const aplicada = await corregirMongo('post', datos.rutaCobertura, body);
+    expect(aplicada.status).toBe(200);
+    expect(aplicada.body.campania.estado).toBe('cerrada');
+    expect((await corregirMongo('post', datos.rutaCobertura, body)).body.repetida).toBe(true);
+    expect((await peticion('get', `${datos.base}/cargos`)).status).toBe(200);
+    const fuente = await datos.Cargo.findById(datos.fuente._id).lean();
+    expect((await corregirMongo('delete', `${datos.ruta}/${datos.pagos[0]._id}`, { version: fuente.__v })).status).toBe(200);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(fuente.campania).lean()).estado).toBe('abierta');
+    const pendiente = (await peticion('get', `${datos.base}/cargos`)).body;
+    expect(pendiente.totales).toMatchObject({ cobros: 3, total_esperado: 30 });
+    expect(pendiente.filas.reduce((total, cargo) => total + cargo.saldo_pendiente, 0)).toBe(10);
+    for (const atleta of [fuente.alumno, datos.hermano.alumno]) {
+      const portal = await datos.propio('get', `/campanias/mis-cargos?alumnoId=${atleta}`);
+      expect(portal.status).toBe(200);
+      expect(portal.body.cargos).toHaveLength(1);
+      expect(portal.body.cargos[0]).toMatchObject({ _id: String(fuente._id), estado: 'pendiente', saldo_pendiente: 10 });
+    }
+    const repago = await registrarMongo(datos.ruta, { ...datos.pagoBody, version: fuente.__v + 1,
+      monto_pagado: 10, monto_pagado_bs: 1000, solicitud_id: require('crypto').randomUUID() });
+    expect(repago.status).toBe(201);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(fuente.campania).lean()).estado).toBe('abierta');
+    expect((await corregirMongo('post', `${datos.ruta}/${repago.body.pago._id}/confirmar`)).status).toBe(200);
+    expect((await modelosMongo.alfa.CampaniaCobro.findById(fuente.campania).lean()).estado).toBe('cerrada');
+    const saldada = (await peticion('get', `${datos.base}/cargos`)).body;
+    expect(saldada.totales.total_esperado).toBe(30);
+    expect(saldada.filas.every((cargo) => cargo.estado === 'pagado' && cargo.saldo_pendiente === 0)).toBe(true);
+    expect(await datos.Cargo.countDocuments({ campania: fuente.campania })).toBe(3);
+  });
+
+  test('cobertura manual Mongo competir con eliminar pago de origen conserva saldo familiar coherente', async () => {
+    const datos = await prepararCoberturaMongo();
+    const fuente = await datos.Cargo.findById(datos.fuente._id).lean();
+    const [cobertura, eliminacion] = await Promise.all([
+      corregirMongo('post', datos.rutaCobertura, datos.bodyCobertura),
+      corregirMongo('delete', `${datos.ruta}/${datos.pagos[0]._id}`, { version: fuente.__v })
+    ]);
+    expect([cobertura.status === 200, eliminacion.status === 200].filter(Boolean)).toHaveLength(1);
+    const hermano = await datos.Cargo.findById(datos.hermano._id).lean();
+    const compartido = await datos.Cargo.findById(datos.fuente._id).lean();
+    const pago = await datos.Pago.findById(datos.pagos[0]._id).lean();
+    if (cobertura.status === 200) {
+      expect(eliminacion.status).toBe(409);
+      expect(hermano).toBeNull();
+      expect(compartido.tipo_cobro).toBe('representante');
+      expect(pago.estado).toBe('confirmado');
+    } else {
+      expect(cobertura.status).toBe(409);
+      expect(hermano.tipo_cobro).toBe('atleta');
+      expect(pago.estado).toBe('eliminado');
+    }
+  });
+
+  test('conversion Mongo conserva No aplica y no admite convertir campanas cerradas', async () => {
+    const datos = await prepararConversionMongo();
+    const id = datos.resumen.campania._id;
+    await datos.Cargo.updateMany({ campania: id, alumno: { $in: datos.atletas.slice(0, 2).map((atleta) => atleta._id) } },
+      { $set: { modalidad: 'no_aplica', monto: 0, saldo_pendiente: 0, estado: 'no_aplica' } });
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: id }, { $set: {
+      totales_cargos: { participantes: 4, generales: 2, personalizados: 0, no_aplica: 2, total_esperado: 20 } }, $inc: { __v: 1 } });
+    const preview = (await peticion('get', datos.rutaConversion)).body;
+    expect(preview.totales).toMatchObject({ participantes: 4, cobros: 3, no_aplica: 1, total_esperado: 20 });
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: id }, { $set: { estado: 'cerrada' } });
+    expect((await peticion('get', datos.rutaConversion)).status).toBe(409);
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: preview.campania.__v, revision: preview.revision })).status).toBe(409);
+    await modelosMongo.alfa.CampaniaCobro.updateOne({ _id: id }, { $set: { estado: 'abierta' } });
+    expect((await corregirMongo('post', datos.rutaConversion, { ...datos.body, version: preview.campania.__v, revision: preview.revision })).status).toBe(200);
+    const cargos = (await peticion('get', `${datos.base}/cargos`)).body.filas;
+    expect(cargos.find((fila) => fila.tipo_cobro === 'representante')).toMatchObject({ modalidad: 'no_aplica', estado: 'no_aplica', monto: 0, saldo_pendiente: 0 });
   });
 });

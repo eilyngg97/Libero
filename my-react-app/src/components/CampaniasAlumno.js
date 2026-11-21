@@ -9,11 +9,12 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useParams } from 'react-router-dom';
 import CampaniaPagoDialog from './CampaniaPagoDialog';
 import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
+import { alumnosDelCargo, detalleCobertura, esCubierto, etiquetaCobro } from '../utils/campaniaCobros';
 
 const API = process.env.REACT_APP_API_URL || window.location.origin;
 const dinero = (valor) => typeof valor === 'number' && Number.isFinite(valor) && valor >= 0;
 const formato = (valor, moneda) => new Intl.NumberFormat('es-VE', { style: 'currency', currency: moneda }).format(valor);
-const estadoVisible = (cargo) => cargo.pago_en_revision ? 'en_revision' : cargo.estado;
+const estadoVisible = (cargo) => esCubierto(cargo) ? 'cubierto' : cargo.pago_en_revision ? 'en_revision' : cargo.estado;
 const diasDeAtraso = (cargo, ahora = Date.now()) => {
   if (!['pendiente', 'abono'].includes(cargo.estado) || cargo.campania.estado === 'cancelada'
     || cargo.saldo_pendiente <= 0 || (cargo.pago_en_revision && cargo.disponible === 0)
@@ -26,7 +27,7 @@ const diasDeAtraso = (cargo, ahora = Date.now()) => {
   const hoy = Date.UTC(Number(calendario.year), Number(calendario.month) - 1, Number(calendario.day));
   return Math.max(0, Math.round((hoy - vencimiento.getTime()) / 86400000));
 };
-const ESTADOS = { pendiente: 'Pendiente', abono: 'Abono', en_revision: 'En revision', pagado: 'Pagado', no_aplica: 'No aplica' };
+const ESTADOS = { pendiente: 'Pendiente', abono: 'Abono', en_revision: 'En revision', pagado: 'Pagado', cubierto: 'Cubierto por pago familiar', no_aplica: 'No aplica' };
 const ESTILOS = {
   pendiente: { fondo: '#fffdf8', borde: '#efe7dc', circulo: '#fbe6cf', icono: '#b45309', etiqueta: '#f6d3ad', texto: '#8a4b08', importe: '#0f172a' },
   pagado: { fondo: '#f6f8ff', borde: '#e5e9f5', circulo: '#86efac', icono: '#166534', etiqueta: '#4ade80', texto: '#065f46', importe: '#a1a1aa' },
@@ -60,11 +61,13 @@ function CampaniasAlumno() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los cobros.');
         if (!Array.isArray(data.cargos) || new Set(data.cargos.map((cargo) => cargo?._id)).size !== data.cargos.length
-          || data.cargos.some((cargo) => !cargo?._id || cargo.alumno !== alumnoId || !cargo.campania?._id
+          || data.cargos.some((cargo) => !cargo?._id || !alumnosDelCargo(cargo).includes(alumnoId) || !cargo.campania?._id
             || typeof cargo.campania.nombre !== 'string' || !['abierta', 'cerrada', 'cancelada'].includes(cargo.campania.estado)
             || !['USD', 'EUR'].includes(cargo.moneda) || cargo.moneda !== cargo.campania.moneda
             || !dinero(cargo.monto) || !dinero(cargo.saldo_pendiente) || cargo.saldo_pendiente > cargo.monto
             || !dinero(cargo.disponible) || cargo.disponible > cargo.saldo_pendiente
+            || (esCubierto(cargo) && (typeof cargo.cobertura_familiar?.cargo !== 'string'
+              || typeof cargo.cobertura_familiar.nombre_atleta !== 'string' || cargo.monto !== 0 || cargo.estado !== 'no_aplica'))
             || !Object.prototype.hasOwnProperty.call(ESTADOS, cargo.estado) || typeof cargo.pago_en_revision !== 'boolean'
             || typeof cargo.permitir_abonos !== 'boolean')) throw new Error('No se pudieron verificar los cobros del atleta.');
         if (!controller.signal.aborted) setCargos(data.cargos);
@@ -85,7 +88,10 @@ function CampaniasAlumno() {
       <Button startIcon={<PaidIcon />} disabled={cargando || Boolean(error)} onClick={() => setAgrupado(true)}
         sx={{ color: '#626879' }}>Pago agrupado</Button>
     </Box>
-    {cargos[0] && <Typography sx={{ mt: 0.5, color: '#64748b', overflowWrap: 'anywhere' }}>{cargos[0].nombres} {cargos[0].apellidos}</Typography>}
+    {cargos[0] && <Typography sx={{ mt: 0.5, color: '#64748b', overflowWrap: 'anywhere' }}>
+      {(cargos[0].atletas_cubiertos || []).find((atleta) => atleta.alumno === alumnoId)?.nombres || cargos[0].nombres}
+      {' '}{(cargos[0].atletas_cubiertos || []).find((atleta) => atleta.alumno === alumnoId)?.apellidos || cargos[0].apellidos}
+    </Typography>}
     <Dialog open={Boolean(aviso)} disableEscapeKeyDown fullWidth maxWidth="xs"
       aria-labelledby="pago-reportado-titulo" aria-describedby="pago-reportado-descripcion"
       slotProps={{ paper: { role: 'alertdialog', sx: { m: 2, width: 'calc(100% - 32px)', borderRadius: 2,
@@ -124,7 +130,7 @@ function CampaniasAlumno() {
       <Box component="ul" aria-label="Cobros adicionales del atleta" sx={{ p: 0, m: 0, listStyle: 'none', display: 'grid', gap: 2 }}>
         {filtrados.slice(pagina * porPagina, (pagina + 1) * porPagina).map((cargo) => {
           const estadoCard = estadoVisible(cargo);
-          const estilo = ESTILOS[estadoCard] || ESTILOS.pendiente;
+          const estilo = ESTILOS[estadoCard === 'cubierto' ? 'pagado' : estadoCard] || ESTILOS.pendiente;
           const atraso = diasDeAtraso(cargo);
           return <Card component="li" key={cargo._id} sx={{ borderRadius: 4, border: `1px solid ${estilo.borde}`,
             bgcolor: estilo.fondo, boxShadow: '0 8px 18px rgba(15, 23, 42, 0.05)', minWidth: 0 }}>
@@ -132,7 +138,7 @@ function CampaniasAlumno() {
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '44px minmax(0, 1fr)', sm: '44px minmax(0, 1fr) minmax(180px, auto)' }, alignItems: 'center', gap: 1.5 }}>
                 <Box aria-hidden="true" sx={{ width: 44, height: 44, borderRadius: '50%', bgcolor: estilo.circulo,
                   color: estilo.icono, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {estadoCard === 'pagado' ? <CheckCircleIcon sx={{ fontSize: 20 }} />
+                  {estadoCard === 'pagado' || estadoCard === 'cubierto' ? <CheckCircleIcon sx={{ fontSize: 20 }} />
                     : estadoCard === 'no_aplica' ? <BlockOutlinedIcon sx={{ fontSize: 20 }} /> : <PendingActionsIcon sx={{ fontSize: 20 }} />}
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
@@ -145,6 +151,20 @@ function CampaniasAlumno() {
                     {`${atraso} ${atraso === 1 ? 'día' : 'días'} de atraso`}
                   </Typography>}
                   {cargo.campania.descripcion && <Typography sx={{ fontSize: 13, color: '#64748b', mt: 0.5, overflowWrap: 'anywhere' }}>{cargo.campania.descripcion}</Typography>}
+                  {cargo.tipo_cobro === 'representante' && <Box sx={{ mt: 1 }}>
+                    <Chip size="small" label={etiquetaCobro(cargo)} sx={{ fontSize: 10, maxWidth: '100%', height: 'auto', '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }} />
+                    <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5, overflowWrap: 'anywhere' }}>{cargo.nombre_representante} · Cubre: {detalleCobertura(cargo)}</Typography>
+                    <Typography sx={{ fontSize: 12, fontWeight: 700, mt: 0.5 }}>Se paga una sola vez para los atletas indicados.</Typography>
+                  </Box>}
+                  {cargo.tipo_cobro === 'individual_sin_representante' && <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5 }}>
+                    Sin representante · Cobro individual
+                  </Typography>}
+                  {esCubierto(cargo) && <Alert severity="success" sx={{ mt: 1 }}>
+                    Cubierto por pago del representante. Pago original de: {cargo.cobertura_familiar.nombre_atleta}. No tienes que pagar este cobro de nuevo.
+                  </Alert>}
+                  {(cargo.tipo_cobro || 'atleta') === 'atleta' && cargo.campania.unidad_cobro === 'representante' && <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5 }}>
+                    Cobro individual conservado al convertir la campaña.
+                  </Typography>}
                   <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5 }}>{cargo.campania.estado === 'cancelada' ? 'Campana cancelada'
                     : cargo.campania.estado === 'cerrada' ? 'Campana cerrada' : `Modalidad de pago: ${cargo.permitir_abonos ? 'Permite abonos' : 'Pago completo'}`}</Typography>
                 </Box>

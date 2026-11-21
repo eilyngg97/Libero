@@ -11,6 +11,7 @@ export function normalizarImportePagoCampania({ monto, montoBs, tasa, esperado, 
 }
 
 export function tieneMontosValidos(campania) {
+  if (campania.unidad_cobro !== undefined && !['atleta', 'representante'].includes(campania.unidad_cobro)) return false;
   const modalidad = campania.modalidad_monto === undefined ? 'unico' : campania.modalidad_monto;
   const montoValido = (monto) => typeof monto === 'number' && Number.isFinite(monto)
     && monto > 0 && monto <= 999999999.99;

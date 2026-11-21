@@ -26,7 +26,7 @@ const PagoCampaniaSchema = new mongoose.Schema({
   fecha_tasa: { type: String, default: '' },
   fecha_pago: { type: String, required: true },
   metodo_pago: { type: String, required: true },
-  referencia: { type: String, required: true, maxlength: 100 },
+  referencia: { type: String, default: '', required: function () { return this.get('metodo_pago') !== 'Efectivo'; }, maxlength: 100 },
   telefono_pago: { type: String, default: '', maxlength: 15 },
   cedula_titular: { type: String, default: '', maxlength: 20 },
   nota: { type: String, default: '', maxlength: 500 },

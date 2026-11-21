@@ -14,6 +14,7 @@ import PagoTransaccionDetalle, { PagoDetalleEncabezado, estiloEditarPago, estilo
   HistorialTransacciones, FilaHistorialTransaccion, DatoHistorialTransaccion } from './PagoTransaccionDetalle';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizarImportePagoCampania } from '../utils/campaniaMontos';
+import { detalleCobertura, titularCargo, esCubierto, etiquetaCobro } from '../utils/campaniaCobros';
 
 const API = process.env.REACT_APP_API_URL || window.location.origin;
 const centimos = (monto) => Math.round(monto * 100);
@@ -70,7 +71,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
         const response = await fetch(`${API}/api/configuracion/pagos`, { headers: headers(), signal: controller.signal });
         const config = await response.json();
         if (!response.ok) throw new Error(config.error || 'No se pudo cargar la configuracion de pagos.');
-        const opciones = buildMetodosFromConfig(config, 'campanias').filter((metodo) => !metodo.adicional || metodo.monedas.includes(campania.moneda));
+        const opciones = buildMetodosFromConfig(config, 'campanias', !representante).filter((metodo) => !metodo.adicional || metodo.monedas.includes(campania.moneda));
         const tasa = enBs ? await (campania.moneda === 'EUR' ? obtenerTasaEuroOficialPorFecha : obtenerTasaOficialPorFecha)(draft.fecha_pago) : null;
         if (enBs && (!Number.isFinite(Number(tasa)) || Number(tasa) <= 0)) throw new Error('No se pudo obtener la tasa oficial de la fecha.');
         if (!controller.signal.aborted) { setMetodos(opciones); setTasaEdicion(tasa == null ? null : Number(tasa)); }
@@ -79,7 +80,7 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
     };
     cargar();
     return () => controller.abort();
-  }, [editando, draft.fecha_pago, enBs, campania.moneda]);
+  }, [editando, draft.fecha_pago, enBs, campania.moneda, representante]);
   useEffect(() => () => { if (comprobante?.url) URL.revokeObjectURL(comprobante.url); }, [comprobante]);
   useEffect(() => {
     const controller = new AbortController();
@@ -253,14 +254,17 @@ function CampaniaPagoDialog({ campania, fila, modo = 'pago', representante = fal
 
   if (modo === 'pago' && campania.estado === 'abierta' && datos && !error && datos.totales.disponible > 0) return <ModalPago open onClose={cerrar}
     pago={{ id: datos.cargo._id, monto: datos.totales.disponible }} currencyCode={datos.cargo.moneda} conceptoPago="campanias"
-    disableCuotas allowPartialPayment={datos.cargo.permitir_abonos} allowPaymentConfirmation={!representante} preventCloseWhileSubmitting
+    disableCuotas allowPartialPayment={datos.cargo.permitir_abonos} allowPaymentConfirmation={!representante} allowCashPayment={!representante} preventCloseWhileSubmitting
     onSubmitPayment={registrar} onSuccess={() => onSaved(resultado.current)} />;
 
   return <><Dialog open onClose={cerrar} fullWidth maxWidth={false} aria-labelledby="historial-campania-titulo"
     PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', width: { xs: 'calc(100% - 16px)', sm: 'calc(100% - 32px)', md: 'calc(100% - 48px)' },
       maxWidth: '1400px', m: { xs: 1, sm: 2, md: 3 } } }}>
-    <PagoDetalleEncabezado id="historial-campania-titulo" nombre={`${fila.nombres} ${fila.apellidos}`} onClose={cerrar} disabled={ocupado} />
+    <PagoDetalleEncabezado id="historial-campania-titulo" nombre={titularCargo(fila)} onClose={cerrar} disabled={ocupado} />
     <DialogContent sx={{ pt: '24px !important', bgcolor: '#f3f5fb' }}>
+      {fila.tipo_cobro === 'representante' && <Alert severity="info" sx={{ mb: 2 }}>{etiquetaCobro(fila)} · Cubre: {detalleCobertura(fila)}</Alert>}
+      {esCubierto(fila) && <Alert severity="success" sx={{ mb: 2 }}>Cubierto por pago del representante.
+        Pago original de: {fila.cobertura_familiar.nombre_atleta}. Este cargo no es una exoneración y no registra otro pago.</Alert>}
       {error && <Alert severity="error" action={!datos && <Button color="inherit" onClick={() => setIntento((valor) => valor + 1)}>Reintentar</Button>}>{error}</Alert>}
       {!datos && !error && <Box role="status" sx={{ display: 'flex', gap: 1, py: 3 }}><CircularProgress size={20} />Cargando historial...</Box>}
       {datos && <>

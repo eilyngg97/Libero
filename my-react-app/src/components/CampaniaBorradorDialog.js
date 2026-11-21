@@ -15,6 +15,7 @@ const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 function CampaniaBorradorDialog({ campania, onClose, onSaved, onContinue }) {
   const [form, setForm] = useState(() => ({
     nombre: campania?.nombre || '', descripcion: campania?.descripcion || '',
+    unidad_cobro: campania?.unidad_cobro || 'atleta',
     modalidad_monto: campania?.modalidad_monto || 'unico',
     monto_general: campania?.monto_general != null ? String(campania.monto_general) : '',
     montos_por_sede: Object.fromEntries((campania?.montos_por_sede || []).map((item) => [item.sede, String(item.monto)])),
@@ -136,7 +137,7 @@ function CampaniaBorradorDialog({ campania, onClose, onSaved, onContinue }) {
     try {
       const token = localStorage.getItem('token');
       if (!token) throw new Error('Tu sesión no está disponible. Inicia sesión nuevamente.');
-      const body = { nombre: form.nombre.trim(), descripcion: form.descripcion.trim(), modalidad_monto: form.modalidad_monto,
+      const body = { nombre: form.nombre.trim(), descripcion: form.descripcion.trim(), unidad_cobro: form.unidad_cobro, modalidad_monto: form.modalidad_monto,
         monto_general: form.modalidad_monto === 'unico' ? monto : null,
         montos_por_sede: form.modalidad_monto === 'por_sede'
           ? form.sedes.map((id) => ({ sede: id, monto: form.montos_por_sede[id].replace(',', '.') })) : [],
@@ -154,6 +155,7 @@ function CampaniaBorradorDialog({ campania, onClose, onSaved, onContinue }) {
       if (!response.ok) throw new Error(data.error || 'No se pudo guardar el borrador. Intenta nuevamente.');
       const guardada = data.campania;
       if (!guardada || typeof guardada._id !== 'string' || guardada.estado !== 'borrador'
+        || (guardada.unidad_cobro || 'atleta') !== form.unidad_cobro
         || typeof guardada.nombre !== 'string' || !tieneMontosValidos(guardada)
         || !['USD', 'EUR'].includes(guardada.moneda) || !Array.isArray(guardada.sedes) || !Number.isInteger(guardada.__v)) {
         throw new Error('No se pudo verificar el guardado. Revisa el listado antes de crear otra campaña.');
@@ -224,6 +226,16 @@ function CampaniaBorradorDialog({ campania, onClose, onSaved, onContinue }) {
           <Box component="section" aria-label="Sedes e importes" sx={seccionSx}>
             {tituloSeccion('02', 'Sedes e importes', `Moneda: ${moneda || '...'}`)}
             <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ color: '#30344b', fontSize: 12, fontWeight: 650, mb: 0.75 }}>{'¿A quién se le cobra?'}</Typography>
+          <ToggleButtonGroup exclusive value={form.unidad_cobro} aria-label="Unidad de cobro" disabled={guardando || !opciones}
+            onChange={(event, valor) => { if (valor) cambiar('unidad_cobro', valor); }} sx={{ mb: 1.5, flexWrap: 'wrap' }}>
+            <ToggleButton value="atleta" sx={{ textTransform: 'none' }}>Por atleta</ToggleButton>
+            <ToggleButton value="representante" sx={{ textTransform: 'none' }}>Por representante</ToggleButton>
+          </ToggleButtonGroup>
+          {form.unidad_cobro === 'representante' && <Alert severity="info" sx={{ mb: 2 }}>
+            Un solo cobro por representante para sus atletas seleccionados. Sin representante: cobro individual.
+            Si los importes o condiciones difieren, deberás unificarlos antes de publicar.
+          </Alert>}
           <Autocomplete multiple size="small" options={opciones?.sedes || []} disableCloseOnSelect disabled={guardando || !opciones}
             value={(opciones?.sedes || []).filter((sede) => form.sedes.includes(sede._id))}
             getOptionLabel={(sede) => sede.nombre} isOptionEqualToValue={(primera, segunda) => primera._id === segunda._id}
@@ -237,7 +249,7 @@ function CampaniaBorradorDialog({ campania, onClose, onSaved, onContinue }) {
               '& .MuiChip-root': { maxWidth: 'calc(100% - 8px)', height: 26, borderRadius: 1, bgcolor: '#f0f2f9', fontSize: 11, color: '#3e4465',
                 '& .MuiChip-deleteIcon': { fontSize: 15, color: '#8b90a8' } } }}
             renderInput={(params) => <TextField {...params} label="Sedes participantes" placeholder={form.sedes.length ? '' : 'Seleccionar sedes'} required error={Boolean(errores.sedes)} helperText={errores.sedes} />} />
-          <Typography sx={{ color: '#30344b', fontSize: 12, fontWeight: 650, mb: 0.75 }}>Importe por atleta</Typography>
+          <Typography sx={{ color: '#30344b', fontSize: 12, fontWeight: 650, mb: 0.75 }}>Importe por {form.unidad_cobro}</Typography>
             <ToggleButtonGroup exclusive value={form.modalidad_monto} aria-label="Modalidad del monto" disabled={guardando || !opciones}
               onChange={(event, valor) => { if (valor) cambiar('modalidad_monto', valor); }}
               sx={{ width: '100%', mb: 1.25, bgcolor: '#f0f1f6', p: 0.5, borderRadius: 1.5,

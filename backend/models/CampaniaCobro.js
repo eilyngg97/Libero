@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const CampaniaCobroSchema = new mongoose.Schema({
   nombre: { type: String, required: true, trim: true, maxlength: 150 },
   descripcion: { type: String, trim: true, default: '', maxlength: 2000 },
+  unidad_cobro: { type: String, enum: ['atleta', 'representante'], default: 'atleta' },
   modalidad_monto: { type: String, enum: ['unico', 'por_sede'], default: 'unico' },
   monto_general: { type: Number, required() { return this.get('modalidad_monto') !== 'por_sede'; }, min: 0.01, max: 999999999.99 },
   montos_por_sede: { type: [new mongoose.Schema({
@@ -31,20 +32,32 @@ const CampaniaCobroSchema = new mongoose.Schema({
     fecha: { type: Date, required: true },
     actor: { id: { type: String, required: true }, rol: { type: String, required: true } },
     participantes: { type: Number, required: true },
+    cobros: Number,
+    representantes: Number,
+    individuales: Number,
     generales: { type: Number, required: true },
     personalizados: { type: Number, required: true },
     no_aplica: { type: Number, required: true },
     total_esperado: { type: Number, required: true, min: 0 }
   }, { _id: false }), default: undefined },
   totales_cargos: { type: new mongoose.Schema({
-    participantes: Number, generales: Number, personalizados: Number, no_aplica: Number, total_esperado: Number
+    participantes: Number, cobros: Number, representantes: Number, individuales: Number,
+    conservados: Number, cubiertos: Number,
+    generales: Number, personalizados: Number, no_aplica: Number, total_esperado: Number
   }, { _id: false }), default: undefined },
+  excepciones_cobro: { type: [new mongoose.Schema({
+    cargo: { type: mongoose.Schema.Types.ObjectId, ref: 'CargoCampania', required: true },
+    representante: { type: mongoose.Schema.Types.ObjectId, ref: 'Representante' },
+    motivo: { type: String, required: true }
+  }, { _id: false })], default: undefined },
   ajustes_cargos: { type: [new mongoose.Schema({
     solicitud_id: String, huella: String, accion: String, cargo: mongoose.Schema.Types.ObjectId,
     anterior: mongoose.Schema.Types.Mixed, nuevo: mongoose.Schema.Types.Mixed,
     actor: { id: String, rol: String }, fecha: Date
   }, { _id: false })], default: [], select: false },
-  actualizado_por: { id: String, rol: String }
+  actualizado_por: { id: String, rol: String },
+  coberturas_familiares: { type: [mongoose.Schema.Types.Mixed], default: [], select: false },
+  conversion_representante: { type: mongoose.Schema.Types.Mixed, select: false }
 }, { timestamps: true });
 
 CampaniaCobroSchema.index({ createdAt: -1, _id: -1 });

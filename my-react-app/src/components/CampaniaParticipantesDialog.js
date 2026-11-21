@@ -152,8 +152,12 @@ function CampaniaParticipantesDialog({ campania, onClose, onSaved, onContinue, o
     ids.forEach((id) => { if (marcar) siguiente.add(id); else siguiente.delete(id); });
     return siguiente;
   });
-  const cambiarCondicion = (id, cambios) => setCondiciones((actuales) => ({ ...actuales,
-    [id]: { ...(actuales[id] || CONDICION_GENERAL), ...cambios } }));
+  const cambiarCondicion = (id, cambios) => setCondiciones((actuales) => {
+    const representante = atletas.find((atleta) => atleta._id === id)?.representante?._id;
+    const ids = datos?.campania.unidad_cobro === 'representante' && representante
+      ? atletas.filter((atleta) => seleccion.has(atleta._id) && atleta.representante?._id === representante).map((atleta) => atleta._id) : [id];
+    return { ...actuales, ...Object.fromEntries(ids.map((alumno) => [alumno, { ...(actuales[alumno] || CONDICION_GENERAL), ...cambios }])) };
+  });
   const hayFiltros = Boolean(busqueda || sede || categoria || tipoMensualidad || inscripcionDesde || inscripcionHasta || vista !== 'todos');
   const limpiarFiltros = () => {
     setBusqueda(''); setSede(''); setCategoria(''); setTipoMensualidad('');
@@ -228,6 +232,10 @@ function CampaniaParticipantesDialog({ campania, onClose, onSaved, onContinue, o
         </Box>}
         {errorCarga && <Alert severity="error" action={<Button color="inherit" onClick={() => setIntento((actual) => actual + 1)}>Reintentar</Button>}>{errorCarga}</Alert>}
         {!cargando && !errorCarga && datos && <>
+          {datos.campania.unidad_cobro === 'representante' && <Alert severity="info" sx={{ mb: 2 }}>
+            Cobro por representante. Los atletas seleccionados del mismo representante comparten una deuda.
+            Al editar una condición se aplica a todos ellos. Sin representante: cobro individual.
+          </Alert>}
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           {condicionInvalida && <Alert severity="error" sx={{ mb: 2 }}>
             Revisa el monto personalizado o la nota interna de {nombreCompleto(atletas.find((atleta) => atleta._id === condicionInvalida[0]))}.

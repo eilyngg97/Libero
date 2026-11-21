@@ -166,6 +166,10 @@ function CobrosAdicionales() {
       setResumen(null); setCreacionGuiada(false);
     }}
       onRevisar={(guardada) => { setResumen(null); setParticipantes(guardada); }}
+      onConverted={(guardada) => {
+        setCampanias((actuales) => actuales.map((item) => item._id === guardada._id ? guardada : item));
+        setResumen(guardada);
+      }}
       onPublished={(guardada) => {
         setCampanias((actuales) => actuales.map((item) => item._id === guardada._id ? guardada : item));
         setResumen(null); setCreacionGuiada(false);
@@ -267,6 +271,8 @@ function CobrosAdicionales() {
               {filtradas.slice(paginaActual * filas, (paginaActual + 1) * filas).map((item) => <TableRow key={item._id}>
                 <TableCell sx={{ minWidth: 180, maxWidth: 300, overflowWrap: 'anywhere' }}>
                   <Typography sx={{ fontSize: 14, fontWeight: 750, color: '#111342' }}>{item.nombre}</Typography>
+                  <Chip size="small" label={item.unidad_cobro === 'representante' ? 'Por representante' : 'Por atleta'}
+                    sx={{ mt: 0.75, height: 22, fontSize: 11, bgcolor: '#f0f2f9', color: '#475569' }} />
                   {item.descripcion && <Typography sx={{ fontSize: 12, color: '#6b7280', mt: 0.5 }}>{item.descripcion}</Typography>}
                 </TableCell>
                 <TableCell sx={{ maxWidth: 220, overflowWrap: 'anywhere' }}>{nombreSedes(item) || 'Sin sedes'}</TableCell>

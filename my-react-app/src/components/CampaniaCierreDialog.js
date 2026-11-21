@@ -5,6 +5,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { tieneMontosValidos } from '../utils/campaniaMontos';
+import { coberturaValida } from '../utils/campaniaCobros';
 
 const API = process.env.REACT_APP_API_URL || window.location.origin;
 const dinero = (valor) => typeof valor === 'number' && Number.isFinite(valor) && valor >= 0;
@@ -40,7 +41,7 @@ function CampaniaCierreDialog({ campania, onClose, onSaved }) {
         const actual = data.campania;
         if (actual?._id !== campania._id || !['abierta', 'cerrada'].includes(actual.estado) || !actual.publicacion
           || !Number.isInteger(actual.__v) || actual.__v < 0 || actual.moneda !== campania.moneda
-          || !Array.isArray(actual.participantes) || !Array.isArray(data.filas) || data.filas.length !== actual.participantes.length
+          || !coberturaValida(data.filas, actual.participantes, actual.unidad_cobro === 'representante')
           || new Set(data.filas.map((fila) => fila?.alumno)).size !== data.filas.length
           || data.filas.some((fila) => !actual.participantes.includes(fila?.alumno) || !dinero(fila.monto)
             || !dinero(fila.saldo_pendiente) || fila.saldo_pendiente > fila.monto || typeof fila.pago_en_revision !== 'boolean')

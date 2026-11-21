@@ -1,8 +1,161 @@
 # Cobros adicionales
 
+## Cobro por atleta o por representante
+
+- El borrador permite elegir `unidad_cobro`: `atleta` (predeterminada, tambien para
+    campanas antiguas sin el campo) o `representante`. La edicion ordinaria de esta
+    propiedad solo se permite antes de publicar. Para una campana abierta existe la
+    conversion explicita descrita abajo; nunca se modifica mediante la edicion general.
+- Por atleta se mantiene un cargo por participante. Por representante se genera un cargo
+    por representante registrado entre los atletas seleccionados, identificado por su ID
+    y no por su nombre. Cada atleta sin representante genera su propio cargo individual;
+    los atletas sin representante nunca se agrupan entre si.
+- El resumen muestra atletas incluidos, cantidad de cobros, representantes, individuales
+    sin representante y total a recaudar sin duplicar la deuda por cada hermano. Permite
+    buscar por responsable, atleta o sede y filtrar representantes con varios atletas
+    o individuales sin representante.
+- La etiqueta "Cobro por representante" se usa cuando cubre un solo atleta;
+    "Cobro compartido" se reserva para cargos que cubren varios atletas.
+    Esta distincion es visual y no cambia el importe ni la unidad de cobro.
+- Los montos por sede siguen disponibles. Si los atletas de un representante tienen
+    importes o modalidades distintos (incluido No aplica), el resumen tiene una observacion,
+    su importe queda pendiente y no se puede publicar. En participantes, editar la condicion
+    de un atleta aplica el cambio a los seleccionados del mismo representante. Un monto
+    personalizado comun permite resolver diferencias entre sedes, sin elegir el mayor,
+    el menor ni el primer importe automaticamente.
+- Al publicar se congelan `tipo_cobro`, `representante_cobro`, `nombre_representante` y
+    `atletas_cubiertos` con sus nombres, categorias y sedes. `alumno` conserva el primer ID
+    como referencia compatible con los pagos existentes, pero no determina la propiedad
+    ni crea una deuda individual cuando `tipo_cobro=representante`. El indice parcial unico
+    por campana y representante impide generar dos cargos para el mismo responsable.
+- `participantes` cuenta atletas; `cobros` cuenta cargos. En publicacion y totales vigentes,
+    `generales`, `personalizados`, `no_aplica` y, tras una conversion con pagos, `cubiertos`
+    cuentan cargos, no hermanos. `conservados` identifica los cargos individuales protegidos
+    y no se suma de nuevo a esas modalidades. Las campanas
+    antiguas sin `cobros` mantienen el conteo anterior. Cierres y conciliacion usan cada deuda
+    una sola vez.
+- El portal muestra el mismo cargo e historial desde cualquiera de los atletas cubiertos,
+    con aviso de cobro compartido y sus nombres. Un reporte reserva el saldo compartido;
+    confirmar, corregir o eliminar afecta esa unica deuda. Los pagos agrupados pueden
+    incluir cargos familiares de distintas campanas sin repetirlos por hermano.
+- El acceso a un cargo familiar corresponde al usuario del representante congelado.
+    Cambiar despues el representante de un atleta no transfiere el cargo ni expone su
+    historial al nuevo representante. Tampoco fusiona cobros individuales anteriores.
+- Agregar explicitamente un hermano de un representante que ya tiene cargo lo vincula
+    a ese mismo cargo sin cambiar importe, saldo ni pagos, incluso si hay abonos. Debe
+    coincidir el importe y la condicion de aplicacion; de otro modo se rechaza el ajuste.
+    Editar o retirar un cargo familiar afecta al cobro completo y a todos sus atletas;
+    la interfaz lo advierte. Se conservan las restricciones de ajuste con pagos activos.
+- Requiere cargar el backend y frontend actualizados. No requiere migrar datos existentes.
+
+## Conversion de una campana abierta a cobro por representante
+
+- En Ver cargos de una campana abierta por atleta, Convertir a cobro por representante
+    abre una vista previa sin escribir datos. Muestra numero de cobros y total antes/despues,
+    representantes, atletas cubiertos e individuales sin representante. Exige aceptar
+    expresamente el nuevo total antes de confirmar. No tiene reversion automatica.
+- La vista compara los totales antes/despues y permite buscar por representante, atleta
+    o sede, filtrar cargos por tipo y revisar ocho tarjetas por pagina. Los filtros no
+    cambian el total ni los cargos que se convertiran. Las reglas y los motivos de
+    conservacion se despliegan al solicitarlos; la confirmacion permanece al pie,
+    tambien en movil.
+- Cuando el cargo corresponde a un solo atleta, el motivo indica "Cargo individual
+    conservado" y los estados de pagos presentes (en revision, confirmados, abonos o
+    eliminados), sin mencionar familia ni cobertura de hermanos. No cambia sus registros.
+- GET `/:id/conversion-representante` y POST en la misma ruta son exclusivos de admin
+    y super_admin de la academia. POST recibe `version`, `revision` de la vista previa y
+    `solicitud_id` UUIDv4. No acepta importes, representantes ni cargos enviados por el cliente.
+- Solo convierte campanas abiertas y publicadas por atleta. Los cargos con cualquier pago
+    registrado (confirmado, parcial, en revision o eliminado) se conservan exactamente:
+    sin modificar IDs, importes, saldos, versiones, fechas, notas ni pagos.
+    Campanas cerradas, canceladas, borradores y ya familiares no admiten una nueva conversion.
+- Se agrupan los cargos vigentes congelados, no los precios actuales ni las condiciones
+    del borrador original. Se conservan participantes, sedes, moneda, vencimiento, abonos,
+    personalizados y No aplica. Se usa el representante actual registrado al convertir.
+    Sin representante, cada atleta conserva su cobro individual.
+- Si un unico cargo de la familia esta totalmente pagado, todos sus pagos estan confirmados
+    y los hermanos pendientes tienen el mismo importe y modalidad, ese cargo cubre a la
+    familia. El cargo pagado y todos sus pagos permanecen intactos. Cada hermano sin historial
+    conserva su ID pero queda a cero con `tipo_cobro=cubierto_por_representante` y
+    `cobertura_familiar.cargo` apuntando al cargo original. Se muestra como
+    "Cubierto por pago del representante", nunca como exonerado ni como otro pago.
+- Abonos, pagos en revision/eliminados, varios hermanos con pagos, diferencias de importe
+    o modalidad, mezcla de retirados y vigentes, atletas desaparecidos o notas conjuntas
+    demasiado largas conservan toda la familia sin cambios para revision. Son avisos,
+    no bloquean la conversion de otras familias. No se elige el mayor o menor importe,
+    ni se generan creditos o reembolsos. Sin representante no hay cobertura entre atletas.
+- `excepciones_cobro` identifica los cargos conservados y sus motivos sin escribir sobre ellos.
+    La vista previa y el resumen distinguen conservados y cubiertos. No se permite agregar
+    automaticamente otra deuda al representante con excepciones ni editar/retirar un cargo
+    cubierto como si fuera una exoneracion; estos casos requieren resolver su cobertura.
+- No se permite eliminar ni cambiar el importe de un pago que sostiene cobertura familiar.
+    Se pueden corregir sus metadatos conservando el importe, sujeto a las restricciones
+    normales del historial (ultimo pago, moneda y estado).
+- La confirmacion recalcula la vista previa y compara version y huella, incluyendo cargos
+    representantes y todos los pagos. Cambios posteriores obligan a actualizarla.
+    En una transaccion obligatoria se bloquea la campana con su version, actualizan los
+    cargos agrupados/cubiertos y sus versiones, sin escribir sobre los protegidos, y eliminan solo los cargos sin pagos absorbidos
+    por el cobro compartido. Un fallo revierte la operacion completa.
+- La escritura de la campana se serializa con pagos y ajustes existentes: un pago que
+    gane la carrera impide convertir; una conversion que gane invalida las versiones
+    antiguas de cargos antes de permitir nuevos pagos. No se pueden perder pagos.
+- Se conserva la publicacion original y se actualizan `unidad_cobro` y `totales_cargos`.
+    `conversion_representante`, privado y no seleccionado por defecto, guarda fecha, actor,
+    solicitud, version, revision, totales anteriores/nuevos y copia de todos los cargos
+    originales (incluidos IDs y notas). Los cargos protegidos conservan todos sus campos;
+    los agrupados mantienen su ID y los cubiertos mantienen el ID con saldo cero.
+    Un reintento identico del mismo actor devuelve `repetida=true` sin agrupar otra vez.
+- Despues de convertir se actualizan la lista y los cargos, sin volver a publicar,
+    registrar pagos ni enviar avisos. El portal comparte la nueva deuda y su historial
+    entre los atletas cubiertos. No es una migracion automatica de campanas existentes.
+    El aviso "Conversion completada" identifica la campana y recuerda que los cargos
+    conservados y sus pagos no cambiaron; se puede cerrar sin cerrar el detalle.
+
+## Cobertura familiar despues de convertir
+
+- Si una familia quedo conservada porque el pago estaba en revision, confirmarlo
+    solo actualiza el saldo de su cargo original: nunca agrupa hermanos automaticamente.
+- En el cargo conservado con pago o abono confirmado, el boton "Cubrir hermanos" abre "Aplicar cobertura familiar", una vista previa
+    con los pagos confirmados de origen, saldo familiar restante, representante, hermanos y totales antes/despues.
+    Requiere aceptar expresamente; abrir o cancelar no escribe datos.
+- GET y POST `/:id/cargos/:cargoId/cobertura-familiar` son exclusivos de admin y
+    super_admin. POST solo acepta `version`, `revision` y `solicitud_id` UUIDv4.
+- Solo admite familias conservadas en campanas abiertas por representante. Todos
+    deben seguir vinculados al representante registrado al convertir. El origen
+    debe estar pagado o en abono (si permite abonos), sin pagos en revision.
+    Los pagos confirmados mas el saldo pendiente deben sumar el importe original.
+    Por ejemplo, un abono de $15 en una campana de $20 deja un unico saldo familiar de $5,
+    no $5 por atleta ni $25 entre dos hermanos.
+    Puede tener varios abonos confirmados e historial eliminado: los pagos eliminados
+    permanecen como auditoria pero no bloquean ni cuentan como pago vigente.
+    Los hermanos deben conservar el mismo importe y modalidad, estar pendientes,
+    no retirados y sin ningun pago registrado, incluidos eliminados o en revision.
+    No se acepta una familia con otra cobertura o cobro compartido ya aplicado.
+- Se conserva el ID, alumno original, importe, saldo y todos los pagos del origen.
+    El cargo se transforma en `tipo_cobro=representante` y congela al responsable y
+    todos sus atletas en `atletas_cubiertos`. Se absorben los cargos de los hermanos
+    sin historial de pagos; sus documentos originales y notas quedan en la auditoria.
+    No se genera otro pago, exoneracion ni deuda individual por hermano.
+    Se actualizan totales y se retiran las excepciones de la familia; no se cambia la publicacion ni la auditoria
+    original de conversion. `coberturas_familiares`, privado, registra solicitud,
+    actor, fecha, totales y copia de los cargos familiares anteriores.
+- Version y revision detectan cambios en cargos, pagos y representantes. La
+    transaccion obligatoria se serializa con pagos, correcciones y ajustes: nunca
+    puede perderse un pago por absorber un cargo que acaba de recibirlo.
+    Corregir o eliminar un pago actualiza el unico saldo familiar: todos los atletas
+    muestran el mismo cargo e historial, pendiente/abono/pagado segun su saldo.
+    Volver a pagar desde cualquier hermano cubre la misma deuda una sola vez.
+    Un reintento identico del mismo actor devuelve `repetida=true`; no duplica cobertura.
+- El resumen y la lista se actualizan al aplicar; el portal muestra al hermano
+    incluido en el cargo compartido. Si queda saldada la ultima deuda exigible y
+    no hay pagos en revision, se aplica el cierre automatico existente.
+    Eliminar o reducir un pago confirmado puede reabrir la campana de cierre automatico,
+    sin duplicar el importe familiar. Las coberturas a cero de la conversion inicial
+    conservan sus reglas anteriores; no se migran ni se modifican automaticamente.
+
 ## Monto esperado en el detalle del pago
 
-- El monto esperado corresponde al importe congelado del cargo del atleta, no al monto
+- El monto esperado corresponde al importe congelado del cargo individual o compartido, no al monto
     pagado ni al equivalente recalculado del pago. Aplica al detalle y al historial individual.
 - Al editar la fecha, cambia la tasa y la conversion a Bs del monto esperado; su importe
     en USD/EUR permanece fijo. Editar el monto pagado solo cambia el equivalente recibido.
@@ -25,6 +178,17 @@
     uniformes ni las cuentas generales. Volver a heredar conserva los datos personalizados.
 - La misma configuracion se aplica a pagos individuales, agrupados y su edicion, tanto en
     administracion como en el portal. Se mantienen validaciones de moneda y metodos habilitados.
+- Al registrar un pago individual, admin y super_admin tambien pueden elegir Efectivo,
+    sin configurar una cuenta bancaria. Se registra directamente en la moneda de la campana
+    (USD o EUR), sin conversion, tasa ni monto en Bs. La referencia o recibo y el comprobante
+    son opcionales. Permite pago completo o abono segun las reglas del cargo; "Pago confirmado"
+    aparece marcado inicialmente y el administrador puede cambiarlo.
+    Efectivo no se ofrece en el portal del representante: la API tambien rechaza que un usuario
+    lo registre o cambie un pago a ese metodo. Los administradores pueden corregirlo desde
+    el historial, conservando las reglas existentes de saldo, auditoria e idempotencia.
+- Tras confirmar un pago individual, el resumen muestra un aviso accesible "Pago confirmado",
+    con icono destacado y recordatorio de que el importe se aplico al cargo. Cerrar el aviso
+    no cierra el detalle ni modifica pagos o saldos.
 - Para activar la persistencia del nuevo concepto, actualizar/reiniciar el backend y cargar
     el frontend actualizado. No requiere migrar ni cambiar pagos historicos.
 

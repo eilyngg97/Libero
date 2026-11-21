@@ -7,6 +7,9 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import CobrosAdicionales from './CobrosAdicionales';
 import ProtectedRoute from './ProtectedRoute';
 import CampaniaParticipantesDialog from './CampaniaParticipantesDialog';
+import CampaniaBorradorDialog from './CampaniaBorradorDialog';
+import CampaniaConversionDialog from './CampaniaConversionDialog';
+import CampaniaCoberturaDialog from './CampaniaCoberturaDialog';
 import CampaniaResumenDialog from './CampaniaResumenDialog';
 import CampaniaCierreDialog from './CampaniaCierreDialog';
 import CampaniaPagoDialog from './CampaniaPagoDialog';
@@ -17,7 +20,7 @@ import CampaniasAlumno from './CampaniasAlumno';
 import PanelOpcionesUsuario from './PanelOpcionesUsuario';
 import ConciliacionBancaria from './ConciliacionBancaria';
 import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
-import { obtenerTasaOficialPorFecha } from '../utils/dolarHistorico';
+import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizarImportePagoCampania } from '../utils/campaniaMontos';
 
 jest.mock('../context/DolarContext', () => ({ useDolar: () => ({ dolar: { promedio: 100, moneda: 'USD' } }) }));
@@ -36,6 +39,567 @@ const originalCrypto = Object.getOwnPropertyDescriptor(window, 'crypto');
 const campania = (indice) => ({ _id: String(indice), nombre: `Viaje ${indice}`, descripcion: '',
   monto_general: 30, moneda: 'USD', estado: 'borrador', sedes: [{ _id: 'norte', nombre: 'Norte' }], vencimiento: '2026-12-15', __v: 0 });
 const responder = (campanias) => ({ ok: true, status: 200, json: async () => ({ campanias }) });
+
+describe('cobros por representante en campañas', () => {
+  const actual = { ...campania(1), unidad_cobro: 'representante', monto_general: 10,
+    participantes: ['ana', 'luis', 'eva'], permitir_abonos: true };
+  const atleta = (alumno, nombres) => ({ alumno, nombres, apellidos: 'QA', categoria: 'Infantil', sede: 'norte', nombre_sede: 'Norte' });
+  const filas = [
+    { alumno: 'ana', nombres: 'Ana', apellidos: 'QA', modalidad: 'general', monto: 10, nota_interna: '', incidencias: [],
+      sede: { _id: 'norte', nombre: 'Norte' }, tipo_cobro: 'representante', representante_cobro: 'maria',
+      nombre_representante: 'María QA', atletas_cubiertos: [atleta('ana', 'Ana'), atleta('luis', 'Luis')] },
+    { alumno: 'eva', nombres: 'Eva', apellidos: 'QA', modalidad: 'general', monto: 10, nota_interna: '', incidencias: [],
+      sede: { _id: 'norte', nombre: 'Norte' }, tipo_cobro: 'individual_sin_representante', atletas_cubiertos: [atleta('eva', 'Eva')] }
+  ];
+  const totales = { participantes: 3, cobros: 2, representantes: 1, individuales: 1,
+    generales: 2, personalizados: 0, no_aplica: 0, pendientes: 0, con_observaciones: 0, subtotal_calculado: 20, total_esperado: 20 };
+  const json = (data) => ({ ok: true, status: 200, json: async () => data });
+  const preview = () => ({ campania: actual, filas, totales, revision: 'a'.repeat(64) });
+  const publicada = { ...actual, estado: 'abierta', __v: 1, publicacion: totales };
+
+  test('guarda la unidad por representante sin cambiar la modalidad del importe', async () => {
+    const onSaved = jest.fn();
+    window.fetch.mockImplementation(async (url, options = {}) => options.method === 'PATCH'
+      ? json({ campania: { ...actual, __v: 1 } }) : json({ moneda: 'USD', sedes: actual.sedes }));
+    render(<CampaniaBorradorDialog campania={{ ...actual, unidad_cobro: 'atleta' }} onClose={jest.fn()} onSaved={onSaved} />);
+    const opcion = await screen.findByRole('button', { name: 'Por representante' });
+    await waitFor(() => expect(opcion).toBeEnabled());
+    fireEvent.click(opcion);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const escritura = window.fetch.mock.calls.find(([, options]) => options?.method === 'PATCH');
+    expect(JSON.parse(escritura[1].body)).toMatchObject({ unidad_cobro: 'representante', modalidad_monto: 'unico', monto_general: '10' });
+  });
+
+  test('muestra dos cobros para tres atletas, permite buscar al hermano y filtrar sin representante', async () => {
+    window.fetch.mockResolvedValue(json(preview()));
+    render(<CampaniaResumenDialog campania={actual} onClose={jest.fn()} onRevisar={jest.fn()} onPublished={jest.fn()} />);
+    const tabla = await screen.findByRole('table', { name: 'Participantes del resumen' });
+    expect(within(tabla).getAllByRole('row')).toHaveLength(3);
+    expect(screen.getByText(/3 atletas incluidos.*2 cobros/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar representante, atleta o sede' }), { target: { value: 'Luis' } });
+    expect(within(tabla).getByText('María QA')).toBeInTheDocument();
+    expect(within(tabla).queryByText('Eva QA')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar representante, atleta o sede' }), { target: { value: '' } });
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Tipo de cobro' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Sin representante' }));
+    expect(within(tabla).getByText('Eva QA')).toBeInTheDocument();
+    expect(within(tabla).queryByText('María QA')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Total a recaudar' })).toHaveTextContent('20,00');
+  });
+
+  test('no permite publicar una familia con importes distintos', async () => {
+    window.fetch.mockResolvedValue(json({ ...preview(), filas: [{ ...filas[0], monto: null,
+      incidencias: ['Unifica los importes de este representante.'] }, filas[1]],
+    totales: { ...totales, pendientes: 1, con_observaciones: 1, subtotal_calculado: 10, total_esperado: null } }));
+    render(<CampaniaResumenDialog campania={actual} onClose={jest.fn()} onRevisar={jest.fn()} onPublished={jest.fn()} />);
+    expect(await screen.findByText('Unifica los importes de este representante.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publicar campaña' })).toBeDisabled();
+  });
+
+  test('publica y verifica los conteos de atletas y cobros por separado', async () => {
+    const onPublished = jest.fn();
+    window.fetch.mockImplementation(async (url, options = {}) => {
+      if (options.method !== 'POST') return json(preview());
+      const body = JSON.parse(options.body);
+      const publicacion = { ...totales, solicitud_id: body.solicitud_id, version_borrador: body.version,
+        revision: body.revision, actor: { id: 'admin', rol: 'admin' }, fecha: '2026-11-20T16:00:00Z' };
+      return json({ campania: { ...publicada, publicacion }, publicacion, repetida: false });
+    });
+    render(<CampaniaResumenDialog campania={actual} onClose={jest.fn()} onRevisar={jest.fn()} onPublished={onPublished} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Publicar campaña' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar publicación' }));
+    await waitFor(() => expect(onPublished).toHaveBeenCalledTimes(1));
+    expect(onPublished.mock.calls[0][0].publicacion).toMatchObject({ participantes: 3, cobros: 2, total_esperado: 20 });
+  });
+
+  test('editar una condición familiar actualiza solo los hermanos seleccionados de ese representante', async () => {
+    const atletas = [atleta('ana', 'Ana'), atleta('luis', 'Luis'), atleta('eva', 'Eva')].map((item) => ({
+      ...item, _id: item.alumno, sede: actual.sedes[0], disponible: true, foto: '', tipo_mensualidad: 'monto_sede',
+      representante: item.alumno === 'eva' ? null : { _id: 'maria', nombres: 'María', apellidos: 'QA' }
+    }));
+    const onSaved = jest.fn();
+    window.fetch.mockImplementation(async (url, options = {}) => {
+      if (options.method === 'PUT') return json({ campania: { ...actual, ...JSON.parse(options.body), __v: 1 } });
+      return json({ campania: actual, atletas });
+    });
+    render(<CampaniaParticipantesDialog campania={actual} onClose={jest.fn()} onSaved={onSaved} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Condiciones de Ana QA' }));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Condición de Ana QA' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Monto personalizado' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Monto de Ana QA' }), { target: { value: '12' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar selección' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const escritura = window.fetch.mock.calls.find(([, options]) => options?.method === 'PUT');
+    expect(JSON.parse(escritura[1].body).condiciones_participantes).toEqual([
+      { alumno: 'ana', modalidad: 'personalizado', monto: 12, nota_interna: '' },
+      { alumno: 'luis', modalidad: 'personalizado', monto: 12, nota_interna: '' }
+    ]);
+  });
+
+  test('el portal del segundo hermano muestra una sola deuda e identifica a todos los cubiertos', async () => {
+    window.fetch.mockResolvedValue(json({ cargos: [{ ...filas[0], _id: 'compartido', campania: publicada, moneda: 'USD',
+      saldo_pendiente: 10, disponible: 10, estado: 'pendiente', pago_en_revision: false, permitir_abonos: true }] }));
+    render(<MemoryRouter initialEntries={['/campanias-alumno/luis']}><Routes>
+      <Route path="/campanias-alumno/:alumnoId" element={<CampaniasAlumno />} /></Routes></MemoryRouter>);
+    expect(await screen.findByText('Cobro compartido')).toBeInTheDocument();
+    expect(screen.getByText(/Se paga una sola vez/)).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Cobros adicionales del atleta' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByText(/Cubre:.*Ana QA.*Luis QA/)).toBeInTheDocument();
+  });
+
+  test('el cierre suma cada deuda compartida una sola vez aunque cubra varios atletas', async () => {
+    window.fetch.mockResolvedValue(json({ campania: publicada, totales,
+      filas: filas.map((fila) => ({ ...fila, monto: 10, saldo_pendiente: 10, pago_en_revision: false })) }));
+    render(<CampaniaCierreDialog campania={publicada} onClose={jest.fn()} onSaved={jest.fn()} />);
+    expect(await screen.findByRole('textbox', { name: /Motivo del cierre/ })).toBeEnabled();
+    expect(screen.queryByText(/No se pudieron verificar/)).not.toBeInTheDocument();
+    expect(screen.getByText(/20,00/)).toBeInTheDocument();
+  });
+
+  test('el portal identifica al representante con un solo atleta sin llamarlo compartido', async () => {
+    window.fetch.mockResolvedValue(json({ cargos: [{ ...filas[0], atletas_cubiertos: [atleta('ana', 'Ana')],
+      _id: 'unico', campania: publicada, moneda: 'USD', saldo_pendiente: 10, disponible: 10,
+      estado: 'pendiente', pago_en_revision: false, permitir_abonos: true }] }));
+    render(<MemoryRouter initialEntries={['/campanias-alumno/ana']}><Routes>
+      <Route path="/campanias-alumno/:alumnoId" element={<CampaniasAlumno />} /></Routes></MemoryRouter>);
+    expect(await screen.findByText('Cobro por representante')).toBeInTheDocument();
+    expect(screen.queryByText(/Cobro compartido/)).not.toBeInTheDocument();
+  });
+});
+
+describe('conversion a cobro por representante', () => {
+  const iniciales = { participantes: 3, generales: 3, personalizados: 0, no_aplica: 0, total_esperado: 30 };
+  const actual = { ...campania(1), estado: 'abierta', unidad_cobro: 'atleta', monto_general: 10,
+    participantes: ['ana', 'luis', 'eva'], publicacion: iniciales, __v: 2 };
+  const atleta = (alumno, nombres) => ({ alumno, nombres, apellidos: 'QA', categoria: 'Infantil', sede: 'norte', nombre_sede: 'Norte' });
+  const filas = [
+    { _id: 'cargo-ana', alumno: 'ana', nombres: 'Ana', apellidos: 'QA', sede: actual.sedes[0], modalidad: 'general',
+      monto: 10, nota_interna: '', incidencias: [], tipo_cobro: 'representante', representante_cobro: 'maria',
+      nombre_representante: 'María QA', atletas_cubiertos: [atleta('ana', 'Ana'), atleta('luis', 'Luis')] },
+    { _id: 'cargo-eva', alumno: 'eva', nombres: 'Eva', apellidos: 'QA', sede: actual.sedes[0], modalidad: 'general',
+      monto: 10, nota_interna: '', incidencias: [], tipo_cobro: 'individual_sin_representante', atletas_cubiertos: [atleta('eva', 'Eva')] }
+  ];
+  const totales = { participantes: 3, cobros: 2, representantes: 1, individuales: 1, generales: 2, personalizados: 0,
+    no_aplica: 0, pendientes: 0, con_observaciones: 0, subtotal_calculado: 20, total_esperado: 20 };
+  const preview = { campania: actual, filas, totales, revision: 'b'.repeat(64), antes: { cobros: 3, total_esperado: 30 } };
+  const convertida = { ...actual, unidad_cobro: 'representante', totales_cargos: totales, __v: 3 };
+  const mixtas = [
+    { ...filas[0], tipo_cobro: 'atleta', atletas_cubiertos: undefined, representante_cobro: undefined,
+      preservado_conversion: true, motivo_conservacion: 'Cargo pagado conservado sin modificaciones.',
+      estado: 'pagado', saldo_pendiente: 0 },
+    { ...filas[0], _id: 'cargo-luis', alumno: 'luis', nombres: 'Luis', tipo_cobro: 'cubierto_por_representante',
+      atletas_cubiertos: [atleta('luis', 'Luis')], cobertura_familiar: { cargo: 'cargo-ana', alumno: 'ana', nombre_atleta: 'Ana QA' },
+      modalidad: 'no_aplica', monto: 0, saldo_pendiente: 0, estado: 'no_aplica' },
+    { ...filas[1], saldo_pendiente: 10, estado: 'pendiente' }
+  ];
+  const totalesMixtos = { ...totales, cobros: 3, representantes: 0, conservados: 1, cubiertos: 1 };
+  const previaMixta = { ...preview, filas: mixtas, totales: totalesMixtos };
+  const json = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
+  const aceptar = async () => fireEvent.click(await screen.findByRole('checkbox', { name: /Confirmo el nuevo total/ }));
+  const confirmar = () => fireEvent.click(screen.getByRole('button', { name: 'Confirmar conversión' }));
+
+  test.each([1, 2])('la vista previa distingue un representante con %i atletas', async (cantidad) => {
+    const vista = cantidad === 2 ? preview : { ...preview,
+      campania: { ...actual, participantes: ['ana', 'eva'], publicacion: { ...iniciales, participantes: 2, generales: 2, total_esperado: 20 } },
+      filas: [{ ...filas[0], atletas_cubiertos: [atleta('ana', 'Ana')] }, filas[1]],
+      totales: { ...totales, participantes: 2 }, antes: { cobros: 2, total_esperado: 20 } };
+    window.fetch.mockResolvedValue(json(vista));
+    render(<CampaniaConversionDialog campania={vista.campania} onClose={jest.fn()} onConverted={jest.fn()} />);
+    const lista = await screen.findByRole('list', { name: 'Cobros después de convertir' });
+    expect(within(lista).getByText(cantidad === 1 ? 'Cobro por representante' : 'Cobro compartido')).toBeInTheDocument();
+    expect(within(lista).queryByText(cantidad === 1 ? 'Cobro compartido' : 'Cobro por representante')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Cobro después de convertir' })).toHaveTextContent('20,00');
+  });
+
+  test('muestra comparacion y atletas cubiertos, exige aceptar y cancelar no cambia la campaña', async () => {
+    const onClose = jest.fn();
+    window.fetch.mockResolvedValue(json(preview));
+    render(<CampaniaConversionDialog campania={actual} onClose={onClose} onConverted={jest.fn()} />);
+    expect(await screen.findByRole('group', { name: 'Cobro actual' })).toHaveTextContent(/30,00.*3 cobros/);
+    expect(screen.getByRole('group', { name: 'Cobro después de convertir' })).toHaveTextContent(/20,00.*2 cobros/);
+    expect(screen.getByText('María QA')).toBeInTheDocument();
+    expect(screen.getByText(/Cubre:.*Ana QA.*Luis QA/)).toBeInTheDocument();
+    expect(screen.getByText('Sin representante · Cobro individual')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar conversión' })).toBeDisabled();
+    await aceptar();
+    expect(screen.getByRole('button', { name: 'Confirmar conversión' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+
+  test('reintenta la misma solicitud tras fallo de red y no permite doble envio pendiente', async () => {
+    const onConverted = jest.fn(); let resolver;
+    window.fetch.mockResolvedValueOnce(json(preview)).mockRejectedValueOnce(new Error('Red no disponible'))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolver = resolve; }));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={onConverted} />);
+    await aceptar(); confirmar();
+    await screen.findByText('Red no disponible');
+    confirmar(); confirmar();
+    expect(screen.getByRole('button', { name: 'Confirmar conversión' })).toBeDisabled();
+    await act(async () => resolver(json({ campania: convertida, repetida: true })));
+    await waitFor(() => expect(onConverted).toHaveBeenCalledWith(convertida));
+    const posts = window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST');
+    expect(posts).toHaveLength(2);
+    expect(posts[0][1].body).toBe(posts[1][1].body);
+    expect(JSON.parse(posts[0][1].body)).toMatchObject({ version: 2, revision: preview.revision });
+  });
+
+  test('bloquea conflictos de importe y muestra como resolverlos', async () => {
+    window.fetch.mockResolvedValue(json({ ...preview,
+      filas: [{ ...filas[0], monto: null, incidencias: ['Los importes de los hermanos son distintos.'] }, filas[1]],
+      totales: { ...totales, pendientes: 1, con_observaciones: 1, subtotal_calculado: 10, total_esperado: null } }));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={jest.fn()} />);
+    expect(await screen.findByText('Los importes de los hermanos son distintos.')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Confirmo el nuevo total/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirmar conversión' })).toBeDisabled();
+    expect(window.fetch.mock.calls).toHaveLength(1);
+  });
+
+  test('un fallo de integridad impide cargar la vista previa y no habilita confirmacion', async () => {
+    window.fetch.mockResolvedValue(json({ error: 'Los pagos y saldos no coinciden.' }, 409));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={jest.fn()} />);
+    expect(await screen.findByText('Los pagos y saldos no coinciden.')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar conversión' })).toBeDisabled();
+  });
+
+  test('permite convertir con pagos conservados y hermanos cubiertos sin llamarlos exonerados', async () => {
+    const onConverted = jest.fn();
+    const resultado = { ...convertida, totales_cargos: totalesMixtos };
+    window.fetch.mockResolvedValueOnce(json(previaMixta)).mockResolvedValueOnce(json({ campania: resultado, repetida: false }));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={onConverted} />);
+    expect(await screen.findByText('Cubierto por pago del representante')).toBeInTheDocument();
+    expect(screen.getByText('Cargo conservado sin cambios')).toBeInTheDocument();
+    expect(screen.getByText(/Pago original de: Ana QA/)).toBeInTheDocument();
+    expect(screen.getByText(/1 cargos conservados.*1 atletas cubiertos/)).toBeInTheDocument();
+    await aceptar(); confirmar();
+    await waitFor(() => expect(onConverted).toHaveBeenCalledWith(resultado));
+  });
+
+  test('familias conservadas para revision no bloquean la conversion de las demas', async () => {
+    const motivo = 'Familia conservada para revision: hay abonos.';
+    window.fetch.mockResolvedValue(json({ ...previaMixta, filas: [
+      { ...mixtas[0], estado: 'abono', saldo_pendiente: 5, motivo_conservacion: motivo },
+      { ...mixtas[0], _id: 'cargo-luis', alumno: 'luis', nombres: 'Luis', estado: 'pendiente',
+        saldo_pendiente: 10, motivo_conservacion: motivo }, mixtas[2]
+    ], totales: { ...totalesMixtos, conservados: 2, cubiertos: 0, generales: 3, total_esperado: 30, subtotal_calculado: 30 } }));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={jest.fn()} />);
+    expect(await screen.findAllByText(motivo)).toHaveLength(2);
+    await aceptar();
+    expect(screen.getByRole('button', { name: 'Confirmar conversión' })).toBeEnabled();
+  });
+
+  test('busca por hermano sin acentos y combina tipos de cobro sin alterar el total global', async () => {
+    window.fetch.mockResolvedValue(json(previaMixta));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={jest.fn()} />);
+    const lista = await screen.findByRole('list', { name: 'Cobros después de convertir' });
+    const buscador = screen.getByRole('textbox', { name: 'Buscar representante, atleta o sede' });
+    fireEvent.change(buscador, { target: { value: 'LUÍS' } });
+    expect(within(lista).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(lista).getByText('Luis QA')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Conservados (1)' }));
+    expect(screen.getByText('No encontramos cobros')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Conservados (1)' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('group', { name: 'Cobro después de convertir' })).toHaveTextContent('20,00');
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+    expect(buscador).toHaveValue('');
+    expect(within(lista).getAllByRole('listitem')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Cubiertos por pago (1)' }));
+    expect(within(lista).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(lista).getByText('Luis QA')).toBeInTheDocument();
+  });
+
+  test('pagina listas extensas y vuelve a la primera pagina al buscar o filtrar', async () => {
+    const adicionales = Array.from({ length: 16 }, (_, indice) => ({ ...filas[1], _id: `cargo-extra-${indice}`,
+      alumno: `extra-${indice}`, nombres: `Extra ${indice}`, atletas_cubiertos: [atleta(`extra-${indice}`, `Extra ${indice}`)] }));
+    window.fetch.mockResolvedValue(json({ ...preview,
+      campania: { ...actual, participantes: [...actual.participantes, ...adicionales.map((fila) => fila.alumno)],
+        publicacion: { ...iniciales, participantes: 19, generales: 19, total_esperado: 190 } },
+      filas: [...filas, ...adicionales],
+      totales: { ...totales, participantes: 19, cobros: 18, individuales: 17, generales: 18, subtotal_calculado: 180, total_esperado: 180 },
+      antes: { cobros: 19, total_esperado: 190 } }));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={jest.fn()} />);
+    const lista = await screen.findByRole('list', { name: 'Cobros después de convertir' });
+    expect(within(lista).getAllByRole('listitem')).toHaveLength(8);
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Mostrando 9–16 de 18 cobros');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar representante, atleta o sede' }), { target: { value: 'María' } });
+    expect(screen.getByRole('status')).toHaveTextContent('Mostrando 1–1 de 1 cobros');
+    expect(within(lista).getByText('María QA')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar representante, atleta o sede' }), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Por representante (1)' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Mostrando 1–1 de 1 cobros');
+    expect(screen.queryByRole('button', { name: 'Página siguiente' })).not.toBeInTheDocument();
+    expect(window.fetch.mock.calls).toHaveLength(1);
+  });
+
+  test('el resumen admite cargos individuales preservados y filtra cobertura sin confundirla con No aplica', async () => {
+    const publicada = { ...convertida, totales_cargos: totalesMixtos };
+    window.fetch.mockResolvedValue(json({ campania: publicada, totales: totalesMixtos,
+      filas: mixtas.map((fila) => ({ ...fila, version: 1, pago_en_revision: false, permitir_abonos: true, puede_ajustar: false })) }));
+    render(<CampaniaResumenDialog campania={publicada} onClose={jest.fn()} onRevisar={jest.fn()} />);
+    const tabla = await screen.findByRole('table', { name: 'Participantes del resumen' });
+    expect(within(tabla).getByText('Ana QA')).toBeInTheDocument();
+    expect(within(tabla).getByText('Cubierto por pago del representante')).toBeInTheDocument();
+    expect(within(tabla).queryByText('No aplica')).not.toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Tipo de cobro' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Cubiertos por pago familiar' }));
+    expect(within(tabla).getByText('Luis QA')).toBeInTheDocument();
+    expect(within(tabla).queryByText('Eva QA')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Total a recaudar' })).toHaveTextContent('20,00');
+  });
+
+  test('el portal del hermano distingue cobertura de exoneracion y no permite reportar otro pago', async () => {
+    window.fetch.mockResolvedValue(json({ cargos: [{ ...mixtas[1], campania: { ...convertida, totales_cargos: totalesMixtos },
+      moneda: 'USD', disponible: 0, pago_en_revision: false, permitir_abonos: true }] }));
+    render(<MemoryRouter initialEntries={['/campanias-alumno/luis']}><Routes>
+      <Route path="/campanias-alumno/:alumnoId" element={<CampaniasAlumno />} /></Routes></MemoryRouter>);
+    expect(await screen.findByText(/Cubierto por pago del representante.*Pago original de: Ana QA/)).toBeInTheDocument();
+    expect(screen.queryByText('No aplica')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reportar pago/ })).toBeDisabled();
+  });
+
+  test('un conflicto al confirmar exige actualizar y aceptar de nuevo', async () => {
+    window.fetch.mockResolvedValueOnce(json(preview)).mockResolvedValueOnce(json({ error: 'Se registró un pago después de la vista previa.' }, 409))
+      .mockResolvedValueOnce(json(preview));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={jest.fn()} />);
+    await aceptar(); confirmar();
+    expect(await screen.findByText('Se registró un pago después de la vista previa.')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar conversión' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar vista previa' }));
+    expect(await screen.findByRole('checkbox', { name: /Confirmo el nuevo total/ })).not.toBeChecked();
+  });
+
+  test.each(['preview', 'resultado'])('rechaza datos inconsistentes en %s sin anunciar conversion', async (defecto) => {
+    const onConverted = jest.fn();
+    window.fetch.mockResolvedValueOnce(json(defecto === 'preview' ? { ...preview, totales: { ...totales, total_esperado: 30 } } : preview))
+      .mockResolvedValueOnce(json({ campania: { ...convertida, totales_cargos: iniciales }, repetida: false }));
+    render(<CampaniaConversionDialog campania={actual} onClose={jest.fn()} onConverted={onConverted} />);
+    if (defecto === 'resultado') { await aceptar(); confirmar(); }
+    expect(await screen.findByText(/No se pudo verificar/)).toBeInTheDocument();
+    expect(onConverted).not.toHaveBeenCalled();
+  });
+
+  test('desde cargos permite convertir y actualiza la lista y los cargos sin volver a publicarla', async () => {
+    let guardada = actual;
+    const originales = [atleta('ana', 'Ana'), atleta('luis', 'Luis'), atleta('eva', 'Eva')].map((item) => ({
+      _id: `cargo-${item.alumno}`, alumno: item.alumno, nombres: item.nombres, apellidos: item.apellidos, sede: actual.sedes[0],
+      modalidad: 'general', monto: 10, saldo_pendiente: 10, estado: 'pendiente', nota_interna: '', incidencias: [],
+      version: 0, permitir_abonos: true, pago_en_revision: false, puede_ajustar: true
+    }));
+    window.fetch.mockImplementation(async (url, options = {}) => {
+      if (url.endsWith('/conversion-representante')) {
+        if (options.method === 'POST') { guardada = convertida; return json({ campania: guardada, repetida: false }); }
+        return json(preview);
+      }
+      if (url.endsWith('/cargos')) return json({ campania: guardada,
+        filas: guardada === actual ? originales : filas.map((fila) => ({ ...fila, saldo_pendiente: 10, estado: 'pendiente',
+          version: 1, permitir_abonos: true, pago_en_revision: false, puede_ajustar: true })),
+        totales: guardada === actual ? { ...iniciales, pendientes: 0, con_observaciones: 0, subtotal_calculado: 30 } : totales });
+      return responder([guardada]);
+    });
+    render(<CobrosAdicionales />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver cargos de Viaje 1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Convertir a cobro por representante' }));
+    await aceptar(); confirmar();
+    expect(await screen.findByRole('heading', { name: 'Conversión completada' })).toBeInTheDocument();
+    const aviso = screen.getByRole('alert', { name: 'Conversión completada' });
+    expect(aviso).toHaveTextContent('Viaje 1 ahora tiene cobro por representante.');
+    expect(aviso).toHaveTextContent('Los cargos conservados y sus pagos permanecen sin cambios.');
+    expect(await screen.findByText('María QA')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Convertir a cobro por representante' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Campaña publicada')).not.toBeInTheDocument();
+    expect(window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar aviso de conversión' }));
+    expect(screen.queryByRole('heading', { name: 'Conversión completada' })).not.toBeInTheDocument();
+    expect(screen.getByText('María QA')).toBeInTheDocument();
+    expect(window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1);
+  });
+});
+
+describe('cobertura familiar manual en interfaz', () => {
+  const antes = { participantes: 3, cobros: 3, representantes: 0, individuales: 1, conservados: 2,
+    generales: 3, personalizados: 0, no_aplica: 0, total_esperado: 30 };
+  const despues = { ...antes, cobros: 2, representantes: 1, conservados: 0, generales: 2, total_esperado: 20 };
+  const actual = { ...campania(1), estado: 'abierta', unidad_cobro: 'representante', monto_general: 10, permitir_abonos: true,
+    participantes: ['ana', 'luis', 'eva'], publicacion: { participantes: 3, generales: 3, personalizados: 0, no_aplica: 0, total_esperado: 30 },
+    totales_cargos: antes, __v: 5 };
+  const fuente = { _id: 'cargo-ana', alumno: 'ana', nombres: 'Ana', apellidos: 'Raga', modalidad: 'general',
+    monto: 10, saldo_pendiente: 0, estado: 'pagado', version: 2 };
+  const hermano = { ...fuente, _id: 'cargo-luis', alumno: 'luis', nombres: 'Juan Pablo', saldo_pendiente: 10,
+    estado: 'pendiente', version: 0 };
+  const preview = { campania: actual, fuente, hermanos: [hermano], antes, despues,
+    representante: { _id: 'maria', nombre: 'María Raga' }, revision: 'c'.repeat(64) };
+  const aplicada = { ...actual, totales_cargos: despues, __v: 6 };
+  const respuesta = { campania: aplicada, fuente: fuente._id, cubiertos: [hermano._id], repetida: false };
+  const json = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
+  const aceptar = async () => fireEvent.click(await screen.findByRole('checkbox', { name: /Confirmo que el pago de Ana Raga/ }));
+  const confirmar = () => fireEvent.click(screen.getByRole('button', { name: 'Confirmar cobertura' }));
+  const filas = [
+    { ...fuente, tipo_cobro: 'atleta', preservado_conversion: true, motivo_conservacion: 'Familia conservada para revision.',
+      sede: actual.sedes[0], nota_interna: '', incidencias: [], permitir_abonos: true, pago_en_revision: false,
+      puede_ajustar: false, puede_revisar_cobertura: true },
+    { ...hermano, tipo_cobro: 'atleta', preservado_conversion: true, motivo_conservacion: 'Familia conservada para revision.',
+      sede: actual.sedes[0], nota_interna: '', incidencias: [], permitir_abonos: true, pago_en_revision: false,
+      puede_ajustar: true, puede_revisar_cobertura: false },
+    { ...hermano, _id: 'cargo-eva', alumno: 'eva', nombres: 'Eva', apellidos: 'QA', tipo_cobro: 'individual_sin_representante',
+      sede: actual.sedes[0], nota_interna: '', incidencias: [], permitir_abonos: true, pago_en_revision: false,
+      puede_ajustar: true, atletas_cubiertos: [{ alumno: 'eva', nombres: 'Eva', apellidos: 'QA', nombre_sede: 'Norte' }] }
+  ];
+  const resumen = (campania, cargos, totales) => ({ campania, filas: cargos,
+    totales: { ...totales, pendientes: 0, con_observaciones: 0, subtotal_calculado: totales.total_esperado } });
+
+  test('muestra origen, hermanos y nuevos totales; cancelar no registra pagos ni cobertura', async () => {
+    const onClose = jest.fn();
+    window.fetch.mockResolvedValue(json(preview));
+    render(<CampaniaCoberturaDialog campania={actual} fila={fuente} onClose={onClose} onApplied={jest.fn()} />);
+    const hermanos = await screen.findByRole('list', { name: 'Hermanos que quedarán cubiertos' });
+    expect(within(hermanos).getByText('Juan Pablo Raga')).toBeInTheDocument();
+    expect(screen.getByText(/El importe y los pagos de Ana Raga se conservan/)).toBeInTheDocument();
+    expect(screen.getByText(/Si corriges o eliminas el pago, todos compartirán el nuevo saldo/)).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Total de la campaña después de aplicar cobertura' })).toHaveTextContent(/30,00.*20,00/);
+    expect(screen.getByRole('button', { name: 'Confirmar cobertura' })).toBeDisabled();
+    await aceptar();
+    expect(screen.getByRole('button', { name: 'Confirmar cobertura' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(window.fetch.mock.calls).toHaveLength(1);
+  });
+
+  test.each(['abierta', 'cerrada'])('confirma la cobertura y acepta campaña %s sin enviar importes o pagos', async (estado) => {
+    const onApplied = jest.fn();
+    const campania = { ...aplicada, estado };
+    window.fetch.mockResolvedValueOnce(json(preview)).mockResolvedValueOnce(json({ ...respuesta, campania }));
+    render(<CampaniaCoberturaDialog campania={actual} fila={fuente} onClose={jest.fn()} onApplied={onApplied} />);
+    await aceptar(); confirmar();
+    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(campania));
+    const post = window.fetch.mock.calls.find(([, options]) => options?.method === 'POST');
+    expect(post[0]).toMatch(/cargos\/cargo-ana\/cobertura-familiar$/);
+    expect(JSON.parse(post[1].body)).toEqual({ version: 5, revision: preview.revision,
+      solicitud_id: expect.stringMatching(/^[a-f\d-]{36}$/) });
+  });
+
+  test('un abono de 15 sobre 20 muestra 5 como saldo familiar y conserva esos importes al confirmar', async () => {
+    const onApplied = jest.fn();
+    const antes20 = { ...antes, total_esperado: 60 };
+    const despues20 = { ...despues, total_esperado: 40 };
+    const actual20 = { ...actual, monto_general: 20, totales_cargos: antes20, publicacion: { ...actual.publicacion, total_esperado: 60 } };
+    const abono = { ...fuente, monto: 20, saldo_pendiente: 5, estado: 'abono' };
+    const preview20 = { ...preview, campania: actual20, fuente: abono,
+      hermanos: [{ ...hermano, monto: 20, saldo_pendiente: 20 }], antes: antes20, despues: despues20 };
+    const aplicada20 = { ...actual20, __v: 6, totales_cargos: despues20 };
+    window.fetch.mockResolvedValueOnce(json(preview20)).mockResolvedValueOnce(json({ ...respuesta, campania: aplicada20 }));
+    render(<CampaniaCoberturaDialog campania={actual20} fila={abono} onClose={jest.fn()} onApplied={onApplied} />);
+    const saldo = await screen.findByRole('group', { name: 'Saldo familiar después de aplicar cobertura' });
+    expect(saldo).toHaveTextContent(/Saldo familiar pendiente:\s*\D*5,00/);
+    expect(saldo).toHaveTextContent(/Importe familiar:\s*\D*20,00/);
+    expect(screen.getByText(/Ana Raga ·/)).toHaveTextContent(/\D15,00/);
+    expect(screen.getByRole('list', { name: 'Hermanos que quedarán cubiertos' }))
+      .toHaveTextContent(/Saldo individual:.*20,00.*Saldo familiar:.*5,00/);
+    await aceptar(); confirmar();
+    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(aplicada20));
+  });
+
+  test('rechaza hermanos con historial y permite actualizar sin mostrar una confirmacion valida', async () => {
+    window.fetch.mockResolvedValueOnce(json({ error: 'Hay hermanos con historial de pagos.' }, 409)).mockResolvedValueOnce(json(preview));
+    render(<CampaniaCoberturaDialog campania={actual} fila={fuente} onClose={jest.fn()} onApplied={jest.fn()} />);
+    expect(await screen.findByText('Hay hermanos con historial de pagos.')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar cobertura' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar vista previa' }));
+    expect(await screen.findByRole('checkbox', { name: /Confirmo que el pago/ })).not.toBeChecked();
+  });
+
+  test('un conflicto al confirmar requiere nueva vista previa y aceptacion', async () => {
+    window.fetch.mockResolvedValueOnce(json(preview))
+      .mockResolvedValueOnce(json({ error: 'Los cargos cambiaron.' }, 409)).mockResolvedValueOnce(json(preview));
+    render(<CampaniaCoberturaDialog campania={actual} fila={fuente} onClose={jest.fn()} onApplied={jest.fn()} />);
+    await aceptar(); confirmar();
+    expect(await screen.findByText('Los cargos cambiaron.')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar vista previa' }));
+    expect(await screen.findByRole('checkbox', { name: /Confirmo que el pago/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Confirmar cobertura' })).toBeDisabled();
+  });
+
+  test('reutiliza UUID tras fallo de red y bloquea doble envio y cierre mientras guarda', async () => {
+    const onApplied = jest.fn(); const onClose = jest.fn(); let resolver;
+    window.fetch.mockResolvedValueOnce(json(preview)).mockRejectedValueOnce(new Error('Red no disponible'))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolver = resolve; }));
+    render(<CampaniaCoberturaDialog campania={actual} fila={fuente} onClose={onClose} onApplied={onApplied} />);
+    await aceptar(); confirmar();
+    await screen.findByText('Red no disponible');
+    confirmar(); confirmar();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cerrar cobertura familiar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirmar cobertura' })).toBeDisabled();
+    await act(async () => resolver(json({ ...respuesta, repetida: true })));
+    await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1));
+    const posts = window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST');
+    expect(posts).toHaveLength(2);
+    expect(posts[0][1].body).toBe(posts[1][1].body);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test.each(['hermano', 'total', 'resultado', 'saldo_abono', 'saldo_pagado'])('rechaza datos inconsistentes en %s sin anunciar cobertura', async (caso) => {
+    const onApplied = jest.fn();
+    const datos = caso === 'hermano' ? { ...preview, hermanos: [{ ...hermano, monto: 20 }] }
+      : caso === 'total' ? { ...preview, despues: { ...despues, total_esperado: 30 } }
+        : caso === 'saldo_abono' ? { ...preview, fuente: { ...fuente, estado: 'abono', saldo_pendiente: 0 } }
+          : caso === 'saldo_pagado' ? { ...preview, fuente: { ...fuente, saldo_pendiente: 5 } } : preview;
+    window.fetch.mockResolvedValueOnce(json(datos)).mockResolvedValueOnce(json({ ...respuesta, cubiertos: ['cargo-ajeno'] }));
+    render(<CampaniaCoberturaDialog campania={actual} fila={fuente} onClose={jest.fn()} onApplied={onApplied} />);
+    if (caso === 'resultado') { await aceptar(); confirmar(); }
+    expect(await screen.findByText(/No se pudo verificar/)).toBeInTheDocument();
+    expect(onApplied).not.toHaveBeenCalled();
+  });
+
+  test.each([0, 2.5])('desde resumen aplica cobertura con saldo %i y muestra un solo cargo compartido con ambos atletas', async (saldo) => {
+    const onConverted = jest.fn();
+    const filasActuales = [{ ...filas[0], estado: saldo ? 'abono' : 'pagado', saldo_pendiente: saldo }, ...filas.slice(1)];
+    let guardada = false;
+    window.fetch.mockImplementation(async (url, options = {}) => {
+      if (url.endsWith('/cobertura-familiar')) {
+        if (options.method === 'POST') { guardada = true; return json(respuesta); }
+        return json({ ...preview, fuente: { ...fuente, estado: filasActuales[0].estado, saldo_pendiente: saldo } });
+      }
+      return json(guardada ? resumen(aplicada, [
+        { ...filasActuales[0], tipo_cobro: 'representante', preservado_conversion: false, puede_revisar_cobertura: false,
+          representante_cobro: 'maria', nombre_representante: 'María Raga',
+          atletas_cubiertos: [{ alumno: 'ana', nombres: 'Ana', apellidos: 'Raga', nombre_sede: 'Norte' },
+            { alumno: 'luis', nombres: 'Juan Pablo', apellidos: 'Raga', nombre_sede: 'Norte' }] },
+        filas[2]
+      ], despues) : resumen(actual, filasActuales, antes));
+    });
+    render(<CampaniaResumenDialog campania={actual} onClose={jest.fn()} onRevisar={jest.fn()} onConverted={onConverted} />);
+    const cubrir = await screen.findByRole('button', { name: 'Aplicar cobertura familiar con el pago de Ana Raga' });
+    expect(cubrir).toHaveTextContent('Cubrir hermanos');
+    fireEvent.click(cubrir);
+    await aceptar(); confirmar();
+    expect(await screen.findByText(/Cobertura familiar aplicada/)).toBeInTheDocument();
+    await waitFor(() => expect(onConverted).toHaveBeenCalledWith(aplicada));
+    const tabla = await screen.findByRole('table', { name: 'Participantes del resumen' });
+    expect(within(tabla).getByText('2 atletas · Cobro compartido')).toBeInTheDocument();
+    expect(within(tabla).getByText(/^Juan Pablo Raga/)).toBeInTheDocument();
+    expect(within(tabla).getAllByRole('row')).toHaveLength(3);
+    expect(screen.getByRole('group', { name: 'Total a recaudar' })).toHaveTextContent('20,00');
+    expect(screen.queryByRole('button', { name: 'Pagar cargo de Juan Pablo Raga' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aplicar cobertura familiar con el pago de Ana Raga' })).not.toBeInTheDocument();
+  });
+
+  test('no ofrece aplicar cobertura a cargo pendiente o en revision', async () => {
+    window.fetch.mockResolvedValue(json(resumen(actual,
+      [{ ...filas[0], estado: 'pendiente', saldo_pendiente: 10, pago_en_revision: true, puede_revisar_cobertura: false },
+        ...filas.slice(1)], antes)));
+    render(<CampaniaResumenDialog campania={actual} onClose={jest.fn()} onRevisar={jest.fn()} />);
+    await screen.findByRole('table', { name: 'Participantes del resumen' });
+    expect(screen.queryByRole('button', { name: /Aplicar cobertura familiar con el pago/ })).not.toBeInTheDocument();
+  });
+});
 
 describe('cierre de campanas en interfaz', () => {
   const actual = { ...campania(1), estado: 'abierta', participantes: ['ana'], publicacion: {}, __v: 2 };
@@ -752,6 +1316,52 @@ describe('pagos individuales campania', () => {
     fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-CAMPANIA' } });
   };
 
+  test.each([['USD', false, false], ['USD', true, true], ['EUR', false, false], ['EUR', true, true], ['USD', false, true]])(
+    'efectivo admin en %s parcial=%s permite_abonos=%s registra sin referencia bancaria ni tasa', async (moneda, parcial, permiteAbonos) => {
+      const onSaved = jest.fn();
+      const importe = parcial ? 15 : 30;
+      const inicial = historial([], { moneda, permitir_abonos: permiteAbonos });
+      preparar(async (url, options) => json({ cargo: { ...inicial.cargo, saldo_pendiente: 30 - importe,
+        estado: parcial ? 'abono' : 'pagado', __v: 1 }, pago: { ...pago, moneda, monto_pagado: importe,
+        metodo_pago: 'Efectivo', referencia: '', estado: 'confirmado', solicitud_id: options.body.get('solicitud_id'),
+        confirmado_por: { id: 'admin-qa' }, confirmado_en: '2026-11-10' }, repetida: false }), inicial);
+      render(<CampaniaPagoDialog campania={{ ...actual, moneda }} fila={fila} onClose={jest.fn()} onSaved={onSaved} />);
+      fireEvent.click(await screen.findByText('Efectivo', { exact: true }));
+      if (parcial) {
+        fireEvent.click(screen.getByText('Realizar Abono Parcial'));
+        fireEvent.change(screen.getByLabelText(`Monto a pagar (${moneda})`), { target: { value: '15.00' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Continuar', exact: true }));
+      } else if (permiteAbonos) fireEvent.click(screen.getByText('Pagar completo'));
+      await waitFor(() => expect(screen.getByLabelText(`Monto pagado (${moneda})`)).toHaveValue(importe.toFixed(2)));
+      expect(screen.getByLabelText('Referencia o recibo (opcional)')).toHaveValue('');
+      expect(screen.queryByLabelText('Monto pagado (Bs)')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Tasa aplicada:/)).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('4125163627')).not.toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: 'Pago confirmado' })).toBeChecked();
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      const [, options] = window.fetch.mock.calls.find(([, params]) => params?.method === 'POST');
+      expect(options.body.get('metodo_pago')).toBe('Efectivo');
+      expect(options.body.get('moneda')).toBe(moneda);
+      expect(options.body.get('monto_pagado')).toBe(importe.toFixed(2));
+      expect(options.body.get('estado')).toBe('confirmado');
+      expect(options.body.get('referencia')).toBe('');
+      expect(options.body.get('telefono_pago')).toBe('');
+      expect(options.body.get('cedula_titular')).toBe('');
+      expect(options.body.get('monto_pagado_bs')).toBeNull();
+      expect(options.body.get('comprobante')).toBeNull();
+      expect(obtenerTasaOficialPorFecha).not.toHaveBeenCalled();
+      expect(obtenerTasaEuroOficialPorFecha).not.toHaveBeenCalled();
+    });
+
+  test('efectivo no se ofrece en el portal del representante', async () => {
+    preparar(jest.fn());
+    render(<CampaniaPagoDialog campania={actual} fila={fila} representante onClose={jest.fn()} onSaved={jest.fn()} />);
+    await screen.findByText('Zelle', { exact: true });
+    expect(screen.queryByText('Efectivo', { exact: true })).not.toBeInTheDocument();
+    expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  });
+
   test.each([-100.01, -100, 100, 100.01])('tolerancia Bs %s usa los centimos reales y no el equivalente redondeado', (diferencia) => {
     const montoBs = Number((13186.84 + diferencia).toFixed(2));
     const monto = Math.round(montoBs * 100 / 879.1225) / 100;
@@ -1188,10 +1798,17 @@ describe('pagos individuales campania', () => {
     fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-CAMPANIA' } });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Pago confirmado' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Pago confirmado'));
+    const aviso = await screen.findByRole('alert', { name: 'Pago confirmado' });
+    expect(within(aviso).getByRole('heading', { name: 'Pago confirmado' })).toBeInTheDocument();
+    expect(aviso).toHaveAccessibleDescription('El importe se aplicó al saldo del cargo. Puedes consultarlo en el historial.');
     await waitFor(() => expect(screen.getByRole('table', { name: 'Participantes del resumen' })).toHaveTextContent('Pagado'));
     expect(screen.queryByRole('button', { name: 'Pagar cargo de Ana QA' })).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Total a recaudar' })).toHaveTextContent(/30,00/);
+    const escrituras = window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST').length;
+    fireEvent.click(within(aviso).getByRole('button', { name: 'Cerrar aviso de pago' }));
+    expect(screen.queryByRole('alert', { name: 'Pago confirmado' })).not.toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Participantes del resumen' })).toHaveTextContent('Pagado');
+    expect(window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(escrituras);
   });
 
   test('tabla de cargos muestra en revision sin descontar saldo y luego abono confirmado', async () => {

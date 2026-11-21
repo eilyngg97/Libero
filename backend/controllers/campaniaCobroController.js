@@ -3,8 +3,11 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
 const { createHash } = require('crypto');
 const { resumenCierre, actualizarCierreAutomatico } = require('../services/campaniaClosure');
+const { alumnosCargo, cantidadCargos, fotoAtleta, agruparCargosPorRepresentante, totalesCargos } = require('../services/campaniaBilling');
+const { prepararConversion } = require('../services/campaniaConversion');
+const { prepararCoberturaFamiliar } = require('../services/campaniaFamilyCoverage');
 
-const CAMPOS = 'nombre descripcion modalidad_monto monto_general montos_por_sede moneda sedes participantes vencimiento permitir_abonos estado publicacion totales_cargos createdAt updatedAt __v';
+const CAMPOS = 'nombre descripcion unidad_cobro modalidad_monto monto_general montos_por_sede moneda sedes participantes vencimiento permitir_abonos estado publicacion totales_cargos excepciones_cobro createdAt updatedAt __v';
 const OBJECT_ID = /^[a-f\d]{24}$/i;
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i;
 const errorPeticion = (status, message) => Object.assign(new Error(message), { status });
@@ -27,7 +30,7 @@ async function monedaAcademia(Config, session = null) {
 }
 
 function validarDatos(body, editar) {
-  const permitidos = ['nombre', 'descripcion', 'modalidad_monto', 'monto_general', 'montos_por_sede', 'moneda', 'sedes', 'vencimiento', 'permitir_abonos', editar ? 'version' : 'solicitud_id'];
+  const permitidos = ['nombre', 'descripcion', 'unidad_cobro', 'modalidad_monto', 'monto_general', 'montos_por_sede', 'moneda', 'sedes', 'vencimiento', 'permitir_abonos', editar ? 'version' : 'solicitud_id'];
   if (!body || Object.keys(body).some((key) => !permitidos.includes(key))) {
     throw errorPeticion(400, 'Solo puedes modificar los datos del borrador; no su estado ni sus pagos.');
   }
@@ -43,6 +46,8 @@ function validarDatos(body, editar) {
     throw errorPeticion(400, 'Selecciona al menos una sede valida, sin duplicados.');
   }
   const modalidad = body.modalidad_monto === undefined ? 'unico' : body.modalidad_monto;
+  const unidad = body.unidad_cobro === undefined ? 'atleta' : body.unidad_cobro;
+  if (!['atleta', 'representante'].includes(unidad)) throw errorPeticion(400, 'Selecciona cobro por atleta o por representante.');
   if (!['unico', 'por_sede'].includes(modalidad)) throw errorPeticion(400, 'Selecciona monto unico o monto por sede.');
   const montoValido = (valor) => ['number', 'string'].includes(typeof valor)
     && /^(0|[1-9]\d{0,8})(\.\d{1,2})?$/.test(String(valor)) && Number(valor) > 0;
@@ -74,7 +79,7 @@ function validarDatos(body, editar) {
     throw errorPeticion(400, editar ? 'Falta la version del borrador. Vuelve a abrirlo.' : 'La solicitud de creacion no es valida.');
   }
   if (!['USD', 'EUR'].includes(body.moneda)) throw errorPeticion(400, 'La moneda no es valida.');
-  return { nombre: body.nombre.trim(), descripcion: body.descripcion.trim(), modalidad_monto: modalidad,
+  return { nombre: body.nombre.trim(), descripcion: body.descripcion.trim(), unidad_cobro: unidad, modalidad_monto: modalidad,
     monto_general: modalidad === 'unico' ? Number(body.monto_general) : null,
     montos_por_sede: montos.map((item) => ({ sede: item.sede.toLowerCase(), monto: Number(item.monto) })),
     moneda: body.moneda, sedes: body.sedes.map((id) => id.toLowerCase()), vencimiento: body.vencimiento,
@@ -160,6 +165,7 @@ exports.crear = async (req, res) => {
           return JSON.stringify(ordenar(guardada.montos_por_sede || [])) === JSON.stringify(ordenar(value));
         }
         if (key === 'modalidad_monto') return (guardada.modalidad_monto || 'unico') === value;
+        if (key === 'unidad_cobro') return (guardada.unidad_cobro || 'atleta') === value;
         return guardada[key] === value;
       });
       if (!coincide || guardada.estado !== 'borrador') {
@@ -182,6 +188,7 @@ exports.editar = async (req, res) => {
     const actual = await models.Campania.findOne({ _id: req.params.id }).lean();
     if (!actual) throw errorPeticion(404, 'El borrador no existe en esta academia.');
     if (actual.estado !== 'borrador') throw errorPeticion(409, 'Solo se pueden editar borradores en esta etapa.');
+    if (req.body.unidad_cobro === undefined) data.unidad_cobro = actual.unidad_cobro || 'atleta';
     if (actual.moneda !== data.moneda) throw errorPeticion(409, 'No se puede cambiar la moneda del borrador.');
     await comprobarOpciones(data, models);
     const anteriores = new Set((actual.sedes || []).map(String));
@@ -264,18 +271,19 @@ exports.participantes = async (req, res) => {
 };
 
 async function calcularResumen(campania, Alumno, session = null) {
+    const porRepresentante = campania.unidad_cobro === 'representante';
+    if (porRepresentante) getTenantModel(Alumno.db, 'Representante');
     const seleccionados = (campania.participantes || []).map(String);
     const condiciones = validarCondiciones((campania.condiciones_participantes || [])
       .map((condicion) => ({ ...condicion, alumno: String(condicion.alumno) })), seleccionados);
     const acuerdos = new Map(condiciones.map((condicion) => [condicion.alumno, condicion]));
-    const atletas = await aplicarSession(Alumno.find({ _id: { $in: seleccionados } })
-      .select('nombres apellidos categoria sede activo dado_de_baja').populate('sede', 'nombre'), session).lean();
+    let consultaAtletas = Alumno.find({ _id: { $in: seleccionados } })
+      .select('nombres apellidos categoria sede activo dado_de_baja representante').populate('sede', 'nombre');
+    if (porRepresentante) consultaAtletas = consultaAtletas.populate('representante', 'nombres apellidos');
+    const atletas = await aplicarSession(consultaAtletas, session).lean();
     const encontrados = new Map(atletas.map((atleta) => [String(atleta._id), atleta]));
     const sedes = new Set(campania.sedes.filter(Boolean).map((sede) => String(sede._id)));
-    const totales = { participantes: seleccionados.length, generales: 0, personalizados: 0, no_aplica: 0,
-      pendientes: 0, con_observaciones: 0, subtotal_calculado: 0, total_esperado: 0 };
-    let centimos = 0;
-    const filas = seleccionados.map((id) => {
+    const individuales = seleccionados.map((id) => {
       const atleta = encontrados.get(id);
       const condicion = acuerdos.get(id);
       const modalidad = condicion?.modalidad || 'general';
@@ -292,20 +300,18 @@ async function calcularResumen(campania, Alumno, session = null) {
       if (modalidad !== 'no_aplica' && (typeof monto !== 'number' || !Number.isFinite(monto)
         || !/^(0|[1-9]\d{0,8})(\.\d{1,2})?$/.test(String(monto)) || monto <= 0)) {
         monto = null;
-        totales.pendientes += 1;
         incidencias.push('No hay un importe valido para este participante. Revisa su sede o condicion individual.');
       }
-      if (modalidad === 'general') totales.generales += 1;
-      else if (modalidad === 'personalizado') totales.personalizados += 1;
-      else totales.no_aplica += 1;
-      if (incidencias.length) totales.con_observaciones += 1;
-      if (monto !== null) centimos += Math.round(monto * 100);
       return { alumno: id, nombres: atleta?.nombres || 'Atleta no disponible', apellidos: atleta?.apellidos || '',
         categoria: atleta?.categoria || '', sede: atleta?.sede || null, modalidad, monto,
+        ...(porRepresentante ? { representante: atleta?.representante || null } : {}),
         nota_interna: condicion?.nota_interna || '', incidencias };
     });
-    totales.subtotal_calculado = centimos / 100;
-    totales.total_esperado = totales.pendientes ? null : totales.subtotal_calculado;
+    const filas = porRepresentante ? agruparCargosPorRepresentante(individuales) : individuales;
+    const totales = { ...totalesCargos(filas, porRepresentante),
+      pendientes: filas.filter((fila) => fila.monto === null).length,
+      con_observaciones: filas.filter((fila) => fila.incidencias.length).length,
+      subtotal_calculado: filas.reduce((total, fila) => total + Math.round((fila.monto || 0) * 100), 0) / 100 };
     const { condiciones_participantes, ...datosCampania } = campania;
     const revision = createHash('sha256').update(JSON.stringify({ version: campania.__v, totales, filas })).digest('hex');
     return { campania: { ...datosCampania, participantes: seleccionados }, totales, filas, revision };
@@ -360,12 +366,16 @@ exports.publicar = async (req, res) => {
       const { participantes, generales, personalizados, no_aplica, total_esperado } = resumen.totales;
       const actor = { id: req.user.id, rol: req.user.rol };
       const publicacion = { solicitud_id: body.solicitud_id, version_borrador: body.version, revision: body.revision,
-        fecha: new Date(), actor, participantes, generales, personalizados, no_aplica, total_esperado };
+        fecha: new Date(), actor, participantes, generales, personalizados, no_aplica, total_esperado,
+        ...(actual.unidad_cobro === 'representante' ? { cobros: resumen.totales.cobros,
+          representantes: resumen.totales.representantes, individuales: resumen.totales.individuales } : {}) };
       const guardada = await models.Campania.findOneAndUpdate({ _id: req.params.id, estado: 'borrador', __v: body.version }, {
         $set: { estado: 'abierta', publicacion, actualizado_por: actor }, $inc: { __v: 1 }
       }, { new: true, runValidators: true, session });
       if (!guardada) throw errorPeticion(409, 'La campana cambio. Recalcula el resumen antes de publicar.');
       await Cargo.insertMany(resumen.filas.map((fila) => ({ campania: actual._id, alumno: fila.alumno,
+        ...(fila.tipo_cobro ? { tipo_cobro: fila.tipo_cobro, representante_cobro: fila.representante_cobro,
+          nombre_representante: fila.nombre_representante, atletas_cubiertos: fila.atletas_cubiertos } : {}),
         sede: fila.sede._id, nombre_sede: fila.sede.nombre, nombres: fila.nombres, apellidos: fila.apellidos,
         categoria: fila.categoria, modalidad: fila.modalidad, moneda: actual.moneda, monto: fila.monto,
         saldo_pendiente: fila.monto, estado: fila.modalidad === 'no_aplica' ? 'no_aplica' : 'pendiente', nota_interna: fila.nota_interna,
@@ -429,31 +439,217 @@ exports.cargos = async (req, res) => {
     if (!campania.publicacion || campania.estado === 'borrador') throw errorPeticion(409, 'Esta campana aun no tiene cargos publicados.');
     const Cargo = getTenantModel(models.connection, 'CargoCampania');
     const cargos = await Cargo.find({ campania: req.params.id })
-      .select('alumno sede nombre_sede nombres apellidos categoria modalidad moneda monto saldo_pendiente estado permitir_abonos retirado __v +nota_interna')
+      .select('alumno tipo_cobro cobertura_familiar representante_cobro nombre_representante atletas_cubiertos sede nombre_sede nombres apellidos categoria modalidad moneda monto saldo_pendiente estado permitir_abonos retirado __v +nota_interna')
       .sort({ nombres: 1, apellidos: 1, alumno: 1 }).lean();
     const pagosEnRevision = await models.connection.db.collection('pagocampanias')
       .find({ campania: campania._id, estado: 'en_revision' }, { projection: { cargo: 1 } }).toArray();
     const cargosEnRevision = new Set(pagosEnRevision.map((pago) => String(pago.cargo)));
+    const excepciones = new Map((campania.excepciones_cobro || []).map((item) => [String(item.cargo), item.motivo]));
+    const gruposConservados = new Map();
+    for (const item of campania.excepciones_cobro || []) {
+      if (item.representante) {
+        const clave = String(item.representante);
+        gruposConservados.set(clave, (gruposConservados.get(clave) || 0) + 1);
+      }
+    }
     const filas = cargos.map((cargo) => ({ _id: String(cargo._id), version: cargo.__v, permitir_abonos: cargo.permitir_abonos,
       pago_en_revision: cargosEnRevision.has(String(cargo._id)),
-      retirado: cargo.retirado === true, puede_ajustar: campania.estado === 'abierta'
+      puede_revisar_cobertura: campania.estado === 'abierta' && campania.unidad_cobro === 'representante'
+        && ['pagado', 'abono'].includes(cargo.estado) && cargo.monto > 0 && !cargosEnRevision.has(String(cargo._id))
+        && (campania.excepciones_cobro || []).some((item) => String(item.cargo) === String(cargo._id)
+          && (gruposConservados.get(String(item.representante)) || 0) > 1),
+      retirado: cargo.retirado === true, puede_ajustar: campania.estado === 'abierta' && !cargo.cobertura_familiar
         && ['pendiente', 'no_aplica'].includes(cargo.estado) && cargo.saldo_pendiente === cargo.monto && !cargosEnRevision.has(String(cargo._id)),
       alumno: String(cargo.alumno), nombres: cargo.nombres, apellidos: cargo.apellidos,
+      tipo_cobro: cargo.tipo_cobro || 'atleta', representante_cobro: cargo.representante_cobro,
+      cobertura_familiar: cargo.cobertura_familiar,
+      ...(excepciones.has(String(cargo._id)) ? { preservado_conversion: true,
+        motivo_conservacion: excepciones.get(String(cargo._id)) } : {}),
+      nombre_representante: cargo.nombre_representante, atletas_cubiertos: cargo.atletas_cubiertos,
       categoria: cargo.categoria, sede: { _id: String(cargo.sede), nombre: cargo.nombre_sede }, modalidad: cargo.modalidad,
       monto: cargo.monto, saldo_pendiente: cargo.saldo_pendiente, estado: cargo.estado, nota_interna: cargo.nota_interna || '', incidencias: [] }));
     const subtotal = filas.reduce((total, fila) => total + Math.round(fila.monto * 100), 0) / 100;
     const vigentes = campania.totales_cargos || campania.publicacion;
-    if (filas.length !== vigentes.participantes || new Set(filas.map((fila) => fila.alumno)).size !== filas.length
+    const participantes = new Set(campania.participantes.map(String));
+    const cubiertos = filas.flatMap(alumnosCargo);
+    if (filas.length !== cantidadCargos(vigentes) || cubiertos.length !== participantes.size || new Set(cubiertos).size !== participantes.size
+      || cubiertos.some((id) => !participantes.has(id))
       || subtotal !== vigentes.total_esperado || cargos.some((cargo) => cargo.moneda !== campania.moneda)) {
       throw new Error('Cargos inconsistentes');
     }
-    return res.json({ campania, filas, totales: { participantes: filas.length,
-      generales: filas.filter((fila) => fila.modalidad === 'general').length,
-      personalizados: filas.filter((fila) => fila.modalidad === 'personalizado').length,
-      no_aplica: filas.filter((fila) => fila.modalidad === 'no_aplica').length,
+    return res.json({ campania, filas, totales: { ...totalesCargos(cargos, campania.unidad_cobro === 'representante'),
       pendientes: 0, con_observaciones: 0, subtotal_calculado: subtotal, total_esperado: subtotal } });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.status ? error.message : 'No se pudieron verificar los cargos publicados.' });
+  }
+};
+
+async function modelosConversion(req) {
+  if (!OBJECT_ID.test(req.params.id)) throw errorPeticion(400, 'La campana no es valida.');
+  const models = await modelos(req);
+  return { ...models, Cargo: getTenantModel(models.connection, 'CargoCampania'),
+    Pago: getTenantModel(models.connection, 'PagoCampania'), Alumno: getTenantModel(models.connection, 'Alumno'),
+    Representante: getTenantModel(models.connection, 'Representante') };
+}
+
+exports.resumenConversion = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const models = await modelosConversion(req);
+    const campania = await models.Campania.findById(req.params.id).select(CAMPOS).populate('sedes', 'nombre').lean();
+    if (!campania) throw errorPeticion(404, 'La campana no existe en esta academia.');
+    const { anteriores, ...resumen } = await prepararConversion(models, campania);
+    return res.json({ campania, ...resumen });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'No se pudo calcular la conversion. Intenta nuevamente.' });
+  }
+};
+
+exports.convertirRepresentante = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const body = req.body;
+    if (!body || Object.keys(body).some((key) => !['version', 'revision', 'solicitud_id'].includes(key))
+      || !Number.isInteger(body.version) || body.version < 0 || typeof body.revision !== 'string' || !/^[a-f\d]{64}$/.test(body.revision)
+      || typeof body.solicitud_id !== 'string' || !UUID.test(body.solicitud_id)) {
+      throw errorPeticion(400, 'Revisa la vista previa y confirma una solicitud de conversion valida.');
+    }
+    if (!req.user.id) throw errorPeticion(401, 'Inicia sesion nuevamente para identificar al administrador.');
+    const models = await modelosConversion(req);
+    await models.Cargo.init();
+    const actor = { id: String(req.user.id), rol: req.user.rol };
+    const solicitudId = body.solicitud_id.toLowerCase();
+    const resultado = await ejecutarConTransaccion(models.Campania, async (session) => {
+      const actual = await aplicarSession(models.Campania.findById(req.params.id).select(`${CAMPOS} +conversion_representante`), session).lean();
+      if (!actual) throw errorPeticion(404, 'La campana no existe en esta academia.');
+      const anterior = actual.conversion_representante;
+      if (anterior) {
+        if (anterior.solicitud_id !== solicitudId || anterior.version !== body.version || anterior.revision !== body.revision
+          || anterior.actor.id !== actor.id || anterior.actor.rol !== actor.rol) {
+          throw errorPeticion(409, 'La campana ya fue convertida. Actualiza sus cargos.');
+        }
+        return { repetida: true };
+      }
+      if (actual.__v !== body.version) throw errorPeticion(409, 'La campana cambio. Actualiza la vista previa antes de convertir.');
+      const resumen = await prepararConversion(models, actual, session);
+      if (resumen.revision !== body.revision) throw errorPeticion(409, 'Los cargos o representantes cambiaron. Actualiza y revisa la vista previa.');
+      if (resumen.totales.pendientes || resumen.totales.con_observaciones) {
+        throw errorPeticion(409, 'Unifica los importes y condiciones de cada representante y resuelve las observaciones antes de convertir.');
+      }
+      const totales = totalesCargos(resumen.filas, true);
+      const conversion = { solicitud_id: solicitudId, version: body.version, revision: body.revision,
+        fecha: new Date(), actor, antes: resumen.antes, despues: totales,
+        cargos_anteriores: resumen.anteriores };
+      const excepciones = resumen.filas.filter((fila) => fila.preservado_conversion).map((fila) => ({
+        cargo: fila._id, representante: fila.representante_excepcion, motivo: fila.motivo_conservacion
+      }));
+      const guardada = await models.Campania.findOneAndUpdate({ _id: actual._id, estado: 'abierta', __v: body.version }, {
+        $set: { unidad_cobro: 'representante', totales_cargos: totales, conversion_representante: conversion,
+          excepciones_cobro: excepciones, actualizado_por: actor },
+        $inc: { __v: 1 }
+      }, { new: true, runValidators: true, session }).lean();
+      if (!guardada) throw errorPeticion(409, 'La campana cambio durante la conversion. Actualiza la vista previa.');
+      const originales = new Map(resumen.anteriores.map((cargo) => [String(cargo._id), cargo]));
+      for (const fila of resumen.filas) {
+        if (fila.preservado_conversion) continue;
+        const original = originales.get(fila._id);
+        const cargo = await models.Cargo.findOneAndUpdate({ _id: fila._id, campania: actual._id, __v: original.__v }, {
+          $set: { tipo_cobro: fila.tipo_cobro, representante_cobro: fila.representante_cobro || null,
+            nombre_representante: fila.nombre_representante || '', atletas_cubiertos: fila.atletas_cubiertos,
+            nota_interna: fila.nota_interna,
+            ...(fila.cobertura_familiar ? { cobertura_familiar: fila.cobertura_familiar, modalidad: 'no_aplica',
+              monto: 0, saldo_pendiente: 0, estado: 'no_aplica' } : {}) }, $inc: { __v: 1 }
+        }, { new: true, runValidators: true, session }).lean();
+        if (!cargo) throw errorPeticion(409, 'Un cargo cambio durante la conversion. Actualiza la vista previa.');
+      }
+      const conservados = new Set(resumen.filas.map((fila) => fila._id));
+      const absorbidos = resumen.anteriores.filter((cargo) => !conservados.has(String(cargo._id))).map((cargo) => cargo._id);
+      if (absorbidos.length) {
+        const eliminados = await models.Cargo.deleteMany({ campania: actual._id, _id: { $in: absorbidos } }, { session });
+        if (eliminados.deletedCount !== absorbidos.length) throw errorPeticion(409, 'Un cargo cambio durante la conversion.');
+      }
+      return { repetida: false };
+    }, { obligatoria: true });
+    const campania = await models.Campania.findById(req.params.id).select(CAMPOS).populate('sedes', 'nombre').lean();
+    return res.json({ ...resultado, campania });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.status ? error.message
+      : 'No se pudo convertir la campana. Reintenta la misma solicitud o actualiza sus cargos.' });
+  }
+};
+
+exports.resumenCoberturaFamiliar = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    if (!OBJECT_ID.test(req.params.cargoId)) throw errorPeticion(400, 'El cargo no es valido.');
+    const models = await modelosConversion(req);
+    const campania = await models.Campania.findById(req.params.id).select(CAMPOS).populate('sedes', 'nombre').lean();
+    if (!campania) throw errorPeticion(404, 'La campana no existe en esta academia.');
+    const { anteriores, familia, datosFamilia, ...resumen } = await prepararCoberturaFamiliar(models, campania, req.params.cargoId);
+    return res.json({ campania, ...resumen });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'No se pudo calcular la cobertura familiar. Intenta nuevamente.' });
+  }
+};
+
+exports.aplicarCoberturaFamiliar = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const body = req.body;
+    if (!OBJECT_ID.test(req.params.cargoId) || !body
+      || Object.keys(body).some((key) => !['version', 'revision', 'solicitud_id'].includes(key))
+      || !Number.isInteger(body.version) || body.version < 0 || typeof body.revision !== 'string' || !/^[a-f\d]{64}$/.test(body.revision)
+      || typeof body.solicitud_id !== 'string' || !UUID.test(body.solicitud_id)) {
+      throw errorPeticion(400, 'Revisa la vista previa y confirma una solicitud de cobertura valida.');
+    }
+    if (!req.user.id) throw errorPeticion(401, 'Inicia sesion nuevamente para identificar al administrador.');
+    const models = await modelosConversion(req);
+    const actor = { id: String(req.user.id), rol: req.user.rol };
+    const solicitudId = body.solicitud_id.toLowerCase();
+    const cargoId = req.params.cargoId.toLowerCase();
+    const resultado = await ejecutarConTransaccion(models.Campania, async (session) => {
+      const actual = await aplicarSession(models.Campania.findById(req.params.id).select(`${CAMPOS} +coberturas_familiares`), session).lean();
+      if (!actual) throw errorPeticion(404, 'La campana no existe en esta academia.');
+      const previa = (actual.coberturas_familiares || []).find((item) => item.solicitud_id === solicitudId);
+      if (previa) {
+        if (previa.cargo !== cargoId || previa.version !== body.version || previa.revision !== body.revision
+          || previa.actor.id !== actor.id || previa.actor.rol !== actor.rol) {
+          throw errorPeticion(409, 'Esta solicitud ya corresponde a otra cobertura.');
+        }
+        return { repetida: true, fuente: cargoId, cubiertos: previa.cubiertos };
+      }
+      if (actual.__v !== body.version) throw errorPeticion(409, 'La campana cambio. Actualiza y revisa la cobertura antes de confirmar.');
+      const resumen = await prepararCoberturaFamiliar(models, actual, cargoId, session);
+      if (resumen.revision !== body.revision) throw errorPeticion(409, 'Los cargos, pagos o representantes cambiaron. Actualiza la vista previa.');
+      const cubiertos = resumen.hermanos.map((cargo) => cargo._id);
+      const idsFamilia = new Set([cargoId, ...cubiertos]);
+      const excepciones = actual.excepciones_cobro.filter((item) => !idsFamilia.has(String(item.cargo)));
+      const auditoria = { solicitud_id: solicitudId, cargo: cargoId, version: body.version,
+        revision: body.revision, actor, fecha: new Date(), cubiertos,
+        antes: resumen.antes, despues: resumen.despues, cargos_anteriores: resumen.familia };
+      const campania = await models.Campania.findOneAndUpdate({ _id: actual._id, __v: body.version, estado: 'abierta' }, {
+        $set: { totales_cargos: resumen.despues, excepciones_cobro: excepciones, actualizado_por: actor },
+        $inc: { __v: 1 }, $push: { coberturas_familiares: auditoria }
+      }, { new: true, runValidators: true, session }).lean();
+      if (!campania) throw errorPeticion(409, 'La campana cambio durante la cobertura. Actualiza la vista previa.');
+      const cargo = await models.Cargo.findOneAndUpdate({ _id: cargoId, campania: actual._id, __v: resumen.fuente.version,
+        estado: resumen.fuente.estado, monto: resumen.fuente.monto, saldo_pendiente: resumen.fuente.saldo_pendiente }, {
+        $set: resumen.datosFamilia, $inc: { __v: 1 }
+      }, { new: true, runValidators: true, session }).lean();
+      if (!cargo) throw errorPeticion(409, 'El cargo de origen cambio durante la cobertura. Actualiza la vista previa.');
+      const eliminados = await models.Cargo.deleteMany({ campania: actual._id, $or: resumen.hermanos.map((hermano) => ({
+        _id: hermano._id, __v: hermano.version, estado: 'pendiente', monto: hermano.monto, saldo_pendiente: hermano.saldo_pendiente
+      })) }, { session });
+      if (eliminados.deletedCount !== cubiertos.length) throw errorPeticion(409, 'Un cargo cambio durante la cobertura. Actualiza la vista previa.');
+      await actualizarCierreAutomatico({ CampaniaCobro: models.Campania, CargoCampania: models.Cargo, PagoCampania: models.Pago },
+        [actual._id], actor, session);
+      return { repetida: false, fuente: cargoId, cubiertos };
+    }, { obligatoria: true });
+    const campania = await models.Campania.findById(req.params.id).select(CAMPOS).populate('sedes', 'nombre').lean();
+    return res.json({ ...resultado, campania });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.status ? error.message
+      : 'No se pudo aplicar la cobertura familiar. Reintenta la misma solicitud o actualiza los cargos.' });
   }
 };
 
@@ -466,8 +662,10 @@ exports.candidatosCargos = async (req, res) => {
     if (!actual) throw errorPeticion(404, 'La campana no existe en esta academia.');
     if (actual.estado !== 'abierta' || !actual.publicacion) throw errorPeticion(409, 'La campana no admite ajustes.');
     const Alumno = getTenantModel(models.connection, 'Alumno');
+    getTenantModel(models.connection, 'Representante');
     const atletas = await Alumno.find({ sede: { $in: actual.sedes }, activo: { $ne: false }, dado_de_baja: { $ne: true },
-      _id: { $nin: actual.participantes } }).select('nombres apellidos categoria sede').populate('sede', 'nombre')
+      _id: { $nin: actual.participantes } }).select('nombres apellidos categoria sede representante')
+      .populate('sede', 'nombre').populate('representante', 'nombres apellidos')
       .sort({ apellidos: 1, nombres: 1, _id: 1 }).limit(10000).lean();
     return res.json({ atletas });
   } catch (error) { return responderError(res, error); }
@@ -506,21 +704,26 @@ exports.ajustarCargo = async (req, res) => {
       const repetida = (actual.ajustes_cargos || []).find((ajuste) => ajuste.solicitud_id === solicitudId);
       if (repetida) {
         if (repetida.huella !== huella) throw errorPeticion(409, 'La solicitud ya corresponde a otro ajuste.');
-        return { cargo: await aplicarSession(Cargo.findById(repetida.cargo), session).lean(), repetida: true };
+        return { cargo: await aplicarSession(Cargo.findById(repetida.cargo), session).lean(), repetida: true,
+          ...(repetida.accion === 'agregar' && repetida.anterior ? { vinculado: true } : {}) };
       }
       if (actual.__v !== body.version) throw errorPeticion(409, 'La campana cambio. Recarga sus cargos antes de ajustar.');
       const anteriores = await aplicarSession(Cargo.find({ campania: actual._id }).select('+nota_interna'), session).lean();
       const vigentes = actual.totales_cargos || actual.publicacion;
-      if (anteriores.length !== vigentes.participantes || anteriores.reduce((total, cargo) => total + Math.round(cargo.monto * 100), 0) !== Math.round(vigentes.total_esperado * 100)) {
+      if (anteriores.length !== cantidadCargos(vigentes) || anteriores.reduce((total, cargo) => total + Math.round(cargo.monto * 100), 0) !== Math.round(vigentes.total_esperado * 100)) {
         throw errorPeticion(409, 'No se pudieron verificar los totales de los cargos.');
       }
-      const anterior = anteriores.find((cargo) => String(cargo.alumno) === body.alumno.toLowerCase());
+      let anterior = anteriores.find((cargo) => alumnosCargo(cargo).includes(alumnoId));
+      if (anterior?.cobertura_familiar) throw errorPeticion(409, 'Este cargo esta cubierto por un pago familiar. No se puede editar ni retirar como una exoneracion.');
       let base = anterior;
+      let vincular = false;
+      let incorporado;
       if (body.accion === 'agregar') {
         if (anterior) throw errorPeticion(409, 'El alumno ya tiene un cargo. Edita el existente para reincorporarlo.');
-        if (anteriores.length >= 10000) throw errorPeticion(409, 'La campana supera el limite de participantes.');
-        const alumno = await aplicarSession(Alumno.findById(body.alumno).select('nombres apellidos categoria sede activo dado_de_baja')
-          .populate('sede', 'nombre'), session).lean();
+        if (actual.participantes.length >= 10000) throw errorPeticion(409, 'La campana supera el limite de participantes.');
+        getTenantModel(models.connection, 'Representante');
+        const alumno = await aplicarSession(Alumno.findById(body.alumno).select('nombres apellidos categoria sede activo dado_de_baja representante')
+          .populate('sede', 'nombre').populate('representante', 'nombres apellidos'), session).lean();
         if (!alumno || alumno.activo === false || alumno.dado_de_baja === true
           || !actual.sedes.some((sede) => String(sede) === String(alumno.sede?._id))) {
           throw errorPeticion(409, 'Selecciona un alumno activo de las sedes de esta campana.');
@@ -528,6 +731,23 @@ exports.ajustarCargo = async (req, res) => {
         base = { campania: actual._id, alumno: alumno._id, nombres: alumno.nombres, apellidos: alumno.apellidos || '',
           categoria: alumno.categoria || '', sede: alumno.sede._id, nombre_sede: alumno.sede.nombre,
           moneda: actual.moneda, permitir_abonos: actual.permitir_abonos, vencimiento: actual.vencimiento };
+        if (actual.unidad_cobro === 'representante') {
+          if (alumno.representante && (actual.excepciones_cobro || [])
+            .some((item) => String(item.representante || '') === String(alumno.representante._id))) {
+            throw errorPeticion(409, 'Este representante conserva cargos individuales de la conversion. Revisa su cobertura familiar antes de agregar otra deuda.');
+          }
+          incorporado = fotoAtleta({ ...alumno, alumno: alumno._id });
+          base = { ...base, tipo_cobro: alumno.representante ? 'representante' : 'individual_sin_representante',
+            atletas_cubiertos: [incorporado],
+            ...(alumno.representante ? { representante_cobro: alumno.representante._id,
+              nombre_representante: [alumno.representante.nombres, alumno.representante.apellidos].filter(Boolean).join(' ') } : {}) };
+          anterior = alumno.representante && anteriores.find((cargo) => cargo.tipo_cobro === 'representante'
+            && String(cargo.representante_cobro) === String(alumno.representante._id));
+          if (anterior) {
+            if (anterior.retirado) throw errorPeticion(409, 'Reincorpora primero el cobro de este representante.');
+            vincular = true;
+          }
+        }
       } else {
         if (!anterior) throw errorPeticion(404, 'El cargo no existe en esta campana.');
         const pago = await aplicarSession(Pago.findOne({ campania: actual._id, cargo: anterior._id,
@@ -542,7 +762,11 @@ exports.ajustarCargo = async (req, res) => {
       if (!Number.isFinite(monto) || monto < 0 || (condicion.modalidad !== 'no_aplica' && monto <= 0)) {
         throw errorPeticion(409, 'No hay un monto valido de campana para la sede del alumno.');
       }
-      const cambios = { modalidad: condicion.modalidad, monto, saldo_pendiente: monto,
+      if (vincular && (monto !== anterior.monto || (condicion.modalidad === 'no_aplica') !== (anterior.modalidad === 'no_aplica'))) {
+        throw errorPeticion(409, 'El representante ya tiene un cobro. Usa el mismo importe y condicion de aplicacion para vincular al atleta sin generar otra deuda.');
+      }
+      const cambios = vincular ? { atletas_cubiertos: [...anterior.atletas_cubiertos, incorporado] }
+        : { modalidad: condicion.modalidad, monto, saldo_pendiente: monto,
         estado: condicion.modalidad === 'no_aplica' ? 'no_aplica' : 'pendiente',
         retirado: body.accion === 'retirar', nota_interna: condicion.nota_interna };
       let cargo;
@@ -551,21 +775,18 @@ exports.ajustarCargo = async (req, res) => {
       { new: true, runValidators: true, session }).lean();
       else [cargo] = await Cargo.insertMany([{ ...base, ...cambios }], { session });
       if (!cargo) throw errorPeticion(409, 'El cargo cambio. Recarga antes de ajustar.');
-      const todos = [...anteriores.filter((item) => String(item.alumno) !== body.alumno.toLowerCase()), cargo];
-      const totales = { participantes: todos.length, generales: todos.filter((item) => item.modalidad === 'general').length,
-        personalizados: todos.filter((item) => item.modalidad === 'personalizado').length,
-        no_aplica: todos.filter((item) => item.modalidad === 'no_aplica').length,
-        total_esperado: todos.reduce((total, item) => total + Math.round(item.monto * 100), 0) / 100 };
+      const todos = [...anteriores.filter((item) => String(item._id) !== String(anterior?._id)), cargo];
+      const totales = totalesCargos(todos, actual.unidad_cobro === 'representante');
       const actor = { id: req.user.id, rol: req.user.rol };
       const guardada = await models.Campania.findOneAndUpdate({ _id: actual._id, estado: 'abierta', __v: body.version }, {
-        $set: { totales_cargos: totales, participantes: todos.map((item) => item.alumno), actualizado_por: actor }, $inc: { __v: 1 },
+        $set: { totales_cargos: totales, participantes: todos.flatMap(alumnosCargo), actualizado_por: actor }, $inc: { __v: 1 },
         $push: { ajustes_cargos: { solicitud_id: solicitudId, huella, accion: body.accion, cargo: cargo._id,
-          anterior: anterior || null, nuevo: { ...(cargo.toObject ? cargo.toObject() : cargo), nota_interna: cambios.nota_interna }, actor, fecha: new Date() } }
+          anterior: anterior || null, nuevo: cargo.toObject ? cargo.toObject() : cargo, actor, fecha: new Date() } }
       }, { new: true, runValidators: true, session });
       if (!guardada) throw errorPeticion(409, 'La campana cambio. Recarga antes de ajustar.');
       await actualizarCierreAutomatico({ CampaniaCobro: models.Campania, CargoCampania: Cargo,
         PagoCampania: getTenantModel(models.connection, 'PagoCampania') }, [actual._id], actor, session);
-      return { cargo, repetida: false };
+      return { cargo, repetida: false, ...(vincular ? { vinculado: true } : {}) };
     }, { obligatoria: true });
     return res.json(resultado);
   } catch (error) {

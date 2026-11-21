@@ -739,7 +739,8 @@ exports.previsualizarConciliacion = async (req, res) => {
       const PagoCampania = getTenantModel(tenantModels.connection, 'PagoCampania');
       const pagos = await PagoCampania.find({ estado: 'en_revision', monto_pagado_bs: { $gt: 0 } })
         .select('_id campania cargo moneda monto_pagado monto_pagado_bs fecha_pago metodo_pago referencia telefono_pago cedula_titular agrupacion es_principal_grupo estado comprobante_url')
-        .populate('campania', 'nombre estado publicacion').populate('cargo', 'nombres apellidos').lean();
+        .populate('campania', 'nombre estado publicacion')
+        .populate('cargo', 'nombres apellidos tipo_cobro nombre_representante atletas_cubiertos').lean();
       sistemaRows = agruparPagosCampania(pagos.filter((pago) => pago.campania?.publicacion && pago.campania.estado === 'abierta' && pago.cargo))
         .map(({ pago, pagos: asignaciones, revision }) => ({
           _id: pago._id, registro_tipo: TIPO_CONCILIACION.CAMPANIAS, id_campania: String(pago.campania._id),
@@ -749,7 +750,9 @@ exports.previsualizarConciliacion = async (req, res) => {
           monto_pagado_bs: parseMonto(pago.agrupacion?.monto_total_bs ?? pago.monto_pagado_bs),
           monto_esperado_bs: parseMonto(pago.agrupacion?.monto_total_bs ?? pago.monto_pagado_bs),
           monto_esperado_usd: pago.agrupacion?.monto_total ?? pago.monto_pagado, fecha_pago: parseFecha(pago.fecha_pago),
-          alumno: [...new Set(asignaciones.map((item) => `${item.cargo.nombres || ''} ${item.cargo.apellidos || ''}`.trim()))].join(' / ') || '-',
+          alumno: [...new Set(asignaciones.map((item) => item.cargo.tipo_cobro === 'representante'
+            ? `${item.cargo.nombre_representante} (cubre: ${item.cargo.atletas_cubiertos.map((atleta) => `${atleta.nombres} ${atleta.apellidos}`.trim()).join(', ')})`
+            : `${item.cargo.nombres || ''} ${item.cargo.apellidos || ''}`.trim()))].join(' / ') || '-',
           contexto: pago.agrupacion ? `Pago agrupado: ${[...new Set(asignaciones.map((item) => item.campania.nombre))].join(' / ')}` : `Campaña: ${pago.campania.nombre}`
         }));
     } else {

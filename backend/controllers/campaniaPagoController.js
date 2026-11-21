@@ -47,13 +47,17 @@ exports.cargosAgrupables = async (req, res) => {
     const models = await modelosAgrupados(req);
     const representante = await representanteAgrupado(models, req, req.query.alumnoId);
     const atletas = await models.Alumno.find({ representante }).select('_id').lean();
-    const cargos = await models.CargoCampania.find({ alumno: { $in: atletas.map((alumno) => alumno._id) },
+    const cargos = await models.CargoCampania.find({ $or: [
+      { alumno: { $in: atletas.map((alumno) => alumno._id) }, tipo_cobro: { $ne: 'representante' } },
+      { tipo_cobro: 'representante', representante_cobro: representante }
+    ],
       saldo_pendiente: { $gt: 0 }, modalidad: { $ne: 'no_aplica' } })
-      .select('campania alumno nombres apellidos moneda saldo_pendiente __v').populate('campania', 'nombre descripcion estado publicacion').sort({ _id: 1 }).lean();
+      .select('campania alumno tipo_cobro representante_cobro nombre_representante atletas_cubiertos nombres apellidos moneda saldo_pendiente __v')
+      .populate('campania', 'nombre descripcion estado publicacion').sort({ _id: 1 }).lean();
     const reservas = await models.PagoCampania.find({ cargo: { $in: cargos.map((cargo) => cargo._id) }, estado: 'en_revision' }).select('cargo').lean();
     const disponibles = [];
     for (const cargo of cargos) {
-      try { await verificarPropiedad(models, req, cargo.alumno); disponibles.push(cargo); }
+      try { await verificarPropiedadCargo(models, req, cargo); disponibles.push(cargo); }
       catch (error) { if (error.status !== 404) throw error; }
     }
     return res.json({ representante: String(representante), cargos: disponibles.filter((cargo) => cargo.campania?.estado === 'abierta'
@@ -88,7 +92,7 @@ exports.registrarAgrupado = async (req, res) => {
       || new Set(seleccion.map((item) => item.cargo)).size !== seleccion.length) throw fallo(400, 'Selecciona entre 2 y 100 cargos distintos con su version.');
     seleccion.sort((primero, segundo) => primero.cargo.localeCompare(segundo.cargo));
     if (req.user?.rol === 'usuario' && body.estado !== 'en_revision') throw fallo(403, 'Los pagos reportados deben quedar en revision.');
-    const { data, huella: huellaPago } = validarRegistro({ body: { ...body, version: 0 }, file: req.file });
+    const { data, huella: huellaPago } = validarRegistro({ body: { ...body, version: 0 }, file: req.file, user: req.user });
     const models = await modelosAgrupados(req);
     const huella = createHash('sha256').update(JSON.stringify({ huellaPago, seleccion, alumnoId, actor: req.user.id, rol: req.user.rol })).digest('hex');
     await models.PagoCampania.init();
@@ -104,9 +108,10 @@ exports.registrarAgrupado = async (req, res) => {
       for (const item of seleccion) {
         const cargo = await aplicarSession(models.CargoCampania.findById(item.cargo), session).lean();
         if (!cargo) throw fallo(404, 'Un cargo no esta disponible en esta academia.');
-        await verificarPropiedad(models, req, cargo.alumno, session);
-        const alumno = await aplicarSession(models.Alumno.findById(cargo.alumno).select('representante'), session).lean();
-        if (String(alumno?.representante || '') !== String(representante)) throw fallo(409, 'Los cargos deben pertenecer al mismo representante.');
+        await verificarPropiedadCargo(models, req, cargo, session);
+        const propietario = cargo.tipo_cobro === 'representante' ? cargo.representante_cobro
+          : (await aplicarSession(models.Alumno.findById(cargo.alumno).select('representante'), session).lean())?.representante;
+        if (String(propietario || '') !== String(representante)) throw fallo(409, 'Los cargos deben pertenecer al mismo representante.');
         const campania = await aplicarSession(models.CampaniaCobro.findById(cargo.campania), session).lean();
         if (!campania?.publicacion || campania.estado !== 'abierta' || cargo.__v !== item.version || cargo.moneda !== data.moneda
           || cargo.modalidad === 'no_aplica' || !(cargo.saldo_pendiente > 0)) throw fallo(409, 'Un cargo cambio o no admite este pago agrupado.');
@@ -157,7 +162,9 @@ async function grupoDisponible(models, req, session, corregir = false) {
     .select('+modificaciones').sort({ cargo: 1 }), session).lean();
   if (pagos.length < 2 || pagos.length !== pagos[0].agrupacion.cargos.length) throw fallo(404, 'El pago agrupado no esta disponible.');
   for (const pago of pagos) {
-    await verificarPropiedad(models, req, pago.alumno, session);
+    const cargo = await aplicarSession(models.CargoCampania.findById(pago.cargo), session).lean();
+    if (!cargo) throw fallo(404, 'Un cargo del grupo no esta disponible.');
+    await verificarPropiedadCargo(models, req, cargo, session);
     if (corregir && req.user.rol === 'usuario' && (pago.registrado_por?.rol !== 'usuario' || String(pago.registrado_por.id) !== String(req.user.id))) {
       throw fallo(403, 'Solo puedes corregir los pagos agrupados que reportaste.');
     }
@@ -171,7 +178,8 @@ exports.historialAgrupado = async (req, res) => {
     const models = await modelosAgrupados(req);
     const pagos = await grupoDisponible(models, req);
     const cargos = await models.CargoCampania.find({ _id: { $in: pagos.map((pago) => pago.cargo) } })
-      .select('campania alumno nombres apellidos moneda saldo_pendiente __v').populate('campania', 'nombre estado').sort({ _id: 1 }).lean();
+      .select('campania alumno tipo_cobro representante_cobro nombre_representante atletas_cubiertos nombres apellidos moneda saldo_pendiente __v')
+      .populate('campania', 'nombre estado').sort({ _id: 1 }).lean();
     return res.json({ cargos, puede_corregir: pagos.every((pago) => pago.estado === 'en_revision'
       && (req.user.rol !== 'usuario' || (pago.registrado_por?.rol === 'usuario' && String(pago.registrado_por.id) === String(req.user.id))))
       && cargos.length === pagos.length && cargos.every((cargo) => cargo.campania?.estado === 'abierta'),
@@ -193,7 +201,7 @@ async function corregirAgrupado(req, res, eliminar) {
         || !OBJECT_ID.test(item.cargo) || !Number.isInteger(item.version) || item.version < 0)
       || new Set(seleccion.map((item) => item.cargo)).size !== seleccion.length) throw fallo(400, 'Revisa las versiones de todos los cargos.');
     if (eliminar && Object.keys(body).length) throw fallo(400, 'El retiro no admite cambios al pago.');
-    const registro = eliminar ? null : validarRegistro({ body: { ...body, version: 0 }, file: req.file });
+    const registro = eliminar ? null : validarRegistro({ body: { ...body, version: 0 }, file: req.file, user: req.user });
     if (registro && registro.data.estado !== 'en_revision') throw fallo(403, 'Solo puedes corregir transferencias pendientes de revision.');
     const models = await modelosAgrupados(req);
     const resultado = await ejecutarConTransaccion(models.CargoCampania, async (session) => {
@@ -259,6 +267,15 @@ async function verificarPropiedad(models, req, alumnoId, session) {
   }
 }
 
+async function verificarPropiedadCargo(models, req, cargo, session) {
+  if (!['representante', 'cubierto_por_representante'].includes(cargo.tipo_cobro)) return verificarPropiedad(models, req, cargo.alumno, session);
+  if (req.user?.rol !== 'usuario') return;
+  if (!req.user.id) throw fallo(401, 'Inicia sesion nuevamente.');
+  if (!await userRepresentsAlumno(req.user.id, { representante: cargo.representante_cobro }, models.Representante, session)) {
+    throw fallo(404, 'El cargo no esta disponible.');
+  }
+}
+
 function respuestaPublica(req, datos) {
   if (req.user?.rol !== 'usuario') return datos;
   const cargoPublico = ({ nota_interna, ...cargo }) => cargo;
@@ -286,7 +303,7 @@ async function cargoVigente(models, req, session, abierto = true) {
   if (!campania.publicacion || (abierto && campania.estado !== 'abierta')) throw fallo(409, 'La campana no admite pagos.');
   const cargo = await aplicarSession(models.CargoCampania.findOne({ _id: req.params.cargoId, campania: req.params.id }), session).lean();
   if (!cargo) throw fallo(404, 'El cargo no existe en esta campana.');
-  await verificarPropiedad(models, req, cargo.alumno, session);
+  await verificarPropiedadCargo(models, req, cargo, session);
   return cargo;
 }
 
@@ -296,15 +313,21 @@ exports.misCargos = async (req, res) => {
     if (typeof req.query.alumnoId !== 'string' || !OBJECT_ID.test(req.query.alumnoId)) throw fallo(400, 'Indica un atleta valido.');
     const models = await modelosPortal(req);
     await verificarPropiedad(models, req, req.query.alumnoId);
-    const cargos = await models.CargoCampania.find({ alumno: req.query.alumnoId })
-      .select('campania alumno nombres apellidos nombre_sede moneda monto saldo_pendiente estado modalidad vencimiento permitir_abonos __v')
-      .populate('campania', 'nombre descripcion moneda estado publicacion.fecha').sort({ createdAt: -1, _id: -1 }).lean();
-    const publicados = cargos.filter((cargo) => cargo.campania?.publicacion && cargo.campania.estado !== 'borrador');
+    const cargos = await models.CargoCampania.find({ $or: [
+      { alumno: req.query.alumnoId }, { 'atletas_cubiertos.alumno': req.query.alumnoId }
+    ] })
+      .select('campania alumno tipo_cobro cobertura_familiar representante_cobro nombre_representante atletas_cubiertos nombres apellidos nombre_sede moneda monto saldo_pendiente estado modalidad vencimiento permitir_abonos __v')
+      .populate('campania', 'nombre descripcion moneda unidad_cobro estado publicacion.fecha').sort({ createdAt: -1, _id: -1 }).lean();
+    const publicados = [];
+    for (const cargo of cargos.filter((item) => item.campania?.publicacion && item.campania.estado !== 'borrador')) {
+      try { await verificarPropiedadCargo(models, req, cargo); publicados.push(cargo); }
+      catch (error) { if (error.status !== 404) throw error; }
+    }
     const revisiones = publicados.length ? await models.PagoCampania.find({ cargo: { $in: publicados.map((cargo) => cargo._id) },
       estado: 'en_revision' }).select('cargo monto_pagado').lean() : [];
     return res.json({ cargos: publicados.map((cargo) => ({ ...cargo,
       campania: { _id: cargo.campania._id, nombre: cargo.campania.nombre, descripcion: cargo.campania.descripcion,
-        moneda: cargo.campania.moneda, estado: cargo.campania.estado },
+        moneda: cargo.campania.moneda, estado: cargo.campania.estado, unidad_cobro: cargo.campania.unidad_cobro },
       disponible: (centimos(cargo.saldo_pendiente) - revisiones.filter((pago) => String(pago.cargo) === String(cargo._id))
         .reduce((suma, pago) => suma + centimos(pago.monto_pagado), 0)) / 100,
       pago_en_revision: revisiones.some((pago) => String(pago.cargo) === String(cargo._id)) })) });
@@ -335,7 +358,10 @@ function validarRegistro(req) {
     monto_pagado: Number(body.monto_pagado), monto_pagado_bs: body.monto_pagado_bs == null ? null : Number(body.monto_pagado_bs),
     fecha_pago: body.fecha_pago, metodo_pago: texto('metodo_pago', 50), referencia: texto('referencia', 100),
     telefono_pago: texto('telefono_pago', 15), cedula_titular: texto('cedula_titular', 20), nota: texto('nota', 500), estado: body.estado };
-  if (!data.referencia || (data.telefono_pago && !/^\d{10,15}$/.test(data.telefono_pago))
+  if (data.metodo_pago === 'Efectivo' && !['admin', 'super_admin'].includes(req.user?.rol)) {
+    throw fallo(403, 'Solo los administradores pueden registrar pagos en efectivo.');
+  }
+  if ((!data.referencia && data.metodo_pago !== 'Efectivo') || (data.telefono_pago && !/^\d{10,15}$/.test(data.telefono_pago))
     || (data.cedula_titular && !/^[VEJG]-\d{1,15}$/i.test(data.cedula_titular))) throw fallo(400, 'Revisa la referencia y los datos del titular.');
   const archivo = req.file;
   if (archivo) {
@@ -352,6 +378,10 @@ function validarRegistro(req) {
 }
 
 async function validarMetodo(models, data, session, esperado) {
+  if (data.metodo_pago === 'Efectivo') {
+    if (data.monto_pagado_bs !== null) throw fallo(400, 'El efectivo debe registrarse en la moneda de la campana, sin monto en Bs.');
+    return { tasa: null, fecha_tasa: '' };
+  }
   if (['Pago movil', 'Transferencia'].includes(data.metodo_pago)) {
     if (!/^\d{6,100}$/.test(data.referencia) || !data.monto_pagado_bs) throw fallo(400, 'Indica el monto en Bs y una referencia de al menos seis digitos.');
     const historico = await obtenerTasaPagoPorFecha(data.fecha_pago, data.moneda);
@@ -534,6 +564,12 @@ async function corregir(req, res, eliminar) {
         return { cargo, pago: publico(pago), repetida: true };
       }
       await bloquearCampania(models, req.params.id, session, req.user.rol !== 'usuario');
+      if (eliminar || centimos(registro.data.monto_pagado) !== centimos(pago.monto_pagado)) {
+        const cubierto = await aplicarSession(models.CargoCampania.findOne({
+          campania: cargo.campania, 'cobertura_familiar.cargo': cargo._id
+        }).select('_id'), session).lean();
+        if (cubierto) throw fallo(409, 'Este pago cubre a otros atletas del representante. No puedes eliminarlo ni cambiar su importe sin resolver primero la cobertura familiar.');
+      }
       const activos = await aplicarSession(models.PagoCampania.find({ cargo: cargo._id,
         campania: req.params.id, estado: { $ne: 'eliminado' } }).sort({ createdAt: -1, _id: -1 }), session).lean();
       if (String(activos[0]?._id) !== String(pago._id)) throw fallo(409, 'Solo puedes modificar o eliminar el ultimo pago registrado.');

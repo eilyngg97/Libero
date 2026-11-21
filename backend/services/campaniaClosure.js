@@ -1,4 +1,5 @@
 const { aplicarSession } = require('./financeTransaction');
+const { cantidadCargos } = require('./campaniaBilling');
 
 const fallo = (mensaje) => Object.assign(new Error(mensaje), { status: 409 });
 const centimos = (valor) => Math.round(valor * 100);
@@ -16,7 +17,7 @@ async function resumenCierre(models, campania, session) {
   const cargos = await aplicarSession(models.CargoCampania.find({ campania: campania._id })
     .select('alumno modalidad monto saldo_pendiente moneda estado retirado'), session).lean();
   const totales = campania.totales_cargos || campania.publicacion;
-  if (!totales || cargos.length !== totales.participantes || new Set(cargos.map((cargo) => String(cargo.alumno))).size !== cargos.length
+  if (!totales || cargos.length !== cantidadCargos(totales) || new Set(cargos.map((cargo) => String(cargo.alumno))).size !== cargos.length
     || cargos.some((cargo) => cargo.moneda !== campania.moneda
       || !Number.isFinite(cargo.monto) || !Number.isFinite(cargo.saldo_pendiente)
       || cargo.monto < 0 || cargo.saldo_pendiente < 0 || cargo.saldo_pendiente > cargo.monto
