@@ -44,6 +44,10 @@
 - El dashboard deduplica el mismo cargo familiar devuelto al consultar a cada hermano,
     sumando su saldo y reserva una sola vez. Si las copias difieren o el atleta no pertenece
     al cargo, muestra un error y permite reintentar, sin publicar un total parcial.
+    La tarjeta se oculta solo al terminar todas las consultas con saldos y reservas a cero.
+    Permanece visible durante la carga, ante errores o con pagos en revision u otros saldos;
+    el boton de pagar aparece solo si hay importe disponible. Un nuevo saldo vuelve a
+    mostrarla al recargar el dashboard. El historial sigue disponible desde el atleta.
     "Pagar todo junto" permite continuar con un unico cargo seleccionado, incluso si
     cubre varios hermanos: usa el registro individual existente, sin crear un grupo ficticio.
     Dos o mas cargos usan la transferencia agrupada; el reporte del representante sigue

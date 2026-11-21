@@ -216,13 +216,61 @@ test('muestra cero por pagar si todos los cargos adicionales ya tienen transfere
   expect(await franja.findByText('$0.00')).toBeInTheDocument();
   expect(franja.getByText('En revisión: $30.00 USD')).toBeInTheDocument();
   expect(franja.queryByText(/^Otros saldos:/)).not.toBeInTheDocument();
+  expect(franja.queryByRole('button', { name: /Pagar todo junto/ })).not.toBeInTheDocument();
 });
 
-test('muestra cero en cobros adicionales solo despues de consultar todos los atletas', async () => {
+test.each([
+  ['sin cargos', {}],
+  ['pagados en ambas monedas', { a1: [cargoResumen('pagado1', 'a1', 0, { estado: 'pagado' })],
+    a2: [cargoResumen('pagado2', 'a2', 0, { estado: 'pagado', moneda: 'EUR', campania: { moneda: 'EUR', estado: 'abierta' } })] }],
+  ['familia pagada', { a1: [cargoFamiliar({ saldo_pendiente: 0, disponible: 0, estado: 'pagado' })],
+    a2: [cargoFamiliar({ saldo_pendiente: 0, disponible: 0, estado: 'pagado' })] }]
+])('oculta cobros adicionales %s solo despues de consultar todos los atletas', async (_, cargos) => {
+  prepararCobrosAdicionales(cargos);
+  const fetchPrevio = global.fetch.getMockImplementation();
+  let completar;
+  global.fetch = jest.fn(async (url, options) => {
+    if (url.includes('/mis-cargos?alumnoId=a2')) return new Promise((resolve) => {
+      completar = async () => resolve(await fetchPrevio(url, options));
+    });
+    return fetchPrevio(url, options);
+  });
   render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
   const franja = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
-  expect(await franja.findByText('$0.00')).toBeInTheDocument();
-  expect(franja.queryByRole('status')).not.toBeInTheDocument();
+  expect(franja.getByRole('status')).toHaveTextContent('Cargando');
+  expect(franja.queryByRole('button', { name: /Pagar todo junto/ })).not.toBeInTheDocument();
+  await act(async () => completar());
+  expect(screen.queryByRole('region', { name: 'Cobros adicionales' })).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Mensualidades' })).toBeInTheDocument();
+});
+
+test('mantiene otros saldos aunque no haya importe disponible para pagar', async () => {
+  prepararCobrosAdicionales({ a1: [cargoResumen('cerrado', 'a1', 5, {
+    moneda: 'EUR', campania: { moneda: 'EUR', estado: 'cerrada' }
+  })] });
+  render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
+  const franja = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
+  expect(await franja.findByText('Otros saldos: €5.00 EUR')).toBeInTheDocument();
+  expect(franja.queryByRole('button', { name: /Pagar todo junto/ })).not.toBeInTheDocument();
+});
+
+test('sin deudas no deja un contenedor vacio y reaparece al cargar un nuevo cargo', async () => {
+  const cargos = { a1: [cargoResumen('pagado', 'a1', 0, { estado: 'pagado' })] };
+  prepararCobrosAdicionales(cargos);
+  const fetchPrevio = global.fetch.getMockImplementation();
+  global.fetch = jest.fn(async (url, options) => url.includes('/api/mensualidades')
+    ? { ok: true, json: async () => [{ _id: 'mes-pagado', mes: 10, anio: 2026,
+      estatus: 'Pagado', monto_esperado: 10, saldo_pendiente: 0 }] } : fetchPrevio(url, options));
+  const { unmount } = render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
+  await screen.findAllByRole('button', { name: 'Ver detalle' });
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Pagos familiares' })).not.toBeInTheDocument());
+  expect(screen.queryByRole('region', { name: 'Cobros adicionales' })).not.toBeInTheDocument();
+  unmount();
+  cargos.a1.push(cargoResumen('nuevo-euro', 'a1', 5, { moneda: 'EUR', campania: { moneda: 'EUR', estado: 'abierta' } }));
+  render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
+  const franja = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
+  expect(await franja.findByText('€5.00')).toBeInTheDocument();
+  expect(franja.getByRole('button', { name: /Pagar todo junto/ })).toBeEnabled();
 });
 
 test.each(['http', 'red', 'json', 'formato', 'saldo', 'moneda', 'duplicado', 'ajeno', 'disponible', 'revision', 'reserva-inconsistente'])(
@@ -280,6 +328,7 @@ test('espera el ultimo saldo adicional y cancela las consultas al salir del dash
 });
 
 test('el dashboard muestra octubre neto y total familiar tras aplicar credito disponible', async () => {
+  prepararCobrosAdicionales({ a1: [cargoResumen('cargo1', 'a1', 30)], a2: [cargoResumen('cargo2', 'a2', 12.5)] });
   render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
   expect(await screen.findByRole('button', { name: 'Pagar $17.97' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Pagar $17.98' })).toBeInTheDocument();
@@ -290,7 +339,7 @@ test('el dashboard muestra octubre neto y total familiar tras aplicar credito di
   expect(screen.getByRole('heading', { name: 'Mensualidades' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Cobros adicionales' })).toBeInTheDocument();
   const botonMensualidades = within(screen.getByRole('region', { name: 'Mensualidades' })).getByRole('button', { name: 'Pagar todo junto · 2 atletas' });
-  const botonCobros = within(screen.getByRole('region', { name: 'Cobros adicionales' })).getByRole('button', { name: 'Pagar todo junto · 2 atletas' });
+  const botonCobros = await within(screen.getByRole('region', { name: 'Cobros adicionales' })).findByRole('button', { name: 'Pagar todo junto · 2 atletas' });
   expect(botonMensualidades).toHaveClass('MuiButton-contained');
   expect(botonCobros).toHaveClass('MuiButton-contained');
   const propiedades = ['width', 'minHeight', 'fontSize', 'fontWeight', 'borderRadius', 'backgroundColor', 'color', 'paddingLeft', 'paddingRight'];
@@ -299,6 +348,7 @@ test('el dashboard muestra octubre neto y total familiar tras aplicar credito di
 });
 
 test('el dashboard abre cobros adicionales de los hermanos aunque no deban mensualidades', async () => {
+  prepararCobrosAdicionales({ a1: [cargoResumen('cargo1', 'a1', 30)], a2: [cargoResumen('cargo2', 'a2', 30)] });
   const fetchPrevio = global.fetch.getMockImplementation();
   global.fetch = jest.fn(async (url, options) => {
     if (url.includes('/api/mensualidades')) return { ok: true, json: async () => [{ _id: 'mes-pagado', mes: 10, anio: 2026,
@@ -314,7 +364,7 @@ test('el dashboard abre cobros adicionales de los hermanos aunque no deban mensu
   localStorage.setItem('token', 'qa-token');
   render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
   const franjaCobros = await screen.findByRole('region', { name: 'Cobros adicionales' });
-  fireEvent.click(within(franjaCobros).getByRole('button', { name: 'Pagar todo junto · 2 atletas' }));
+  fireEvent.click(await within(franjaCobros).findByRole('button', { name: 'Pagar todo junto · 2 atletas' }));
   expect(await screen.findByRole('checkbox', { name: 'Seleccionar Ana QA - Viaje QA' })).toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: 'Seleccionar Eva QA - Viaje QA' })).toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Mensualidades' })).not.toBeInTheDocument();
@@ -353,7 +403,7 @@ test.each(['Entendido', 'Cerrar aviso de pago agrupado'])('muestra la tarjeta de
   render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   const franja = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
-  fireEvent.click(franja.getByRole('button', { name: 'Pagar todo junto · 2 atletas' }));
+  fireEvent.click(await franja.findByRole('button', { name: 'Pagar todo junto · 2 atletas' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Continuar con el pago' }));
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
   const tarjeta = await screen.findByRole('alertdialog', { name: 'Pago agrupado reportado' });

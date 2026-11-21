@@ -269,6 +269,9 @@ function DashboardUsuario() {
     return () => controller.abort();
   }, [alumnos, apiBase, intentoCobros, token]);
 
+  const mostrarCobros = Boolean(errorCobros) || totalesCobros === null || totalesCobros.length > 0;
+  const puedePagarCobros = !errorCobros && Boolean(totalesCobros?.some(([, importes]) => importes.porPagar > 0));
+
   const resumenFamiliar = useMemo(() => {
     const pendientes = alumnos
       .map((alumno) => resumenPagos[alumno._id])
@@ -349,7 +352,7 @@ function DashboardUsuario() {
         <Button color="inherit" size="small" onClick={() => setIntentoCarga((actual) => actual + 1)}>Reintentar</Button>
       }>{errorCarga}</Alert>}
 
-      {!cargando && !errorCarga && alumnos.length > 0 && (
+      {!cargando && !errorCarga && alumnos.length > 0 && (resumenFamiliar.atletas > 0 || mostrarCobros) && (
         <Box component="section" aria-label="Pagos familiares" sx={{ mb: 3.5, display: 'grid', gap: 1.5 }}>
           {resumenFamiliar.atletas > 0 && (
             <Box component="section" aria-label="Mensualidades" sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'minmax(0, 1fr) minmax(95px, auto) minmax(80px, auto) minmax(190px, auto)' },
@@ -378,7 +381,7 @@ function DashboardUsuario() {
               </Button>}
             </Box>
           )}
-          <Box component="section" aria-label="Cobros adicionales" sx={{ display: 'grid', alignItems: 'center',
+          {mostrarCobros && <Box component="section" aria-label="Cobros adicionales" sx={{ display: 'grid', alignItems: 'center',
             gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'minmax(0, 1fr) minmax(95px, auto) minmax(80px, auto) minmax(190px, auto)' },
             gap: { xs: 2.25, lg: 3 }, p: { xs: 2, sm: 2.5 }, bgcolor: '#fff', border: '1px solid #e5e7ee', boxShadow: 'inset 3px 0 0 #111342', borderRadius: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, gridColumn: { xs: '1 / -1', lg: 'auto' } }}>
@@ -395,7 +398,7 @@ function DashboardUsuario() {
               {errorCobros ? <Alert severity="error" action={<Button color="inherit" size="small" aria-label="Reintentar cobros adicionales"
                 onClick={() => setIntentoCobros((actual) => actual + 1)}>Reintentar</Button>}>{errorCobros}</Alert>
                 : totalesCobros === null ? <Typography role="status" sx={{ color: '#70758a', fontSize: 13 }}>Cargando...</Typography>
-                  : (totalesCobros.length ? totalesCobros : [['USD', { porPagar: 0, revision: 0, otros: 0 }]]).map(([moneda, importes]) => <Box key={moneda} sx={{ overflowWrap: 'anywhere' }}>
+                  : totalesCobros.map(([moneda, importes]) => <Box key={moneda} sx={{ overflowWrap: 'anywhere' }}>
                     <Typography sx={{ color: '#111342', fontSize: 26, fontWeight: 850, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
                       {new Intl.NumberFormat('en-US', { style: 'currency', currency: moneda }).format(importes.porPagar / 100)}
                       <Box component="span" sx={{ ml: 0.5, fontSize: 11, fontWeight: 700, color: '#70758a' }}>{moneda}</Box>
@@ -410,12 +413,12 @@ function DashboardUsuario() {
                     </Tooltip>}
                   </Box>)}
             </Box>
-            <Button variant="contained" endIcon={<ArrowForwardRoundedIcon />}
+            {puedePagarCobros && <Button variant="contained" endIcon={<ArrowForwardRoundedIcon />}
               onClick={() => { setMensajeCobros(''); setPagoCobrosAbierto(true); }}
               sx={{ ...estiloBotonPagoAgrupado, gridColumn: { xs: '1 / -1', lg: 'auto' }, justifySelf: 'end' }}>
               Pagar todo junto · {alumnos.length} {alumnos.length === 1 ? 'atleta' : 'atletas'}
-            </Button>
-          </Box>
+            </Button>}
+          </Box>}
         </Box>
       )}
 
