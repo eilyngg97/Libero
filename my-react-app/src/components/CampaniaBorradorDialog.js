@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useMediaQuery, useTheme
@@ -6,6 +6,9 @@ import {
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
+import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CampaniaPasos from './CampaniaPasos';
 import CampaniaDialog from './CampaniaDialog';
 import { tieneMontosValidos } from '../utils/campaniaMontos';
@@ -13,6 +16,7 @@ import { tieneMontosValidos } from '../utils/campaniaMontos';
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
 
 function CampaniaBorradorDialog({ campania, onClose, onSaved, onContinue }) {
+  const descripcionUnidadId = useId();
   const [form, setForm] = useState(() => ({
     nombre: campania?.nombre || '', descripcion: campania?.descripcion || '',
     unidad_cobro: campania?.unidad_cobro || 'atleta',
@@ -228,9 +232,36 @@ function CampaniaBorradorDialog({ campania, onClose, onSaved, onContinue }) {
             <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ color: '#30344b', fontSize: 12, fontWeight: 650, mb: 0.75 }}>{'¿A quién se le cobra?'}</Typography>
           <ToggleButtonGroup exclusive value={form.unidad_cobro} aria-label="Unidad de cobro" disabled={guardando || !opciones}
-            onChange={(event, valor) => { if (valor) cambiar('unidad_cobro', valor); }} sx={{ mb: 1.5, flexWrap: 'wrap' }}>
-            <ToggleButton value="atleta" sx={{ textTransform: 'none' }}>Por atleta</ToggleButton>
-            <ToggleButton value="representante" sx={{ textTransform: 'none' }}>Por representante</ToggleButton>
+            onChange={(event, valor) => { if (valor) cambiar('unidad_cobro', valor); }}
+            sx={{ width: '100%', mb: 1.5, p: 0.5, gap: 0.5, bgcolor: '#f0f1f6', border: '1px solid #e3e6ef', borderRadius: 2,
+              display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+              '& .MuiToggleButtonGroup-grouped': { m: 0, border: '1px solid transparent !important', borderRadius: '10px !important' },
+              '& .MuiToggleButton-root': { minWidth: 0, minHeight: 64, px: 1.5, py: 1, gap: 1,
+                justifyContent: 'flex-start', textAlign: 'left', textTransform: 'none', color: '#747a90',
+                '&:hover': { bgcolor: '#e8eaf2' },
+                '&.Mui-selected': { color: '#262b48', bgcolor: '#fff', borderColor: '#c8cee3 !important',
+                  boxShadow: '0 2px 6px rgba(27,34,65,0.10)', '&:hover': { bgcolor: '#fff' } },
+                '&.Mui-focusVisible': { outline: '2px solid #bd4779', outlineOffset: 2 },
+                '&.Mui-disabled': { opacity: 0.6 } } }}>
+            {[
+              { valor: 'atleta', titulo: 'Por atleta', detalle: 'Un cargo por cada atleta.', icono: <PersonOutlineRoundedIcon sx={{ fontSize: 21 }} /> },
+              { valor: 'representante', titulo: 'Por representante', detalle: 'Un cargo para sus atletas seleccionados.', icono: <GroupsOutlinedIcon sx={{ fontSize: 21 }} /> }
+            ].map((opcion) => {
+              const seleccionada = form.unidad_cobro === opcion.valor;
+              return <ToggleButton key={opcion.valor} value={opcion.valor} aria-label={opcion.titulo}
+                aria-describedby={`${descripcionUnidadId}-${opcion.valor}`}>
+                <Box aria-hidden="true" sx={{ display: 'grid', placeItems: 'center', width: 34, height: 34, flexShrink: 0,
+                  borderRadius: 1.5, bgcolor: seleccionada ? '#eef0fb' : '#e7e9f0', color: seleccionada ? '#343b78' : '#858999' }}>
+                  {opcion.icono}
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography component="span" sx={{ display: 'block', fontSize: 13, fontWeight: 750, lineHeight: 1.35 }}>{opcion.titulo}</Typography>
+                  <Typography component="span" id={`${descripcionUnidadId}-${opcion.valor}`}
+                    sx={{ display: 'block', mt: 0.25, fontSize: 11, lineHeight: 1.4, color: '#747a90' }}>{opcion.detalle}</Typography>
+                </Box>
+                <CheckCircleRoundedIcon sx={{ fontSize: 18, flexShrink: 0, color: '#343b78', opacity: seleccionada ? 1 : 0 }} />
+              </ToggleButton>;
+            })}
           </ToggleButtonGroup>
           {form.unidad_cobro === 'representante' && <Alert severity="info" sx={{ mb: 2 }}>
             Un solo cobro por representante para sus atletas seleccionados. Sin representante: cobro individual.

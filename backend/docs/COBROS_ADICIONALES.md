@@ -6,6 +6,9 @@
     campanas antiguas sin el campo) o `representante`. La edicion ordinaria de esta
     propiedad solo se permite antes de publicar. Para una campana abierta existe la
     conversion explicita descrita abajo; nunca se modifica mediante la edicion general.
+- El selector de unidad usa dos opciones con iconos, explicacion breve y marca de seleccion.
+    Conserva una sola opcion activa, nombres accesibles y foco visible; en movil las opciones
+    se apilan. El cambio es visual y no modifica el calculo ni la modalidad del importe.
 - Por atleta se mantiene un cargo por participante. Por representante se genera un cargo
     por representante registrado entre los atletas seleccionados, identificado por su ID
     y no por su nombre. Cada atleta sin representante genera su propio cargo individual;
@@ -38,6 +41,13 @@
     con aviso de cobro compartido y sus nombres. Un reporte reserva el saldo compartido;
     confirmar, corregir o eliminar afecta esa unica deuda. Los pagos agrupados pueden
     incluir cargos familiares de distintas campanas sin repetirlos por hermano.
+- El dashboard deduplica el mismo cargo familiar devuelto al consultar a cada hermano,
+    sumando su saldo y reserva una sola vez. Si las copias difieren o el atleta no pertenece
+    al cargo, muestra un error y permite reintentar, sin publicar un total parcial.
+    "Pagar todo junto" permite continuar con un unico cargo seleccionado, incluso si
+    cubre varios hermanos: usa el registro individual existente, sin crear un grupo ficticio.
+    Dos o mas cargos usan la transferencia agrupada; el reporte del representante sigue
+    en revision y no descuenta saldo hasta la confirmacion administrativa.
 - El acceso a un cargo familiar corresponde al usuario del representante congelado.
     Cambiar despues el representante de un atleta no transfiere el cargo ni expone su
     historial al nuevo representante. Tampoco fusiona cobros individuales anteriores.
@@ -152,6 +162,14 @@
     Eliminar o reducir un pago confirmado puede reabrir la campana de cierre automatico,
     sin duplicar el importe familiar. Las coberturas a cero de la conversion inicial
     conservan sus reglas anteriores; no se migran ni se modifican automaticamente.
+- El cuadro de cargos publicados tiene un ancho maximo de 1440 px en escritorio, con
+    margenes de al menos 32 px. Las columnas tienen menos relleno y las acciones pueden
+    pasar a otra linea sin ocultarse, evitando ensanchar toda la ventana.
+    La cabecera, los indicadores y los filtros usan un espaciado vertical mas compacto.
+    Muestra inicialmente 5 filas por pagina para reducir el desplazamiento vertical;
+    el administrador puede elegir 10 o 25. Los borradores conservan 10 filas por pagina.
+    En movil se mantiene a pantalla completa y conserva el scroll necesario para
+    que todas las columnas y acciones sigan accesibles.
 
 ## Monto esperado en el detalle del pago
 

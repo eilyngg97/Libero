@@ -79,6 +79,7 @@ const respuestaValida = (data, id, estado = 'borrador') => {
 };
 
 function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onConverted, creacionGuiada = false }) {
+  const publicada = campania.estado !== 'borrador';
   const fullScreen = useMediaQuery(useTheme().breakpoints.down('sm'));
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -89,7 +90,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
   const [estado, setEstado] = useState('');
   const [tipoCobro, setTipoCobro] = useState('');
   const [pagina, setPagina] = useState(0);
-  const [filasPorPagina, setFilasPorPagina] = useState(10);
+  const [filasPorPagina, setFilasPorPagina] = useState(publicada ? 5 : 10);
   const [confirmando, setConfirmando] = useState(false);
   const [publicando, setPublicando] = useState(false);
   const [errorPublicacion, setErrorPublicacion] = useState('');
@@ -103,7 +104,6 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
   const enviando = useRef(false);
   const solicitud = useRef('');
   const publicacionController = useRef(null);
-  const publicada = campania.estado !== 'borrador';
   const porRepresentante = datos?.campania.unidad_cobro === 'representante';
   useEffect(() => () => publicacionController.current?.abort(), []);
 
@@ -195,8 +195,11 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
   const porcentajePagado = avance.total ? Math.round(avance.pagado * 100 / avance.total) : 0;
 
   return <><CampaniaDialog open fullWidth maxWidth={publicada ? 'xl' : 'lg'} fullScreen={fullScreen} onClose={cerrar} aria-labelledby="resumen-campania-titulo"
-    PaperProps={{ sx: { maxWidth: publicada ? 1280 : 1000, borderRadius: { xs: 0, sm: 2 }, color: '#202441' } }}>
-    <DialogTitle component="div" id="resumen-campania-cabecera" sx={{ bgcolor: '#171b4b', color: '#fff', px: { xs: 2.5, sm: 4 }, py: 2.5,
+    PaperProps={{ sx: { maxWidth: publicada ? 1440 : 1000,
+      ...(publicada ? { width: { xs: '100%', sm: 'calc(100% - 64px)' }, m: { xs: 0, sm: 4 },
+        maxHeight: { xs: '100%', sm: 'calc(100% - 64px)' } } : {}),
+      borderRadius: { xs: 0, sm: 2 }, color: '#202441' } }}>
+    <DialogTitle component="div" id="resumen-campania-cabecera" sx={{ bgcolor: '#171b4b', color: '#fff', px: { xs: 2.5, sm: 4 }, py: publicada ? 1.5 : 2.5,
       display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 2 }}>
       <Box sx={{ minWidth: 0 }}>
         <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#f28cbd', mb: 0.75 }}>COBROS ADICIONALES</Typography>
@@ -213,7 +216,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
           sx={{ color: '#d8daea', bgcolor: 'rgba(255,255,255,0.07)', width: 32, height: 32, borderRadius: 1 }}><CloseRoundedIcon sx={{ fontSize: 18 }} /></IconButton></Tooltip>
       </Box>
     </DialogTitle>
-    <DialogContent sx={{ px: { xs: 2.5, sm: 4 }, pt: '24px !important', pb: 1, minWidth: 0,
+    <DialogContent sx={{ px: { xs: 2.5, sm: 4 }, pt: publicada ? '16px !important' : '24px !important', pb: publicada ? 0.5 : 1, minWidth: 0,
       '& .MuiInputBase-root': { fontSize: 13, borderRadius: 1.5, bgcolor: '#fff' },
       '& .MuiInputLabel-root': { position: 'static', transform: 'none', maxWidth: '100%', mb: 0.75, color: '#30344b', fontSize: 12, fontWeight: 650 },
       '& .MuiOutlinedInput-notchedOutline': { top: 0, borderColor: '#e5e6ed', '& legend': { display: 'none' } },
@@ -252,13 +255,13 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
         </Typography>
       </Alert>}
       {!cargando && !error && datos && <>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 2, pb: 2.5,
-          mb: 2.5, borderBottom: '1px solid #e9eaf0' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 2, pb: publicada ? 1 : 2.5,
+          mb: publicada ? 1 : 2.5, borderBottom: '1px solid #e9eaf0' }}>
           {[['Participantes', datos.totales.participantes], ['Total a recaudar', datos.totales.total_esperado, true],
             ['Personalizados', datos.totales.personalizados], ['No aplica', datos.totales.no_aplica]].map(([etiqueta, cantidad, esMonto]) =>
             <Box key={etiqueta} role="group" aria-label={etiqueta} sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontSize: 12, color: '#858999', minHeight: 36 }}>{etiqueta}</Typography>
-              <Typography sx={{ fontSize: esMonto ? 18 : 22, fontWeight: 750, color: '#202441', mt: 0.5, overflowWrap: 'anywhere' }}>
+              <Typography sx={{ fontSize: 12, color: '#858999', minHeight: publicada ? 18 : 36 }}>{etiqueta}</Typography>
+              <Typography sx={{ fontSize: esMonto ? 18 : 22, fontWeight: 750, color: '#202441', mt: publicada ? 0.25 : 0.5, overflowWrap: 'anywhere' }}>
                 {esMonto ? cantidad === null ? 'Pendiente de revisar' : formatoMonto(cantidad, datos.campania.moneda) : cantidad}
                 {!esMonto && <Box component="span" sx={{ fontSize: 11, fontWeight: 400, color: '#858999', ml: 0.75 }}> {porRepresentante && etiqueta !== 'Participantes'
                   ? cantidad === 1 ? 'cobro' : 'cobros' : cantidad === 1 ? 'atleta' : 'atletas'}</Box>}
@@ -272,8 +275,8 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
           {`${datos.totales.participantes} atletas incluidos · ${datos.totales.representantes} cobros por representante + ${datos.totales.individuales} individuales sin representante${datos.totales.conservados ? ` + ${datos.totales.conservados} conservados` : ''}${datos.totales.cubiertos ? ` + ${datos.totales.cubiertos} cubiertos por pagos existentes` : ''} = ${datos.totales.cobros} cobros.`}
           <Typography sx={{ fontSize: 12, mt: 0.5 }}>Cada cobro por representante se paga una sola vez y cubre los atletas indicados.</Typography>
         </Alert>}
-        {publicada && <Box component="section" aria-label="Avance de cobros" sx={{ mb: 2.5, pb: 2.5, borderBottom: '1px solid #e9eaf0' }}>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+        {publicada && <Box component="section" aria-label="Avance de cobros" sx={{ mb: 1.5, pb: 1.5, borderBottom: '1px solid #e9eaf0' }}>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
             <Typography sx={{ fontSize: 14, fontWeight: 750, color: '#202441' }}>
               {avance.total ? `${avance.pagado} de ${avance.total} pagados (${porcentajePagado}%)` : 'Sin cargos por cobrar'}
             </Typography>
@@ -281,7 +284,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
           </Box>
           <LinearProgress variant="determinate" value={porcentajePagado} aria-label="Porcentaje de cargos pagados"
             sx={{ height: 8, borderRadius: 1, bgcolor: '#e8ebf2', '& .MuiLinearProgress-bar': { bgcolor: '#0f7a4a' } }} />
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mt: 1.5 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mt: 0.75 }}>
             {[[ 'Pagados', avance.pagado, '#0f7a4a'], ['Pendientes', avance.pendiente, '#b45309'],
               ['En revisi\u00f3n', avance.en_revision, '#d4a017'], ['Con abono', avance.abono, '#6d4c41']].map(([label, cantidad, color]) =>
               <Box key={label} role="group" aria-label={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
@@ -295,7 +298,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
         {datos.totales.con_observaciones > 0 && <Alert severity="warning" sx={{ mb: 2 }}>
           {`${datos.totales.con_observaciones} participante(s) con observaciones${datos.totales.pendientes ? `; ${datos.totales.pendientes} con importe pendiente` : ''}.`}
         </Alert>}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: publicada ? '2fr 1fr 1fr' : '2fr 1fr' }, gap: 1.75, mb: 2 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: publicada ? '2fr 1fr 1fr' : '2fr 1fr' }, gap: 1.75, mb: publicada ? 1.5 : 2 }}>
           <TextField size="small" label={porRepresentante ? 'Buscar representante, atleta o sede' : 'Buscar atleta o sede'} value={busqueda} onChange={(event) => { setBusqueda(event.target.value); setPagina(0); }}
             slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18 }} /></InputAdornment> } }} />
           <TextField select size="small" label={'Condici\u00f3n'} value={modalidad} onChange={(event) => { setModalidad(event.target.value); setPagina(0); }}>
@@ -315,7 +318,8 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
           </TextField>}
         </Box>
         <TableContainer sx={{ maxWidth: '100%' }}>
-          <Table size="small" aria-label="Participantes del resumen" sx={{ minWidth: publicada ? 1160 : 620 }}>
+          <Table size="small" aria-label="Participantes del resumen" sx={{ minWidth: publicada ? 1160 : 620,
+            ...(publicada ? { '& .MuiTableCell-root': { px: 1.5, py: 0.5 } } : {}) }}>
             <TableHead sx={{ bgcolor: '#f5f6fa' }}><TableRow>{[porRepresentante ? 'Responsable y atletas cubiertos' : 'Atleta', 'Sede', 'Condici\u00f3n', 'Importe', 'Nota interna', ...(publicada ? ['Saldo pendiente', 'Estado', 'Acciones'] : [])].map((titulo) =>
               <TableCell key={titulo} sx={{ color: '#626879', fontSize: 12, fontWeight: 750, whiteSpace: 'nowrap' }}>{titulo}</TableCell>)}
             </TableRow></TableHead>
@@ -333,7 +337,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
                 </>}
                 {fila.incidencias.map((incidencia, indice) => <Typography key={indice} sx={{ fontSize: 11, color: '#a33142', mt: 0.5 }}>{incidencia}</Typography>)}
               </TableCell>
-              <TableCell sx={{ fontSize: 12, minWidth: 140, maxWidth: 200, overflowWrap: 'break-word' }}>
+              <TableCell sx={{ fontSize: 12, minWidth: 140, maxWidth: 200, overflowWrap: publicada ? 'anywhere' : 'break-word' }}>
                 {porRepresentante && fila.atletas_cubiertos ? [...new Set(fila.atletas_cubiertos.map((atleta) => atleta.nombre_sede || 'Sede no disponible'))].join(' / ')
                   : fila.sede?.nombre || 'Sede no disponible'}
               </TableCell>
@@ -342,7 +346,8 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
               <TableCell sx={{ fontSize: 12, minWidth: 140, maxWidth: 250, overflowWrap: 'anywhere' }}>{fila.nota_interna || '-'}</TableCell>
               {publicada && <>
                 <TableCell sx={{ fontSize: 12, whiteSpace: 'nowrap' }}>{formatoMonto(fila.saldo_pendiente, datos.campania.moneda)}</TableCell>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}><EstadoPagoChip
+                <TableCell sx={{ '& .MuiChip-root': { maxWidth: '100%', height: 'auto', minHeight: 32 },
+                  '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }}><EstadoPagoChip
                   data-testid={`estado-cargo-${fila.alumno}`}
                   estado={estadoVisible(fila) === 'en_revision' ? 'en revision' : estadoVisible(fila) === 'no_aplica' ? 'exonerado' : estadoVisible(fila)}
                   label={esCubierto(fila) ? 'Cubierto por pago familiar' : fila.retirado ? 'Retirado' : fila.pago_en_revision ? 'En revisi\u00f3n' : fila.estado === 'no_aplica' ? 'No aplica' : undefined} /></TableCell>
@@ -361,7 +366,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
                         Cubrir hermanos
                       </Button>
                     </Tooltip>}
-                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
                   {fila._id && datos.campania.estado === 'abierta' && <>
                     <Tooltip title={fila.puede_ajustar ? fila.retirado ? 'Reincorporar alumno' : 'Editar cargo' : 'El cargo tiene pagos o no admite ajustes'}><span>
                       <IconButton aria-label={`${fila.retirado ? 'Reincorporar' : 'Editar cargo de'} ${titularCargo(fila)}`}
@@ -396,7 +401,7 @@ function CampaniaResumenDialog({ campania, onClose, onRevisar, onPublished, onCo
             '& .MuiTablePagination-actions': { ml: 1 }, '& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows': { fontSize: 11 } }} />
       </>}
     </DialogContent>
-    <DialogActions sx={{ px: { xs: 2.5, sm: 4 }, py: 1.75, gap: 1, borderTop: '1px solid #f0f1f5', bgcolor: '#fafafe',
+    <DialogActions sx={{ px: { xs: 2.5, sm: 4 }, py: publicada ? 1.25 : 1.75, gap: 1, borderTop: '1px solid #f0f1f5', bgcolor: '#fafafe',
       flexWrap: 'wrap', '& > :not(style) ~ :not(style)': { ml: 0 } }}>
       {!creacionGuiada && <Button onClick={cerrar} disabled={publicando} sx={{ color: '#50566e', fontSize: 12 }}>Cerrar</Button>}
       {publicada && datos?.campania.estado === 'abierta' && !cargando && !error && <Button startIcon={<PersonAddOutlinedIcon />}

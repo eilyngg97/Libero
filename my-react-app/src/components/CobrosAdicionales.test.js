@@ -64,7 +64,15 @@ describe('cobros por representante en campañas', () => {
     render(<CampaniaBorradorDialog campania={{ ...actual, unidad_cobro: 'atleta' }} onClose={jest.fn()} onSaved={onSaved} />);
     const opcion = await screen.findByRole('button', { name: 'Por representante' });
     await waitFor(() => expect(opcion).toBeEnabled());
+    const porAtleta = screen.getByRole('button', { name: 'Por atleta' });
+    expect(porAtleta).toHaveAttribute('aria-pressed', 'true');
+    expect(porAtleta).toHaveAccessibleDescription('Un cargo por cada atleta.');
+    expect(opcion).toHaveAccessibleDescription('Un cargo para sus atletas seleccionados.');
     fireEvent.click(opcion);
+    expect(opcion).toHaveAttribute('aria-pressed', 'true');
+    expect(porAtleta).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(opcion);
+    expect(opcion).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     const escritura = window.fetch.mock.calls.find(([, options]) => options?.method === 'PATCH');
@@ -695,6 +703,60 @@ describe('pagos agrupados de campanias', () => {
     if (!ana.checked) fireEvent.click(ana);
     if (!luis.checked) fireEvent.click(luis);
   };
+  test.each([[true, false], [false, false], [true, true]])(
+    'paga un unico saldo familiar con ModalPago sin grupo ficticio, representante=%s reintento=%s', async (representante, reintento) => {
+      const familiar = { ...cargos[0], _id: 'familia', saldo_pendiente: 5, __v: 2, tipo_cobro: 'representante',
+        representante_cobro: 'rep1', nombre_representante: 'Representante QA',
+        atletas_cubiertos: [{ alumno: 'ana', nombres: 'Ana', apellidos: 'QA' }, { alumno: 'eva', nombres: 'Eva', apellidos: 'QA' }] };
+      const onSaved = jest.fn();
+      let solicitudes = 0;
+      window.fetch.mockImplementation(async (url, options = {}) => {
+        if (url.includes('/configuracion/pagos')) return json({ pagos: { adicionales: [{ tipo: 'zelle', titular: 'QA', correo: 'qa@example.com' }] } });
+        if (options.method === 'POST') {
+          solicitudes += 1;
+          return json({ repetida: solicitudes > 1,
+            cargo: { ...familiar, campania: 'camp1', monto: 20, saldo_pendiente: representante ? 5 : 0,
+              estado: representante ? 'abono' : 'pagado', __v: 3 },
+            pago: { _id: 'pago-familia', cargo: 'familia', campania: 'camp1', moneda: 'USD', monto_pagado: 5,
+              monto_pagado_bs: null, estado: options.body.get('estado'), solicitud_id: options.body.get('solicitud_id'),
+              registrado_por: { id: 'actor1', rol: representante ? 'usuario' : 'admin' },
+              ...(!representante ? { confirmado_por: { id: 'actor1' }, confirmado_en: '2026-11-10T12:00:00.000Z' } : {}),
+              ...(reintento && solicitudes === 1 ? { agrupacion: { id: options.body.get('solicitud_id'), monto_total: 5 } } : {})
+            }
+          });
+        }
+        return json({ representante: 'rep1', cargos: [familiar] });
+      });
+      render(<CampaniaPagoAgrupadoDialog alumnoId="ana" pagina={representante} representante={representante}
+        onClose={jest.fn()} onSaved={onSaved} />);
+      const seleccion = await screen.findByRole('checkbox', { name: 'Seleccionar Representante QA - Viaje QA' });
+      if (!seleccion.checked) fireEvent.click(seleccion);
+      fireEvent.click(screen.getByRole('button', { name: representante ? 'Continuar con el pago' : 'Continuar al pago' }));
+      fireEvent.click(await screen.findByText('Zelle', { exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Ya pague' }));
+      await waitFor(() => expect(screen.getByLabelText('Monto pagado (USD)')).toHaveValue('5.00'));
+      expect(screen.queryAllByRole('checkbox', { name: 'Pago confirmado' })).toHaveLength(representante ? 0 : 1);
+      if (!representante) fireEvent.click(screen.getByRole('checkbox', { name: 'Pago confirmado' }));
+      fireEvent.change(screen.getByLabelText('Referencia'), { target: { value: 'TX-FAMILIA-QA' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+      if (reintento) {
+        await screen.findByText('No se pudo verificar el pago. Reintenta o consulta el historial.');
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+      }
+      await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ mensaje: representante ? 'Pago reportado' : 'Pago confirmado',
+        cargo: expect.objectContaining({ monto: 20, saldo_pendiente: representante ? 5 : 0 }) }));
+      const posts = window.fetch.mock.calls.filter(([, options]) => options?.method === 'POST');
+      expect(posts).toHaveLength(reintento ? 2 : 1);
+      expect(new Set(posts.map(([, options]) => options.body.get('solicitud_id'))).size).toBe(1);
+      const [url, options] = posts[0];
+      expect(url).toContain('/api/campanias-cobro/camp1/cargos/familia/pagos');
+      expect(options.body.get('version')).toBe('2');
+      expect(options.body.get('monto_pagado')).toBe('5.00');
+      expect(options.body.get('estado')).toBe(representante ? 'en_revision' : 'confirmado');
+      expect(options.body.get('cargos')).toBeNull();
+      expect(options.body.get('alumnoId')).toBeNull();
+    });
   test('selecciona saldos completos de hermanos y separa monedas sin enviar pagos prematuramente', async () => {
     montar();
     expect(screen.getByRole('button', { name: 'Continuar al pago' })).toBeDisabled();
@@ -780,7 +842,7 @@ describe('pagos agrupados de campanias', () => {
     expect(screen.getByRole('button', { name: 'Continuar con el pago' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Seleccionar todos' }));
     expect(screen.getByText('1 de 1 seleccionados')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Continuar con el pago' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Continuar con el pago' })).toBeEnabled();
     expect(window.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
   });
   const grupoId = '22000000-0000-4000-8000-000000000001';
@@ -1826,8 +1888,8 @@ describe('pagos individuales campania', () => {
     expect(within(filaAtleta).getByRole('cell', { name: 'En revisión', exact: true })).toBeInTheDocument();
     expect(within(filaAtleta).getByTestId('estado-cargo-ana')).toHaveStyle({ backgroundColor: '#fff6cc', color: '#b45309' });
     expect(tabla).toHaveStyle({ minWidth: '1160px' });
-    expect(within(filaAtleta).getAllByRole('cell')[1]).toHaveStyle({ minWidth: '140px', overflowWrap: 'break-word' });
-    expect(screen.getByRole('dialog', { name: 'Cargos de la campaña' })).toHaveStyle({ maxWidth: '1280px' });
+    expect(within(filaAtleta).getAllByRole('cell')[1]).toHaveStyle({ minWidth: '140px', overflowWrap: 'anywhere' });
+    expect(screen.getByRole('dialog', { name: 'Cargos de la campaña' })).toHaveStyle({ maxWidth: '1440px' });
     expect(within(filaAtleta).queryByRole('cell', { name: 'Pendiente', exact: true })).not.toBeInTheDocument();
     expect(within(filaAtleta).getAllByRole('cell')[5]).toHaveTextContent(/30,00/);
     enRevision = false;
@@ -1891,7 +1953,8 @@ describe('pagos individuales campania', () => {
   });
 
   test('estado cargos vuelve a primera pagina al cambiar el filtro y permite volver a todos', async () => {
-    const filas = Array.from({ length: 25 }, (_, indice) => ({ alumno: `atleta${indice}`, nombres: `Atleta ${indice}`, apellidos: 'QA',
+    const filas = Array.from({ length: 25 }, (_, indice) => ({ _id: `cargo${indice}`, alumno: `atleta${indice}`, nombres: `Atleta ${indice}`, apellidos: 'QA',
+      puede_ajustar: indice < 20,
       sede: { _id: 'norte', nombre: 'Norte' }, estado: indice < 20 ? 'pendiente' : 'pagado', saldo_pendiente: indice < 20 ? 30 : 0,
       modalidad: 'general', monto: 30, nota_interna: '', incidencias: [] }));
     const totales = { participantes: 25, generales: 25, personalizados: 0, no_aplica: 0, pendientes: 0,
@@ -1900,14 +1963,16 @@ describe('pagos individuales campania', () => {
     window.fetch.mockResolvedValue(json({ campania: publicada, filas, totales }));
     render(<CampaniaResumenDialog campania={publicada} onClose={jest.fn()} />);
     const tabla = await screen.findByRole('table', { name: 'Participantes del resumen' });
+    expect(within(tabla).getAllByRole('row')).toHaveLength(6);
+    expect(screen.getByText('1-5 de 25')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /next page|siguiente/i }));
-    expect(within(tabla).getByRole('row', { name: /Atleta 10 QA/ })).toBeInTheDocument();
+    expect(within(tabla).getByRole('row', { name: /Atleta 5 QA/ })).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Estado' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Pendiente', exact: true }));
     expect(within(tabla).getByRole('row', { name: /Atleta 0 QA/ })).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Estado' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Todos los estados', exact: true }));
-    expect(screen.getByText('1-10 de 25')).toBeInTheDocument();
+    expect(screen.getByText('1-5 de 25')).toBeInTheDocument();
   });
 });
 

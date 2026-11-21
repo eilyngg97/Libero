@@ -89,7 +89,7 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
     if (enviando.current) throw new Error('El pago ya esta en proceso.');
     montoPagadoMoneda = normalizarImportePagoCampania({ monto: montoPagadoMoneda, montoBs: montoPagadoBs,
       tasa: tasaAplicada, esperado: total, metodo: metodoPago });
-    if (elegidos.length < 2 || !dinero(montoPagadoMoneda) || centimos(montoPagadoMoneda) !== centimos(total) || monedaPago !== moneda) {
+    if (elegidos.length < (grupoId ? 2 : 1) || !dinero(montoPagadoMoneda) || centimos(montoPagadoMoneda) !== centimos(total) || monedaPago !== moneda) {
       throw new Error('El pago debe cubrir los saldos completos seleccionados en la misma moneda.');
     }
     enviando.current = true;
@@ -97,15 +97,38 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
       if (!solicitud.current) solicitud.current = window.crypto.randomUUID();
       const body = new FormData();
       const estado = !grupoId && !representante && confirmarPago ? 'confirmado' : 'en_revision';
+      const individual = !grupoId && elegidos.length === 1;
+      const fuente = elegidos[0];
       const campos = { solicitud_id: solicitud.current, moneda, monto_pagado: total.toFixed(2), fecha_pago: fechaPago,
         metodo_pago: metodoPago, referencia, estado, telefono_pago: telefonoPago || '', cedula_titular: cedulaTitular || '', nota: notaPago || '',
-        cargos: JSON.stringify(elegidos.map((cargo) => ({ cargo: cargo._id, version: cargo.__v }))), ...(!grupoId ? { alumnoId } : {}) };
+        ...(individual ? { version: fuente.__v }
+          : { cargos: JSON.stringify(elegidos.map((cargo) => ({ cargo: cargo._id, version: cargo.__v }))), ...(!grupoId ? { alumnoId } : {}) }) };
       for (const [campo, valor] of Object.entries(campos)) body.append(campo, String(valor));
       if (montoPagadoBs != null) body.append('monto_pagado_bs', Number(montoPagadoBs).toFixed(2));
       if (comprobante) body.append('comprobante', comprobante);
-      const response = await fetch(ruta, { method: grupoId ? 'PATCH' : 'POST', headers: headers(), body, cache: 'no-store' });
+      const destino = individual ? `${API}/api/campanias-cobro/${fuente.campania._id}/cargos/${fuente._id}/pagos` : ruta;
+      const response = await fetch(destino, { method: grupoId ? 'PATCH' : 'POST', headers: headers(), body, cache: 'no-store' });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'No se pudo guardar la transferencia. Reintenta la misma solicitud.');
+      if (individual) {
+        const { cargo, pago } = data;
+        const saldoEsperado = estado === 'confirmado' ? 0 : fuente.saldo_pendiente;
+        if (typeof data.repetida !== 'boolean' || cargo?._id !== fuente._id || cargo.campania !== fuente.campania._id
+          || cargo.alumno !== fuente.alumno || cargo.moneda !== moneda || !dinero(cargo.monto)
+          || cargo.monto < total || cargo.saldo_pendiente !== saldoEsperado
+          || cargo.estado !== (saldoEsperado === 0 ? 'pagado' : saldoEsperado === cargo.monto ? 'pendiente' : 'abono')
+          || !Number.isInteger(cargo.__v) || cargo.__v < fuente.__v + (data.repetida ? 0 : 1)
+          || !pago?._id || pago.cargo !== fuente._id || pago.campania !== fuente.campania._id
+          || pago.moneda !== moneda || pago.monto_pagado !== total || pago.estado !== estado || pago.agrupacion
+          || pago.solicitud_id !== solicitud.current
+          || (representante ? pago.registrado_por?.rol !== 'usuario' : !pago.registrado_por?.id)
+          || (estado === 'confirmado' && (!pago.confirmado_por?.id || !pago.confirmado_en))
+          || (montoPagadoBs == null ? pago.monto_pagado_bs != null : pago.monto_pagado_bs !== Number(montoPagadoBs.toFixed(2)))) {
+          throw new Error('No se pudo verificar el pago. Reintenta o consulta el historial.');
+        }
+        resultado.current = { ...data, mensaje: estado === 'confirmado' ? 'Pago confirmado' : 'Pago reportado' };
+        return;
+      }
       if (typeof data.repetida !== 'boolean' || (!grupoId && (!Array.isArray(data.pagos) || data.pagos.length !== elegidos.length
         || new Set(data.pagos.map((pago) => pago.cargo)).size !== elegidos.length
         || data.pagos.some((pago) => !pago._id || pago.agrupacion?.id !== solicitud.current || pago.moneda !== moneda || pago.estado !== estado
@@ -139,6 +162,7 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
   if (formulario) return <ModalPago open onClose={() => { if (!enviando.current) setFormulario(false); }}
     pago={{ id: grupoId || 'campanias-agrupado', monto: total }} currencyCode={moneda} conceptoPago="campanias"
     disableCuotas allowPaymentConfirmation={!grupoId && !representante} preventCloseWhileSubmitting
+    allowCashPayment={!grupoId && !representante && elegidos.length === 1}
     initialPayment={grupoId ? datos.pagos[0] : null}
     onSubmitPayment={registrar} onSuccess={() => onSaved(resultado.current)} />;
 
@@ -198,7 +222,7 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
           <Typography sx={{ color: '#24273c', fontSize: 13, fontWeight: 750 }}>Total</Typography>
           <Typography sx={{ color: '#11132f', fontSize: 25, fontWeight: 900, overflowWrap: 'anywhere', minWidth: 0 }}>{formato(total, moneda)}</Typography>
         </Box>
-        <Button fullWidth variant="contained" disabled={elegidos.length < 2} onClick={() => { solicitud.current = ''; setFormulario(true); }}
+        <Button fullWidth variant="contained" disabled={!elegidos.length} onClick={() => { solicitud.current = ''; setFormulario(true); }}
           sx={{ bgcolor: '#11132f', '&:hover': { bgcolor: '#25284f' }, textTransform: 'none', py: 1.05, borderRadius: 1.25, fontWeight: 800, fontSize: 12, boxShadow: 'none' }}>
           Continuar con el pago
         </Button>
@@ -281,7 +305,7 @@ function CampaniaPagoAgrupadoDialog({ alumnoId, grupoId = '', representante = fa
       {!grupoId && <Button onClick={cerrar} disabled={ocupado} sx={{ color: '#626879', textTransform: 'none', minHeight: 40 }}>Cancelar</Button>}
       {grupoId && datos?.puede_corregir && <Button color="error" startIcon={<DeleteOutlineRoundedIcon />} disabled={ocupado} onClick={() => setRetirando(true)} sx={{ textTransform: 'none', minHeight: 40 }}>Retirar transferencia</Button>}
       {(!grupoId || datos?.puede_corregir) && <Button variant="contained" startIcon={grupoId ? <EditRoundedIcon /> : <PaymentsOutlinedIcon />}
-        disabled={!datos || elegidos.length < 2 || ocupado} onClick={() => { solicitud.current = ''; setFormulario(true); }}
+        disabled={!datos || elegidos.length < (grupoId ? 2 : 1) || ocupado} onClick={() => { solicitud.current = ''; setFormulario(true); }}
         sx={{ bgcolor: '#111342', '&:hover': { bgcolor: '#25284f' }, boxShadow: 'none', textTransform: 'none', minHeight: 40 }}>{grupoId ? 'Corregir transferencia' : 'Continuar al pago'}</Button>}
     </DialogActions>
   </Dialog>

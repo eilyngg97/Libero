@@ -65,6 +65,89 @@ function prepararCobrosAdicionales(cargosPorAtleta) {
   });
 }
 
+const cargoFamiliar = (cambios = {}) => cargoResumen('familia', 'a1', 10, {
+  nombres: 'Ana', apellidos: 'QA', monto: 10, __v: 2, tipo_cobro: 'representante',
+  representante_cobro: 'r1', nombre_representante: 'Representante QA',
+  atletas_cubiertos: [{ alumno: 'a1', nombres: 'Ana', apellidos: 'QA', nombre_sede: 'Sede QA' },
+    { alumno: 'a2', nombres: 'Eva', apellidos: 'QA', nombre_sede: 'Sede QA' }],
+  campania: { _id: 'camp1', nombre: 'Campaña familiar QA', moneda: 'USD', estado: 'abierta' }, ...cambios
+});
+
+test('campaña familiar se cuenta una vez y un unico cargo de dos hermanas se reporta sin crear un grupo', async () => {
+  Object.defineProperty(window, 'crypto', { configurable: true, value: { randomUUID: () => '22000000-0000-4000-8000-000000000001' } });
+  const familiar = cargoFamiliar();
+  const fetchPrevio = global.fetch.getMockImplementation();
+  let reportado = false;
+  global.fetch = jest.fn(async (url, options = {}) => {
+    if (url.includes('/mis-cargos')) return { ok: true, json: async () => ({
+      cargos: [{ ...familiar, pago_en_revision: reportado, disponible: reportado ? 0 : 10 }]
+    }) };
+    if (url.includes('/cargos-agrupables')) return { ok: true, json: async () => ({ representante: 'r1', cargos: [familiar] }) };
+    if (options.method === 'POST') {
+      reportado = true;
+      return { ok: true, json: async () => ({ repetida: false,
+        cargo: { ...familiar, campania: 'camp1', __v: 3 },
+        pago: { _id: 'pago-familia', cargo: 'familia', campania: 'camp1', moneda: 'USD', monto_pagado: 10,
+          monto_pagado_bs: null, estado: 'en_revision', solicitud_id: options.body.get('solicitud_id'),
+          registrado_por: { id: 'u1', rol: 'usuario' } }
+      }) };
+    }
+    return fetchPrevio(url, options);
+  });
+  render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
+  const franja = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
+  expect(await franja.findByText('$10.00')).toBeInTheDocument();
+  expect(franja.queryByText('$20.00')).not.toBeInTheDocument();
+  expect(franja.queryByRole('alert')).not.toBeInTheDocument();
+  fireEvent.click(franja.getByRole('button', { name: 'Pagar todo junto · 2 atletas' }));
+  expect(await screen.findByText('1 de 1 seleccionados')).toBeInTheDocument();
+  expect(screen.getByText(/Cobro compartido/)).toHaveTextContent('Ana QA');
+  expect(screen.getByText(/Cobro compartido/)).toHaveTextContent('Eva QA');
+  expect(screen.getByRole('button', { name: 'Continuar con el pago' })).toBeEnabled();
+  expect(global.fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Continuar con el pago' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Confirmar', exact: true }));
+  expect(await screen.findByRole('alertdialog', { name: 'Pago reportado' })).toBeInTheDocument();
+  const posts = global.fetch.mock.calls.filter(([, options]) => options?.method === 'POST');
+  expect(posts).toHaveLength(1);
+  expect(posts[0][0]).toContain('/api/campanias-cobro/camp1/cargos/familia/pagos');
+  expect(posts[0][1].body.get('version')).toBe('2');
+  expect(posts[0][1].body.get('monto_pagado')).toBe('10.00');
+  expect(posts[0][1].body.get('estado')).toBe('en_revision');
+  expect(posts[0][1].body.get('cargos')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+  const actualizado = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
+  expect(await actualizado.findByText('En revisión: $10.00 USD')).toBeInTheDocument();
+  expect(actualizado.getByText('$0.00')).toBeInTheDocument();
+  expect(actualizado.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test.each([false, true])('campaña familiar con abono cuenta su saldo o reserva solo una vez, revision=%s', async (revision) => {
+  const familiar = cargoFamiliar({ estado: 'abono', saldo_pendiente: 5, disponible: revision ? 0 : 5, pago_en_revision: revision });
+  prepararCobrosAdicionales({ a1: [familiar], a2: [familiar] });
+  render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
+  const franja = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
+  expect(await franja.findByText(revision ? '$0.00' : '$5.00')).toBeInTheDocument();
+  expect(franja.queryByText('En revisión: $5.00 USD') !== null).toBe(revision);
+  expect(franja.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test.each(['saldo', 'version', 'miembros', 'ajeno', 'duplicado', 'identificador'])(
+  'campaña familiar no oculta datos inconsistentes entre hermanas: %s', async (caso) => {
+    const familiar = cargoFamiliar();
+    const segundo = { ...familiar };
+    if (caso === 'saldo') { segundo.saldo_pendiente = 5; segundo.disponible = 5; segundo.estado = 'abono'; }
+    if (caso === 'version') segundo.__v = 3;
+    if (caso === 'identificador') segundo._id = {};
+    if (caso === 'miembros') segundo.atletas_cubiertos = [...familiar.atletas_cubiertos, { alumno: 'a3', nombres: 'Otra', apellidos: 'QA', nombre_sede: 'Sede QA' }];
+    if (caso === 'ajeno') segundo.atletas_cubiertos = [familiar.atletas_cubiertos[0]];
+    prepararCobrosAdicionales({ a1: [familiar], a2: caso === 'duplicado' ? [familiar, familiar] : [segundo] });
+    render(<MemoryRouter><DashboardUsuario /></MemoryRouter>);
+    const franja = within(await screen.findByRole('region', { name: 'Cobros adicionales' }));
+    expect(await franja.findByRole('alert')).toHaveTextContent('No se pudo verificar el total de cobros adicionales.');
+    expect(franja.queryByText('$10.00')).not.toBeInTheDocument();
+  });
+
 test('separa por moneda los cobros agrupables, las transferencias en revision y los otros saldos', async () => {
   prepararCobrosAdicionales({
     a1: [cargoResumen('cargo1', 'a1', 30, { pago_en_revision: true, disponible: 0 }),

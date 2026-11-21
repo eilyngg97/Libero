@@ -11,6 +11,7 @@ import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
 import { cargarAtletasPortal, cargarMensualidadesPortal } from '../utils/portalPaymentData';
 import CampaniaPagoAgrupadoDialog from './CampaniaPagoAgrupadoDialog';
+import { alumnosDelCargo } from '../utils/campaniaCobros';
 
 const normalizarDiaMes = (value) => {
   const numero = Number(value);
@@ -207,15 +208,21 @@ function DashboardUsuario() {
       const cargarCobros = async () => {
         try {
           if (!token) throw new Error('Inicia sesion nuevamente para consultar los cobros.');
-          const identificadores = new Set();
           const resultados = await Promise.all(alumnos.map(async (alumno) => {
             const response = await fetch(`${apiBase}/api/campanias-cobro/mis-cargos?alumnoId=${encodeURIComponent(alumno._id)}`, {
               headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal
             });
             const data = await response.json();
             if (!response.ok) throw new Error('No se pudo cargar el total de cobros adicionales.');
-            if (!Array.isArray(data?.cargos) || data.cargos.some((cargo) => {
-              if (!cargo?._id || identificadores.has(cargo._id) || cargo.alumno !== alumno._id
+            if (!Array.isArray(data?.cargos) || new Set(data.cargos.map((cargo) => cargo?._id)).size !== data.cargos.length
+              || data.cargos.some((cargo) => {
+              const familiar = cargo?.tipo_cobro === 'representante';
+              if (typeof cargo?._id !== 'string' || !cargo._id || (familiar ? !Array.isArray(cargo.atletas_cubiertos) || !cargo.atletas_cubiertos.length
+                || typeof cargo.representante_cobro !== 'string' || !cargo.representante_cobro
+                || cargo.atletas_cubiertos[0]?.alumno !== cargo.alumno
+                || cargo.atletas_cubiertos.some((atleta) => typeof atleta?.alumno !== 'string')
+                || new Set(alumnosDelCargo(cargo)).size !== cargo.atletas_cubiertos.length
+                || !alumnosDelCargo(cargo).includes(alumno._id) : cargo.alumno !== alumno._id)
                 || !['USD', 'EUR'].includes(cargo.moneda) || cargo.campania?.moneda !== cargo.moneda
                 || !['abierta', 'cerrada', 'cancelada'].includes(cargo.campania?.estado)
                 || !['pendiente', 'abono', 'pagado', 'no_aplica'].includes(cargo.estado)
@@ -223,13 +230,25 @@ function DashboardUsuario() {
                 || cargo.saldo_pendiente < 0 || !Number.isSafeInteger(Math.round(cargo.saldo_pendiente * 100))
                 || typeof cargo.pago_en_revision !== 'boolean' || typeof cargo.disponible !== 'number' || !Number.isFinite(cargo.disponible)
                 || cargo.disponible < 0 || cargo.disponible > cargo.saldo_pendiente) return true;
-              identificadores.add(cargo._id);
               return false;
             })) throw new Error('No se pudo verificar el total de cobros adicionales.');
             return data.cargos;
           }));
+          const cargosUnicos = new Map();
+          for (const cargo of resultados.flat()) {
+            const huella = JSON.stringify({ alumno: cargo.alumno, tipo: cargo.tipo_cobro, moneda: cargo.moneda,
+              representante: cargo.representante_cobro,
+              monto: cargo.monto, estado: cargo.estado, version: cargo.__v, saldo: cargo.saldo_pendiente,
+              disponible: cargo.disponible, revision: cargo.pago_en_revision, atletas: cargo.atletas_cubiertos,
+              campania: { id: cargo.campania._id, moneda: cargo.campania.moneda, estado: cargo.campania.estado } });
+            const anterior = cargosUnicos.get(cargo._id);
+            if (anterior && (cargo.tipo_cobro !== 'representante' || anterior.huella !== huella)) {
+              throw new Error('No se pudo verificar el total de cobros adicionales.');
+            }
+            if (!anterior) cargosUnicos.set(cargo._id, { cargo, huella });
+          }
           const totales = { USD: { porPagar: 0, revision: 0, otros: 0 }, EUR: { porPagar: 0, revision: 0, otros: 0 } };
-          resultados.flat().forEach((cargo) => {
+          cargosUnicos.forEach(({ cargo }) => {
             if (['pendiente', 'abono'].includes(cargo.estado) && cargo.campania.estado !== 'cancelada') {
               const saldo = Math.round(cargo.saldo_pendiente * 100);
               const revision = saldo - Math.round(cargo.disponible * 100);
