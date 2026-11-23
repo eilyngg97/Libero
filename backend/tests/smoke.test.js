@@ -2382,6 +2382,114 @@ describe('Backend smoke tests', () => {
     }
   });
 
+  describe('POST /api/alumnos/importar-excel fecha de inicio de cobro', () => {
+    const sedeId = '507f1f77bcf86cd799439011';
+    const anio = new Date().getUTCFullYear();
+    let originalGetTenantModel;
+
+    beforeEach(() => {
+      const { getTenantModel } = require('../services/tenantModelService');
+      originalGetTenantModel = getTenantModel.getMockImplementation();
+      const sede = { _id: sedeId, nombre: 'Sede de prueba', costo: 100 };
+      getTenantModel.mockImplementation((connection, modelName) => {
+        if (modelName === 'Sede') {
+          return {
+            findById: jest.fn(() => ({
+              select: jest.fn().mockResolvedValue(sede),
+              then: (resolve) => resolve(sede)
+            }))
+          };
+        }
+        return originalGetTenantModel(connection, modelName);
+      });
+      Mensualidad.findOne.mockResolvedValue(null);
+      Mensualidad.create.mockImplementation(async (data) => ({ ...data, _id: 'm-importada' }));
+    });
+
+    afterEach(() => {
+      require('../services/tenantModelService').getTenantModel.mockImplementation(originalGetTenantModel);
+    });
+
+    async function importar(rows, dryRun = false) {
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Alumnos');
+      return request(app)
+        .post('/api/alumnos/importar-excel')
+        .set('Authorization', `Bearer ${makeToken({ id: 'admin1', rol: 'super_admin' })}`)
+        .field('sede', sedeId)
+        .field('dryRun', dryRun ? '1' : '0')
+        .attach('archivo', XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), {
+          filename: 'alumnos.xlsx',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+    }
+
+    test.each([
+      ['DD/MM/AAAA', `01/12/${anio}`],
+      ['ISO', `${anio}-12-01`],
+      ['celda de fecha Excel', new Date(anio, 11, 1, 12)],
+      ['serial Excel', (Date.UTC(anio, 11, 1) - Date.UTC(1899, 11, 30)) / 86400000]
+    ])('guarda fecha %s y crea solo la mensualidad de diciembre', async (formato, fecha) => {
+      const response = await importar([
+        ['NOMBRES', 'APELLIDOS', 'FECHA INICIO COBRO'],
+        ['Ana', 'Perez', fecha],
+        ['Luis', 'Gomez', `01/01/${anio}`]
+      ]);
+
+      expect(response.status).toBe(200);
+      expect(response.body.detalle.errores).toEqual([]);
+      expect(response.body.creados).toBe(2);
+      expect(Alumno.mock.calls[0][0].fecha_inicio_cobro.toISOString()).toBe(`${anio}-12-01T12:00:00.000Z`);
+      expect(Alumno.mock.calls[1][0].fecha_inicio_cobro.toISOString()).toBe(`${anio}-01-01T12:00:00.000Z`);
+      expect(Mensualidad.create).toHaveBeenCalledTimes(2);
+      expect(Mensualidad.create.mock.calls[0][0]).toEqual(expect.objectContaining({ mes: 12, anio }));
+      expect(Mensualidad.create.mock.calls[1][0]).toEqual(expect.objectContaining({ mes: 1, anio }));
+    });
+
+    test.each([false, true])('conserva el mes actual con columna vacia o ausente (%s)', async (incluirColumna) => {
+      const response = await importar(incluirColumna
+        ? [['NOMBRES', 'APELLIDOS', 'FECHA INICIO COBRO'], ['Ana', 'Perez', '']]
+        : [['NOMBRES', 'APELLIDOS'], ['Ana', 'Perez']]);
+
+      expect(response.body.detalle.errores).toEqual([]);
+      expect(response.body.creados).toBe(1);
+      const mes = new Date().getUTCMonth() + 1;
+      expect(Alumno.mock.calls[0][0].fecha_inicio_cobro.getUTCDate()).toBe(1);
+      expect(Mensualidad.create).toHaveBeenCalledWith(expect.objectContaining({ mes, anio }));
+    });
+
+    test.each([false, true])('reporta fechas invalidas por fila sin crear atletas (vista previa: %s)', async (dryRun) => {
+      const response = await importar([
+        ['NOMBRES', 'APELLIDOS', 'FECHA INICIO COBRO'],
+        ['Ana', 'Perez', 'no es fecha'],
+        ['Luis', 'Gomez', `31/02/${anio}`],
+        ['Maria', 'Diaz', `01/12/${anio + 1}`]
+      ], dryRun);
+
+      expect(response.status).toBe(200);
+      expect(response.body.creados).toBe(0);
+      expect(response.body.detalle.errores).toEqual([
+        { fila: 2, error: expect.stringContaining('FECHA INICIO COBRO invalida') },
+        { fila: 3, error: expect.stringContaining('FECHA INICIO COBRO invalida') },
+        { fila: 4, error: expect.stringContaining(`año actual (${anio})`) }
+      ]);
+      expect(Alumno).not.toHaveBeenCalled();
+      expect(Mensualidad.create).not.toHaveBeenCalled();
+    });
+
+    test('la vista previa valida y devuelve la fecha sin crear registros', async () => {
+      const response = await importar([
+        ['NOMBRES', 'APELLIDOS', 'FECHA INICIO COBRO'],
+        ['Ana', 'Perez', `01/12/${anio}`]
+      ], true);
+
+      expect(response.body.detalle.errores).toEqual([]);
+      expect(response.body.detalle.creados[0].fecha_inicio_cobro).toBe(`${anio}-12-01T12:00:00.000Z`);
+      expect(Alumno).not.toHaveBeenCalled();
+      expect(Mensualidad.create).not.toHaveBeenCalled();
+    });
+  });
+
   test('POST /api/alumnos allows create without numero_franela', async () => {
     const token = makeToken({ id: 'admin1', rol: 'admin', nombre: 'Admin' });
 

@@ -62,6 +62,19 @@ no administrativos no pueden consultar ni emitir datos de entrenadores.
 Las restricciones actuales de acceso y solvencia siguen aplicandose a alumnos.
 No es necesario migrar los datos existentes.
 
+## Importar atletas desde Excel
+
+En **Importar Excel**, la columna opcional `FECHA INICIO COBRO` permite indicar
+la fecha de cada atleta, como fecha de Excel, `DD/MM/AAAA` o `AAAA-MM-DD`.
+Por ejemplo, usa `01/12/2026` en todas las filas que deban comenzar a pagar en
+diciembre de 2026. La fecha debe pertenecer al anio actual; las fechas invalidas
+se reportan por fila tanto en la vista previa como al importar.
+
+Si la columna no existe o la celda esta vacia, se conserva el dia 1 del mes
+actual. La mensualidad inicial se crea solo para el mes de inicio indicado,
+sin generar meses anteriores. La sede se selecciona antes de importar.
+Este cambio requiere actualizar el backend.
+
 ## Available Scripts
 
 In the project directory, you can run:

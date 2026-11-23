@@ -72,8 +72,28 @@ const { registrarOperacion } = require('../services/operacionService');
 
 const { obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
 
-function getPeriodoInicioCobroImportacion() {
+function getPeriodoInicioCobroImportacion(value) {
   const now = new Date();
+  if (value !== null && value !== undefined && String(value).trim() !== '') {
+    let fecha;
+    if (typeof value === 'string') {
+      const raw = value.trim();
+      const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const iso = match
+        ? `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`
+        : raw;
+      fecha = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? parseDateInput(iso) : null;
+    } else {
+      fecha = parseExcelDateInput(value);
+    }
+    if (!fecha) {
+      throw new Error('FECHA INICIO COBRO invalida. Usa una fecha de Excel o DD/MM/AAAA.');
+    }
+    if (!esFechaDelAnioActual(fecha)) {
+      throw new Error(getMensajeErrorFechaInicioCobroAnioActual());
+    }
+    return { fecha, ...obtenerPeriodoDesdeFecha(fecha) };
+  }
   return {
     fecha: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 12, 0, 0)),
     mes: now.getUTCMonth() + 1,
@@ -575,6 +595,7 @@ function parseAlumnoExcelRows(fileBuffer) {
   }
 
   const idxFechaIngreso = findColumnIndexByCandidates(headerRow, ['FECHA INGRESO', 'FECHA DE INGRESO', 'INGRESO']);
+  const idxFechaInicioCobro = findColumnIndexByCandidates(headerRow, ['FECHA INICIO COBRO', 'FECHA DE INICIO DE COBRO', 'FECHA_INICIO_COBRO']);
   const idxClasif = findColumnIndexByCandidates(headerRow, ['CLASIF INTERNA', 'CLASIFICACION INTERNA', 'CATEGORIA']);
   const idxColegioInstitucion = findColumnIndexByCandidates(headerRow, ['COLEGIO', 'INSTITUCION', 'INSTITUCION EDUCATIVA', 'COLEGIO INSTITUCION', 'COLEGIO / INSTITUCION', 'COLEGIO/INSTITUCION']);
   const idxNumeroFranela = findColumnIndexByCandidates(headerRow, ['NRO DE FRANELA', 'NRO FRANELA', 'NUMERO FRANELA']);
@@ -622,6 +643,7 @@ function parseAlumnoExcelRows(fileBuffer) {
       sexo,
       fecha_nacimiento,
       fecha_inscripcion,
+      fecha_inicio_cobro: idxFechaInicioCobro >= 0 ? row[idxFechaInicioCobro] : '',
       categoria,
       colegio_institucion,
       domicilio,
@@ -1940,7 +1962,6 @@ exports.importarAlumnosExcel = async (req, res) => {
     }
 
     const dryRun = String(req.body?.dryRun || '').trim() === '1';
-  const periodoInicioCobroImportacion = getPeriodoInicioCobroImportacion();
 
     const rows = parseAlumnoExcelRows(req.file.buffer);
     const created = [];
@@ -1955,6 +1976,7 @@ exports.importarAlumnosExcel = async (req, res) => {
           continue;
         }
 
+        const periodoInicioCobroImportacion = getPeriodoInicioCobroImportacion(row.fecha_inicio_cobro);
         const cedulaKey = row.cedula ? `${String(row.cedula).toLowerCase()}::${sedeIdRaw}` : '';
         if (cedulaKey && seenCedulaInFile.has(cedulaKey)) {
           skipped.push({ fila: row.excelRow, motivo: 'Cedula duplicada dentro del mismo archivo.' });
@@ -2119,7 +2141,7 @@ exports.importarAlumnosExcel = async (req, res) => {
             });
           } catch (errMensualidad) {
             await alumno.deleteOne().catch(() => {});
-            throw new Error(`No se pudo crear mensualidad inicial del período actual: ${errMensualidad.message}`);
+            throw new Error(`No se pudo crear mensualidad inicial del periodo ${periodoInicioCobroImportacion.mes}/${periodoInicioCobroImportacion.anio}: ${errMensualidad.message}`);
           }
 
           created.push({
@@ -2135,6 +2157,7 @@ exports.importarAlumnosExcel = async (req, res) => {
             nombres: alumnoData.nombres,
             apellidos: alumnoData.apellidos,
             colegio_institucion: alumnoData.colegio_institucion,
+            fecha_inicio_cobro: alumnoData.fecha_inicio_cobro,
             preview: true,
             representanteDetectado: Boolean(tieneDatosRepresentante)
           });
