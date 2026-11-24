@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -63,6 +63,11 @@ import { hasAllPermissions } from './utils/permissions';
  // Wrapper para pasar location.state a AlumnoEditar si viene de PanelOpcionesUsuario
 import AlumnoEditar from './components/AlumnoEditar';
 import SolicitudUniforme from './components/SolicitudUniforme';
+
+function EntrypointAlumnoEditar() {
+  const location = useLocation();
+  return <AlumnoEditar locationState={location.state} />;
+}
                       
 function BackNavigationButton() {
   const navigate = useNavigate();
@@ -85,6 +90,11 @@ function BackNavigationButton() {
   const rutaFallback = usuario?.rol === 'usuario' ? '/dashboard-usuario' : '/dashboard';
 
   const handleVolver = () => {
+    const atletaEnEdicion = location.pathname.match(/^\/alumno-editar\/([^/]+)$/);
+    if (usuario?.rol === 'usuario' && atletaEnEdicion) {
+      navigate(`/panel-opciones-usuario/${atletaEnEdicion[1]}`);
+      return;
+    }
     if (window.history.length > 1) {
       navigate(-1);
       return;
@@ -313,7 +323,7 @@ function DashboardEntry() {
   return <><SystemPaymentReminder />{canViewFinanceAndStats ? <Dashboard /> : <DashboardOperativo />}</>;
 }
 
-function App() {
+function AppRoutes() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -321,12 +331,6 @@ function App() {
 
   const userOnly = ['usuario'];
   const adminAndUser = ['admin', 'super_admin', 'usuario'];
-
-  function EntrypointAlumnoEditar() {
-                          const location = useLocation();
-                          // Si viene desde PanelOpcionesUsuario, location.state tendrá alumno y sede
-                          return <AlumnoEditar locationState={location.state} />;
-                        }
 
     function SolicitudUniformeWrapper() {
                         const location = useLocation();
@@ -336,9 +340,6 @@ function App() {
                       }
 
     return (
-      <SedeProvider>
-        <DolarProvider>
-          <Router>
             <TenantHostGate>
               <Routes>
               <Route path="/login" element={<Login />} />
@@ -436,10 +437,19 @@ function App() {
               } />
               </Routes>
             </TenantHostGate>
-          </Router>
-        </DolarProvider>
-      </SedeProvider>
     );
+}
+
+const router = createBrowserRouter([{ path: '*', element: <AppRoutes /> }]);
+
+function App() {
+  return (
+    <SedeProvider>
+      <DolarProvider>
+        <RouterProvider router={router} />
+      </DolarProvider>
+    </SedeProvider>
+  );
 }
 
 export default App;

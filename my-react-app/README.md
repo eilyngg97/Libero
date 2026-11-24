@@ -14,6 +14,17 @@ No se muestra la opcion de recuperar contrasena. El enlace de soporte muestra
 instrucciones para contactar a su administracion; no envia correos ni ejecuta un restablecimiento
 automatico. El rediseno solo requiere actualizar el frontend.
 
+## Edicion de datos del atleta: representante y administrador
+
+- Al aplicar el recorte, la foto de perfil se guarda automaticamente mediante `PATCH /api/alumnos/:id/foto`, sin enviar los otros datos del formulario. La foto anterior sigue visible hasta que el servidor confirma la nueva URL. Se muestran `Subiendo foto...`, un aviso lateral `Foto de perfil actualizada` arriba a la derecha (se cierra automaticamente o con la equis), o un error junto a la foto con `Reintentar`.
+- Los demas datos, la cedula y los documentos conservan el guardado manual. En moviles, `Guardar cambios` permanece fijo abajo, con espacio para la zona segura y para que no tape el final del formulario.
+- La navegacion interna, incluido Volver y cerrar sesion, muestra `Guardar` y `Salir sin guardar` cuando hay cambios pendientes. La equis superior cierra el aviso y permite seguir editando sin perder los cambios; se deshabilita mientras se guarda. Guardar espera la respuesta del servidor; un fallo conserva el formulario. Cerrar sesion no elimina las credenciales hasta que se acepta la salida.
+- Las tres mejoras se aplican al representante (`usuario`) y al administrador (`admin`, `administrador`, `super_admin`). El router de datos de React Router permite el bloqueo sin interceptar enlaces ni modificar el historial manualmente. Las rutas y permisos existentes se mantienen.
+- El panel del representante carga el atleta desde el ID de la URL, incluso al volver del formulario o recargar sin datos de navegacion. Consulta los datos actuales del servidor para mostrar la foto guardada; mientras carga o si falla, no muestra acciones del atleta y ofrece reintento ante un error.
+- El representante puede consultar las categorias sugeridas sin permisos de gestion; la seleccion manual de categoria y division sigue reservada al administrador. El selector de franela conserva el numero actual mientras carga la disponibilidad, sin declararlo libre si aparece ocupado.
+- Al recargar o cerrar una pestaña se solicita el aviso nativo del navegador: no admite botones ni texto personalizados. Safari/iOS puede omitir `beforeunload` al cerrar la app o cambiar de aplicacion; no se puede garantizar ese aviso en esos casos. La foto ya confirmada permanece guardada.
+- Pruebas: `npm test -- --watch=false --runInBand --runTestsByPath src\components\AlumnoEditar.test.js src\App.test.js src\components\Login.test.js`. Validar tambien en dispositivos Android/Chrome e iOS/Safari: recorte, subida lenta/error/reintento, recarga, navegacion con datos pendientes y boton fijo con teclado abierto.
+
 ## Formatos de constancias por academia
 
 En Configuraciones > Constancias, los cinco formatos predeterminados se mantienen.

@@ -47,11 +47,8 @@ function Header({ titulo, onMenuClick }) {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('rol');
-    localStorage.removeItem('usuario');
     setAnchorEl(null);
-    navigate('/login');
+    navigate('/login', { state: { cerrarSesion: true } });
   };
 
   return (

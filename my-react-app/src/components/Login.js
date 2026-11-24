@@ -47,6 +47,21 @@ function Login({ onLogin }) {
   const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
+    if (!location.state?.cerrarSesion) return;
+    localStorage.removeItem('token');
+    localStorage.removeItem('rol');
+    localStorage.removeItem('usuario');
+    if (location.state.limpiarTenant) {
+      localStorage.removeItem('tenantId');
+      localStorage.removeItem('sedeSeleccionada');
+    }
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: { ...location.state, cerrarSesion: false, limpiarTenant: false }
+    });
+  }, [location, navigate]);
+
+  useEffect(() => {
     let isActive = true;
     const controller = new AbortController();
 

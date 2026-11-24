@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Alert, Dialog, DialogActions, DialogContent } from '@mui/material';
+import { Box, Typography, Grid, IconButton, Button, Chip, Avatar, Alert, CircularProgress, Dialog, DialogActions, DialogContent } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -11,7 +11,7 @@ import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import SavingsOutlinedIcon from '@mui/icons-material/SavingsOutlined';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import CloseIcon from '@mui/icons-material/Close';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import { mediaUrl } from '../utils/mediaUrl';
 import TerminosPendientesAlert from './TerminosPendientesAlert.js';
@@ -57,6 +57,11 @@ const parseFechaSinDesfase = (value) => {
 function PanelOpcionesUsuario() {
    const location = useLocation();
   const navigate = useNavigate();
+  const { alumnoId } = useParams();
+  const [alumno, setAlumno] = useState(null);
+  const [alumnoLoading, setAlumnoLoading] = useState(true);
+  const [alumnoError, setAlumnoError] = useState('');
+  const [intentoAlumno, setIntentoAlumno] = useState(0);
   const [loadingRep, setLoadingRep] = useState(false);
   const [avisoExpedienteOpen, setAvisoExpedienteOpen] = useState(false);
   const [, setTorneosAlumno] = useState([]);
@@ -74,8 +79,7 @@ function PanelOpcionesUsuario() {
   const [cargosCampania, setCargosCampania] = useState([]);
   const [campaniasLoading, setCampaniasLoading] = useState(true);
   const [campaniasError, setCampaniasError] = useState('');
-  const alumno = location.state?.alumno;
-  const sede = location.state?.sede;
+  const sede = alumno?.sede || location.state?.sede;
   const token = localStorage.getItem('token');
   const tenantId = String(localStorage.getItem('tenantId') || '').trim().toLowerCase();
   const esUsuarioEsporta = tenantId === 'esporta';
@@ -85,6 +89,35 @@ function PanelOpcionesUsuario() {
   const monedaCobro = String(dolar?.moneda || 'USD').toUpperCase() === 'EUR' ? 'EUR' : 'USD';
   const simboloMonedaCobro = monedaCobro === 'EUR' ? '€' : '$';
   const avisoExpedienteKey = alumno?._id ? `aviso-expediente-leido:${tenantId}:${alumno._id}` : '';
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setAlumno(null);
+    setAlumnoLoading(true);
+    setAlumnoError('');
+    const cargarAlumno = async () => {
+      try {
+        if (!alumnoId) throw new Error('No se indicó el atleta solicitado.');
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${encodeURIComponent(alumnoId)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || data?.msg || 'No se pudieron cargar los datos del atleta.');
+        if (!data || typeof data._id !== 'string' || data._id !== alumnoId) {
+          throw new Error('El servidor no devolvió los datos del atleta solicitado.');
+        }
+        if (!controller.signal.aborted) setAlumno(data);
+      } catch (error) {
+        if (!controller.signal.aborted) setAlumnoError(error.message || 'No se pudieron cargar los datos del atleta.');
+      } finally {
+        if (!controller.signal.aborted) setAlumnoLoading(false);
+      }
+    };
+    cargarAlumno();
+    return () => controller.abort();
+  }, [alumnoId, token, intentoAlumno]);
 
   useEffect(() => {
     if (!avisoExpedienteKey) return;
@@ -178,6 +211,7 @@ function PanelOpcionesUsuario() {
   }, [alumno?._id, token]);
 
   useEffect(() => {
+    if (!alumno?._id) return;
     const controller = new AbortController();
     setCargosCampania([]);
     setCampaniasError('');
@@ -357,6 +391,27 @@ function PanelOpcionesUsuario() {
     cerrarAvisoExpediente();
     irAMisDatos();
   };
+
+  if (alumnoLoading || (!alumnoError && alumno?._id !== alumnoId)) {
+    return (
+      <Box role="status" sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <CircularProgress size={24} />
+        <Typography>Cargando datos del atleta...</Typography>
+      </Box>
+    );
+  }
+
+  if (alumnoError) {
+    return (
+      <Box sx={{ p: 2 }}>
+        <Alert severity="error" action={
+          <Button color="inherit" onClick={() => setIntentoAlumno((actual) => actual + 1)}>Reintentar</Button>
+        }>
+          {alumnoError}
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 2 }}>

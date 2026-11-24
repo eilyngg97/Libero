@@ -69,6 +69,26 @@ function uploadAlumno(req, res, next) {
 	});
 }
 
+const fotoUpload = multer({
+	storage,
+	limits: { fileSize: 10 * 1024 * 1024 },
+	fileFilter: (req, file, cb) => {
+		const ext = path.extname(file.originalname || '').toLowerCase();
+		const esImagen = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'].includes(file.mimetype)
+			&& ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'].includes(ext);
+		return cb(esImagen ? null : new Error('La foto debe ser una imagen JPG, PNG, WebP, GIF o AVIF.'), esImagen);
+	}
+}).single('foto');
+
+function uploadFoto(req, res, next) {
+	fotoUpload(req, res, (error) => {
+		if (error) {
+			return res.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'La foto debe pesar como maximo 10 MB.' : error.message });
+		}
+		return next();
+	});
+}
+
 const importUpload = multer({
 	storage: multer.memoryStorage(),
 	limits: { fileSize: 8 * 1024 * 1024 },
@@ -82,10 +102,14 @@ const importUpload = multer({
 });
 
 // CRUD rutas para alumnos
+const permisoGestionCategorias = permisoMiddleware('alumnos.manage');
+const permisoConsultarCategorias = (req, res, next) =>
+	req.user?.rol === 'usuario' ? next() : permisoGestionCategorias(req, res, next);
+
 router.get('/', authMiddleware, permisoMiddleware('alumnos.view'), alumnoController.getAlumnos);
 router.get('/estadisticas/inscritos-retirados', authMiddleware, permisoMiddleware('alumnos.view'), alumnoController.getEstadisticasInscritosRetirados);
 router.get('/numeros-franela/disponibilidad', authMiddleware, alumnoController.getDisponibilidadNumeroFranela);
-router.get('/categoria-sugerida', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.getCategoriaSugerida);
+router.get('/categoria-sugerida', authMiddleware, permisoConsultarCategorias, alumnoController.getCategoriaSugerida);
 router.get('/asignar-categorias/preview', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.previewAsignarCategoriasMasivamente);
 router.post('/importar-excel', authMiddleware, superAdminMiddleware, importUpload.single('archivo'), alumnoController.importarAlumnosExcel);
 router.post('/', authMiddleware, permisoMiddleware('alumnos.manage'), uploadAlumno, alumnoController.createAlumno);
@@ -102,6 +126,7 @@ router.put('/asignar-categorias', authMiddleware, permisoMiddleware('alumnos.man
 
 router.get('/:id/ficha-tecnica', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.descargarFichaTecnica);
 router.get('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), alumnoController.getAlumnoById);
+router.patch('/:id/foto', authMiddleware, ensureAlumnoOwnershipFromParam('id'), uploadFoto, alumnoController.actualizarFotoAlumno);
 router.patch('/:id/requisitos-recaudos', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.actualizarEstadoRequisitoRecaudoAlumno);
 router.put('/:id', authMiddleware, ensureAlumnoOwnershipFromParam('id'), uploadAlumno, alumnoController.updateAlumno);
 router.get('/:id/baja-preview', authMiddleware, permisoMiddleware('alumnos.manage'), alumnoController.previewBajaAlumno);
