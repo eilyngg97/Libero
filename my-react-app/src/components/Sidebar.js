@@ -176,12 +176,7 @@ function Sidebar({ variant = 'permanent', open, onClose }) {
   const drawerWidth = collapsed ? 64 : 220;
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('rol');
-    localStorage.removeItem('usuario');
-    localStorage.removeItem('tenantId');
-    localStorage.removeItem('sedeSeleccionada');
-    navigate('/login');
+    navigate('/login', { state: { cerrarSesion: true, limpiarTenant: true } });
   };
 
   const handleDashboardNavigation = async () => {

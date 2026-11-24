@@ -3,6 +3,28 @@
 Fecha: 2026-03-06
 Alcance: backup/retencion, monitoreo y rollback backend.
 
+## Foto de perfil del atleta
+
+- `PATCH /api/alumnos/:id/foto` recibe solo el archivo `foto` y devuelve `{ foto: "/uploads/<tenant>/alumnos/<archivo>" }` despues de guardar la URL. Requiere autenticacion y la misma validacion de propiedad del atleta que su formulario. Los otros campos enviados se ignoran: no actualiza representante, datos personales ni mensualidades.
+- Acepta JPG, PNG, WebP, GIF o AVIF de hasta 10 MB y verifica que el contenido sea una imagen. El portal convierte HEIC antes del recorte y envia una imagen compatible.
+- Si el guardado no se confirma, devuelve un error y no anuncia exito. No elimina una subida despues de un error de escritura ambiguo, porque Mongo puede haber guardado la URL; tampoco borra la foto anterior.
+- Desplegar backend antes del frontend para habilitar la nueva ruta. No requiere migraciones ni transacciones multidocumento.
+- Prueba Mongo local: desde backend en PowerShell, `$env:RUN_MONGO_PROFILE_TESTS = '1'; npm test -- --runTestsByPath tests\fotoPerfil.mongo.test.js`. Usa una base y carpeta de imagenes temporales `libero-qa-foto-*` y las elimina al terminar. Desactivar despues con `Remove-Item Env:RUN_MONGO_PROFILE_TESTS`. No ejecutarla contra produccion.
+
+## Consultas del formulario del atleta
+
+- `GET /api/alumnos/categoria-sugerida` admite al representante autenticado (`usuario`), con o sin fecha de nacimiento. Solo consulta las categorias del tenant; no cambia atletas ni otorga permisos de gestion.
+- Los demas roles conservan el requisito `alumnos.manage`; la previsualizacion y asignacion masiva siguen exigiendo ese permiso tambien al representante.
+- Reiniciar el backend al desplegar esta correccion para cargar el permiso de consulta. La disponibilidad de franela conserva la autenticacion y el formulario envia el token.
+
+## Edicion de reposos
+
+- Cambiar un reposo activo a `Indefinido` elimina su fecha final. Desde la fecha de inicio, las mensualidades no pagadas quedan `Exento por reposo` con monto esperado 0; las pagadas, incluso futuras, se conservan sin cambios ni devoluciones.
+- La sincronizacion considera las cuotas existentes y crea la del mes inicial si falta. El generador mensual compartido aplica la exencion a las cuotas que se creen despues, mientras el periodo este cubierto por el reposo.
+- Un reposo `Finalizado` mantiene su fecha final; los meses fuera del rango vuelven a calcularse segun la configuracion y los pagos del alumno.
+- Editar guarda reposo, mensualidades y ajustes de saldo en una transaccion obligatoria. Un fallo revierte todos esos cambios. Requiere replica set o cluster sharded; sin soporte de transacciones devuelve `503`, sin fallback ni escrituras parciales.
+- Prueba local Mongo: desde backend en PowerShell, `$env:RUN_MONGO_REPOSO_TESTS = '1'; npm test -- --runTestsByPath tests\reposos.mongo.test.js`. Usa solo una base temporal `libero_qa_reposo_*` en `127.0.0.1:27017`, replica set `rs0`, y la elimina al terminar. Desactivar despues con `Remove-Item Env:RUN_MONGO_REPOSO_TESTS`. No ejecutarla contra produccion.
+
 ## Eliminacion definitiva de mensualidades
 
 - `DELETE /api/mensualidades/:id` requiere `mensualidades.manage` y un cuerpo JSON con `motivo` obligatorio (1-1000 caracteres sin espacios exteriores). La eliminacion es definitiva para ese alumno, mes y anio.

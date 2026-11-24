@@ -3350,4 +3350,160 @@ describe('Backend smoke tests', () => {
     expect(mensualidadAbril.estatus).toBe('Pendiente');
     expect(mensualidadAbril.save).toHaveBeenCalled();
   });
+
+  describe('consulta de categorias del formulario', () => {
+    test.each(['', '?fecha_nacimiento=2017-01-04'])('el representante consulta categorias sin permisos de gestion: %s', async (query) => {
+      require('../models/TenantConfig').findOne.mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            categorias: {
+              disciplina: 'voleibol',
+              reglas: [{ etiqueta: 'U11', anio_nacimiento_desde: 2016, anio_nacimiento_hasta: 2017, orden: 1 }]
+            }
+          })
+        })
+      });
+      const token = makeToken({ id: 'qa-parent', rol: 'usuario', permisos: [] });
+      const res = await request(app).get(`/api/alumnos/categoria-sugerida${query}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        categorias_disponibles: ['U11'], categoria_sugerida: query ? 'U11' : ''
+      });
+      expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(Alumno.find).not.toHaveBeenCalled();
+    });
+
+    test('el administrador conserva el acceso a categorias', async () => {
+      const res = await request(app).get('/api/alumnos/categoria-sugerida')
+        .set('Authorization', `Bearer ${makeToken({ id: 'qa-admin', rol: 'admin' })}`);
+      expect(res.status).toBe(200);
+      expect(res.body.categorias_disponibles).toEqual(expect.any(Array));
+    });
+
+    test('otros roles sin gestion no pueden consultar categorias', async () => {
+      const res = await request(app).get('/api/alumnos/categoria-sugerida')
+        .set('Authorization', `Bearer ${makeToken({ id: 'qa-staff', rol: 'entrenador', permisos: [] })}`);
+      expect(res.status).toBe(403);
+    });
+
+    test('la consulta de categorias sigue requiriendo autenticacion', async () => {
+      const res = await request(app).get('/api/alumnos/categoria-sugerida');
+      expect(res.status).toBe(401);
+    });
+
+    test('consultar categorias no habilita la asignacion masiva al representante', async () => {
+      const token = makeToken({ id: 'qa-parent', rol: 'usuario', permisos: [] });
+      const preview = await request(app).get('/api/alumnos/asignar-categorias/preview')
+        .set('Authorization', `Bearer ${token}`);
+      const asignacion = await request(app).put('/api/alumnos/asignar-categorias')
+        .set('Authorization', `Bearer ${token}`).send({});
+      expect(preview.status).toBe(403);
+      expect(asignacion.status).toBe(403);
+      expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('foto de perfil del atleta', () => {
+    let alumnoFoto;
+    let imagen;
+    let fotosSubidas;
+
+    beforeEach(async () => {
+      alumnoFoto = { _id: 'a1', usuario: 'qa-parent', foto: '/uploads/qa/anterior.png', telefono: '000' };
+      fotosSubidas = [];
+      imagen = await require('sharp')({ create: { width: 32, height: 32, channels: 3, background: '#123456' } }).png().toBuffer();
+      Alumno.findById.mockImplementation(() => ({
+        select: jest.fn().mockResolvedValue(alumnoFoto),
+        populate: jest.fn().mockReturnThis(),
+        then: (resolve) => resolve({ ...alumnoFoto, toObject: () => ({ ...alumnoFoto }) })
+      }));
+      Alumno.findByIdAndUpdate.mockImplementation((id, cambios) => {
+        fotosSubidas.push(cambios.$set.foto);
+        alumnoFoto = { ...alumnoFoto, ...cambios.$set };
+        return { select: jest.fn().mockResolvedValue(alumnoFoto) };
+      });
+    });
+
+    afterEach(async () => {
+      const fs = require('fs/promises');
+      const path = require('path');
+      for (const foto of fotosSubidas) {
+        await fs.unlink(path.join(__dirname, '..', ...foto.split('/').filter(Boolean)));
+      }
+    });
+
+    test.each(['usuario', 'admin'])('%s PATCH guarda solo la foto y GET devuelve la URL persistida sin actualizar otros datos', async (rol) => {
+      const token = makeToken({ id: 'qa-parent', rol });
+      const res = await request(app).patch('/api/alumnos/a1/foto')
+        .set('Authorization', `Bearer ${token}`)
+        .field('telefono', 'cambio que no debe guardarse')
+        .field('tipo_mensualidad', 'beca_completa')
+        .attach('foto', imagen, { filename: 'perfil.png', contentType: 'image/png' });
+      expect(res.status).toBe(200);
+      expect(res.body.foto).toMatch(/^\/uploads\/[^/]+\/alumnos\/.+\.png$/);
+      expect(Alumno.findByIdAndUpdate.mock.calls[0][1]).toEqual({ $set: { foto: res.body.foto } });
+      expect(Mensualidad.find).not.toHaveBeenCalled();
+      expect(User.findOne).not.toHaveBeenCalled();
+      const lectura = await request(app).get('/api/alumnos/a1').set('Authorization', `Bearer ${token}`);
+      expect(lectura.status).toBe(200);
+      expect(lectura.body).toMatchObject({ foto: res.body.foto, telefono: '000' });
+    });
+
+    test('un error de persistencia devuelve 500 y conserva la foto anterior', async () => {
+      Alumno.findByIdAndUpdate.mockImplementation((id, cambios) => {
+        fotosSubidas.push(cambios.$set.foto);
+        return { select: jest.fn().mockRejectedValue(new Error('Fallo QA al persistir')) };
+      });
+      const res = await request(app).patch('/api/alumnos/a1/foto')
+        .set('Authorization', `Bearer ${makeToken({ id: 'qa-parent', rol: 'usuario' })}`)
+        .attach('foto', imagen, { filename: 'perfil.png', contentType: 'image/png' });
+      expect(res.status).toBe(500);
+      expect(res.body.error).toMatch(/No se pudo guardar la foto/);
+      expect(alumnoFoto.foto).toBe('/uploads/qa/anterior.png');
+    });
+
+    test('rechaza la foto de un atleta ajeno antes de guardar un archivo', async () => {
+      alumnoFoto.usuario = 'otro-usuario';
+      const res = await request(app).patch('/api/alumnos/a1/foto')
+        .set('Authorization', `Bearer ${makeToken({ id: 'qa-parent', rol: 'usuario' })}`)
+        .attach('foto', imagen, { filename: 'perfil.png', contentType: 'image/png' });
+      expect(res.status).toBe(403);
+      expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('requiere autenticacion para subir la foto', async () => {
+      const res = await request(app).patch('/api/alumnos/a1/foto')
+        .attach('foto', imagen, { filename: 'perfil.png', contentType: 'image/png' });
+      expect(res.status).toBe(401);
+      expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['HTML', Buffer.from('<html>no es foto</html>'), 'perfil.html', 'text/html'],
+      ['PNG corrupto', Buffer.from('no es una imagen'), 'perfil.png', 'image/png']
+    ])('rechaza %s y no modifica al atleta', async (tipo, archivo, filename, contentType) => {
+      const res = await request(app).patch('/api/alumnos/a1/foto')
+        .set('Authorization', `Bearer ${makeToken({ id: 'qa-parent', rol: 'usuario' })}`)
+        .attach('foto', archivo, { filename, contentType });
+      expect(res.status).toBe(400);
+      expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('rechaza fotos de mas de 10 MB sin modificar al atleta', async () => {
+      const res = await request(app).patch('/api/alumnos/a1/foto')
+        .set('Authorization', `Bearer ${makeToken({ id: 'qa-parent', rol: 'usuario' })}`)
+        .attach('foto', Buffer.alloc(10 * 1024 * 1024 + 1), { filename: 'perfil.png', contentType: 'image/png' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/10 MB/);
+      expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('requiere el archivo de foto', async () => {
+      const res = await request(app).patch('/api/alumnos/a1/foto')
+        .set('Authorization', `Bearer ${makeToken({ id: 'qa-parent', rol: 'usuario' })}`);
+      expect(res.status).toBe(400);
+      expect(Alumno.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+  });
 });

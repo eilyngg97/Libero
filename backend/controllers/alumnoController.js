@@ -62,6 +62,8 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const XLSX = require('xlsx');
+const sharp = require('sharp');
+const { unlink } = require('fs/promises');
 const { getTenantBusinessConnection } = require('../config/tenantBusinessConnection');
 const { getTenantCoreConnection } = require('../config/tenantCoreConnection');
 const { getTenantCoreModel } = require('../models/TenantCore');
@@ -2727,6 +2729,47 @@ exports.actualizarEstadoRequisitoRecaudoAlumno = async (req, res) => {
 };
 
 // Actualizar un alumno
+exports.actualizarFotoAlumno = async (req, res) => {
+  let escrituraIntentada = false;
+  const eliminarArchivoNoGuardado = async () => {
+    if (!req.file?.path) return;
+    try {
+      await unlink(req.file.path);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.error('Error al eliminar foto no guardada:', { alumnoId: req.params.id, message: error.message });
+      }
+    }
+  };
+
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Debes adjuntar una foto.' });
+    try {
+      await sharp(req.file.path).metadata();
+    } catch {
+      await eliminarArchivoNoGuardado();
+      return res.status(400).json({ error: 'El archivo no contiene una imagen valida.' });
+    }
+    const { Alumno: TenantAlumno } = await getTenantAlumnoWriteModels(req);
+    const foto = buildUploadUrl(req, req.file, 'alumnos');
+    escrituraIntentada = true;
+    const alumno = await TenantAlumno.findByIdAndUpdate(req.params.id, { $set: { foto } }, {
+      new: true,
+      runValidators: true
+    }).select('_id foto');
+    if (!alumno) {
+      await eliminarArchivoNoGuardado();
+      return res.status(404).json({ error: 'Alumno no encontrado' });
+    }
+    return res.json({ foto: alumno.foto });
+  } catch (error) {
+    // Una escritura sin confirmacion puede haber guardado la URL; no borrar su archivo.
+    if (!escrituraIntentada) await eliminarArchivoNoGuardado();
+    console.error('Error al actualizar foto del alumno:', { alumnoId: req.params.id, message: error.message });
+    return res.status(500).json({ error: 'No se pudo guardar la foto de perfil. Intenta nuevamente.' });
+  }
+};
+
 exports.updateAlumno = async (req, res) => {
   try {
     const tenantModels = await getTenantAlumnoWriteModels(req);

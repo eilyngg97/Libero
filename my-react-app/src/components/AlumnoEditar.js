@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { TextField, Typography, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle, CircularProgress } from '@mui/material';
+import { useParams, useBlocker, useBeforeUnload } from 'react-router-dom';
+import { TextField, Typography, FormControl, InputLabel, Select, MenuItem, Paper, FormControlLabel, Autocomplete, Box, Switch, Snackbar, Alert, AlertTitle, CircularProgress, Button, IconButton, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { OPCIONES_MENSUALIDAD } from './Alumnos';
 import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CloseIcon from '@mui/icons-material/Close';
 import { mediaUrl } from '../utils/mediaUrl';
 import './Alumnos.css';
 import { Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText } from '@mui/material';
@@ -18,6 +19,21 @@ const DIVISIONES = ['Primera división', 'Segunda división', 'Tercera división
 const ANIO_ACTUAL = new Date().getFullYear();
 const FECHA_INICIO_COBRO_MIN = `${ANIO_ACTUAL}-01-01`;
 const FECHA_INICIO_COBRO_MAX = `${ANIO_ACTUAL}-12-31`;
+const CAMPOS_EDITABLES = [
+  'nombres', 'apellidos', 'fecha_nacimiento', 'fecha_inscripcion', 'fecha_inicio_cobro', 'cedula',
+  'sexo', 'division', 'domicilio', 'telefono', 'colegio_institucion', 'talla', 'peso', 'alcance',
+  'envergadura', 'proyeccion', 'tipo_sangre', 'alergias', 'antecedentes_patologicos', 'observaciones',
+  'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
+  'aplicar_recargo_mensualidad', 'dia_limite_personalizado', 'sede', 'categoria',
+  'categoria_ajustada_manualmente', 'usuario', 'representante', 'parentesco', 'tipo_mensualidad',
+  'monto_personalizado_valor', 'sinRepresentante',
+  'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_fecha_nacimiento', 'rep_correo', 'rep_direccion'
+];
+
+function valorComparable(campo, valor) {
+  if (campo === 'sede' && valor && typeof valor === 'object') valor = valor._id || '';
+  return JSON.stringify(valor ?? '');
+}
 
 function esFechaInicioCobroDelAnioActual(valor) {
   const raw = String(valor || '').trim();
@@ -32,6 +48,8 @@ function AlumnoEditar({ locationState }) {
   const token = localStorage.getItem('token');
   const rolActual = String(localStorage.getItem('rol') || '').trim().toLowerCase();
   const esAdmin = rolActual === 'admin' || rolActual === 'administrador' || rolActual === 'super_admin';
+  const esRepresentante = rolActual === 'usuario';
+  const mejorasPerfilActivas = esRepresentante || esAdmin;
   const [form, setForm] = useState({
     fecha_inicio_cobro: new Date().toISOString().split('T')[0],
     tipo_mensualidad: 'monto_sede',
@@ -51,6 +69,11 @@ function AlumnoEditar({ locationState }) {
   const [cedulaCrop, setCedulaCrop] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [initialForm, setInitialForm] = useState(null);
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
+  const [fotoError, setFotoError] = useState('');
+  const [fotoActualizada, setFotoActualizada] = useState(false);
   const [error, setError] = useState(null);
   const [successOpen, setSuccessOpen] = useState(false);
   const [initialMensualidadConfig, setInitialMensualidadConfig] = useState({
@@ -68,10 +91,36 @@ function AlumnoEditar({ locationState }) {
   const [opcionesRepresentantes, setOpcionesRepresentantes] = useState([]);
   const [loadingOpciones, setLoadingOpciones] = useState(false);
   const inputRef = useRef(null);
+  const formRef = useRef(null);
+  const fotoUploadRef = useRef(false);
+  const guardandoRef = useRef(false);
   const inputCedulaRef = useRef(null);
   const categoriaAutoRef = useRef('');
   const fechaNacimientoAnteriorRef = useRef(null);
   const categoriaManualRef = useRef(false);
+  const datosModificados = initialForm && CAMPOS_EDITABLES.some((campo) =>
+    valorComparable(campo, form[campo]) !== valorComparable(campo, initialForm[campo])
+  );
+  const hayCambiosPendientes = mejorasPerfilActivas && Boolean(
+    datosModificados || fotoFile || fotoCedulaFile || Object.values(documentosFiles).some(Boolean)
+  );
+  const operacionEnCurso = guardando || subiendoFoto;
+  const blocker = useBlocker(useCallback(({ currentLocation, nextLocation }) =>
+    mejorasPerfilActivas && (hayCambiosPendientes || operacionEnCurso)
+      && currentLocation.pathname !== nextLocation.pathname,
+  [mejorasPerfilActivas, hayCambiosPendientes, operacionEnCurso]));
+
+  useBeforeUnload(useCallback((event) => {
+    if (!mejorasPerfilActivas || (!hayCambiosPendientes && !operacionEnCurso)) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }, [mejorasPerfilActivas, hayCambiosPendientes, operacionEnCurso]));
+
+  useEffect(() => {
+    if (blocker.state === 'blocked' && !hayCambiosPendientes && !operacionEnCurso) {
+      blocker.proceed();
+    }
+  }, [blocker, hayCambiosPendientes, operacionEnCurso]);
 
   const buscarOpcionesRepresentantes = async (valor, campo = 'cedula') => {
     const valorBusqueda = String(valor || '').trim();
@@ -143,6 +192,7 @@ function AlumnoEditar({ locationState }) {
       formData.dia_limite_personalizado = '';
     }
     setForm(formData);
+    setInitialForm(formData);
     setInitialMensualidadConfig({
       tipo_mensualidad: formData.tipo_mensualidad || 'monto_sede',
       monto_personalizado_valor: formData.monto_personalizado_valor ?? ''
@@ -151,10 +201,11 @@ function AlumnoEditar({ locationState }) {
     if (data.foto_cedula) setPreviewCedula(mediaUrl(data.foto_cedula));
   };
 
-  const fetchAlumnoFresco = useCallback(async () => {
+  const fetchAlumnoFresco = useCallback(async (signal) => {
     const url = `${process.env.REACT_APP_API_URL}/api/alumnos/${id}?_t=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
+      signal,
       headers: token ? { Authorization: `Bearer ${token}` } : undefined
     });
     if (!res.ok) throw new Error('Error al obtener alumno');
@@ -174,6 +225,18 @@ function AlumnoEditar({ locationState }) {
 
   useEffect(() => {
     let mounted = true;
+    const controller = new AbortController();
+    setLoading(true);
+    setInitialForm(null);
+    setFotoFile(null);
+    setFotoCedulaFile(null);
+    setDocumentosFiles({});
+    setFotoError('');
+    setFotoActualizada(false);
+    setFotoCrop(null);
+    setCedulaCrop(null);
+    setPreview(null);
+    setPreviewCedula(null);
 
     const cargar = async () => {
       try {
@@ -181,7 +244,7 @@ function AlumnoEditar({ locationState }) {
           console.log('Usando alumno inicial desde location.state:', locationState.alumno);
           hidratarFormularioAlumno(locationState.alumno);
         }
-        await fetchAlumnoFresco();
+        await fetchAlumnoFresco(controller.signal);
       } catch (err) {
         if (mounted) setError(err.message);
       } finally {
@@ -190,7 +253,10 @@ function AlumnoEditar({ locationState }) {
     };
 
     cargar();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, [locationState, fetchAlumnoFresco]);
 
   useEffect(() => {
@@ -315,7 +381,8 @@ function AlumnoEditar({ locationState }) {
       setNumeroFranelaCheckLoading(true);
       try {
         const res = await fetch(
-          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}&sexo=${encodeURIComponent(sexoNormalizado)}&excludeAlumnoId=${encodeURIComponent(id)}`
+          `${process.env.REACT_APP_API_URL}/api/alumnos/numeros-franela/disponibilidad?categoria=${encodeURIComponent(categoriaNormalizada)}&sexo=${encodeURIComponent(sexoNormalizado)}&excludeAlumnoId=${encodeURIComponent(id)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || 'Error verificando nro de franela');
@@ -342,7 +409,7 @@ function AlumnoEditar({ locationState }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [form.categoria, form.sexo, id]);
+  }, [form.categoria, form.sexo, id, token]);
 
   useEffect(() => {
     if (!form.numero_franela) {
@@ -367,6 +434,7 @@ function AlumnoEditar({ locationState }) {
   }, [form.numero_franela, form.categoria, form.sexo, numerosFranelaOcupados]);
 
   const handleFotoChange = async (e) => {
+    if (fotoUploadRef.current || guardandoRef.current) return;
     const file = e.target.files[0];
     if (file) {
       try {
@@ -380,10 +448,47 @@ function AlumnoEditar({ locationState }) {
     e.target.value = '';
   };
 
+  const guardarFotoPerfil = async (file) => {
+    if (fotoUploadRef.current) return false;
+    fotoUploadRef.current = true;
+    setSubiendoFoto(true);
+    setFotoError('');
+    setFotoActualizada(false);
+    try {
+      const formData = new FormData();
+      formData.append('foto', file);
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/api/alumnos/${id}/foto`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'El servidor rechazo la foto.');
+      if (typeof data?.foto !== 'string' || !data.foto.trim()) {
+        throw new Error('El servidor no confirmo la foto guardada.');
+      }
+      setPreview(mediaUrl(data.foto));
+      setForm((prev) => ({ ...prev, foto: data.foto }));
+      setFotoFile(null);
+      setFotoActualizada(true);
+      return true;
+    } catch (uploadError) {
+      setFotoError(`No se pudo guardar la foto de perfil. ${uploadError.message}`);
+      return false;
+    } finally {
+      fotoUploadRef.current = false;
+      setSubiendoFoto(false);
+    }
+  };
+
   const handleFotoCropConfirm = async (file) => {
     setFotoFile(file);
-    setPreview(await fileToDataUrl(file));
     setFotoCrop(null);
+    if (mejorasPerfilActivas) {
+      await guardarFotoPerfil(file);
+    } else {
+      setPreview(await fileToDataUrl(file));
+    }
   };
 
   const handleFotoCedulaChange = async (e) => {
@@ -428,6 +533,7 @@ function AlumnoEditar({ locationState }) {
   };
 
   const handleClick = () => {
+    if (fotoUploadRef.current || guardandoRef.current) return;
     inputRef.current.click();
   };
   const handleClickCedula = () => {
@@ -465,6 +571,7 @@ function AlumnoEditar({ locationState }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (guardandoRef.current || fotoUploadRef.current) return false;
     setError(null);
     setSuccessOpen(false);
     if (form.numero_franela) {
@@ -493,23 +600,12 @@ function AlumnoEditar({ locationState }) {
         return;
       }
     }
-    setLoading(true);
+    if (mejorasPerfilActivas && fotoFile && !(await guardarFotoPerfil(fotoFile))) return false;
+    guardandoRef.current = true;
+    setGuardando(true);
     try {
       const formData = new FormData();
-      const camposEditables = [
-        'nombres', 'apellidos', 'fecha_nacimiento', 'fecha_inscripcion', 'fecha_inicio_cobro', 'cedula',
-        'sexo', 'division',
-        'domicilio', 'telefono', 'colegio_institucion', 'talla', 'peso', 'alcance', 'envergadura', 'proyeccion',
-        'tipo_sangre', 'alergias', 'antecedentes_patologicos', 'observaciones',
-        'numero_franela', 'habilitar_pago_cuotas', 'etiquetas', 'activo', 'estado',
-        'aplicar_recargo_mensualidad',
-        'dia_limite_personalizado',
-        'sede', 'categoria', 'categoria_ajustada_manualmente', 'usuario', 'representante', 'parentesco', 'tipo_mensualidad',
-        'monto_personalizado_valor', 'sinRepresentante',
-        'rep_nombres', 'rep_apellidos', 'rep_cedula', 'rep_telefono', 'rep_fecha_nacimiento', 'rep_correo', 'rep_direccion'
-      ];
-
-      camposEditables.forEach((key) => {
+      CAMPOS_EDITABLES.forEach((key) => {
         if (!Object.prototype.hasOwnProperty.call(form, key)) return;
         let value = form[key];
 
@@ -557,7 +653,7 @@ function AlumnoEditar({ locationState }) {
           formData.append(key, String(value));
         }
       });
-      if (fotoFile) {
+      if (fotoFile && !mejorasPerfilActivas) {
         formData.append('foto', fotoFile);
       }
       if (fotoCedulaFile) {
@@ -585,15 +681,23 @@ function AlumnoEditar({ locationState }) {
         }
         throw new Error(errorMsg);
       }
-      setSuccessOpen(true);
-      await fetchAlumnoFresco();
+      setInitialForm(form);
       setFotoFile(null);
       setFotoCedulaFile(null);
       setDocumentosFiles({});
+      try {
+        await fetchAlumnoFresco();
+      } catch {
+        throw new Error('Los datos se guardaron, pero no se pudieron recargar. Recarga la pantalla.');
+      }
+      setSuccessOpen(true);
+      if (blocker.state === 'blocked') blocker.proceed();
+      return true;
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      guardandoRef.current = false;
+      setGuardando(false);
     }
   };
 
@@ -628,7 +732,10 @@ function AlumnoEditar({ locationState }) {
   });
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#fdfdfd', py: { xs: 2, md: 3 } }}>
+    <Box sx={{
+      minHeight: '100vh', bgcolor: '#fdfdfd', py: { xs: 2, md: 3 },
+      pb: { xs: mejorasPerfilActivas ? 'calc(100px + env(safe-area-inset-bottom))' : 2, md: 3 }
+    }}>
       <Snackbar
         open={successOpen}
         autoHideDuration={3500}
@@ -644,6 +751,49 @@ function AlumnoEditar({ locationState }) {
           <AlertTitle sx={{ mb: 0.25, fontWeight: 800 }}>Alumno actualizado</AlertTitle>
         </Alert>
       </Snackbar>
+      <Snackbar
+        open={fotoActualizada}
+        autoHideDuration={6000}
+        onClose={(event, motivo) => { if (motivo !== 'clickaway') setFotoActualizada(false); }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        sx={{
+          top: { xs: 'calc(16px + env(safe-area-inset-top, 0px))', sm: 24 },
+          right: { xs: 16, sm: 24 }, left: { xs: 16, sm: 'auto' }, bottom: 'auto',
+          width: { xs: 'auto', sm: 400 }, maxWidth: 'calc(100% - 32px)', transform: 'none'
+        }}
+      >
+        <Alert
+          role="status"
+          aria-label="Foto de perfil actualizada"
+          aria-live="polite"
+          aria-atomic="true"
+          severity="success"
+          closeText="Cerrar notificación de foto"
+          onClose={() => setFotoActualizada(false)}
+          icon={<CheckCircleIcon sx={{ color: '#d93670', fontSize: 22 }} />}
+          sx={{
+            width: '100%', boxSizing: 'border-box', alignItems: 'start', gap: 1.5, p: 2,
+            bgcolor: '#fff', border: '1px solid #e8eaf1', borderLeft: '4px solid #d93670',
+            borderRadius: 2, boxShadow: '0 12px 32px rgba(17,19,66,0.16)',
+            '& .MuiAlert-icon': {
+              width: 36, height: 36, flexShrink: 0, p: 0, m: 0,
+              display: 'grid', placeItems: 'center', bgcolor: '#fff0f5', borderRadius: 1.5
+            },
+            '& .MuiAlert-message': { minWidth: 0, flex: 1, p: 0, overflowWrap: 'anywhere' },
+            '& .MuiAlert-action': {
+              p: 0, m: 0,
+              '& .MuiIconButton-root': { width: 28, height: 28, color: '#858b9b' }
+            }
+          }}
+        >
+          <AlertTitle sx={{ mb: 0.5, fontSize: 14, fontWeight: 750, color: '#111342', lineHeight: 1.4 }}>
+            Foto de perfil actualizada
+          </AlertTitle>
+          <Typography sx={{ fontSize: 12, color: '#7a8194', lineHeight: 1.5 }}>
+            La nueva foto ya está guardada.
+          </Typography>
+        </Alert>
+      </Snackbar>
       <Box
         sx={{
           mx: 'auto',
@@ -655,15 +805,21 @@ function AlumnoEditar({ locationState }) {
         </Typography>
         <Box
           component="form"
+          ref={formRef}
           className="alumnos-form"
           onSubmit={handleSubmit}
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(12, minmax(0, 1fr))' },
-            gap: { xs: 2, md: 3 },
-            alignItems: 'start',
-          }}
         >
+          <Box
+            component="fieldset"
+            disabled={guardando}
+            style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(12, minmax(0, 1fr))' },
+              gap: { xs: 2, md: 3 },
+              alignItems: 'start',
+            }}
+          >
           <Box
             sx={{
               gridColumn: { xs: '1 / -1', md: 'span 4' },
@@ -698,7 +854,9 @@ function AlumnoEditar({ locationState }) {
                 >
                   <input
                     type="file"
+                    aria-label="Cambiar foto de perfil"
                     accept="image/*,.heic,.heif"
+                    disabled={subiendoFoto || guardando}
                     onChange={handleFotoChange}
                     ref={inputRef}
                     style={{ display: 'none' }}
@@ -714,7 +872,27 @@ function AlumnoEditar({ locationState }) {
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography sx={{ fontWeight: 700, color: '#0f172a' }}>Foto del alumno</Typography>
                   <Typography sx={{ fontSize: 12, color: '#64748b' }}>Arrastra o haz clic para cambiar</Typography>
+                  {mejorasPerfilActivas && (
+                    <Typography sx={{ fontSize: 12, color: '#64748b', mt: 1 }}>
+                      Al aplicar el recorte, la foto se guarda automáticamente.
+                    </Typography>
+                  )}
                 </Box>
+                {subiendoFoto && (
+                  <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={18} />
+                    <Typography>Subiendo foto...</Typography>
+                  </Box>
+                )}
+                {fotoError && (
+                  <Alert severity="error" action={
+                    <Button disabled={subiendoFoto || guardando} onClick={() => guardarFotoPerfil(fotoFile)}>
+                      Reintentar
+                    </Button>
+                  }>
+                    {fotoError}
+                  </Alert>
+                )}
               </Box>
             </Paper>
 
@@ -973,19 +1151,19 @@ function AlumnoEditar({ locationState }) {
                   name="numero_franela"
                   select
                   variant="outlined"
-                  value={form.numero_franela || ''}
+                  value={form.numero_franela ? String(form.numero_franela) : ''}
                   onChange={handleChange}
                   fullWidth
                   size="small"
                   sx={{ my: 1 }}
-                  disabled={!categoria || !form.sexo || numeroFranelaCheckLoading}
+                  disabled={!(form.categoria || categoria) || !form.sexo || numeroFranelaCheckLoading}
                   error={numeroFranelaDuplicado}
                   helperText={
                     numeroFranelaDuplicado
                       ? numeroFranelaCheckMsg
                       : (numeroFranelaCheckLoading
                         ? 'Verificando disponibilidad por categoría calculada...'
-                        : ((!categoria || !form.sexo)
+                        : ((!(form.categoria || categoria) || !form.sexo)
                           ? 'Selecciona fecha de nacimiento y sexo para calcular disponibilidad'
                           : `Disponibles: ${numerosFranelaDisponibles.length} de 100`))
                   }
@@ -994,6 +1172,9 @@ function AlumnoEditar({ locationState }) {
                   {numerosFranelaDisponibles.map((nro) => (
                     <MenuItem key={nro} value={String(nro)}>{nro}</MenuItem>
                   ))}
+                  {!!form.numero_franela && !numerosFranelaDisponibles.some((nro) => String(nro) === String(form.numero_franela)) && (
+                    <MenuItem value={String(form.numero_franela)}>{form.numero_franela}</MenuItem>
+                  )}
                 </TextField>
                 <TextField id="outlined-basic-cedula" label="Cédula" name="cedula" variant="outlined" value={form.cedula || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
               </div>
@@ -1318,10 +1499,24 @@ function AlumnoEditar({ locationState }) {
                 <TextField id="outlined-basic-rep-direccion" label="Dirección del representante" name="rep_direccion" variant="outlined" value={form.rep_direccion || ''} onChange={handleChange} fullWidth size="small" sx={{ my: 1 }} />
               </div>
             </fieldset>
-            <button type="submit" disabled={loading} style={loading ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
-              {loading ? 'Guardando...' : 'Guardar cambios'}
-            </button>
+            <Box sx={mejorasPerfilActivas ? {
+              position: { xs: 'fixed', md: 'static' },
+              bottom: 0, left: 0, right: 0, zIndex: { xs: 1100, md: 'auto' },
+              bgcolor: '#fff', p: { xs: 1.5, md: 0 },
+              pb: { xs: 'calc(12px + env(safe-area-inset-bottom))', md: 0 },
+              borderTop: { xs: '1px solid #e2e8f0', md: 'none' },
+              boxShadow: { xs: '0 -4px 16px rgba(15, 23, 42, 0.08)', md: 'none' }
+            } : {}}>
+              <button
+                type="submit"
+                disabled={guardando || subiendoFoto}
+                style={{ width: '100%', minHeight: 48, marginTop: 0, opacity: operacionEnCurso ? 0.6 : 1 }}
+              >
+                {guardando ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </Box>
             {error && <div className="error-message">{error}</div>}
+          </Box>
           </Box>
         </Box>
       </Box>
@@ -1343,6 +1538,84 @@ function AlumnoEditar({ locationState }) {
         onCancel={() => setCedulaCrop(null)}
         onConfirm={handleCedulaCropConfirm}
       />
+      <Dialog
+        open={blocker.state === 'blocked'}
+        onClose={operacionEnCurso ? undefined : () => blocker.reset()}
+        fullWidth
+        maxWidth="xs"
+        aria-labelledby="cambios-pendientes-titulo"
+        aria-describedby="cambios-pendientes-descripcion"
+        PaperProps={{ sx: {
+          borderRadius: 4, m: 2, width: 'calc(100% - 32px)', overflow: 'hidden',
+          boxShadow: '0 24px 64px rgba(15, 23, 42, 0.24)'
+        } }}
+      >
+        <DialogTitle component="div" sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 1.5, px: 2.5, pt: 2.5, pb: 1.5
+        }}>
+          <Typography component="h2" id="cambios-pendientes-titulo" sx={{
+            fontSize: 20, fontWeight: 800, color: '#0f172a', lineHeight: 1.3
+          }}>
+            Cambios sin guardar
+          </Typography>
+          <IconButton
+            aria-label="Cerrar y seguir editando"
+            disabled={operacionEnCurso}
+            onClick={() => blocker.reset()}
+            sx={{
+              width: 40, height: 40, flexShrink: 0, bgcolor: '#f1f5f9', color: '#64748b',
+              '&:hover': { bgcolor: '#e2e8f0', color: '#0f172a' }
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ px: 2.5, pb: 2.5 }}>
+          <Typography id="cambios-pendientes-descripcion" sx={{ color: '#64748b', fontSize: 15, lineHeight: 1.7 }}>
+            {operacionEnCurso
+              ? 'Espera a que termine el guardado antes de salir.'
+              : 'Si sales ahora, perderás los cambios pendientes. Puedes guardarlos antes de continuar.'}
+          </Typography>
+          {(error || fotoError) && <Alert severity="error" sx={{ mt: 2 }}>{fotoError || error}</Alert>}
+        </DialogContent>
+        <DialogActions disableSpacing sx={{
+          display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)',
+          gap: 1.5, px: 2.5, py: 2, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0'
+        }}>
+          <Button
+            variant="outlined"
+            disabled={operacionEnCurso}
+            onClick={() => blocker.proceed()}
+            sx={{
+              minHeight: 44, px: 1, borderRadius: 2, textTransform: 'none', fontSize: 13,
+              fontWeight: 700, color: '#475569', borderColor: '#cbd5e1',
+              '&:hover': { borderColor: '#94a3b8', bgcolor: '#f1f5f9' }
+            }}
+          >
+            Salir sin guardar
+          </Button>
+          <Button
+            variant="contained"
+            disabled={operacionEnCurso}
+            disableElevation
+            sx={{
+              minHeight: 44, px: 1, borderRadius: 2, textTransform: 'none', fontWeight: 700,
+              bgcolor: '#171b4b', '&:hover': { bgcolor: '#242960' }
+            }}
+            onClick={() => {
+              if (!formRef.current.checkValidity()) {
+                blocker.reset();
+                formRef.current.reportValidity();
+                return;
+              }
+              formRef.current.requestSubmit();
+            }}
+          >
+            {guardando ? 'Guardando...' : 'Guardar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
