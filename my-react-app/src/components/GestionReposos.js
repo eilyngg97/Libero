@@ -904,6 +904,7 @@ const GestionReposos = () => {
                     onChange={(e) => setEditandoReposo((prev) => ({
                       ...prev,
                       tipo: e.target.value,
+                      fechaFin: e.target.value === 'Indefinido' && prev?.estado !== 'Finalizado' ? '' : prev?.fechaFin,
                       modalidadCobroParcial: e.target.value === 'Parcial' ? (prev?.modalidadCobroParcial || 'Normal') : 'Normal',
                       montoParcialPersonalizado: e.target.value === 'Parcial' ? (prev?.montoParcialPersonalizado || '') : ''
                     }))}

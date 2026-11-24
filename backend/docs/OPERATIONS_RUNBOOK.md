@@ -3,6 +3,14 @@
 Fecha: 2026-03-06
 Alcance: backup/retencion, monitoreo y rollback backend.
 
+## Edicion de reposos
+
+- Cambiar un reposo activo a `Indefinido` elimina su fecha final. Desde la fecha de inicio, las mensualidades no pagadas quedan `Exento por reposo` con monto esperado 0; las pagadas, incluso futuras, se conservan sin cambios ni devoluciones.
+- La sincronizacion considera las cuotas existentes y crea la del mes inicial si falta. El generador mensual compartido aplica la exencion a las cuotas que se creen despues, mientras el periodo este cubierto por el reposo.
+- Un reposo `Finalizado` mantiene su fecha final; los meses fuera del rango vuelven a calcularse segun la configuracion y los pagos del alumno.
+- Editar guarda reposo, mensualidades y ajustes de saldo en una transaccion obligatoria. Un fallo revierte todos esos cambios. Requiere replica set o cluster sharded; sin soporte de transacciones devuelve `503`, sin fallback ni escrituras parciales.
+- Prueba local Mongo: desde backend en PowerShell, `$env:RUN_MONGO_REPOSO_TESTS = '1'; npm test -- --runTestsByPath tests\reposos.mongo.test.js`. Usa solo una base temporal `libero_qa_reposo_*` en `127.0.0.1:27017`, replica set `rs0`, y la elimina al terminar. Desactivar despues con `Remove-Item Env:RUN_MONGO_REPOSO_TESTS`. No ejecutarla contra produccion.
+
 ## Eliminacion definitiva de mensualidades
 
 - `DELETE /api/mensualidades/:id` requiere `mensualidades.manage` y un cuerpo JSON con `motivo` obligatorio (1-1000 caracteres sin espacios exteriores). La eliminacion es definitiva para ese alumno, mes y anio.

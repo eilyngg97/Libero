@@ -69,6 +69,7 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { generarMensualidadesPendientesAlumno } = require('./mensualidadController');
 const { registrarOperacion } = require('../services/operacionService');
+const { ejecutarConTransaccion } = require('../services/financeTransaction');
 
 const { obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
 
@@ -413,11 +414,11 @@ function construirFinDeDiaCaracasPeriodo(anio, mes, dia) {
   return new Date(Date.UTC(anio, mes - 1, diaAjustado, 23 + CARACAS_OFFSET_UTC_HOURS, 59, 59, 999));
 }
 
-async function obtenerDiaVencimientoCobro(models = {}) {
+async function obtenerDiaVencimientoCobro(models = {}, { session } = {}) {
   try {
     const TenantConfigModel = models.TenantConfig;
     if (!TenantConfigModel) return 5;
-    const config = await TenantConfigModel.findOne({ key: 'default' }).select('cobro.dia_vencimiento').lean();
+    const config = await applySession(TenantConfigModel.findOne({ key: 'default' }), session).select('cobro.dia_vencimiento').lean();
     return normalizarDiaMes(config?.cobro?.dia_vencimiento, 5);
   } catch {
     return 5;
@@ -873,7 +874,7 @@ function esTipoMensualidadBecaCompleta(tipoMensualidad) {
   return String(tipoMensualidad || '').toLowerCase() === 'beca_completa';
 }
 
-async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models = {}) {
+async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models = {}, { session } = {}) {
   const AlumnoModel = models.Alumno || Alumno;
   const tipoDesdePopulate = mensualidad?.id_alumno?.tipo_mensualidad;
   if (tipoDesdePopulate !== undefined) {
@@ -887,7 +888,7 @@ async function obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models 
     return null;
   }
 
-  const consultaAlumno = AlumnoModel.findById(alumnoId);
+  const consultaAlumno = applySession(AlumnoModel.findById(alumnoId), session);
   if (!consultaAlumno) return null;
 
   let alumno;
@@ -1179,12 +1180,12 @@ function formatPeriodoTexto(periodo) {
   return `${meses[mes - 1]} ${anio}`;
 }
 
-async function resolverMontoBaseAlumno(alumno, models = {}) {
+async function resolverMontoBaseAlumno(alumno, models = {}, { session } = {}) {
   const SedeModel = models.Sede || Sede;
   const tipoMensualidad = String(alumno?.tipo_mensualidad || '').toLowerCase();
   if (tipoMensualidad === 'monto_sede' || tipoMensualidad === 'media_beca' || !tipoMensualidad) {
     const sedeId = alumno.sede && alumno.sede._id ? alumno.sede._id : alumno.sede;
-    const consultaSede = SedeModel.findById(sedeId);
+    const consultaSede = applySession(SedeModel.findById(sedeId), session);
     const sede = typeof consultaSede?.select === 'function'
       ? await consultaSede.select('costo')
       : await Promise.resolve(consultaSede);
@@ -1202,10 +1203,10 @@ async function resolverMontoBaseAlumno(alumno, models = {}) {
   return 0;
 }
 
-async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null, models = {}) {
+async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null, models = {}, { session } = {}) {
   const PagoDetalleModel = models.PagoDetalle || PagoDetalle;
   const AlumnoModel = models.Alumno || Alumno;
-  const pagos = await PagoDetalleModel.find({ id_mensualidad: mensualidad._id });
+  const pagos = await applySession(PagoDetalleModel.find({ id_mensualidad: mensualidad._id }), session);
   const tienePagosRegistrados = pagos.length > 0;
   const { totalPagado, montoEsperado, cubreEsperadoConTolerancia } = obtenerCoberturaMensualidad(mensualidad.monto_esperado, pagos);
   const saldoGeneradoPrevio = redondearMonto(mensualidad.saldo_a_favor_generado || 0);
@@ -1213,7 +1214,7 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
   const deltaSaldo = redondearMonto(saldoGeneradoNuevo - saldoGeneradoPrevio);
 
   if (deltaSaldo !== 0) {
-    const alumnoDoc = await AlumnoModel.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno);
+    const alumnoDoc = await applySession(AlumnoModel.findById(mensualidad.id_alumno?._id || mensualidad.id_alumno), session);
     if (alumnoDoc) {
       const saldoActual = redondearMonto(alumnoDoc.saldo_a_favor_mensualidades || 0);
       const saldoResultante = redondearMonto(saldoActual + deltaSaldo);
@@ -1223,7 +1224,7 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
       }
 
       alumnoDoc.saldo_a_favor_mensualidades = saldoResultante;
-      await alumnoDoc.save();
+      await alumnoDoc.save(session ? { session } : undefined);
     }
   }
 
@@ -1233,7 +1234,7 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
   const estaVencida = mensualidad.fecha_vencimiento ? new Date(mensualidad.fecha_vencimiento) < new Date() : false;
   const estatusActualNormalizado = String(mensualidad.estatus || '').toLowerCase();
   const veniaExentoPorReposo = estatusAnteriorNormalizado === 'exento por reposo';
-  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models);
+  const tipoMensualidadAlumno = await obtenerTipoMensualidadAlumnoDesdeMensualidad(mensualidad, models, { session });
   const esBecado = esTipoMensualidadBecaCompleta(tipoMensualidadAlumno);
 
   if (esBecado && estatusActualNormalizado !== 'exento por reposo') {
@@ -1252,15 +1253,15 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
     mensualidad.estatus = 'Abono';
   }
 
-  await mensualidad.save();
+  await mensualidad.save(session ? { session } : undefined);
 }
 
-async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
+async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}, { session } = {}) {
   const ReposoModel = models.Reposo || Reposo;
   const inicioMes = new Date(Date.UTC(anio, mes - 1, 1, 0, 0, 0, 0));
   const finMes = new Date(Date.UTC(anio, mes, 0, 23, 59, 59, 999));
 
-  const reposoIndefinido = await ReposoModel.findOne({
+  const reposoIndefinido = await applySession(ReposoModel.findOne({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Indefinido',
@@ -1269,13 +1270,13 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
       { fecha_fin: null },
       { fecha_fin: { $gte: inicioMes } }
     ]
-  }).sort({ fecha_inicio: -1 });
+  }), session).sort({ fecha_inicio: -1 });
 
   if (reposoIndefinido) {
     return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
   }
 
-  const reposoTotal = await ReposoModel.findOne({
+  const reposoTotal = await applySession(ReposoModel.findOne({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Total',
@@ -1289,13 +1290,13 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
         fecha_inicio: { $gte: inicioMes, $lte: finMes }
       }
     ]
-  }).sort({ fecha_inicio: -1 });
+  }), session).sort({ fecha_inicio: -1 });
 
   if (reposoTotal) {
     return { tipo: 'EXENTO_POR_REPOSO', montoPersonalizado: null };
   }
 
-  const repososParcialesConsulta = ReposoModel.find({
+  const repososParcialesConsulta = applySession(ReposoModel.find({
     id_alumno: alumnoId,
     estado: { $ne: 'Inactivo' },
     tipo: 'Parcial',
@@ -1305,7 +1306,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
       { fecha_fin: null },
       { fecha_fin: { $gte: inicioMes } }
     ]
-  }).select('fecha_inicio fecha_fin monto_parcial_personalizado');
+  }), session).select('fecha_inicio fecha_fin monto_parcial_personalizado');
 
   const repososParcialesProrrateados = repososParcialesConsulta && typeof repososParcialesConsulta.sort === 'function'
     ? await repososParcialesConsulta.sort({ fecha_inicio: -1, createdAt: -1 })
@@ -1331,7 +1332,7 @@ async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}) {
   };
 }
 
-async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}) {
+async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}, { session } = {}) {
   const MensualidadModel = models.Mensualidad || Mensualidad;
   if (!reposo || !reposo.fecha_inicio) return [];
 
@@ -1354,13 +1355,13 @@ async function listarPeriodosAfectadosPorReposo(alumnoId, reposo, models = {}) {
 
   const inicioMes = reposo.fecha_inicio.getUTCMonth() + 1;
   const inicioAnio = reposo.fecha_inicio.getUTCFullYear();
-  const consultaMensualidades = MensualidadModel.find({
+  const consultaMensualidades = applySession(MensualidadModel.find({
     id_alumno: alumnoId,
     $or: [
       { anio: { $gt: inicioAnio } },
       { anio: inicioAnio, mes: { $gte: inicioMes } }
     ]
-  });
+  }), session);
   const mensualidades = consultaMensualidades && typeof consultaMensualidades.select === 'function'
     ? await consultaMensualidades.select('mes anio').lean()
     : (Array.isArray(consultaMensualidades) ? consultaMensualidades : []);
@@ -1419,13 +1420,13 @@ async function validarMensualidadesParaReposoConImpactoMonto(alumnoId, reposo, m
   );
 }
 
-async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, models = {}) {
+async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, models = {}, { session } = {}) {
   const AlumnoModel = models.Alumno || Alumno;
   const MensualidadModel = models.Mensualidad || Mensualidad;
   if (!Array.isArray(periodos) || periodos.length === 0) return;
 
   if (!AlumnoModel || typeof AlumnoModel.findById !== 'function') return;
-  const consultaAlumno = AlumnoModel.findById(alumnoId);
+  const consultaAlumno = applySession(AlumnoModel.findById(alumnoId), session);
   if (!consultaAlumno) return;
 
   const alumno = typeof consultaAlumno.select === 'function'
@@ -1438,11 +1439,11 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, m
   );
 
   for (const periodo of periodosUnicos) {
-    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumnoId, periodo.mes, periodo.anio, models);
-    let mensualidad = await MensualidadModel.findOne({ id_alumno: alumnoId, mes: periodo.mes, anio: periodo.anio });
+    const reglaReposo = await obtenerReglaReposoParaPeriodo(alumnoId, periodo.mes, periodo.anio, models, { session });
+    let mensualidad = await applySession(MensualidadModel.findOne({ id_alumno: alumnoId, mes: periodo.mes, anio: periodo.anio }), session);
 
     if (reglaReposo.tipo === 'EXENTO_POR_REPOSO') {
-      await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio, models);
+      await upsertMensualidadExentaPorReposo(alumnoId, periodo.mes, periodo.anio, models, { session });
       continue;
     }
 
@@ -1451,7 +1452,7 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, m
     const estatusActual = String(mensualidad.estatus || '').toLowerCase();
     if (['pagado', 'exonerado', 'becado'].includes(estatusActual)) continue;
 
-    const montoBaseNormal = await resolverMontoBaseAlumno(alumno, models);
+    const montoBaseNormal = await resolverMontoBaseAlumno(alumno, models, { session });
     const montoBase = reglaReposo.tipo === 'PRORRATEO_PARCIAL'
       ? redondearMonto(
           Number.isFinite(Number(reglaReposo.montoPersonalizado))
@@ -1467,7 +1468,7 @@ async function sincronizarMensualidadesAfectadasPorReposos(alumnoId, periodos, m
       Math.max(0, montoBase - mensualidad.credito_aplicado - mensualidad.ajuste_extraordinario)
     );
 
-    await recalcularMensualidadPorPagos(mensualidad, estatusActual || 'Exento por reposo', models);
+    await recalcularMensualidadPorPagos(mensualidad, estatusActual || 'Exento por reposo', models, { session });
   }
 }
 
@@ -1501,24 +1502,32 @@ async function aplicarReposoTotalPorPeriodo(alumnoId, fechaInicio, fechaFin = nu
   }
 }
 
-async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio, models = {}) {
+async function upsertMensualidadExentaPorReposo(alumnoId, mes, anio, models = {}, { session } = {}) {
   const MensualidadModel = models.Mensualidad || Mensualidad;
-  const diaVencimiento = await obtenerDiaVencimientoCobro(models);
+  const diaVencimiento = await obtenerDiaVencimientoCobro(models, { session });
   const fechaVencimiento = construirFinDeDiaCaracasPeriodo(anio, mes, diaVencimiento);
+  const periodo = { id_alumno: alumnoId, mes, anio };
+  const ahora = new Date();
+  const cambios = {
+    monto_esperado: 0,
+    estatus: 'Exento por reposo',
+    fecha_vencimiento: fechaVencimiento
+  };
   await MensualidadModel.findOneAndUpdate(
-    { id_alumno: alumnoId, mes, anio, estatus: { $ne: 'Pagado' } },
-    {
-      $set: {
-        monto_esperado: 0,
-        estatus: 'Exento por reposo',
-        fecha_vencimiento: fechaVencimiento
-      }
-    },
+    periodo,
+    { $setOnInsert: { ...cambios, createdAt: ahora, updatedAt: ahora } },
     {
       upsert: true,
       setDefaultsOnInsert: true,
-      new: true
+      new: true,
+      timestamps: false,
+      ...(session ? { session } : {})
     }
+  );
+  await MensualidadModel.findOneAndUpdate(
+    { ...periodo, estatus: { $ne: 'Pagado' } },
+    { $set: cambios },
+    { new: true, ...(session ? { session } : {}) }
   );
 }
 
@@ -4211,24 +4220,12 @@ exports.editarReposoAlumno = async (req, res) => {
     const reposo = await TenantReposo.findOne({ _id: req.params.reposoId, id_alumno: alumno._id });
     if (!reposo) return res.status(404).json({ error: 'Reposo no encontrado' });
 
-    const reposoAnterior = {
-      tipo: reposo.tipo,
-      fecha_inicio: reposo.fecha_inicio,
-      fecha_fin: reposo.fecha_fin,
-      modalidad_cobro_parcial: reposo.modalidad_cobro_parcial,
-      monto_parcial_personalizado: reposo.monto_parcial_personalizado,
-      certificados: normalizarListaCertificados(reposo)
-    };
-
     const fecha_inicio_raw = req.body.fecha_inicio || req.body.fechaInicio;
-    const fecha_fin_raw = req.body.fecha_fin || req.body.fechaFin;
+    const fecha_fin_raw = req.body.fecha_fin ?? req.body.fechaFin;
 
     if (fecha_inicio_raw !== undefined) {
       const fechaInicio = parseDateInput(fecha_inicio_raw);
       if (!fechaInicio) return res.status(400).json({ error: 'fecha_inicio inválida' });
-      if (reposo.fecha_fin && fechaInicio.getTime() > reposo.fecha_fin.getTime()) {
-        return res.status(400).json({ error: 'fecha_inicio no puede ser posterior a fecha_fin' });
-      }
       reposo.fecha_inicio = fechaInicio;
     }
 
@@ -4239,9 +4236,6 @@ exports.editarReposoAlumno = async (req, res) => {
       } else {
         const fechaFin = parseDateInput(raw);
         if (!fechaFin) return res.status(400).json({ error: 'fecha_fin inválida' });
-        if (reposo.fecha_inicio && fechaFin.getTime() < reposo.fecha_inicio.getTime()) {
-          return res.status(400).json({ error: 'fecha_fin no puede ser anterior a fecha_inicio' });
-        }
         reposo.fecha_fin = fechaFin;
       }
     }
@@ -4306,6 +4300,14 @@ exports.editarReposoAlumno = async (req, res) => {
       reposo.estado = req.body.estado || 'Activo';
     }
 
+    if (reposo.tipo === 'Indefinido' && reposo.estado !== 'Finalizado') {
+      reposo.fecha_fin = null;
+    }
+
+    if (reposo.fecha_fin && reposo.fecha_inicio.getTime() > reposo.fecha_fin.getTime()) {
+      return res.status(400).json({ error: 'fecha_inicio no puede ser posterior a fecha_fin' });
+    }
+
     if (reposo.estado === 'Finalizado' && !reposo.fecha_fin) {
       return res.status(400).json({ error: 'Debes indicar una fecha_fin para finalizar el reposo.' });
     }
@@ -4352,15 +4354,35 @@ exports.editarReposoAlumno = async (req, res) => {
     reposo.certificados = certificadosActuales;
     reposo.certificado = certificadosActuales[0] || null;
 
-    await reposo.save();
+    const reposoActualizado = await ejecutarConTransaccion(TenantReposo, async (session) => {
+      const vigente = await applySession(TenantReposo.findOne({ _id: reposo._id, id_alumno: alumno._id }), session);
+      if (!vigente) throw Object.assign(new Error('Reposo no encontrado'), { status: 404 });
+      const reposoAnterior = vigente.toObject();
+      vigente.set({
+        fecha_inicio: reposo.fecha_inicio,
+        fecha_fin: reposo.fecha_fin,
+        tipo: reposo.tipo,
+        modalidad_cobro_parcial: reposo.modalidad_cobro_parcial,
+        monto_parcial_personalizado: reposo.monto_parcial_personalizado,
+        motivo: reposo.motivo,
+        estado: reposo.estado,
+        certificados: reposo.certificados,
+        certificado: reposo.certificado
+      });
+      await vigente.save({ session });
 
-    const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior, tenantModels);
-    const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, reposo, tenantModels);
-    await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos], tenantModels);
+      const periodosPrevios = await listarPeriodosAfectadosPorReposo(alumno._id, reposoAnterior, tenantModels, { session });
+      const periodosNuevos = await listarPeriodosAfectadosPorReposo(alumno._id, vigente, tenantModels, { session });
+      await sincronizarMensualidadesAfectadasPorReposos(alumno._id, [...periodosPrevios, ...periodosNuevos], tenantModels, { session });
+      return vigente;
+    }, { obligatoria: true });
 
-    return res.json({ message: 'Reposo actualizado', reposo });
+    return res.json({ message: 'Reposo actualizado', reposo: reposoActualizado });
   } catch (err) {
-    return res.status(500).json({ error: 'Error al actualizar reposo', detalle: err.message });
+    return res.status(err.status || 500).json({
+      error: err.status === 503 ? err.message : 'Error al actualizar reposo',
+      detalle: err.message
+    });
   }
 };
 

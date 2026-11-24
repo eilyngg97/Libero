@@ -83,6 +83,12 @@ jest.mock('../models/Uniforme', () => ({
 }));
 
 jest.mock('../models/Reposo', () => ({
+  db: {
+    startSession: jest.fn(async () => ({
+      withTransaction: async (operacion) => operacion(null),
+      endSession: jest.fn().mockResolvedValue(undefined)
+    }))
+  },
   find: jest.fn(),
   findOne: jest.fn(),
   deleteMany: jest.fn()
@@ -3291,6 +3297,15 @@ describe('Backend smoke tests', () => {
       estado: 'Activo',
       save: jest.fn().mockResolvedValue(true)
     };
+    const reposoVigente = {
+      ...reposoDoc,
+      toObject: () => ({
+        tipo: 'Total',
+        fecha_inicio: new Date('2026-03-01T12:00:00.000Z'),
+        fecha_fin: new Date('2026-04-30T12:00:00.000Z')
+      }),
+      set(cambios) { Object.assign(this, cambios); }
+    };
 
     const mensualidadMarzo = {
       _id: 'm-mar',
@@ -3327,6 +3342,7 @@ describe('Backend smoke tests', () => {
 
     Reposo.findOne
       .mockResolvedValueOnce(reposoDoc)
+      .mockResolvedValueOnce(reposoVigente)
       .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) })
       .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue({ _id: 'r1' }) })
       .mockReturnValueOnce({ sort: jest.fn().mockResolvedValue(null) })
