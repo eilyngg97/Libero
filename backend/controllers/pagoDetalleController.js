@@ -11,6 +11,7 @@ const { aplicarSession, ejecutarConTransaccion } = require('../services/financeT
 const { obtenerTasaPagoPorFecha } = require('../services/paymentExchangeRate');
 const { cotizarCreditosAlumno, aplicarCreditoMensualidad, actualizarRevisionCredito, liberarCreditoOrigen } = require('../services/monthlyCredit');
 const { userRepresentsAlumno } = require('../services/paymentOwnership');
+const { guardarMensualidadConRecibo } = require('../services/paymentReceipt');
 
 const { MONTO_TOLERANCIA_BS, ordenarPagos, obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
 
@@ -186,7 +187,7 @@ async function recalcularMensualidad(mensualidad, actorRol, estatusAnterior, mod
 
   await actualizarRevisionCredito(mensualidad, models, { session });
   if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
-  await mensualidad.save(session ? { session } : undefined);
+  await guardarMensualidadConRecibo(mensualidad, { session });
 
   return {
     totalPagado,
@@ -868,7 +869,7 @@ exports.registrarPago = async (req, res) => {
     const inicial = await obtenerMensualidadConAlumnoTenant(id_mensualidad, tenantModels);
     if (!inicial) throw errorPagoAgrupado(404, 'Mensualidad no encontrada');
     const solicitaRevisionRecargo = normalizarBooleano(solicita_revision_recargo);
-    const obligatoria = Number(inicial.id_alumno?.saldo_a_favor_mensualidades) > 0 || Number(req.body.credito_a_aplicar) > 0
+    const obligatoria = esRolAdmin(req.user?.rol) || Number(inicial.id_alumno?.saldo_a_favor_mensualidades) > 0 || Number(req.body.credito_a_aplicar) > 0
       || monto > Number(inicial.monto_esperado);
     const resultado = await ejecutarConTransaccion(tenantModels.PagoAgrupado, async (session) => {
     const mensualidad = session ? await aplicarSession(tenantModels.Mensualidad.findById(id_mensualidad).populate('id_alumno'), session) : inicial;

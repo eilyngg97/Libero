@@ -130,7 +130,7 @@ test.each(['En revision', 'Pagado'])('detalle de cuota cubierta solo con credito
     return original(url, options);
   });
   render(<MemoryRouter><PagosAlumno alumno={{ _id: 'a1', nombres: 'Victor', apellidos: 'Raga' }} /></MemoryRouter>);
-  const botones = await screen.findAllByRole('button', { name: /Ver detalle|Ver Recibo/i });
+  const botones = await screen.findAllByRole('button', { name: /Ver detalle/i });
   expect(screen.queryByRole('button', { name: 'Pagar restante' })).not.toBeInTheDocument();
   expect(screen.getByText('Saldo a favor aplicado: $20.00 USD')).toBeInTheDocument();
   expect(screen.getByText('Pago directo: $0.00 USD')).toBeInTheDocument();

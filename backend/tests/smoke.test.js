@@ -60,6 +60,9 @@ jest.mock('../models/PagoDetalle', () => ({
 }));
 
 jest.mock('../models/MensualidadEliminada', () => ({ findOne: jest.fn().mockResolvedValue(null) }));
+jest.mock('../services/paymentReceipt', () => ({
+  guardarMensualidadConRecibo: (mensualidad, { session } = {}) => mensualidad.save(session ? { session } : undefined)
+}));
 
 jest.mock('../models/PagoAgrupado', () => ({
   find: jest.fn(),
@@ -2842,7 +2845,8 @@ describe('Backend smoke tests', () => {
       _id: 'm1',
       id_alumno: 'a1',
       estatus: 'Pagado',
-      monto_esperado: 100
+      monto_esperado: 100,
+      save: jest.fn().mockResolvedValue(true)
     };
 
     Alumno.findById.mockResolvedValue(alumnoDoc);
@@ -2850,6 +2854,9 @@ describe('Backend smoke tests', () => {
     Mensualidad.create.mockResolvedValue(mensualidadCreada);
     PagoDetalle.create.mockResolvedValue({ _id: 'p1' });
 
+    const dbAnterior = Mensualidad.db;
+    const session = { withTransaction: async (callback) => callback(), endSession: jest.fn().mockResolvedValue(undefined) };
+    Mensualidad.db = { startSession: jest.fn().mockResolvedValue(session) };
     const response = await request(app)
       .post('/api/mensualidades/primera')
       .set('Authorization', `Bearer ${token}`)
@@ -2858,15 +2865,17 @@ describe('Backend smoke tests', () => {
         monto_esperado: 100,
         estatus: 'Pagado'
       });
+    Mensualidad.db = dbAnterior;
 
     expect(response.status).toBe(200);
     expect(PagoDetalle.create).toHaveBeenCalledWith(
-      expect.objectContaining({
+      [expect.objectContaining({
         id_mensualidad: 'm1',
         monto_pagado: 100,
         metodo_pago: 'Registro inicial admin',
         referencia: 'primera-mensualidad'
-      })
+      })],
+      { session }
     );
   });
 

@@ -7,6 +7,7 @@ const Reposo = require('../models/Reposo');
 const Mensualidad = require('../models/Mensualidad');
 const MensualidadEliminada = require('../models/MensualidadEliminada');
 const PagoDetalle = require('../models/PagoDetalle');
+const ReciboCounter = require('../models/ReciboCounter');
 const PagoAgrupado = require('../models/PagoAgrupado');
 const Aspirante = require('../models/Aspirante');
 const Uniforme = require('../models/Uniforme');
@@ -39,6 +40,7 @@ const modelSchemaMap = {
   Mensualidad: Mensualidad.schema,
   MensualidadEliminada: MensualidadEliminada.schema,
   PagoDetalle: PagoDetalle.schema,
+  ReciboCounter: ReciboCounter.schema,
   PagoAgrupado: PagoAgrupado.schema,
   Aspirante: Aspirante.schema,
   Uniforme: Uniforme.schema,

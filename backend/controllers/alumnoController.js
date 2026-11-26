@@ -72,6 +72,7 @@ const { resolveRequestTenantId } = require('../services/tenantFallbackService');
 const { generarMensualidadesPendientesAlumno } = require('./mensualidadController');
 const { registrarOperacion } = require('../services/operacionService');
 const { ejecutarConTransaccion } = require('../services/financeTransaction');
+const { guardarMensualidadConRecibo } = require('../services/paymentReceipt');
 
 const { obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
 
@@ -1255,7 +1256,7 @@ async function recalcularMensualidadPorPagos(mensualidad, estatusAnterior = null
     mensualidad.estatus = 'Abono';
   }
 
-  await mensualidad.save(session ? { session } : undefined);
+  await guardarMensualidadConRecibo(mensualidad, { session });
 }
 
 async function obtenerReglaReposoParaPeriodo(alumnoId, mes, anio, models = {}, { session } = {}) {
@@ -3905,7 +3906,7 @@ exports.reactivarAlumno = async (req, res) => {
         referencia: (esPrimerPeriodo && tienePago) ? (referencia || undefined) : undefined,
         comprobante_url: esPrimerPeriodo ? comprobanteUrl : undefined,
         fecha_vencimiento: fechaVencimientoPeriodo,
-        estatus: estatusPeriodoInicial
+        estatus: estatusPeriodoInicial === 'Pagado' ? 'Pendiente' : estatusPeriodoInicial
       });
 
       if (esPrimerPeriodo) {

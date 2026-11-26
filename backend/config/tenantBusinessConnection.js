@@ -100,9 +100,19 @@ async function getTenantBusinessConnection(tenant = {}) {
   const maxEntries = normalizePoolSize(process.env.TENANT_CONNECTION_CACHE_SIZE, 20);
 
   const existing = connectionCache.get(cacheKey);
+  const receiptTenant = {
+    tenantId, nombre: tenant.nombre || fallbackTenant.nombre,
+    branding: tenant.branding || {
+      displayName: process.env.DEFAULT_TENANT_NAME || fallbackTenant.nombre,
+      logoUrl: process.env.DEFAULT_TENANT_LOGO_URL || ''
+    },
+    domains: tenant.domains || []
+  };
   if (existing?.connectionPromise) {
     metrics.cacheHits += 1;
-    return existing.connectionPromise;
+    const connection = await existing.connectionPromise;
+    connection.receiptTenant = receiptTenant;
+    return connection;
   }
 
   metrics.cacheMisses += 1;
@@ -114,6 +124,7 @@ async function getTenantBusinessConnection(tenant = {}) {
     maxPoolSize,
     serverSelectionTimeoutMS: 5000
   });
+  connection.receiptTenant = receiptTenant;
   attachConnectionMetrics(connection);
 
   const connectionPromise = connection.asPromise().catch((err) => {

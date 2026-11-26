@@ -309,6 +309,7 @@ app.use('/api/representantes', require('./routes/representantes'));
 app.use('/api/sedes', require('./routes/sedes'));
 app.use('/api/mensualidades', require('./routes/mensualidades'));
 app.use('/api/pagos', require('./routes/pagos'));
+app.use('/api/recibos', require('./routes/recibos'));
 app.use('/api/conciliacion', require('./routes/conciliacion'));
 app.use('/api/operaciones', require('./routes/operaciones'));
 app.use('/api/constancias', require('./routes/constancias'));

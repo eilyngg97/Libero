@@ -10,6 +10,7 @@ const { hasRequestPermission } = require('../middleware/auth');
 const { normalizePersonalizados } = require('../services/constanciaTemplateService');
 
 const DEFAULT_CONFIG = {
+  recibos: { nombre_oficial: '', rif: '' },
   pagos: {
     adicionales: [],
     pago_movil: {
@@ -610,6 +611,13 @@ function normalizeAdditionalPayments(value = []) {
   });
 }
 
+function normalizeRecibos(value = {}) {
+  return {
+    nombre_oficial: cleanValue(value.nombre_oficial).slice(0, 180),
+    rif: cleanValue(value.rif).slice(0, 40)
+  };
+}
+
 function normalizeConfigPayload(payload = {}) {
   const root = payload && typeof payload === 'object' ? payload : {};
   const pagos = root.pagos && typeof root.pagos === 'object' ? root.pagos : root;
@@ -675,6 +683,7 @@ function normalizeConfigPayload(payload = {}) {
       recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000),
       moneda: normalizeCobroMoneda(cobro.moneda, DEFAULT_CONFIG.cobro.moneda)
     },
+    recibos: normalizeRecibos(root.recibos),
     categorias: normalizeCategoriasPayload(categorias),
     constancias: normalizeConstanciasPayload(constancias),
     publicaciones: normalizePublicacionesPayload(publicaciones)
@@ -684,6 +693,9 @@ function normalizeConfigPayload(payload = {}) {
 function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
   const root = payload && typeof payload === 'object' ? payload : {};
   const patch = {};
+  if (root.recibos && typeof root.recibos === 'object') {
+    patch.recibos = normalizeRecibos(root.recibos);
+  }
 
   if (root.pagos && typeof root.pagos === 'object') {
     const pagosPatch = {};
@@ -952,6 +964,7 @@ function serializeConfig(doc) {
       recargo_usd: clampDecimal(recargoUsdRaw, DEFAULT_CONFIG.cobro.recargo_usd, 0, 100000),
       moneda: normalizeCobroMoneda(cobro?.moneda, DEFAULT_CONFIG.cobro.moneda)
     },
+    recibos: normalizeRecibos(doc.recibos),
     categorias: normalizeCategoriasPayload(categoriasParaRespuesta, DEFAULT_CONFIG.categorias),
     constancias: normalizeConstanciasPayload(constancias),
     publicaciones: normalizePublicacionesPayload(publicaciones),
@@ -1150,6 +1163,9 @@ exports.patchConfiguracionAdmin = async (req, res) => {
       });
     }
 
+    if (normalizedPatch.recibos) {
+      setPayload.recibos = normalizedPatch.recibos;
+    }
     if (normalizedPatch.categorias) {
       setPayload.categorias = normalizedPatch.categorias;
     }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReciboPagoButton from './ReciboPago';
 import { useSearchParams } from 'react-router-dom';
 import { Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Typography, Chip, Box, Snackbar, Alert, Avatar, Tooltip, Checkbox, FormGroup, FormControlLabel, InputAdornment } from '@mui/material';
 import PaymentIcon from '@mui/icons-material/Payment';
@@ -3277,6 +3278,9 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 					)}
 				</DialogContent>
 				<DialogActions sx={{ px: 3, pb: 2.25, bgcolor: '#f3f5fb', justifyContent: 'flex-end' }}>
+					{mensualidadDetalle?.estatus === 'Pagado' && (
+						<ReciboPagoButton mensualidadId={mensualidadDetalle._id} label="Compartir / Descargar Recibo" destacado />
+					)}
 					{(mensualidadDetalle?.estatus || '').toLowerCase() === 'en revision' && (
 						<Button
 							onClick={solicitarConfirmarMensualidad}

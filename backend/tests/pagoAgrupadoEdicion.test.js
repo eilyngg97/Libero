@@ -5,6 +5,9 @@ jest.mock('../models/Mensualidad', () => ({}));
 jest.mock('../models/Alumno', () => ({}));
 jest.mock('../models/PagoAgrupado', () => ({}));
 jest.mock('../models/UniformePedido', () => ({}));
+jest.mock('../services/paymentReceipt', () => ({
+  guardarMensualidadConRecibo: (mensualidad, { session } = {}) => mensualidad.save(session ? { session } : undefined)
+}));
 jest.mock('../services/operacionService', () => ({ registrarOperacion: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../middleware/auth', () => ({ hasRequestPermission: jest.fn().mockReturnValue(true) }));
 jest.mock('../services/paymentExchangeRate', () => ({ obtenerTasaPagoPorFecha: jest.fn() }));
@@ -1033,13 +1036,13 @@ function agregarPagoIndividual() {
   datos.PagoDetalle.p3 = { _id: 'p3', id_mensualidad: 'm3', id_pago_agrupado: null, monto_pagado: 14 };
 }
 
-test('confirmacion exclusivamente individual conserva compatibilidad sin transacciones', async () => {
+test('confirmacion individual sin transacciones no cambia estados ni emite recibos', async () => {
   agregarPagoIndividual();
   models.PagoAgrupado.db.startSession = undefined;
   const grupo = copiar(datos.PagoAgrupado.g1);
   const res = await confirmar(['p3']);
-  expect(res.status).not.toHaveBeenCalled();
-  expect(datos.Mensualidad.m3.estatus).toBe('Pagado');
+  expect(res.status).toHaveBeenCalledWith(503);
+  expect(datos.Mensualidad.m3.estatus).toBe('En revision');
   expect(datos.PagoAgrupado.g1).toEqual(grupo);
   expect(datos.Mensualidad.m1.estatus).toBe('En revision');
   expect(datos.Mensualidad.m2.estatus).toBe('En revision');

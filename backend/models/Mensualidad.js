@@ -38,6 +38,14 @@ const MensualidadSchema = new mongoose.Schema({
   fecha_pago: { type: Date },
   metodo_pago: { type: String },
   referencia: { type: String },
+  recibo: {
+    type: new mongoose.Schema({
+      numero: { type: String, required: true },
+      emitido_en: { type: Date, required: true },
+      datos: { type: mongoose.Schema.Types.Mixed, required: true }
+    }, { _id: false }),
+    default: undefined
+  },
   comprobante_url: { type: String },
   fecha_vencimiento: { type: Date, required: true },
   estatus: { type: String, enum: ['Pendiente', 'Pagado', 'Retrasado', 'Insolvente', 'Exonerado', 'En revision', 'Abono', 'Exento por reposo', 'Becado'], default: 'Pendiente' },
@@ -66,5 +74,6 @@ const MensualidadSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 MensualidadSchema.index({ id_alumno: 1, mes: 1, anio: 1 }, { unique: true });
+MensualidadSchema.index({ 'recibo.numero': 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Mensualidad', MensualidadSchema);
