@@ -20,6 +20,20 @@ const descripcionHabito = (habito) => {
 };
 const normalizar = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const fechaVisible = (value) => String(value || '').split('-').reverse().join('/');
+const momentosPago = { anticipado: 'Anticipado', en_mes: 'En el mes', posterior: 'Posterior' };
+const estadoCuotaVisible = (estado) => estado === 'En revision' ? 'En revisión' : estado;
+const estilosEstadoExcel = {
+  pagado: { bg: '#dff7ea', color: '#0f7a4a' },
+  confirmado: { bg: '#e9f6ef', color: '#216548' },
+  pendiente: { bg: '#fff3dc', color: '#b45309' },
+  retrasado: { bg: '#ffe1e6', color: '#d32f2f' },
+  insolvente: { bg: '#ffe1e6', color: '#d32f2f' },
+  exonerado: { bg: '#e3f2fd', color: '#0288d1' },
+  becado: { bg: '#e0f2fe', color: '#0284c7' },
+  abono: { bg: '#efe9e7', color: '#6d4c41' },
+  'en revision': { bg: '#fff6cc', color: '#b45309' },
+  'exento por reposo': { bg: '#e3f2fd', color: '#0288d1' }
+};
 
 function rangoMes(mes, anio) {
   const prefijo = `${anio}-${String(mes).padStart(2, '0')}`;
@@ -46,9 +60,10 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
   const [error, setError] = useState('');
   const [errorAccion, setErrorAccion] = useState('');
   const [intento, setIntento] = useState(0);
-  const [vista, setVista] = useState('pagos');
+  const [vista, setVista] = useState('cuotas');
   const [busqueda, setBusqueda] = useState('');
   const [estado, setEstado] = useState('');
+  const [estadoCuota, setEstadoCuota] = useState('');
   const [tendencia, setTendencia] = useState('');
   const [pagina, setPagina] = useState(0);
   const [filas, setFilas] = useState(10);
@@ -72,7 +87,10 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload?.error || 'No se pudo consultar el reporte.');
-        if (!Array.isArray(payload.pagos) || !Array.isArray(payload.habitos) || !Array.isArray(payload.periodos_habito)
+        if (!Array.isArray(payload.cuotas_del_mes) || payload.cuotas_del_mes.some((cuota) => !cuota.id
+          || !cuota.id_alumno || !cuota.estado || !Number.isFinite(cuota.monto) || cuota.monto < 0
+          || (cuota.momento_pago != null && !momentosPago[cuota.momento_pago]))
+          || !Array.isArray(payload.pagos) || !Array.isArray(payload.habitos) || !Array.isArray(payload.periodos_habito)
           || !payload.resumen || payload.pagos.some((pago) => !pago.id || !Number.isFinite(pago.monto) || pago.monto <= 0
             || !['Confirmado', 'En revision'].includes(pago.estado) || !Array.isArray(pago.asignaciones)
             || pago.asignaciones.some((item) => !item.id_alumno || !Number.isFinite(item.monto) || item.monto <= 0))
@@ -96,6 +114,9 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
   }, [mes, anio, rango.desde, rango.hasta, sedeId, intento]);
 
   const consulta = normalizar(busqueda);
+  const cuotas = (datos?.cuotas_del_mes || []).filter((cuota) => (!estadoCuota || cuota.estado === estadoCuota)
+    && normalizar(`${cuota.alumno} ${cuota.representante}`).includes(consulta));
+  const cuotasPagadas = cuotas.filter((cuota) => cuota.estado === 'Pagado');
   const pagos = (datos?.pagos || []).filter((pago) => (!estado || pago.estado === estado)
     && normalizar([pago.codigo, pago.referencia, ...pago.asignaciones.map((item) => `${item.alumno} ${item.representante}`)].join(' ')).includes(consulta));
   const habitos = (datos?.habitos || []).filter((habito) => (!tendencia
@@ -104,7 +125,7 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
   const alumnos = new Set(pagos.flatMap((pago) => pago.asignaciones.map((item) => item.id_alumno))).size;
   const total = (estadoPago) => pagos.filter((pago) => pago.estado === estadoPago)
     .reduce((suma, pago) => suma + Math.round(pago.monto * 100), 0) / 100;
-  const registros = vista === 'pagos' ? pagos : habitos;
+  const registros = vista === 'cuotas' ? cuotas : vista === 'pagos' ? pagos : habitos;
   const periodosHabito = datos?.periodos_habito || [];
   const inicioHistorial = periodosHabito[0];
   const finHistorial = periodosHabito[periodosHabito.length - 1];
@@ -125,7 +146,13 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
     setExportando(true);
     setErrorAccion('');
     try {
-      const rows = vista === 'pagos' ? pagos.map((pago) => ({ Fecha: fechaVisible(pago.fecha),
+      const rows = vista === 'cuotas' ? cuotas.map((cuota) => ({
+        Alumno: cuota.alumno, Representante: cuota.representante,
+        'Cuota correspondiente a': `${meses[cuota.mes - 1]} ${cuota.anio}`,
+        'Importe de la cuota': cuota.monto, Moneda: moneda, Estado: estadoCuotaVisible(cuota.estado),
+        'Fecha de pago': cuota.fecha_pago ? fechaVisible(cuota.fecha_pago) : '',
+        'Momento del pago': momentosPago[cuota.momento_pago] || (cuota.estado === 'Pagado' ? 'Sin fecha registrada' : '')
+      })) : vista === 'pagos' ? pagos.map((pago) => ({ Fecha: fechaVisible(pago.fecha),
         Alumnos: pago.asignaciones.map((item) => item.alumno).join(' / '),
         Representantes: [...new Set(pago.asignaciones.map((item) => item.representante).filter(Boolean))].join(' / '),
         Mensualidades: pago.asignaciones.map((item) => `${item.alumno}: Cuota de ${meses[item.mes - 1]} ${item.anio} (${item.monto})`).join(' / '),
@@ -134,8 +161,12 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
         Tendencia: descripcionHabito(habito), 'Cuotas analizadas': habito.meses_observados,
         Coincidencias: habito.franjas_frecuentes.length ? habito.coincidencias : '',
         Evidencia: habito.muestras.map((muestra) => `${meses[muestra.mes - 1]} ${muestra.anio}: ${fechaVisible(muestra.fecha_completada)}`).join(' / ') }));
-      await exportToExcel(rows, vista === 'pagos' ? `${vista}-${anio}-${String(mes).padStart(2, '0')}.xlsx`
-        : 'habitos-historial-completo.xlsx', [], { numberColumns: ['Monto'] });
+      await exportToExcel(rows, vista !== 'habitos' ? `${vista === 'cuotas' ? 'cuotas-del-mes' : 'dinero-recibido'}-${anio}-${String(mes).padStart(2, '0')}.xlsx`
+        : 'habitos-historial-completo.xlsx', [], {
+          numberColumns: ['Monto', 'Importe de la cuota'],
+          statusColumnName: 'Estado',
+          statusStyleMap: estilosEstadoExcel
+        });
     } catch (err) { setErrorAccion('No se pudo exportar el reporte.'); }
     finally { setExportando(false); }
   };
@@ -150,6 +181,19 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
       {pago.agrupado && <Typography variant="caption" sx={{ color: '#475569', fontWeight: 700 }}>{pago.codigo || 'Pago agrupado'}</Typography>}
     </Box>
   );
+  const detalleCuota = (cuota) => <Box>
+    <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{cuota.alumno}</Typography>
+    <Typography variant="caption" color="text.secondary">{cuota.representante}</Typography>
+    <Typography variant="caption" component="div" color="text.secondary">Cuota de {meses[cuota.mes - 1]} {cuota.anio}</Typography>
+  </Box>;
+  const estadoCuotaChip = (cuota) => <Chip size="small" label={estadoCuotaVisible(cuota.estado)}
+    sx={{ bgcolor: cuota.estado === 'Pagado' ? '#e9f6ef' : '#f1f5f9',
+      color: cuota.estado === 'Pagado' ? '#216548' : '#475569', fontWeight: 700 }} />;
+  const fechaCuota = (cuota) => <Box>
+    <Typography variant="body2">{cuota.fecha_pago ? fechaVisible(cuota.fecha_pago) : cuota.estado === 'Pagado' ? 'Sin fecha registrada' : '—'}</Typography>
+    {cuota.momento_pago && <Chip size="small" label={momentosPago[cuota.momento_pago]}
+      sx={{ mt: 0.5, bgcolor: '#f1f5f9', color: '#475569' }} />}
+  </Box>;
   const estadoChip = (pago) => <Chip size="small" label={pago.estado === 'Confirmado' ? 'Confirmado' : 'En revisión'}
     sx={{ bgcolor: pago.estado === 'Confirmado' ? '#e9f6ef' : '#fff3d8', color: pago.estado === 'Confirmado' ? '#216548' : '#8a5700', fontWeight: 700 }} />;
   const tendenciaHabito = (habito) => <Typography sx={{ fontWeight: 700, fontSize: 13,
@@ -171,32 +215,58 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
         <PaymentsOutlinedIcon sx={{ mt: 0.25, color: '#cbd5e1' }} />
         <Box sx={{ minWidth: 0, flex: 1 }}><Typography component="h2" id="reporte-pagos-title" sx={{ fontSize: 20, fontWeight: 700 }}>Reporte de pagos</Typography>
-          <Typography sx={{ fontSize: 13, color: '#cbd5e1', mt: 0.5, overflowWrap: 'anywhere' }}>{vista === 'pagos' ? `${meses[mes - 1]} ${anio}` : 'Historial completo'} · {sede?.nombre || 'Todas las sedes'}</Typography></Box>
+          <Typography sx={{ fontSize: 13, color: '#cbd5e1', mt: 0.5, overflowWrap: 'anywhere' }}>{vista !== 'habitos' ? `${meses[mes - 1]} ${anio}` : 'Historial completo'} · {sede?.nombre || 'Todas las sedes'}</Typography></Box>
         <IconButton aria-label="Cerrar reporte" onClick={onClose} size="small" sx={{ color: '#fff' }}><CloseIcon /></IconButton>
       </Box>
     </DialogTitle>
     <Tabs value={vista} onChange={(event, value) => { setVista(value); setPagina(0); setErrorAccion(''); }} variant="fullWidth" aria-label="Vistas del reporte">
-      <Tab value="pagos" label="Pagos recibidos" icon={<PaymentsOutlinedIcon fontSize="small" />} iconPosition="start"
+      <Tab value="cuotas" label="Cuotas del mes"
+        sx={{ minHeight: 56, minWidth: 0, px: 1, fontSize: { xs: 12, sm: 13 } }} />
+      <Tab value="pagos" label="Dinero recibido" icon={<PaymentsOutlinedIcon fontSize="small" />} iconPosition="start"
         sx={{ minHeight: 56, minWidth: 0, px: 1, fontSize: { xs: 12, sm: 13 }, '& .MuiTab-iconWrapper': { mr: 0.75, fontSize: 18 } }} />
       <Tab value="habitos" label="Hábito de pago" icon={<TimelineOutlinedIcon fontSize="small" />} iconPosition="start"
         sx={{ minHeight: 56, minWidth: 0, px: 1, fontSize: { xs: 12, sm: 13 }, '& .MuiTab-iconWrapper': { mr: 0.75, fontSize: 18 } }} />
     </Tabs>
     <DialogContent dividers sx={{ px: { xs: 2, sm: 3 }, overflowWrap: 'anywhere' }}>
-      {vista === 'pagos' && <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
+      {vista !== 'habitos' && <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
         <TextField select size="small" label="Año" value={anio} sx={{ width: 110 }} onChange={(event) => {
           const value = Number(event.target.value); setAnio(value); setRango(rangoMes(mes, value)); setBorrador(rangoMes(mes, value)); setErrorAccion('');
         }}>{Array.from({ length: ultimoAnio - 1999 }, (_, index) => ultimoAnio - index).map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}</TextField>
+        {vista === 'pagos' && <>
           <TextField label="Desde" type="date" size="small" value={borrador.desde} onChange={(event) => setBorrador({ ...borrador, desde: event.target.value })}
             InputLabelProps={{ shrink: true }} inputProps={{ min: limites.desde, max: limites.hasta }} sx={{ flex: { xs: '1 1 150px', sm: '0 1 160px' }, minWidth: 0 }} />
           <TextField label="Hasta" type="date" size="small" value={borrador.hasta} onChange={(event) => setBorrador({ ...borrador, hasta: event.target.value })}
             InputLabelProps={{ shrink: true }} inputProps={{ min: limites.desde, max: limites.hasta }} sx={{ flex: { xs: '1 1 150px', sm: '0 1 160px' }, minWidth: 0 }} />
           <Button variant="outlined" onClick={aplicarRango} disabled={cargando}>Aplicar rango</Button>
+        </>}
       </Box>}
       {errorAccion && <Alert severity="error" sx={{ mb: 2 }}>{errorAccion}</Alert>}
-      {cargando ? <Typography role="status" sx={{ py: 5, textAlign: 'center' }}>Consultando pagos...</Typography> : error ? (
+      {cargando ? <Typography role="status" sx={{ py: 5, textAlign: 'center' }}>Consultando reporte...</Typography> : error ? (
         <Alert severity="error" action={<Button onClick={() => setIntento(intento + 1)}>Reintentar</Button>}>{error}</Alert>
       ) : datos && <>
-        {vista === 'pagos' ? <>
+        {vista === 'cuotas' ? <>
+          <Alert severity="info" role="note" sx={{ mb: 2 }}>
+            Estas son las cuotas correspondientes a {meses[mes - 1]} {anio}, aunque se hayan pagado en otro mes.
+            {' '}Anticipado: antes de este mes. En el mes: durante este mes. Posterior: después de este mes.
+            {' '}Para saber cuánto dinero ingresó en el mes, consulta «Dinero recibido».
+          </Alert>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, py: 2, mb: 2, borderBottom: '1px solid #e2e8f0' }}>
+            {[['Cuotas del mes', cuotas.length], ['Cuotas pagadas', cuotasPagadas.length],
+              ['Pagadas por anticipado', cuotasPagadas.filter((cuota) => cuota.momento_pago === 'anticipado').length],
+              ['Pagadas durante el mes', cuotasPagadas.filter((cuota) => cuota.momento_pago === 'en_mes').length]].map(([label, valor]) => <Box key={label}>
+              <Typography sx={{ fontSize: 12, color: '#64748b' }}>{label}</Typography>
+              <Typography sx={{ fontSize: 21, fontWeight: 700, color: '#374151', mt: 0.5 }}>{valor}</Typography>
+            </Box>)}
+          </Box>
+          {cuotasPagadas.some((cuota) => !cuota.fecha_pago) && <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Las cuotas pagadas sin fecha registrada cuentan como pagadas, pero no se clasifican por momento del pago. Esto puede ocurrir con pagos históricos o saldo a favor.
+          </Typography>}
+        </> : vista === 'pagos' ? <>
+          <Alert severity="info" role="note" sx={{ mb: 2 }}>
+            Aquí se cuenta el dinero recibido por fecha de pago, no las cuotas del mes.
+            {' '}Un pago anticipado de {meses[mes - 1]} recibido en otro mes aparece en ese otro mes.
+            {' '}Un pago agrupado cuenta una sola vez, aunque cubra varias cuotas.
+          </Alert>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>Fecha de pago: {fechaVisible(rango.desde)} al {fechaVisible(rango.hasta)}</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', py: 2, mb: 2 }}>
             {[['Pagos recibidos', pagos.length], ['Alumnos que pagaron', alumnos], ['Confirmado', dinero(total('Confirmado'))], ['En revisión', dinero(total('En revision'))]].map(([label, valor]) => <Box key={label}>
@@ -208,26 +278,35 @@ export default function ReportePagosMensuales({ mes, anioInicial = new Date().ge
           <Typography variant="caption" color="text.secondary">Cuotas completadas con pagos confirmados.</Typography></Box>}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) 220px' }, gap: 1.5, mb: 2 }}>
           <TextField size="small" label="Buscar alumno o representante" value={busqueda} onChange={(event) => { setBusqueda(event.target.value); setPagina(0); }} />
-          {vista === 'pagos' ? <TextField select size="small" label="Estado del pago" value={estado} onChange={(event) => { setEstado(event.target.value); setPagina(0); }}>
+          {vista === 'cuotas' ? <TextField select size="small" label="Estado de la cuota" value={estadoCuota} onChange={(event) => { setEstadoCuota(event.target.value); setPagina(0); }}>
+            <MenuItem value="">Todos</MenuItem>
+            {[...new Set((datos.cuotas_del_mes || []).map((cuota) => cuota.estado))].map((value) => <MenuItem key={value} value={value}>{estadoCuotaVisible(value)}</MenuItem>)}
+          </TextField> : vista === 'pagos' ? <TextField select size="small" label="Estado del pago" value={estado} onChange={(event) => { setEstado(event.target.value); setPagina(0); }}>
             <MenuItem value="">Todos</MenuItem><MenuItem value="Confirmado">Confirmados</MenuItem><MenuItem value="En revision">En revisión</MenuItem>
           </TextField> : <TextField select size="small" label="Tendencia" value={tendencia} onChange={(event) => { setTendencia(event.target.value); setPagina(0); }}>
             <MenuItem value="">Todas</MenuItem>{Object.entries(tendencias).filter(([value]) => value !== 'sin_patron').map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
           </TextField>}
         </Box>
-        {registros.length === 0 ? <Typography sx={{ py: 5, textAlign: 'center', color: '#64748b' }}>{vista === 'pagos' ? 'No hay pagos recibidos para esta selección.' : 'No hay alumnos para esta selección.'}</Typography>
+        {registros.length === 0 ? <Typography sx={{ py: 5, textAlign: 'center', color: '#64748b' }}>{vista === 'cuotas' ? 'No hay cuotas para esta selección.' : vista === 'pagos' ? 'No hay pagos recibidos para esta selección.' : 'No hay alumnos para esta selección.'}</Typography>
           : movil ? visibles.map((item) => <Box component="article" key={item.id || item.id_alumno} sx={{ py: 2, borderBottom: '1px solid #e2e8f0' }}>
-            {vista === 'pagos' ? <><Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1 }}><Typography variant="body2">{fechaVisible(item.fecha)}</Typography>{estadoChip(item)}</Box>
+            {vista === 'cuotas' ? <>{detalleCuota(item)}<Box sx={{ my: 1 }}>{estadoCuotaChip(item)}</Box>
+              <Typography sx={{ fontWeight: 700, mb: 1 }}>{dinero(item.monto)}</Typography>{fechaCuota(item)}</>
+              : vista === 'pagos' ? <><Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mb: 1 }}><Typography variant="body2">{fechaVisible(item.fecha)}</Typography>{estadoChip(item)}</Box>
               {detallePago(item)}<Typography sx={{ fontWeight: 700, mt: 1 }}>{dinero(item.monto)} · {item.metodo}</Typography>
               {item.referencia && <Typography variant="caption" color="text.secondary">Referencia: {item.referencia}</Typography>}</>
               : <><Typography fontWeight={700}>{item.alumno}</Typography><Typography variant="body2" color="text.secondary">{item.representante}</Typography>
                 <Box sx={{ my: 1 }}>{tendenciaHabito(item)}</Box>{evidenciaHabito(item)}</>}
           </Box>) : <TableContainer sx={{ overflowX: 'auto' }}>
-            <Table size="small" aria-label={vista === 'pagos' ? 'Pagos recibidos' : 'Hábitos de pago'} sx={{ minWidth: vista === 'pagos' ? 760 : 620,
+            <Table size="small" aria-label={vista === 'cuotas' ? 'Cuotas del mes' : vista === 'pagos' ? 'Pagos recibidos' : 'Hábitos de pago'} sx={{ minWidth: vista === 'pagos' ? 760 : 620,
               '& th': { bgcolor: '#f8fafc', color: '#64748b', fontSize: 11, fontWeight: 700, py: 1.5 }, '& td': { py: 1.5, verticalAlign: 'top' } }}>
-              <TableHead><TableRow>{(vista === 'pagos' ? ['Fecha de pago', 'Alumnos / mensualidades', `Importe ${moneda}`, 'Método / referencia', 'Estado']
+              <TableHead><TableRow>{(vista === 'cuotas' ? ['Alumno / cuota', `Importe de la cuota ${moneda}`, 'Estado de la cuota', 'Fecha / momento del pago']
+                : vista === 'pagos' ? ['Fecha de pago', 'Alumnos / mensualidades', `Importe ${moneda}`, 'Método / referencia', 'Estado']
                 : ['Alumno', 'Tendencia estimada', 'Evidencia']).map((label) => <TableCell key={label}>{label}</TableCell>)}</TableRow></TableHead>
               <TableBody>{visibles.map((item) => <TableRow key={item.id || item.id_alumno}>
-                {vista === 'pagos' ? <><TableCell sx={{ whiteSpace: 'nowrap' }}>{fechaVisible(item.fecha)}</TableCell><TableCell>{detallePago(item)}</TableCell>
+                {vista === 'cuotas' ? <><TableCell>{detalleCuota(item)}</TableCell>
+                  <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{dinero(item.monto)}</TableCell>
+                  <TableCell>{estadoCuotaChip(item)}</TableCell><TableCell>{fechaCuota(item)}</TableCell></>
+                  : vista === 'pagos' ? <><TableCell sx={{ whiteSpace: 'nowrap' }}>{fechaVisible(item.fecha)}</TableCell><TableCell>{detallePago(item)}</TableCell>
                   <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{dinero(item.monto)}</TableCell><TableCell>{item.metodo}<Typography variant="caption" component="div" color="text.secondary">{item.referencia}</Typography></TableCell><TableCell>{estadoChip(item)}</TableCell></>
                   : <><TableCell><Typography sx={{ fontWeight: 700, fontSize: 13 }}>{item.alumno}</Typography><Typography variant="caption" color="text.secondary">{item.representante}</Typography></TableCell>
                     <TableCell>{tendenciaHabito(item)}</TableCell>

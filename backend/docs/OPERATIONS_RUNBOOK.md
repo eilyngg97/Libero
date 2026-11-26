@@ -17,6 +17,13 @@ Alcance: backup/retencion, monitoreo y rollback backend.
 - Los demas roles conservan el requisito `alumnos.manage`; la previsualizacion y asignacion masiva siguen exigiendo ese permiso tambien al representante.
 - Reiniciar el backend al desplegar esta correccion para cargar el permiso de consulta. La disponibilidad de franela conserva la autenticacion y el formulario envia el token.
 
+## Guardado de reglas de categorias
+
+- `PATCH /api/configuracion` combina los campos de categorias antes de validarlos. Las reglas nuevas reemplazan las anteriores, incluso si estas estaban vacias o eran invalidas.
+- Si se omiten las reglas, conserva las existentes; si no hay reglas almacenadas, usa las predeterminadas. Una lista nueva vacia, rangos invertidos o solapados siguen devolviendo `400` sin guardar.
+- Reiniciar el backend al desplegar. No requiere migraciones. Prueba desde backend: `npm test -- --runTestsByPath tests\categoriasConfig.test.js`.
+- La pantalla de categorias muestra el resultado del guardado y la asignacion en una tarjeta superior derecha, con cierre manual o automatico a los seis segundos. Los errores de previsualizacion permanecen en el dialogo.
+
 ## Edicion de reposos
 
 - Cambiar un reposo activo a `Indefinido` elimina su fecha final. Desde la fecha de inicio, las mensualidades no pagadas quedan `Exento por reposo` con monto esperado 0; las pagadas, incluso futuras, se conservan sin cambios ni devoluciones.
@@ -24,6 +31,10 @@ Alcance: backup/retencion, monitoreo y rollback backend.
 - Un reposo `Finalizado` mantiene su fecha final; los meses fuera del rango vuelven a calcularse segun la configuracion y los pagos del alumno.
 - Editar guarda reposo, mensualidades y ajustes de saldo en una transaccion obligatoria. Un fallo revierte todos esos cambios. Requiere replica set o cluster sharded; sin soporte de transacciones devuelve `503`, sin fallback ni escrituras parciales.
 - Prueba local Mongo: desde backend en PowerShell, `$env:RUN_MONGO_REPOSO_TESTS = '1'; npm test -- --runTestsByPath tests\reposos.mongo.test.js`. Usa solo una base temporal `libero_qa_reposo_*` en `127.0.0.1:27017`, replica set `rs0`, y la elimina al terminar. Desactivar despues con `Remove-Item Env:RUN_MONGO_REPOSO_TESTS`. No ejecutarla contra produccion.
+
+## Exportacion de mensualidades
+
+- El Excel de mensualidades incluye `Fecha de pago` para filas con estado `Pagado`. Usa la fecha mas reciente de los pagos registrados, o la fecha historica de la cuota si no hay detalle. Otros estados y cuotas sin fecha registrada dejan la celda vacia. Conserva los filtros aplicados antes de exportar. Desplegar y reiniciar el backend junto con el frontend para incluir las fechas de los detalles de pago.
 
 ## Eliminacion definitiva de mensualidades
 
@@ -40,7 +51,9 @@ Alcance: backup/retencion, monitoreo y rollback backend.
 - Mensualidades > Reporte de pagos usa el mes seleccionado y la sede actual (o todas las sedes). Requiere un mes concreto; con Todos queda deshabilitado. Dentro del reporte se elige anio y un rango opcional de dias del mismo mes.
 - `GET /api/mensualidades/reporte-pagos?mes=11&anio=2026&id_sede=...&desde=2026-11-01&hasta=2026-11-15` requiere autenticacion y `mensualidades.view`. El rol usuario no puede acceder al reporte colectivo. No admite meses futuros, fechas inexistentes, rangos invertidos ni dias fuera del mes.
 - Consulta exclusivamente la base del tenant; no recalcula cuotas, aplica recargos, consume credito ni escribe documentos. Las fechas administrativas guardadas a medianoche UTC conservan su dia; los timestamps con hora se interpretan en Caracas. Ambos extremos del rango son inclusivos.
-- Pagos recibidos usa la fecha del pago, no el periodo de la cuota. Un pago en noviembre de la cuota de octubre aparece en noviembre e identifica octubre en su desglose. Agrupa por cabecera de PagoAgrupado y no duplica el importe por atleta. Si un grupo cubre varias sedes, solo suma las asignaciones de la sede consultada; el contador cuenta ese grupo una vez en la seleccion.
+- El reporte abre en `Cuotas del mes`: incluye todas las cuotas del mes/anio y sede consultados, independientemente del rango de fechas de caja. Cuenta cuotas pagadas segun su estado vigente e identifica pagos anticipados, en el mes o posteriores usando el pago confirmado que completa la cuota, no el primer abono ni un sobrepago posterior. Las cuotas pagadas sin evidencia de fecha, incluidas las cubiertas con credito, cuentan como pagadas sin inventar una fecha. La respuesta incluye `cuotas_del_mes`; su Excel usa periodo, estado y fecha de cancelacion.
+- `Dinero recibido` (antes `Pagos recibidos`) usa la fecha del pago, no el periodo de la cuota. Un pago en noviembre de la cuota de octubre aparece en noviembre e identifica octubre en su desglose. Agrupa por cabecera de PagoAgrupado y no duplica el importe por atleta. Si un grupo cubre varias sedes, solo suma las asignaciones de la sede consultada; el contador cuenta ese grupo una vez en la seleccion. Esta vista conserva sus importes y filtros; su Excel se identifica como dinero recibido.
+- Ambos Excel colorean la celda `Estado`: verde para pagado/confirmado, rojo para insolvente/retrasado, amarillo para pendiente/en revision, azul para exonerado/becado/reposo y marron para abono.
 - Separa importes confirmados y en revision segun el estado VIGENTE del grupo o la mensualidad; no pretende reconstruir la fecha historica de aprobacion. Rechazados/anulados y aplicaciones de credito sin transferencia no se cuentan como dinero recibido. Sin evidencia de confirmacion no clasifica un pago como confirmado.
 - Habito usa todo el historial registrado de cuotas y pagos, sin limite de tres meses ni corte por el mes/anio/rango de recibidos. Incluye periodos antiguos, el actual y cancelaciones posteriores al mes consultado. Busca el primer pago acumulado que completa cada cuota con pagos confirmados y la tolerancia financiera existente (no el primer abono). Excluye cuotas de inscripcion/reingreso, exoneraciones, becas, reposos exentos y cuotas con credito aplicado/provisional, porque no hay una fecha completa verificable de transferencia para esas cuotas.
 - Clasifica del 1 al 5, del 6 al 15, despues del 15, anticipado o en meses posteriores al periodo de la cuota. Siempre muestra la frecuencia maxima, aunque solo haya una cuota o una coincidencia. Con al menos dos cuotas analizadas, una mayoria estricta se presenta como Habito consistente; en los demas casos indica Mayor frecuencia. Cuando hay empate muestra todas las franjas empatadas con la etiqueta Mayor frecuencia (empate), sin elegir una arbitrariamente ni mostrar Sin franja predominante. Solo sin evidencia indica Sin cuotas completadas. La API conserva franja para consistencia y franja_frecuente para una ganadora unica; franjas_frecuentes contiene TODAS las franjas con frecuencia maxima, o un arreglo vacio sin evidencia. El frontend requiere este arreglo y filtra al alumno por cualquiera de sus franjas maximas. Excel usa la misma descripcion y cantidad de coincidencias por franja.

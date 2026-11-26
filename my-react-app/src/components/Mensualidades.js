@@ -1837,7 +1837,10 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				'Monto total sin recargo': Number(Math.max(0, montoTotal - recargo).toFixed(2)),
 				Recargo: recargo,
 				'Monto total': montoTotal,
-				Estado: m.estatus || '-'
+				Estado: m.estatus || '-',
+				'Fecha de pago': String(m.estatus || '').toLowerCase() === 'pagado' && (m.fecha_ultimo_pago || m.fecha_pago)
+					? formatFechaBonita(m.fecha_ultimo_pago || m.fecha_pago)
+					: ''
 			};
 
 			if (opcionesExportExcel.incluirNombreAtleta) {
@@ -1859,7 +1862,8 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 			'Monto total sin recargo',
 			'Recargo',
 			'Monto total',
-			'Estado'
+			'Estado',
+			'Fecha de pago'
 		];
 
 		const nombreCampos = opcionesExportExcel.incluirNombreAtleta && opcionesExportExcel.incluirNombreRepresentante

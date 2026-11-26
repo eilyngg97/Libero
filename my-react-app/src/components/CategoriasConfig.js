@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  AlertTitle,
   Box,
   Button,
   Dialog,
@@ -9,6 +10,7 @@ import {
   DialogTitle,
   IconButton,
   Paper,
+  Slide,
   Snackbar,
   TextField,
   Tooltip,
@@ -17,6 +19,7 @@ import {
 import Groups2OutlinedIcon from '@mui/icons-material/Groups2Outlined';
 import CloseIcon from '@mui/icons-material/Close';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import {
   DndContext,
   KeyboardSensor,
@@ -36,6 +39,10 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
+
+function NotificationTransition(props) {
+  return <Slide {...props} direction="left" />;
+}
 
 const EMPTY_CATEGORIAS_CONFIG = {
   disciplina: 'voleibol',
@@ -153,8 +160,7 @@ function CategoriasConfig() {
   const [previewCategoriasData, setPreviewCategoriasData] = useState(null);
   const [previewCategoriasError, setPreviewCategoriasError] = useState('');
 
-  const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [aviso, setAviso] = useState(null);
 
   const apiBase = useMemo(() => (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/$/, ''), []);
   const dragSensors = useSensors(
@@ -248,7 +254,11 @@ function CategoriasConfig() {
         if (!active || !res.ok) return;
         setCategoriasConfig(buildCategoriasConfig(payload?.categorias));
       } catch (_) {
-        if (active) setError('No se pudo cargar la configuracion de categorias.');
+        if (active) setAviso({
+          severity: 'error',
+          titulo: 'Error al cargar categorias',
+          mensaje: 'No se pudo cargar la configuracion de categorias.'
+        });
       } finally {
         if (active) setCargandoConfig(false);
       }
@@ -338,7 +348,7 @@ function CategoriasConfig() {
   const guardarCategoriasConfig = async () => {
     try {
       setGuardandoCategoriasConfig(true);
-      setError('');
+      setAviso(null);
       const payloadCategorias = {
         ...categoriasConfig,
         disciplina: String(categoriasConfig.disciplina || '').trim().toLowerCase(),
@@ -366,9 +376,17 @@ function CategoriasConfig() {
       if (!res.ok) throw new Error(data?.error || data?.detalle || 'No se pudo guardar la configuracion de categorias.');
 
       setCategoriasConfig(buildCategoriasConfig(data?.categorias));
-      setSuccessMessage('Configuracion de categorias actualizada.');
+      setAviso({
+        severity: 'success',
+        titulo: 'Reglas de categorias guardadas',
+        mensaje: 'Configuracion de categorias actualizada.'
+      });
     } catch (err) {
-      setError(err.message || 'No se pudo guardar la configuracion de categorias.');
+      setAviso({
+        severity: 'error',
+        titulo: 'Error al guardar reglas',
+        mensaje: err.message || 'No se pudo guardar la configuracion de categorias.'
+      });
     } finally {
       setGuardandoCategoriasConfig(false);
     }
@@ -377,16 +395,24 @@ function CategoriasConfig() {
   const asignarCategorias = async () => {
     try {
       setAsignandoCategorias(true);
-      setError('');
+      setAviso(null);
       const res = await fetch(`${API_BASE}/api/alumnos/asignar-categorias`, {
         method: 'PUT',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'No se pudieron asignar las categorias');
-      setSuccessMessage(data?.message || 'Categorias asignadas correctamente');
+      setAviso({
+        severity: 'success',
+        titulo: 'Categorias asignadas',
+        mensaje: data?.message || 'Categorias asignadas correctamente'
+      });
     } catch (err) {
-      setError(err.message || 'No se pudieron asignar las categorias');
+      setAviso({
+        severity: 'error',
+        titulo: 'Error al asignar categorias',
+        mensaje: err.message || 'No se pudieron asignar las categorias'
+      });
     } finally {
       setAsignandoCategorias(false);
     }
@@ -420,16 +446,53 @@ function CategoriasConfig() {
 
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto' }}>
-      <Snackbar
-        open={!!successMessage}
-        autoHideDuration={3000}
-        onClose={() => setSuccessMessage('')}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      {aviso && <Snackbar
+        open
+        autoHideDuration={6000}
+        onClose={(event, motivo) => { if (motivo !== 'clickaway') setAviso(null); }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        TransitionComponent={NotificationTransition}
+        sx={{
+          top: { xs: 'calc(16px + env(safe-area-inset-top, 0px))', sm: 24 },
+          right: { xs: 16, sm: 24 }, left: { xs: 16, sm: 'auto' }, bottom: 'auto',
+          width: { xs: 'auto', sm: 400 }, maxWidth: 'calc(100% - 32px)', transform: 'none'
+        }}
       >
-        <Alert onClose={() => setSuccessMessage('')} severity="success" sx={{ width: '100%' }}>
-          {successMessage}
+        <Alert
+          role={aviso.severity === 'error' ? 'alert' : 'status'}
+          aria-label={aviso.titulo}
+          aria-live={aviso.severity === 'error' ? 'assertive' : 'polite'}
+          aria-atomic="true"
+          severity={aviso.severity}
+          closeText="Cerrar notificacion"
+          onClose={() => setAviso(null)}
+          iconMapping={{ success: <CheckCircleOutlineRoundedIcon sx={{ fontSize: 22 }} /> }}
+          sx={{
+            width: '100%', boxSizing: 'border-box', alignItems: 'start', gap: 1.5, p: 2,
+            bgcolor: '#fff', border: '1px solid #e8eaf1',
+            borderLeft: `4px solid ${aviso.severity === 'error' ? '#dc2626' : '#d93670'}`,
+            borderRadius: 2, boxShadow: '0 12px 32px rgba(17,19,66,0.16)',
+            '& .MuiAlert-icon': {
+              width: 36, height: 36, flexShrink: 0, p: 0, m: 0,
+              color: aviso.severity === 'error' ? '#dc2626' : '#d93670',
+              display: 'grid', placeItems: 'center',
+              bgcolor: aviso.severity === 'error' ? '#fef2f2' : '#fff0f5', borderRadius: 1.5
+            },
+            '& .MuiAlert-message': { minWidth: 0, flex: 1, p: 0, overflowWrap: 'anywhere' },
+            '& .MuiAlert-action': {
+              p: 0, m: 0,
+              '& .MuiIconButton-root': { width: 28, height: 28, color: '#858b9b' }
+            }
+          }}
+        >
+          <AlertTitle sx={{ mb: 0.5, fontSize: 14, fontWeight: 750, color: '#111342', lineHeight: 1.4 }}>
+            {aviso.titulo}
+          </AlertTitle>
+          <Typography sx={{ fontSize: 12, color: '#7a8194', lineHeight: 1.5 }}>
+            {aviso.mensaje}
+          </Typography>
         </Alert>
-      </Snackbar>
+      </Snackbar>}
 
       <Typography sx={{ fontSize: { xs: 24, md: 30 }, fontWeight: 900, color: '#0f172a', mb: 0.5 }}>
         Categorias
@@ -437,10 +500,6 @@ function CategoriasConfig() {
       <Typography sx={{ color: '#475569', mb: 2.5 }}>
         Configura las reglas de categorias de tu academia.
       </Typography>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-      )}
 
       <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
         <Box sx={sectionHeaderSx}>

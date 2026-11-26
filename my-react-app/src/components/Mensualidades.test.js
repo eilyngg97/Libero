@@ -155,14 +155,14 @@ test('archivo de eliminadas oculta el acceso sin permiso de gestion', async () =
 test('reporte de pagos utiliza el mes seleccionado y se deshabilita con Todos', async () => {
   const original = global.fetch.getMockImplementation();
   global.fetch.mockImplementation(async (url, options) => url.includes('/reporte-pagos?')
-    ? { ok: true, json: async () => ({ pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
+    ? { ok: true, json: async () => ({ cuotas_del_mes: [], pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
     : original(url, options));
   render(<Mensualidades />);
   await screen.findByRole('button', { name: 'Ver detalle' });
   fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Mes', exact: true }));
   fireEvent.click(await screen.findByRole('option', { name: 'Octubre', exact: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Reporte de pagos', exact: true }));
-  expect(await screen.findByText('No hay pagos recibidos para esta selección.')).toBeInTheDocument();
+  expect(await screen.findByText('No hay cuotas para esta selección.')).toBeInTheDocument();
   expect(global.fetch.mock.calls.find(([url]) => url.includes('/reporte-pagos?'))[0]).toContain('mes=10');
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar reporte' }));
   await screen.findByRole('button', { name: 'Reporte de pagos', exact: true });
@@ -236,11 +236,42 @@ test.each([
   await waitFor(() => expect(exportToExcel).toHaveBeenCalledTimes(1));
   const [filas, , encabezados, opciones] = exportToExcel.mock.calls[0];
   expect(encabezados).toEqual([
-    'Alumno', 'Representante', 'Categoria', 'Sede', 'Mes', 'Anio', 'Monto total sin recargo', 'Recargo', 'Monto total', 'Estado'
+    'Alumno', 'Representante', 'Categoria', 'Sede', 'Mes', 'Anio', 'Monto total sin recargo', 'Recargo', 'Monto total', 'Estado', 'Fecha de pago'
   ]);
   expect(filas[0]).toMatchObject({ 'Monto total sin recargo': sinRecargo, Recargo: recargo, 'Monto total': total });
   expect(opciones.numberColumns).toEqual(['Monto total sin recargo', 'Recargo', 'Monto total']);
   expect(opciones.numberFormat).toBe('#,##0.00');
+});
+
+test.each([
+  ['Pagado', '2026-10-06T00:00:00.000Z', '2026-10-01', '06 oct 2026'],
+  ['Pagado', null, '2026-10-01', '01 oct 2026'],
+  ['Pagado', null, null, ''],
+  ['Abono', '2026-10-06', '2026-10-01', ''],
+  ['En revision', '2026-10-06', '2026-10-01', '']
+])('exporta fecha de pago solo para %s: %s / %s', async (estatus, ultimaFecha, fechaLegacy, esperado) => {
+  exportToExcel.mockClear();
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    const respuesta = await original(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [mensualidad] = await respuesta.json();
+    return { ok: true, json: async () => [{ ...mensualidad, estatus,
+      fecha_ultimo_pago: ultimaFecha, fecha_pago: fechaLegacy }] };
+  });
+  render(<Mensualidades />);
+  await screen.findByRole('button', { name: 'Ver detalle' });
+  if (estatus === 'Pagado') {
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Estado', exact: true }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Pagado', exact: true }));
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Aplicar' }));
+  await waitFor(() => expect(exportToExcel).toHaveBeenCalledTimes(1));
+  const [filas, , encabezados] = exportToExcel.mock.calls[0];
+  expect(encabezados).toContain('Fecha de pago');
+  expect(filas).toHaveLength(1);
+  expect(filas[0]).toMatchObject({ Estado: estatus, 'Fecha de pago': esperado });
 });
 
 test.each(['Zelle', 'PayPal', 'Binance'])('detalle de %s muestra el monto real en divisa y no cero Bs', async (metodo) => {
@@ -637,14 +668,14 @@ test('reporte abre el año futuro seleccionado y se bloquea con todos los años'
   const futuro = new Date().getFullYear() + 1;
   const original = global.fetch.getMockImplementation();
   global.fetch.mockImplementation(async (url, options) => url.includes('/reporte-pagos?')
-    ? { ok: true, json: async () => ({ pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
+    ? { ok: true, json: async () => ({ cuotas_del_mes: [], pagos: [], habitos: [], periodos_habito: [], resumen: { pagos: 0 } }) }
     : original(url, options));
   render(<Mensualidades />);
   await screen.findByRole('button', { name: 'Ver detalle' });
   fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Año', exact: true }));
   fireEvent.click(await screen.findByRole('option', { name: String(futuro), exact: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Reporte de pagos', exact: true }));
-  expect(await screen.findByText('No hay pagos recibidos para esta selección.')).toBeInTheDocument();
+  expect(await screen.findByText('No hay cuotas para esta selección.')).toBeInTheDocument();
   const [url] = global.fetch.mock.calls.find(([ruta]) => ruta.includes('/reporte-pagos?'));
   const params = new URLSearchParams(url.split('?')[1]);
   expect(params.get('anio')).toBe(String(futuro));

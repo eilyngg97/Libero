@@ -47,6 +47,17 @@ function estadoPago(pago, cuota) {
   return ['Pagado', 'Abono', 'Insolvente', 'Retrasado'].includes(cuota.estatus) ? 'Confirmado' : 'En revision';
 }
 
+function fechaCancelacionCuota(cuota, pagos) {
+  const acumulados = [];
+  for (const pago of ordenarPagos(pagos.filter((item) => item.estado_reporte === 'Confirmado'))) {
+    acumulados.push(pago);
+    if (obtenerCoberturaMensualidad(cuota.monto_esperado, acumulados).cubreEsperadoConTolerancia) {
+      return pago.fecha_pago;
+    }
+  }
+  return null;
+}
+
 function construirReportePagos({ alumnos = [], mensualidades = [], pagos = [], periodo, sede }) {
   const cuotas = new Map(mensualidades.map((cuota) => [id(cuota), cuota]));
   const pagosPorCuota = new Map();
@@ -97,6 +108,24 @@ function construirReportePagos({ alumnos = [], mensualidades = [], pagos = [], p
   resumen.total_confirmado /= 100;
   resumen.total_en_revision /= 100;
 
+  const periodoCuotas = `${periodo.anio}-${String(periodo.mes).padStart(2, '0')}`;
+  const cuotasDelMes = mensualidades.filter((cuota) => cuota.id_alumno?._id && dentroSede(cuota.id_alumno)
+    && Number(cuota.mes) === periodo.mes && Number(cuota.anio) === periodo.anio).map((cuota) => {
+    const alumno = cuota.id_alumno;
+    const estado = Number(cuota.credito_en_revision) > 0 ? 'En revision'
+      : cuota.estatus === 'Retrasado' ? 'Insolvente' : cuota.estatus;
+    const evidencias = pagosPorCuota.get(id(cuota)) || [];
+    const fecha = estado === 'Pagado' && Number(cuota.credito_aplicado || 0) === 0
+      ? (fechaCancelacionCuota(cuota, evidencias)
+        || (evidencias.length === 0 ? fechaCalendarioPago(cuota.fecha_pago) : null))
+      : null;
+    const momento = !fecha ? null : fecha.slice(0, 7) < periodoCuotas ? 'anticipado'
+      : fecha.slice(0, 7) > periodoCuotas ? 'posterior' : 'en_mes';
+    return { id: id(cuota), id_alumno: id(alumno), alumno: nombre(alumno),
+      representante: nombre(alumno.representante), mes: Number(cuota.mes), anio: Number(cuota.anio),
+      monto: importe(cuota.monto_esperado) / 100, estado, fecha_pago: fecha, momento_pago: momento };
+  }).sort((primero, segundo) => primero.alumno.localeCompare(segundo.alumno, 'es') || primero.id.localeCompare(segundo.id));
+
   const periodosHabito = new Map();
   const observaciones = new Map();
   for (const cuota of mensualidades) {
@@ -105,17 +134,7 @@ function construirReportePagos({ alumnos = [], mensualidades = [], pagos = [], p
       || cuota.es_inscripcion || cuota.tipo_registro_inicial || Number(cuota.credito_aplicado) > 0
       || Number(cuota.credito_en_revision) > 0 || ['Becado', 'Exonerado', 'Exento por reposo'].includes(cuota.estatus)
       || importe(cuota.monto_esperado) <= 0) continue;
-    const confirmados = ordenarPagos((pagosPorCuota.get(id(cuota)) || [])
-      .filter((pago) => pago.estado_reporte === 'Confirmado'));
-    const acumulados = [];
-    let completada;
-    for (const pago of confirmados) {
-      acumulados.push(pago);
-      if (obtenerCoberturaMensualidad(cuota.monto_esperado, acumulados).cubreEsperadoConTolerancia) {
-        completada = pago.fecha_pago;
-        break;
-      }
-    }
+    const completada = fechaCancelacionCuota(cuota, pagosPorCuota.get(id(cuota)) || []);
     if (!completada) continue;
     periodosHabito.set(`${cuota.anio}-${cuota.mes}`, { mes: cuota.mes, anio: cuota.anio });
     const dia = Number(completada.slice(8));
@@ -145,7 +164,7 @@ function construirReportePagos({ alumnos = [], mensualidades = [], pagos = [], p
   }).sort((primero, segundo) => primero.alumno.localeCompare(segundo.alumno, 'es'));
   return { periodo: { mes: periodo.mes, anio: periodo.anio, desde: periodo.desde, hasta: periodo.hasta },
     periodos_habito: [...periodosHabito.values()].sort((primero, segundo) => primero.anio - segundo.anio || primero.mes - segundo.mes),
-    resumen, pagos: registros, habitos };
+    resumen, cuotas_del_mes: cuotasDelMes, pagos: registros, habitos };
 }
 
 module.exports = { fechaCalendarioPago, resolverPeriodoReporte, construirReportePagos };

@@ -2679,7 +2679,8 @@ exports.getMensualidades = async (req, res) => {
           {
             $group: {
               _id: '$id_mensualidad',
-              total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } }
+              total_pagado: { $sum: { $ifNull: ['$monto_pagado', 0] } },
+              fecha_ultimo_pago: { $max: '$fecha_pago' }
             }
           }
         ])
@@ -2687,6 +2688,9 @@ exports.getMensualidades = async (req, res) => {
 
     const totalPagadoMap = new Map(
       pagosPorMensualidad.map((item) => [String(item._id), redondearMonto(item.total_pagado)])
+    );
+    const fechaUltimoPagoMap = new Map(
+      pagosPorMensualidad.map((item) => [String(item._id), item.fecha_ultimo_pago])
     );
 
     const detallesAgrupados = mensualidadIds.length > 0
@@ -2723,6 +2727,9 @@ exports.getMensualidades = async (req, res) => {
       const componentes = obtenerComponentesMensualidad(raw);
 
       raw.total_pagado = totalPagado;
+      raw.fecha_ultimo_pago = String(raw.estatus || '').toLowerCase() === 'pagado'
+        ? (fechaUltimoPagoMap.get(String(raw._id)) || raw.fecha_pago || null)
+        : null;
       raw.saldo_pendiente = saldoPendiente;
       raw.monto_total = redondearMonto(raw.monto_esperado || 0);
       raw.monto_mensualidad_visual = componentes.componenteMensualidad;

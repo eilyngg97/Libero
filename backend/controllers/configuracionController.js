@@ -787,7 +787,10 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
   }
 
   if (root.categorias && typeof root.categorias === 'object') {
-    const existingCategorias = normalizeCategoriasPayload(existingConfig?.categorias || {}, DEFAULT_CONFIG.categorias);
+    const existingCategorias = existingConfig?.categorias || {};
+    const existingReglas = Array.isArray(existingCategorias.reglas) && existingCategorias.reglas.length > 0
+      ? existingCategorias.reglas
+      : DEFAULT_CONFIG.categorias.reglas;
     const mergedCategoriasInput = {
       ...existingCategorias,
       ...root.categorias,
@@ -795,7 +798,7 @@ function normalizeConfigPatchPayload(payload = {}, existingConfig = {}) {
         ...existingCategorias.fecha_corte,
         ...(root.categorias.fecha_corte || {})
       },
-      reglas: root.categorias.reglas !== undefined ? root.categorias.reglas : existingCategorias.reglas
+      reglas: root.categorias.reglas !== undefined ? root.categorias.reglas : existingReglas
     };
 
     patch.categorias = normalizeCategoriasPayload(mergedCategoriasInput, DEFAULT_CONFIG.categorias);

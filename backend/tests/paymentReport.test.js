@@ -77,6 +77,45 @@ test('fecha de pago y no periodo de cuota determina los recibidos', () => {
   expect(resultado.pagos[0].asignaciones[0]).toMatchObject({ mes: 10 });
 });
 
+test('dos cuotas de noviembre pagadas cuentan en noviembre aunque una se pago en octubre', () => {
+  const resultado = construirReportePagos({ alumnos: [alumno], mensualidades: [
+    cuota(11), cuota(11, { _id: 'm2', id_alumno: { ...alumno, _id: 'a2', nombres: 'Ana' } }), cuota(10)
+  ], pagos: [
+    pago(11, 1, { fecha_pago: '2026-10-25' }),
+    pago(11, 5, { _id: 'p2', id_mensualidad: 'm2' })
+  ], periodo: periodo() });
+  expect(resultado.cuotas_del_mes).toHaveLength(2);
+  expect(resultado.cuotas_del_mes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'm11', estado: 'Pagado', fecha_pago: '2026-10-25', momento_pago: 'anticipado' }),
+    expect.objectContaining({ id: 'm2', estado: 'Pagado', fecha_pago: '2026-11-05', momento_pago: 'en_mes' })
+  ]));
+  expect(resultado.resumen).toMatchObject({ pagos: 1, total_confirmado: 20 });
+});
+
+test('cuotas no dependen del rango de caja y fecha de cancelacion no es un abono ni un sobrepago posterior', () => {
+  const resultado = construirReportePagos({ alumnos: [alumno], mensualidades: [cuota(11)],
+    pagos: [pago(11, 1, { monto_pagado: 5 }), pago(11, 15, { monto_pagado: 15 }), pago(11, 20, { monto_pagado: 2 })],
+    periodo: resolverPeriodoReporte({ mes: 11, anio: 2026, desde: '2026-11-01', hasta: '2026-11-05' }, new Date('2026-11-26')) });
+  expect(resultado.cuotas_del_mes[0]).toMatchObject({ fecha_pago: '2026-11-15', momento_pago: 'en_mes' });
+  expect(resultado.resumen.pagos).toBe(1);
+});
+
+test('cuotas pagadas posteriores, historicas, con credito y sin fecha se distinguen sin inventar pagos', () => {
+  const resultado = construirReportePagos({ alumnos: [alumno], mensualidades: [
+    cuota(11), cuota(11, { _id: 'historica', fecha_pago: '2026-10-01' }),
+    cuota(11, { _id: 'credito', credito_aplicado: 20, fecha_pago: '2026-11-01' }),
+    cuota(11, { _id: 'sin-fecha' }), cuota(11, { _id: 'abono', estatus: 'Abono' })
+  ], pagos: [pago(11, 1, { fecha_pago: '2026-12-03' }), pago(11, 2, { id_mensualidad: 'abono', monto_pagado: 5 })],
+  periodo: periodo() });
+  expect(resultado.cuotas_del_mes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'm11', fecha_pago: '2026-12-03', momento_pago: 'posterior' }),
+    expect.objectContaining({ id: 'historica', fecha_pago: '2026-10-01', momento_pago: 'anticipado' }),
+    expect.objectContaining({ id: 'credito', estado: 'Pagado', fecha_pago: null, momento_pago: null }),
+    expect.objectContaining({ id: 'sin-fecha', estado: 'Pagado', fecha_pago: null, momento_pago: null }),
+    expect.objectContaining({ id: 'abono', estado: 'Abono', fecha_pago: null, momento_pago: null })
+  ]));
+});
+
 test('agrupado cuenta una transferencia, dos alumnos e importes en centavos', () => {
   const grupo = { _id: 'g1', estado: 'Conciliado', fecha_pago: '2026-11-05', codigo: 'PA-QA' };
   const resultado = construirReportePagos({ alumnos: [alumno], mensualidades: [cuota(11), cuota(11, {
@@ -117,6 +156,8 @@ test('grupo entre sedes suma solo asignaciones de la sede consultada', () => {
     _id: 'm2', id_alumno: { ...alumno, _id: 'a2', sede: { _id: 's2' } } })], pagos: [pago(11, 5, { id_pago_agrupado: grupo }),
     pago(11, 5, { _id: 'p2', id_mensualidad: 'm2', id_pago_agrupado: grupo })], sede: 's1', periodo: periodo() });
   expect(resultado.resumen).toMatchObject({ pagos: 1, alumnos: 1, total_confirmado: 20 });
+  expect(resultado.cuotas_del_mes).toHaveLength(1);
+  expect(resultado.cuotas_del_mes[0].id_alumno).toBe('a1');
 });
 
 test('rango incluye extremos y excluye pagos fuera del intervalo', () => {

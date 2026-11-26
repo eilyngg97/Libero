@@ -544,6 +544,39 @@ describe('Backend smoke tests', () => {
     expect(PagoDetalle.create).not.toHaveBeenCalled();
   });
 
+  test('GET mensualidades expone fecha del ultimo pago solo para cuotas pagadas y conserva fechas historicas', async () => {
+    const token = makeToken({ id: 'u1', rol: 'admin', permisos: ['mensualidades.manage'] });
+    const base = { id_alumno: { _id: 'a1', nombres: 'Ana', saldo_a_favor_mensualidades: 0 },
+      mes: 10, anio: 2026, monto_esperado: 15, estatus: 'Pagado' };
+    const cuotas = [
+      { ...base, _id: 'pagada', fecha_pago: '2026-10-01' },
+      { ...base, _id: 'historica', fecha_pago: '2026-10-02' },
+      { ...base, _id: 'sin-fecha' },
+      { ...base, _id: 'revision', estatus: 'En revision', fecha_pago: '2026-10-03' }
+    ];
+    Mensualidad.find.mockReturnValue({
+      populate: jest.fn().mockResolvedValue(cuotas),
+      then: (resolve, reject) => Promise.resolve(cuotas).then(resolve, reject)
+    });
+    PagoDetalle.find.mockImplementation((filter) => filter.id_pago_agrupado
+      ? { select: jest.fn().mockResolvedValue([]) } : Promise.resolve([]));
+    PagoDetalle.aggregate = jest.fn().mockResolvedValue([
+      { _id: 'pagada', total_pagado: 15, fecha_ultimo_pago: new Date('2026-10-06T00:00:00.000Z') },
+      { _id: 'revision', total_pagado: 15, fecha_ultimo_pago: new Date('2026-10-07T00:00:00.000Z') }
+    ]);
+    const res = await request(app).get('/api/mensualidades?mes=10&anio=2026').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.map(({ _id, fecha_ultimo_pago }) => ({ _id, fecha_ultimo_pago }))).toEqual([
+      { _id: 'pagada', fecha_ultimo_pago: '2026-10-06T00:00:00.000Z' },
+      { _id: 'historica', fecha_ultimo_pago: '2026-10-02' },
+      { _id: 'sin-fecha', fecha_ultimo_pago: null },
+      { _id: 'revision', fecha_ultimo_pago: null }
+    ]);
+    expect(PagoDetalle.aggregate).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ $group: expect.objectContaining({ fecha_ultimo_pago: { $max: '$fecha_pago' } }) })
+    ]));
+  });
+
   test('roles internos sin permiso de gestion no acceden ni editan pagos agrupados', async () => {
     const token = makeToken({ id: 'u1', rol: 'entrenador', permisos: [], nombre: 'Entrenador' });
     const consulta = await request(app).get('/api/pagos/agrupado/pa1').set('Authorization', `Bearer ${token}`);
