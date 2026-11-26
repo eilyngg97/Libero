@@ -16,6 +16,9 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloseIcon from '@mui/icons-material/Close';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PaymentIcon from '@mui/icons-material/Payment';
+import ReceiptOutlinedIcon from '@mui/icons-material/ReceiptOutlined';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import PaymentsIcon from '@mui/icons-material/Payments';
@@ -24,6 +27,7 @@ import { useDolar } from '../context/DolarContext';
 import { obtenerTasaOficialPorFecha, obtenerTasaEuroOficialPorFecha } from '../utils/dolarHistorico';
 import { normalizeMetodoPago, metodoRequiereReferencia, ADDITIONAL_PAYMENT_METHODS, esMetodoPagoAdicional, referenciaPagoValida } from '../utils/paymentMethod';
 import { mediaUrl } from '../utils/mediaUrl';
+import ReciboPagoButton from './ReciboPago';
 
 // Eliminar pagosEjemplo, usaremos datos reales
 
@@ -881,6 +885,29 @@ function PagosAlumno(props) {
               <Box component="span" sx={{ fontWeight: 700 }}>{typeof sede?.nombre === 'object' ? sede.nombre.nombre : sede?.nombre || '-'}</Box>
             </Typography>
           </Box>
+          <Box component="section" aria-label="Descarga de recibos" sx={{
+            display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' },
+            justifyContent: 'space-between', gap: 2, mb: 3, p: { xs: 2, sm: 2.5 },
+            bgcolor: '#f1f5fb', border: '1px solid #dce5f1', borderRadius: 3
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                width: 44, height: 44, borderRadius: 2, bgcolor: '#e2eaf5', color: '#334155'
+              }}>
+                <ReceiptOutlinedIcon />
+              </Box>
+              <Box>
+                <Typography component="h2" sx={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                  Todos tus recibos
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mt: 0.25, fontSize: 12 }}>
+                  Los pagos de todos tus atletas hasta hoy, en un solo PDF.
+                </Typography>
+              </Box>
+            </Box>
+            <ReciboPagoButton todos label="Descargar PDF" destacado startIcon={<FileDownloadOutlinedIcon />} />
+          </Box>
           <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 3 }}>
             <Button
               startIcon={<PendingActionsIcon sx={{ fontSize: 18 }} />}
@@ -1242,6 +1269,21 @@ function PagosAlumno(props) {
                           </Button>
                         </span>
                       </Tooltip>
+                    ) : estado === 'pagado' ? (
+                      <Box sx={{
+                        display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 0.75, mt: 0.75,
+                        '& > .MuiButton-root': {
+                          minHeight: 32, px: 1.5, py: 0.5, borderRadius: 999, fontSize: 12, fontWeight: 700,
+                          color: '#526079', bgcolor: 'rgba(255, 255, 255, 0.72)', border: '1px solid #dce3ee', boxShadow: 'none',
+                          '&:hover': { bgcolor: '#eef2f8', borderColor: '#b9c6d9' },
+                          '&.Mui-disabled': { color: '#94a3b8', borderColor: '#e2e8f0', bgcolor: '#f8fafc' },
+                          '& .MuiButton-startIcon': { mr: 0.65, ml: 0 },
+                          '& .MuiSvgIcon-root': { fontSize: 16 }
+                        }
+                      }}>
+                        <ReciboPagoButton mensualidadId={pago.id} startIcon={<ReceiptOutlinedIcon />} />
+                        <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => handleVerDetalle(pago)}>Ver detalle</Button>
+                      </Box>
                     ) : (
                       <Button
                         variant="text"

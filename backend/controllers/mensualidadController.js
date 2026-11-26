@@ -17,6 +17,7 @@ const { obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCover
 const { cotizarCreditosAlumno, proyectarCreditoMensualidades, obtenerTrazabilidadCredito, tomarCredito,
   actualizarRevisionCredito, sincronizarCreditoAlumno } = require('../services/monthlyCredit');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
+const { guardarMensualidadConRecibo } = require('../services/paymentReceipt');
 const SALDO_A_FAVOR_CONSUMIDO_ERROR = 'El saldo a favor de esta mensualidad ya fue consumido en meses posteriores.';
 
 function esErrorSaldoAFavorConsumido(err) {
@@ -852,7 +853,7 @@ async function crearMensualidadParaPeriodo(
     PagoDetalle: PagoDetalleModel
   } = resolveMensualidadModels(models);
 
-  if (!session && Number(alumno.saldo_a_favor_mensualidades) > 0) {
+  if (!session && (Number(alumno.saldo_a_favor_mensualidades) > 0 || estatusManual === 'Pagado')) {
     const resultado = await ejecutarConTransaccion(MensualidadModel, async (sesion) => {
       const vigente = await aplicarSession(resolveMensualidadModels(models).Alumno.findById(alumno._id), sesion);
       if (!vigente) throw Object.assign(new Error('Alumno no encontrado'), { status: 404 });
@@ -970,7 +971,7 @@ async function crearMensualidadParaPeriodo(
     fecha_aplicacion_recargo: snapshotRecargo.recargoAplicadoUsd > 0 ? new Date() : undefined,
     monto_esperado: snapshotRecargo.montoEsperado,
     fecha_vencimiento: fechaVencimiento,
-    estatus,
+    estatus: estatus === 'Pagado' ? 'Pendiente' : estatus,
     ...(esInscripcion ? { es_inscripcion: true } : {}),
     ...(metadataInscripcion && {
       monto_inscripcion: metadataInscripcion.montoInscripcion,
@@ -1017,6 +1018,10 @@ async function crearMensualidadParaPeriodo(
     }
   }
 
+  if (estatus === 'Pagado') {
+    mensualidad.estatus = estatus;
+    await guardarMensualidadConRecibo(mensualidad, { session });
+  }
   const consultaMensualidadCreada = aplicarSession(MensualidadModel.findById(mensualidad._id), session);
   const mensualidadPopulada = typeof consultaMensualidadCreada?.populate === 'function'
     ? await consultaMensualidadCreada.populate('id_alumno')
@@ -1257,7 +1262,7 @@ async function recalcularMensualidadPorPagos(
 
   await actualizarRevisionCredito(mensualidad, resolveMensualidadModels(models));
   if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
-  await mensualidad.save();
+  await guardarMensualidadConRecibo(mensualidad);
 
   return {
     totalPagado,
@@ -2902,7 +2907,7 @@ exports.confirmarMensualidad = async (req, res) => {
       }
       actual.pago_en_revision = false;
       actual.estatus = 'Pagado';
-      await actual.save(session ? { session } : undefined);
+      await guardarMensualidadConRecibo(actual, { session });
       await sincronizarCreditoAlumno(actual.id_alumno?._id || actual.id_alumno, models, { session });
       return actual;
     }, { obligatoria: true });

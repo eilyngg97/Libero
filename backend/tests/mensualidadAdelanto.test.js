@@ -14,6 +14,9 @@ jest.mock('../models/Reposo', () => ({}));
 jest.mock('../models/PagoDetalle', () => ({}));
 jest.mock('../models/Representante', () => ({}));
 jest.mock('../models/HistorialEstadoAlumno', () => ({}));
+jest.mock('../services/paymentReceipt', () => ({
+  guardarMensualidadConRecibo: (mensualidad, { session } = {}) => mensualidad.save(session ? { session } : undefined)
+}));
 
 const mongoose = require('mongoose');
 const { getTenantModel } = require('../services/tenantModelService');
@@ -440,11 +443,13 @@ describe('registrarPrimeraMensualidad', () => {
       findById: jest.fn().mockResolvedValue(alumnoDoc)
     };
 
+    const session = { withTransaction: async (callback) => callback(), endSession: jest.fn().mockResolvedValue(undefined) };
     const TenantMensualidad = {
+      db: { startSession: jest.fn().mockResolvedValue(session) },
       findOne: jest.fn().mockReturnValue(queryPopulate(null)),
       create: jest
         .fn()
-        .mockResolvedValueOnce({ _id: 'm-jul' })
+        .mockResolvedValueOnce({ _id: 'm-jul', save: jest.fn().mockResolvedValue(true) })
         .mockResolvedValueOnce({ _id: 'm-ago' }),
       findById: jest.fn().mockImplementation((id) => queryPopulate(mensualidadesPopuladas[id]))
     };
@@ -516,18 +521,19 @@ describe('registrarPrimeraMensualidad', () => {
     expect(TenantMensualidad.create).toHaveBeenCalledTimes(2);
     expect(TenantMensualidad.create).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({
+      [expect.objectContaining({
         id_alumno: 'a3',
         mes: 7,
         anio: 2026,
         monto_base: 40,
         monto_esperado: 40,
-        estatus: 'Pagado',
+        estatus: 'Pendiente',
         es_inscripcion: true,
         monto_inscripcion: 15,
         monto_primera_mensualidad: 25,
         referencia: '701278'
-      })
+      })],
+      { session }
     );
     expect(TenantMensualidad.create).toHaveBeenNthCalledWith(
       2,
@@ -541,10 +547,11 @@ describe('registrarPrimeraMensualidad', () => {
     );
 
     expect(PagoDetalleModel.create).toHaveBeenCalledWith(
-      expect.objectContaining({
+      [expect.objectContaining({
         referencia: '701278',
         monto_pagado: 40
-      })
+      })],
+      { session }
     );
 
     expect(res.json).toHaveBeenCalledWith(

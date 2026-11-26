@@ -9,6 +9,7 @@ const { getTenantModel } = require('../services/tenantModelService');
 const { registrarOperacion } = require('../services/operacionService');
 const { hasRequestPermission } = require('../middleware/auth');
 const { aplicarSession, ejecutarConTransaccion } = require('../services/financeTransaction');
+const { guardarMensualidadConRecibo } = require('../services/paymentReceipt');
 const { MONTO_TOLERANCIA_BS, obtenerCoberturaMensualidad } = require('../services/monthlyPaymentCoverage');
 const { actualizarRevisionCredito, sincronizarCreditoAlumno, liberarCreditoOrigen } = require('../services/monthlyCredit');
 const { confirmarPagoCampania, agruparPagosCampania } = require('../services/campaniaPaymentConfirmation');
@@ -1232,13 +1233,13 @@ exports.confirmarMatchTotal = async (req, res) => {
         mensualidad.estatus = totalPagado <= 0 ? 'Pendiente' : (cubreEsperadoConTolerancia ? 'Pagado' : 'Abono');
         await actualizarRevisionCredito(mensualidad, tenantModels, { session });
         if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
-        await mensualidad.save(session ? { session } : undefined);
+        await guardarMensualidadConRecibo(mensualidad, { session });
         if (tieneCredito) await sincronizarCreditoAlumno(mensualidad.id_alumno?._id || mensualidad.id_alumno, tenantModels, { session });
         actualizadas += 1;
       }
       return actualizadas;
     };
-    const actualizadas = await ejecutarConTransaccion(TenantPagoAgrupado, confirmar, { obligatoria: pagosAgrupados.length > 0 });
+    const actualizadas = await ejecutarConTransaccion(TenantPagoAgrupado, confirmar, { obligatoria: true });
 
     await registrarOperacion(req, {
       tipo: 'conciliacion_bancaria',
@@ -1330,7 +1331,7 @@ exports.rechazarPagoAgrupado = async (req, res) => {
         }
         await actualizarRevisionCredito(mensualidad, tenantModels, { session });
         if (mensualidad.credito_en_revision > 0) mensualidad.estatus = 'En revision';
-        await mensualidad.save({ session });
+        await guardarMensualidadConRecibo(mensualidad, { session });
         actualizadas += 1;
       }
       Object.assign(pagoAgrupado, { motivo_rechazo: grupo.motivo_rechazo });

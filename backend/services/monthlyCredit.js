@@ -1,5 +1,6 @@
 const estadosPagables = new Set(['pendiente', 'retrasado', 'insolvente', 'abono']);
 const { aplicarSession } = require('./financeTransaction');
+const { guardarMensualidadConRecibo } = require('./paymentReceipt');
 const { obtenerCoberturaMensualidad } = require('./monthlyPaymentCoverage');
 const centavos = (valor) => Math.round(Number(valor || 0) * 100);
 const alumnoId = (mensualidad) => String(mensualidad.id_alumno?._id || mensualidad.id_alumno);
@@ -92,7 +93,7 @@ async function sincronizarCreditoAlumno(id, models, { session } = {}) {
     if (!['Exonerado', 'Becado', 'Exento por reposo'].includes(mensualidad.estatus)) {
       mensualidad.estatus = estadoConCredito(mensualidad, pagos);
     }
-    await mensualidad.save(session ? { session } : undefined);
+    await guardarMensualidadConRecibo(mensualidad, { session });
   }
 }
 
@@ -112,7 +113,7 @@ async function liberarCreditoOrigen(origen, saldoGeneradoNuevo, models, { sessio
   for (const { mensualidad, movimiento } of aplicaciones) {
     if (mensualidad.credito_aplicado > 0 && !mensualidad.credito_origenes?.length) {
       mensualidad.credito_origenes = movimiento.credito_origenes;
-      await mensualidad.save({ session });
+      await guardarMensualidadConRecibo(mensualidad, { session });
     }
   }
   for (const { mensualidad, movimiento } of aplicaciones.reverse()) {
@@ -157,7 +158,7 @@ async function liberarCreditoOrigen(origen, saldoGeneradoNuevo, models, { sessio
     mensualidad.historial_ediciones = mensualidad.historial_ediciones || [];
     mensualidad.historial_ediciones.push({ accion: 'retiro_credito_origen', fecha: new Date(),
       nota: `Credito retirado por anulacion del pago de origen: ${(importe / 100).toFixed(2)}` });
-    await mensualidad.save({ session });
+    await guardarMensualidadConRecibo(mensualidad, { session });
     retirar -= importe;
   }
 }

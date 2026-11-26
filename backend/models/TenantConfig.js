@@ -218,6 +218,10 @@ const RostersSchema = new mongoose.Schema({
 
 const TenantConfigSchema = new mongoose.Schema({
   key: { type: String, default: 'default', unique: true },
+  recibos: {
+    nombre_oficial: { type: String, trim: true, maxlength: 180, default: '' },
+    rif: { type: String, trim: true, maxlength: 40, default: '' }
+  },
   pagos: { type: PagosSchema, default: () => ({}) },
   cobro: { type: CobroSchema, default: () => ({}) },
   categorias: { type: CategoriasSchema, default: () => ({}) },

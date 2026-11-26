@@ -18,6 +18,7 @@ import EntrenadoresSedeStaff from './components/EntrenadoresSedeStaff';
 import Horarios from './components/Horarios';
 import ListadoSolicitudesUniformes from './components/ListadoSolicitudesUniformes';
 import PagosAlumno from './components/PagosAlumno';
+import { VerificarRecibo } from './components/ReciboPago';
 import CampaniasAlumno from './components/CampaniasAlumno';
 import PagoAgrupado from './components/PagoAgrupado';
 import Mensualidades from './components/Mensualidades';
@@ -343,6 +344,7 @@ function AppRoutes() {
             <TenantHostGate>
               <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/verificar/:numero" element={<VerificarRecibo />} />
               <Route path="/seleccionar-perfil" element={<ProtectedRoute><SeleccionarPerfil /></ProtectedRoute>} />
               <Route path="/" element={<LandingEntryRoute />} />
               <Route path="/*" element={

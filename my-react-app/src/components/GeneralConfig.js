@@ -293,6 +293,8 @@ function GeneralConfig() {
   const [logoPreview, setLogoPreview] = useState('');
   const [dragLogoActive, setDragLogoActive] = useState(false);
   const [constanciasConfig, setConstanciasConfig] = useState(EMPTY_CONSTANCIAS_CONFIG);
+  const [recibosConfig, setRecibosConfig] = useState({ nombre_oficial: '', rif: '' });
+  const [guardandoRecibos, setGuardandoRecibos] = useState(false);
   const [nuevoFormatoNombre, setNuevoFormatoNombre] = useState('');
   const [formatoAEliminar, setFormatoAEliminar] = useState(null);
   const [categoriasConfig, setCategoriasConfig] = useState(EMPTY_CATEGORIAS_CONFIG);
@@ -451,6 +453,7 @@ function GeneralConfig() {
         const payload = await res.json().catch(() => ({}));
         if (!active || !res.ok) return;
         setConstanciasConfig(buildConstanciasConfig(payload?.constancias));
+        setRecibosConfig(payload?.recibos || { nombre_oficial: '', rif: '' });
         setCategoriasConfig(buildCategoriasConfig(payload?.categorias));
       } catch (_) {
         if (active) {
@@ -607,6 +610,26 @@ function GeneralConfig() {
   const handleRetiroModeChange = (checked) => {
     updateRetiroField('habilitado', checked);
     setExpandedRetiroSubAccordion(checked ? 'aislado' : 'global');
+  };
+
+  const guardarRecibos = async () => {
+    setGuardandoRecibos(true);
+    setError('');
+    try {
+      const res = await fetch(`${apiBase}/api/configuracion`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recibos: recibosConfig })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudieron guardar los datos fiscales.');
+      setRecibosConfig(data.recibos);
+      setSuccessMessage('Datos fiscales de recibos actualizados.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGuardandoRecibos(false);
+    }
   };
 
   const guardarConstancias = async (nextConfig = constanciasConfig, successText = 'Configuracion de constancias actualizada.') => {
@@ -1010,6 +1033,20 @@ function GeneralConfig() {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
       )}
+
+      <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
+        <Typography sx={{ fontWeight: 800, mb: 1 }}>Datos fiscales de recibos</Typography>
+        <Typography sx={{ color: '#637086', fontSize: 13, mb: 2 }}>Se usan el logo de la academia y la sede del atleta.</Typography>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+          <TextField label="Nombre oficial de la academia" value={recibosConfig.nombre_oficial}
+            inputProps={{ maxLength: 180 }} onChange={(e) => setRecibosConfig((prev) => ({ ...prev, nombre_oficial: e.target.value }))} />
+          <TextField label="RIF / ID fiscal" value={recibosConfig.rif}
+            inputProps={{ maxLength: 40 }} onChange={(e) => setRecibosConfig((prev) => ({ ...prev, rif: e.target.value }))} />
+          <Button onClick={guardarRecibos} disabled={guardandoRecibos || cargandoConfigAdmin}>
+            {guardandoRecibos ? 'Guardando...' : 'Guardar datos fiscales'}
+          </Button>
+        </Box>
+      </Paper>
 
       <Paper sx={{ ...sectionCardSx, mb: 2.2 }}>
         <Box sx={sectionHeaderSx}>
