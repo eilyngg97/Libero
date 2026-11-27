@@ -1827,7 +1827,14 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 		if (opcionesExportExcel.incluirNombreAtleta) nombreColumnas.push('Alumno');
 		if (opcionesExportExcel.incluirNombreRepresentante) nombreColumnas.push('Representante');
 
-		const rows = fuente.map((m) => {
+		const fuenteOrdenada = fuente.map((m) => {
+			const fecha = String(m.estatus || '').toLowerCase() === 'pagado'
+				? m.fecha_ultimo_pago || m.fecha_pago
+				: null;
+			return { mensualidad: m, fecha, orden: parsePagoDate(fecha) || Infinity };
+		}).sort((a, b) => a.orden === b.orden ? 0 : a.orden - b.orden);
+
+		const rows = fuenteOrdenada.map(({ mensualidad: m, fecha }) => {
 			const montoTotal = Number(Number(obtenerMontoTablaMensualidad(m) || 0).toFixed(2));
 			const recargo = Number(Number(m.recargo_aplicado_usd || 0).toFixed(2));
 			const row = {
@@ -1839,9 +1846,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				Recargo: recargo,
 				'Monto total': montoTotal,
 				Estado: m.estatus || '-',
-				'Fecha de pago': String(m.estatus || '').toLowerCase() === 'pagado' && (m.fecha_ultimo_pago || m.fecha_pago)
-					? formatFechaBonita(m.fecha_ultimo_pago || m.fecha_pago)
-					: ''
+				'Fecha de pago': fecha ? formatFechaBonita(fecha) : ''
 			};
 
 			if (opcionesExportExcel.incluirNombreAtleta) {
@@ -3407,7 +3412,7 @@ function Mensualidades({ initialEstado = '', pageTitle = 'Mensualidades', onlyIn
 				<DialogTitle sx={{ fontWeight: 800, color: '#0f172a' }}>Exportar Excel</DialogTitle>
 				<DialogContent>
 					<Typography sx={{ color: '#64748b', mb: 1.5 }}>
-						Se exportarán las mensualidades visibles según los filtros actuales. Elige qué columna(s) de nombre incluir.
+						Se exportarán las mensualidades visibles según los filtros actuales, ordenadas por fecha de pago de la más antigua a la más reciente. Las mensualidades sin fecha de pago quedarán al final. Elige qué columna(s) de nombre incluir.
 					</Typography>
 					<FormGroup>
 						<FormControlLabel

@@ -274,6 +274,55 @@ test.each([
   expect(filas[0]).toMatchObject({ Estado: estatus, 'Fecha de pago': esperado });
 });
 
+test.each(['Todos', 'Pagado'])('Excel ordena por fecha de pago ascendente sin alterar la tabla con estado %s', async (estado) => {
+  exportToExcel.mockClear();
+  const original = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    const respuesta = await original(url, options);
+    if (!url.includes('/api/mensualidades')) return respuesta;
+    const [mensualidad] = await respuesta.json();
+    const registros = [
+      { nombre: 'Ana', estatus: 'Pagado', fecha_ultimo_pago: '2026-11-15', fecha_pago: '2026-10-01' },
+      { nombre: 'Bea', estatus: 'Pagado', fecha_pago: '2026-10-23' },
+      { nombre: 'Caro', estatus: 'Pagado', fecha_ultimo_pago: '2026-11-05T00:00:00.000Z' },
+      { nombre: 'Dani', estatus: 'Pagado', fecha_ultimo_pago: '2026-10-06' },
+      { nombre: 'Eva', estatus: 'Pagado', fecha_ultimo_pago: '2025-12-31' },
+      { nombre: 'Fabi', estatus: 'Pagado', fecha_ultimo_pago: '2026-10-06' },
+      { nombre: 'Gaby', estatus: 'Pagado' },
+      { nombre: 'Hana', estatus: 'Abono', fecha_ultimo_pago: '2025-01-01' }
+    ];
+    return { ok: true, json: async () => registros.map(({ nombre, ...pago }, index) => ({
+      ...mensualidad, ...pago, _id: `m${index}`,
+      id_alumno: { _id: `a${index}`, nombres: nombre, apellidos: 'Prueba' }
+    })) };
+  });
+  render(<Mensualidades />);
+  await screen.findByText('Hana Prueba');
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Estado', exact: true }));
+  fireEvent.click(await screen.findByRole('option', { name: estado, exact: true }));
+  const nombresTabla = () => screen.getAllByText(/^(Ana|Bea|Caro|Dani|Eva|Fabi|Gaby|Hana) Prueba$/)
+    .map((nombre) => nombre.textContent.match(/(Ana|Bea|Caro|Dani|Eva|Fabi|Gaby|Hana) Prueba$/)[0]);
+  const tablaAntes = nombresTabla();
+  expect(tablaAntes).toEqual(
+    ['Ana', 'Bea', 'Caro', 'Dani', 'Eva', 'Fabi', 'Gaby', ...(estado === 'Todos' ? ['Hana'] : [])].map((nombre) => `${nombre} Prueba`)
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Aplicar' }));
+  await waitFor(() => expect(exportToExcel).toHaveBeenCalledTimes(1));
+  const [filas] = exportToExcel.mock.calls[0];
+  expect(filas.map((fila) => [fila.Alumno, fila['Fecha de pago']])).toEqual([
+    ['Eva Prueba', '31 dic 2025'],
+    ['Dani Prueba', '06 oct 2026'],
+    ['Fabi Prueba', '06 oct 2026'],
+    ['Bea Prueba', '23 oct 2026'],
+    ['Caro Prueba', '05 nov 2026'],
+    ['Ana Prueba', '15 nov 2026'],
+    ['Gaby Prueba', ''],
+    ...(estado === 'Todos' ? [['Hana Prueba', '']] : [])
+  ]);
+  expect(nombresTabla()).toEqual(tablaAntes);
+});
+
 test.each(['Zelle', 'PayPal', 'Binance'])('detalle de %s muestra el monto real en divisa y no cero Bs', async (metodo) => {
   agrupado = false;
   const original = global.fetch.getMockImplementation();
